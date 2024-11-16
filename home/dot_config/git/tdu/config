@@ -1,0 +1,8 @@
+[core]
+    excludesFile = ~/.config/git/tdu/ignore
+
+[commit]
+    template = ~/.config/git/tdu/message.txt
+
+[credential "https://n-contents.backlog.com"]
+    provider = generic

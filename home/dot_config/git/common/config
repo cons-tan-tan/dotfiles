@@ -1,0 +1,27 @@
+[core]
+    editor = \"C:\\Users\\zhouc\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code\" --wait
+    sshCommand = ssh -i ~/.ssh/github_main.pub -o IdentitiesOnly=yes
+    autocrlf = input
+    excludesFile = ~/.config/git/common/ignore
+
+[user]
+    name = cons-tan-tan
+    email = 132136681+cons-tan-tan@users.noreply.github.com
+    signingkey = ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOGLGIXT0iVROaYQ3V6ytmPAe9605+4AwjEjVcdS0Nk8
+
+[filter "lfs"]
+    clean = git-lfs clean -- %f
+    smudge = git-lfs smudge -- %f
+    process = git-lfs filter-process
+    required = true
+
+[gpg]
+    format = ssh
+
+[gpg "ssh"]
+    program = "C:/Users/zhouc/AppData/Local/1Password/app/8/op-ssh-sign.exe"
+
+[commit]
+    gpgsign = true
+    cleanup = strip
+    template = ~/.config/git/common/message.txt

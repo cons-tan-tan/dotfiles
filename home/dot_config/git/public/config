@@ -1,0 +1,7 @@
+[core]
+    sshCommand = ssh -i ~/.ssh/github_work.pub -o IdentitiesOnly=yes
+
+[user]
+    name = taiyakisusume
+    email = 157872668+taiyakisusume@users.noreply.github.com
+    signingkey = ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINt6kOOFTsoC3hV70p0lSXGYL8htiFb7+piCIoge1Szr
