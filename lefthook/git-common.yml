@@ -1,0 +1,7 @@
+extends:
+  - lefthook/git-utils.yml
+
+pre-commit:
+  commands:
+    gitleaks:
+      run: lefthook run gitleaks

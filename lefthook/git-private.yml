@@ -1,0 +1,7 @@
+extends:
+  - lefthook/git-common.yml
+
+commit-msg:
+  commands:
+    gitlint:
+      run: lefthook run gitlint {1}
