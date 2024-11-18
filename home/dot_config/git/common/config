@@ -1,5 +1,5 @@
 [core]
-    editor = \"C:\\Users\\zhouc\\AppData\\Local\\Programs\\Microsoft VS Code\\bin\\code\" --wait
+    editor = code --wait
     sshCommand = ssh -i ~/.ssh/github_main.pub -o IdentitiesOnly=yes
     autocrlf = input
     excludesFile = ~/.config/git/common/ignore
