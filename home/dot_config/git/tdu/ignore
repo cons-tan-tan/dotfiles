@@ -3,3 +3,4 @@
 .venv
 .envrc
 docker-compose.override.yml
+.ruff.toml
