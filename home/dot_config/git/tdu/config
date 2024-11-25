@@ -1,6 +1,3 @@
-[core]
-    excludesFile = ~/.config/git/tdu/ignore
-
 [commit]
     template = ~/.config/git/tdu/message.txt
 

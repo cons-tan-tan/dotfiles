@@ -1,0 +1,8 @@
+.vscode
+.idea
+.venv
+.envrc
+.ruff.toml
+docker-compose.override.yml
+.lefthook.*
+*lefthook-local.*
