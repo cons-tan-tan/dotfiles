@@ -1,0 +1,3 @@
+# https://github.com/gitleaks/gitleaks
+[pre-commit.commands.check-credentials]
+run = "gitleaks protect --staged"

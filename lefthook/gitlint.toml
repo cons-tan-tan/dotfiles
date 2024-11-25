@@ -1,9 +1,5 @@
-# https://github.com/gitleaks/gitleaks
-[gitleaks.commands.check-credentials]
-run = "gitleaks protect --staged"
-
 # https://github.com/jorisroovers/gitlint
-[gitlint.commands.conventional-commits]
+[commit-msg.commands.conventional-commits]
 # デフォルトだと`-c contrib-title-conventional-commits.types=fix,feat,chore,docs,style,refactor,perf,test,revert,ci,build`
 # B6: body-is-missing
 run = "gitlint --contrib contrib-title-conventional-commits --msg-filename {1} --ignore=B6"
