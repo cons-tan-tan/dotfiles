@@ -1,0 +1,6 @@
+extends = [
+  "lefthook/git-utils.toml",
+]
+
+[pre-commit.commands.gitleaks]
+run = "lefthook run gitleaks"
