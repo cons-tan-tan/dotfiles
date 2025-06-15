@@ -10,5 +10,6 @@ credential_process = sh -c '~/.aws/aws-vault-wrapper.sh'
 {{   if (.chezmoi.kernel.osrelease | lower | contains "microsoft") }}
 # WSLでの設定
 credential_process = aws-vault exec nagase --json --prompt=terminal --duration=12h
+mfa_process = pass otp aws/otp/nagase
 {{   end }}
 {{ end }}
