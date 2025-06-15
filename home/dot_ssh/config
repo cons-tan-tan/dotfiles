@@ -1,0 +1,37 @@
+Host *
+    ServerAliveInterval 60
+    TCPKeepAlive yes
+
+Host xvps
+    HostName 162.43.28.237
+    User root
+
+Host univ
+    HostName login.hiroshima-u.ac.jp
+    User b226659
+
+Host github.com
+    HostName github.com
+    User git
+
+Host oci
+    HostName 217.142.228.246
+    User ubuntu
+    IdentityFile ~/.ssh/oci.pub
+
+Host pve01
+    HostName 192.168.1.1
+    User root
+
+Host k8s-cp
+    HostName 192.168.2.11
+    User cloudinit
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+    ForwardAgent yes
+
+Host k8s-wk
+    HostName 192.168.2.21
+    User cloudinit
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
