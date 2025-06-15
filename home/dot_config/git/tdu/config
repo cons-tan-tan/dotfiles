@@ -1,5 +1,2 @@
-[commit]
-    template = ~/.config/git/tdu/message.txt
-
 [credential "https://n-contents.backlog.com"]
     provider = generic
