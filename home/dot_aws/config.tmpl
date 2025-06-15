@@ -1,0 +1,14 @@
+[profile nagase]
+region = ap-northeast-1
+output = json
+mfa_serial = arn:aws:iam::128755073671:mfa/1password
+
+{{ if eq .chezmoi.os "windows" }}
+# Windowsでの設定
+credential_process = sh -c '~/.aws/aws-vault-wrapper.sh'
+{{ else if eq .chezmoi.os "linux" }}
+{{   if (.chezmoi.kernel.osrelease | lower | contains "microsoft") }}
+# WSLでの設定
+credential_process = aws-vault exec nagase --json --prompt=terminal --duration=12h
+{{   end }}
+{{ end }}
