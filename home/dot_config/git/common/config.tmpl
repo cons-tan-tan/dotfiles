@@ -24,3 +24,14 @@
     gpgsign = true
     cleanup = strip
     template = ~/.config/git/common/message.txt
+
+{{ if eq .chezmoi.os "linux" }}
+{{   if (.chezmoi.kernel.osrelease | lower | contains "microsoft") }}
+# WSLでの設定
+[core]
+    sshCommand = ssh.exe -i ~/.ssh/github_main.pub -o IdentitiesOnly=yes
+
+[gpg "ssh"]
+    program = /mnt/c/Users/zhouc/AppData/Local/1Password/app/8/op-ssh-sign-wsl
+{{   end }}
+{{ end }}
