@@ -1,0 +1,5 @@
+[profile nagase]
+region = ap-northeast-1
+output = json
+mfa_serial = arn:aws:iam::128755073671:mfa/1password
+credential_process=sh -c '~/.aws/aws-vault-wrapper.sh'
