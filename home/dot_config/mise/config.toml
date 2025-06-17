@@ -1,0 +1,17 @@
+[settings]
+disable_backends = ["asdf"]
+
+[settings.pipx]
+uvx = true
+
+[tools]
+
+# [Node.js]
+node = "latest"
+"npm:@anthropic-ai/claude-code" = "latest"
+"npm:ccusage" = "latest"
+
+# [Python]
+uv = "latest"
+"pipx:flake8" = "latest"
+"pipx:ruff" = "latest"
