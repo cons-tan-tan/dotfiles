@@ -1,8 +1,19 @@
+# Editor
 .vscode
 .idea
+
+# Python
 .venv
-.envrc
+
+## Ruff
 .ruff.toml
+
+# Dotenv
+.envrc
+
+# Docker
 docker-compose.override.yml
+
+# Lefthook
 .lefthook.*
 *lefthook-local.*
