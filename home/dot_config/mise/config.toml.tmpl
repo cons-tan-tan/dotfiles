@@ -14,6 +14,8 @@ fzf = "latest"
 fastfetch = "latest"
 sops = "latest"
 protoc = "latest"
+
+# [Git Hooks]
 lefthook = "latest"
 
 # [GitHub]
@@ -22,6 +24,7 @@ ghq = "latest"
 
 # [AWS]
 {{ if eq .chezmoi.os "linux" }}
+# aws-cliはMac, Linuxのみ対応
 aws-cli = "latest"
 {{ end }}
 aws-vault = "latest"
