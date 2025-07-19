@@ -13,6 +13,8 @@ Host univ
 Host github.com
     HostName github.com
     User git
+    IdentityFile ~/.ssh/github_main.pub
+    IdentitiesOnly yes
 
 Host oci
     HostName 217.142.228.246

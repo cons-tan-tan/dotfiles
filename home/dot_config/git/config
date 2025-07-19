@@ -1,8 +1,2 @@
 [include]
     path = ./common/config
-
-[includeIf "gitdir:~/dev/public/"]
-    path = ./public/config
-
-[includeIf "gitdir:~/dev/public/tdu/"]
-    path = ./tdu/config

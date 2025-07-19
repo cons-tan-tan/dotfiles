@@ -1,6 +1,5 @@
 [core]
     editor = code --wait
-    sshCommand = ssh -i ~/.ssh/github_main.pub -o IdentitiesOnly=yes
     autocrlf = input
 
 [user]
@@ -29,7 +28,8 @@
 {{   if (.chezmoi.kernel.osrelease | lower | contains "microsoft") }}
 # WSLでの設定
 [core]
-    sshCommand = ssh.exe -i ~/.ssh/github_main.pub -o IdentitiesOnly=yes
+    # windows側の.ssh/configを参照した挙動となるので注意
+    sshCommand = ssh.exe
 
 [gpg "ssh"]
     program = /mnt/c/Users/zhouc/AppData/Local/1Password/app/8/op-ssh-sign-wsl
