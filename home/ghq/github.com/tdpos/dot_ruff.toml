@@ -1,0 +1,39 @@
+line-length = 100
+
+[lint]
+select = [
+    "F",
+    "E",
+    "W",
+    "I",
+    "N",
+    "D",
+    "COM",
+]
+ignore = [
+    # Docstring関連
+    "D1",
+    "D415",
+    "D417",
+
+    # formatterを使う際に無効化が推奨されているもの
+    "COM812",
+    "ISC001",
+]
+
+[lint.isort]
+force-sort-within-sections = true
+section-order = ["future", "standard-library", "third-party", "django", "selenium", "first-party", "local-folder"]
+
+[lint.isort.sections]
+"django" = ["django"]
+"selenium" = ["selenium", "seleniumbase"]
+
+[lint.flake8-quotes]
+inline-quotes = "single"
+
+[format]
+quote-style = "single"
+
+[lint.pydocstyle]
+convention = "google"
