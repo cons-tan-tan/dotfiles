@@ -7,9 +7,12 @@ idiomatic_version_file_enable_tools = ["terraform"]
 uvx = true
 
 [tools]
+cosign = "latest"
+aqua = "latest"
 
 starship = "latest"
 chezmoi = "latest"
+jq = "latest"
 ripgrep = "latest"
 fzf = "latest"
 bat = "latest"
@@ -20,9 +23,10 @@ protoc = "latest"
 sops = "latest"
 "aqua:trufflesecurity/trufflehog" = "latest"
 
-# [GitHub]
+# [Git]
 github-cli = "latest"
 ghq = "latest"
+lefthook = "latest"
 
 # [AWS]
 {{ if eq .chezmoi.os "linux" }}
