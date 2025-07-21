@@ -1,4 +1,3 @@
 brew "mise"
 brew "pass"
 brew "pass-otp"
-brew "trufflehog"
