@@ -5,11 +5,12 @@ mfa_serial = arn:aws:iam::128755073671:mfa/1password
 
 {{ if eq .chezmoi.os "windows" }}
 # [Windows]
-credential_process = sh -c '~/.aws/aws-vault-wrapper.sh'
+credential_process = sh -c 'aws-vault export nagase --format=json --duration=12h'
+mfa_process = sh -c 'op item get AWS --otp'
 {{ else if eq .chezmoi.os "linux" }}
 {{   if (.chezmoi.kernel.osrelease | lower | contains "microsoft") }}
 # [WSL]
-credential_process = aws-vault exec nagase --json --prompt=terminal --duration=12h
+credential_process = aws-vault export nagase --format=json --duration=12h
 mfa_process = pass otp aws/otp/nagase
 {{   end }}
 {{ end }}

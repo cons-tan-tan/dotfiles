@@ -31,9 +31,9 @@ lefthook = "latest"
 # [AWS]
 {{ if eq .chezmoi.os "linux" }}
 # aws-cliはMac, Linuxのみ対応
-aws-cli = "latest"
-aws-vault = "latest"
+awscli = "latest"
 {{ end }}
+"ubi:ByteNess/aws-vault" = "latest"
 
 # [AI Tools]
 claude = "latest"
