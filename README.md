@@ -25,7 +25,7 @@ $ echo 'eval "$(mise activate zsh)"' >> ~/.zshrc
 # chezmoiのインストール
 $ mise use -g chezmoi
 ```
-### 
+
 ### 初回実行
 
 ```shell
@@ -50,6 +50,15 @@ $ brew bundle
 
 # miseの一括インストール
 $ mise install
+```
+
+### 他ツールの対応
+```shell
+# https://github.com/nullpo-head/WSL-Hello-sudo のインストール
+$ wget http://github.com/nullpo-head/WSL-Hello-sudo/releases/latest/download/release.tar.gz
+$ tar xvf release.tar.gz
+$ cd release
+$ ./install.sh
 ```
 
 ## 運用
