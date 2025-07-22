@@ -32,6 +32,7 @@
     sshCommand = ssh.exe
 
 [gpg "ssh"]
-    program = /mnt/c/Users/zhouc/AppData/Local/1Password/app/8/op-ssh-sign-wsl
+    # ホストwindowsのユーザー名を取得
+    program = /mnt/c/Users/{{ output "powershell.exe" "$env:USERNAME" | trim }}/AppData/Local/1Password/app/8/op-ssh-sign-wsl
 {{   end }}
 {{ end }}
