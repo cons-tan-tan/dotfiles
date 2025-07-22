@@ -11,6 +11,6 @@ mfa_process = sh -c 'op item get AWS --otp'
 {{   if (.chezmoi.kernel.osrelease | lower | contains "microsoft") }}
 # [WSL]
 credential_process = aws-vault export nagase --format=json --duration=12h
-mfa_process = pass otp aws/otp/nagase
+mfa_process = gopass otp --password aws/otp/nagase
 {{   end }}
 {{ end }}
