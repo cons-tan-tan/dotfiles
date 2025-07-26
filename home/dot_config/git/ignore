@@ -17,3 +17,7 @@ docker-compose.override.yml
 # Lefthook
 .lefthook.*
 *lefthook-local.*
+
+# Claude Code
+CLAUDE.local.md
+**/.claude/settings.local.json
