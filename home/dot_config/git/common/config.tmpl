@@ -24,6 +24,9 @@
     cleanup = strip
     template = ~/.config/git/common/message.txt
 
+[url "git@github.com:"]
+	insteadOf = https://github.com/
+
 {{ if eq .chezmoi.os "linux" }}
 {{   if (.chezmoi.kernel.osrelease | lower | contains "microsoft") }}
 # WSLでの設定
