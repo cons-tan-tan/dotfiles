@@ -11,6 +11,9 @@
 # Dotenv
 .envrc
 
+# Mise
+mise.local.toml
+
 # Docker
 docker-compose.override.yml
 
