@@ -27,8 +27,9 @@
     cleanup = strip
     template = ~/.config/git/common/message.txt
 
-[url "git@github.com:"]
-	insteadOf = https://github.com/
+[url "https://github.com/"]
+    insteadOf = git@github.com:
+    insteadOf = ssh://git@github.com/
 
 {{ if eq .chezmoi.os "linux" }}
 {{   if (.chezmoi.kernel.osrelease | lower | contains "microsoft") }}
