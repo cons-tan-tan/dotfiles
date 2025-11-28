@@ -20,7 +20,7 @@
     format = ssh
 
 [gpg "ssh"]
-    program = {{.chezmoi.homeDir}}/AppData/Local/1Password/app/8/op-ssh-sign.exe
+    program = {{.chezmoi.homeDir}}/AppData/Local/Microsoft/WindowsApps/op-ssh-sign-wsl.exe
 
 [commit]
     gpgsign = true
@@ -39,6 +39,6 @@
 
 [gpg "ssh"]
     # ホストwindowsのユーザー名を取得
-    program = /mnt/c/Users/{{ output "powershell.exe" "$env:USERNAME" | trim }}/AppData/Local/1Password/app/8/op-ssh-sign-wsl
+    program = /mnt/c/Users/{{ output "powershell.exe" "$env:USERNAME" | trim }}/AppData/Local/Microsoft/WindowsApps/op-ssh-sign-wsl.exe
 {{   end }}
 {{ end }}
