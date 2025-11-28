@@ -16,6 +16,11 @@
     process = git-lfs filter-process
     required = true
 
+[credential "https://github.com"]
+	helper = !gh auth git-credential
+[credential "https://gist.github.com"]
+	helper = !gh auth git-credential
+
 [gpg]
     format = ssh
 
