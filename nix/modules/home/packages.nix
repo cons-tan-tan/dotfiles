@@ -40,6 +40,7 @@ in
     google-cloud-sdk
 
     # Node.js
+    ni
     pnpm
     google-clasp
 
