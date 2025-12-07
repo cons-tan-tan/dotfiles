@@ -22,6 +22,7 @@ in
     ghq
     lefthook
     git-cliff
+    pinact
 
     # Secret
     sops
