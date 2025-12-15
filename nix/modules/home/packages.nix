@@ -13,6 +13,7 @@ in
     fzf
     bat
     zoxide
+    eza
     fastfetch
     protobuf
     redocly
