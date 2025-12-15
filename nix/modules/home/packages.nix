@@ -17,6 +17,7 @@ in
     fastfetch
     protobuf
     redocly
+    genact
 
     # Git
     git
