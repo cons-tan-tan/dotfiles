@@ -4,8 +4,6 @@ let
   overlayFiles = [
     # AI tools
     ./ai-tools.nix
-    # IAC tools
-    ./pike.nix
   ];
 
   # Apply each overlay and merge results

@@ -55,8 +55,5 @@ in
 
     # Go
     go
-
-    # Terraform
-    pike
   ];
 }
