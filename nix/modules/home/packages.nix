@@ -55,5 +55,9 @@ in
 
     # Go
     go
+
+    # Nix
+    nixd
+    nil
   ];
 }
