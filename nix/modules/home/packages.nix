@@ -61,5 +61,8 @@ in
     # Nix
     nixd
     nil
+
+    # Japanese Language Server
+    mozuku-lsp
   ];
 }

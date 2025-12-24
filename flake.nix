@@ -22,6 +22,10 @@
       url = "github:numtide/treefmt-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    mozuku = {
+      url = "github:comamoca/MoZuKu/feat/support-nix";
+    };
   };
 
   outputs =
@@ -32,6 +36,7 @@
       home-manager,
       ai-tools,
       treefmt-nix,
+      mozuku,
       ...
     }:
     let
@@ -66,6 +71,7 @@
           overlays = [
             (final: prev: {
               _ai-tools = ai-tools;
+              mozuku-lsp = mozuku.packages.${system}.default;
             })
             (import ./nix/overlays)
           ];
