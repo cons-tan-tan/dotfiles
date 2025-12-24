@@ -19,6 +19,7 @@ in
     protobuf
     redocly
     genact
+    renovate
 
     # Git
     git
