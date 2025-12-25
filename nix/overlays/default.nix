@@ -4,6 +4,8 @@ let
   overlayFiles = [
     # AI tools
     ./ai-tools.nix
+    # Rust tools
+    ./rustup.nix
   ];
 
   # Apply each overlay and merge results

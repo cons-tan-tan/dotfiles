@@ -58,6 +58,9 @@ in
     # Go
     go
 
+    # Rust
+    rustup
+
     # Nix
     nixd
     nil
