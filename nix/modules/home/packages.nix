@@ -39,7 +39,6 @@ in
     codex
     gemini-cli
     github-copilot-cli
-    opencode
     ccusage
     ccusage-codex
 
