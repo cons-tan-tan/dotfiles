@@ -24,7 +24,7 @@
     };
 
     mozuku = {
-      url = "github:comamoca/MoZuKu/feat/support-nix";
+      url = "github:t3tra-dev/MoZuKu";
     };
   };
 

@@ -3,73 +3,69 @@ let
   isDarwin = pkgs.stdenv.isDarwin;
 in
 {
-  home.packages =
-    with pkgs;
-    [
-      # CLI tools
-      curl
-      mise
-      chezmoi
-      jq
-      ripgrep
-      fd
-      fzf
-      bat
-      zoxide
-      eza
-      fastfetch
-      protobuf
-      redocly
-      genact
-      renovate
+  home.packages = with pkgs; [
+    # CLI tools
+    curl
+    mise
+    chezmoi
+    jq
+    ripgrep
+    fd
+    fzf
+    bat
+    zoxide
+    eza
+    fastfetch
+    protobuf
+    redocly
+    genact
+    renovate
 
-      # Git
-      git
-      gh
-      ghq
-      lefthook
-      git-cliff
-      pinact
+    # Git
+    git
+    gh
+    ghq
+    lefthook
+    git-cliff
+    pinact
 
-      # Secret
-      sops
-      gopass
-      trufflehog
+    # Secret
+    sops
+    gopass
+    trufflehog
 
-      # AI Tools
-      claude-code
-      codex
-      gemini-cli
-      github-copilot-cli
-      ccusage
-      ccusage-codex
+    # AI Tools
+    claude-code
+    codex
+    gemini-cli
+    github-copilot-cli
+    ccusage
+    ccusage-codex
 
-      # Google Cloud
-      google-cloud-sdk
+    # Google Cloud
+    google-cloud-sdk
 
-      # Node.js
-      ni
-      pnpm
-      google-clasp
+    # Node.js
+    ni
+    pnpm
+    google-clasp
 
-      # Python
-      uv
-      ruff
-      basedpyright
+    # Python
+    uv
+    ruff
+    basedpyright
 
-      # Go
-      go
+    # Go
+    go
 
-      # Rust
-      rustup
+    # Rust
+    rustup
 
-      # Nix
-      nixd
-      nil
+    # Nix
+    nixd
+    nil
 
-    ]
-    ++ lib.optionals (!isDarwin) [
-      # Japanese Language Server
-      mozuku-lsp
-    ];
+    # Japanese Language Server
+    mozuku-lsp
+  ];
 }
