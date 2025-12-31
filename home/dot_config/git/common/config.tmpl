@@ -5,7 +5,7 @@
 [user]
     name = cons-tan-tan
     email = 132136681+cons-tan-tan@users.noreply.github.com
-    signingkey = ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOGLGIXT0iVROaYQ3V6ytmPAe9605+4AwjEjVcdS0Nk8
+    signingkey = 6250E02A31E09AFE
 
 [init]
     defaultBranch = main
@@ -21,12 +21,6 @@
 [credential "https://gist.github.com"]
 	helper = !gh auth git-credential
 
-[gpg]
-    format = ssh
-
-[gpg "ssh"]
-    program = {{.chezmoi.homeDir}}/AppData/Local/Microsoft/WindowsApps/op-ssh-sign.exe
-
 [commit]
     gpgsign = true
     cleanup = strip
@@ -36,19 +30,11 @@
     insteadOf = git@github.com:
     insteadOf = ssh://git@github.com/
 
-{{ if eq .chezmoi.os "darwin" }}
-# macOSでの設定
-[gpg "ssh"]
-    program = "/Applications/1Password.app/Contents/MacOS/op-ssh-sign"
-{{ else if eq .chezmoi.os "linux" }}
+{{ if eq .chezmoi.os "linux" }}
 {{   if (.chezmoi.kernel.osrelease | lower | contains "microsoft") }}
 # WSLでの設定
 [core]
     # windows側の.ssh/configを参照した挙動となるので注意
     sshCommand = ssh.exe
-
-[gpg "ssh"]
-    # ホストwindowsのユーザー名を取得
-    program = /mnt/c/Users/{{ output "powershell.exe" "$env:USERNAME" | trim }}/AppData/Local/Microsoft/WindowsApps/op-ssh-sign-wsl.exe
 {{   end }}
 {{ end }}
