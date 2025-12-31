@@ -10,12 +10,6 @@
 [init]
     defaultBranch = main
 
-[filter "lfs"]
-    clean = git-lfs clean -- %f
-    smudge = git-lfs smudge -- %f
-    process = git-lfs filter-process
-    required = true
-
 [credential "https://github.com"]
 	helper = !gh auth git-credential
 [credential "https://gist.github.com"]
@@ -29,12 +23,3 @@
 [url "https://github.com/"]
     insteadOf = git@github.com:
     insteadOf = ssh://git@github.com/
-
-{{ if eq .chezmoi.os "linux" }}
-{{   if (.chezmoi.kernel.osrelease | lower | contains "microsoft") }}
-# WSLでの設定
-[core]
-    # windows側の.ssh/configを参照した挙動となるので注意
-    sshCommand = ssh.exe
-{{   end }}
-{{ end }}
