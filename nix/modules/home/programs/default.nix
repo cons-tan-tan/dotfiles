@@ -1,6 +1,7 @@
 {
   imports = [
     ./aws.nix
+    ./claude.nix
     ./direnv.nix
     ./git.nix
     ./gpg.nix

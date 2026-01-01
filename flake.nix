@@ -170,6 +170,9 @@
         linuxSystem:
         home-manager.lib.homeManagerConfiguration {
           pkgs = mkPkgs linuxSystem;
+          extraSpecialArgs = {
+            dotfilesDir = "${linuxHomedir}/ghq/github.com/cons-tan-tan/dotfiles";
+          };
           modules = [
             ./nix/modules/home
             {
@@ -201,6 +204,7 @@
             home-manager.useUserPackages = true;
             home-manager.extraSpecialArgs = {
               pkgs = mkPkgs darwinSystem;
+              dotfilesDir = "${darwinHomedir}/ghq/github.com/cons-tan-tan/dotfiles";
             };
             home-manager.users.${username} =
               { pkgs, ... }:
