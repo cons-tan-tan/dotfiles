@@ -34,7 +34,6 @@ in
     trufflehog
 
     # AI Tools
-    claude-code
     codex
     gemini-cli
     github-copilot-cli
