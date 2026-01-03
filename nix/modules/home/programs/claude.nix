@@ -12,4 +12,6 @@
     config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/claude/commands";
   home.file.".claude/skills".source =
     config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/claude/skills";
+  home.file.".claude/output-styles".source =
+    config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/claude/output-styles";
 }
