@@ -4,6 +4,7 @@
     enable = true;
     settings = {
       includeCoAuthoredBy = false;
+      model = "claude-opus-4-5-20251101";
     };
   };
   home.file.".claude/CLAUDE.md".source =
