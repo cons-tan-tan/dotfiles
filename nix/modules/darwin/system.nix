@@ -25,6 +25,9 @@
     home = homedir;
   };
 
+  # Enable Touch ID for sudo
+  security.pam.services.sudo_local.touchIdAuth = true;
+
   # macOS system defaults (uncomment as needed)
   # system.defaults = {
   #   # Dock settings
