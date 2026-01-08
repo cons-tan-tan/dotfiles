@@ -46,7 +46,7 @@ in
     # Node.js
     ni
     pnpm
-    google-clasp
+    # google-clasp
 
     # Python
     uv
