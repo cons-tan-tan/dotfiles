@@ -2,8 +2,8 @@ final: prev:
 let
   # Import all overlay files in this directory
   overlayFiles = [
-    # AI tools
-    ./ai-tools.nix
+    # LLM agents
+    ./llm-agents.nix
     # Rust tools
     ./rustup.nix
   ];

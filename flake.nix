@@ -14,8 +14,8 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    ai-tools = {
-      url = "github:numtide/nix-ai-tools";
+    llm-agents = {
+      url = "github:numtide/llm-agents.nix";
     };
 
     treefmt-nix = {
@@ -27,10 +27,6 @@
       url = "github:t3tra-dev/MoZuKu";
     };
 
-    claude-code-overlay = {
-      url = "github:ryoppippi/claude-code-overlay";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
   };
 
   outputs =
@@ -39,10 +35,9 @@
       nixpkgs,
       nix-darwin,
       home-manager,
-      ai-tools,
+      llm-agents,
       treefmt-nix,
       mozuku,
-      claude-code-overlay,
       ...
     }:
     let
@@ -76,8 +71,7 @@
           config.allowUnfree = true;
           overlays = [
             (final: prev: {
-              _ai-tools = ai-tools;
-              _claude-code-overlay = claude-code-overlay;
+              _llm-agents = llm-agents;
               mozuku-lsp = mozuku.packages.${system}.default;
             })
             (import ./nix/overlays)
@@ -181,7 +175,6 @@
             dotfilesDir = "${linuxHomedir}/ghq/github.com/cons-tan-tan/dotfiles";
           };
           modules = [
-            claude-code-overlay.homeManagerModules.default
             ./nix/modules/home
             {
               home = {
@@ -218,7 +211,6 @@
               { pkgs, ... }:
               {
                 imports = [
-                  claude-code-overlay.homeManagerModules.default
                   ./nix/modules/home
                   ./nix/modules/darwin
                 ];
