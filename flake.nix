@@ -26,6 +26,11 @@
     mozuku = {
       url = "github:t3tra-dev/MoZuKu";
     };
+
+    claude-code-overlay = {
+      url = "github:ryoppippi/claude-code-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -37,6 +42,7 @@
       ai-tools,
       treefmt-nix,
       mozuku,
+      claude-code-overlay,
       ...
     }:
     let
@@ -71,6 +77,7 @@
           overlays = [
             (final: prev: {
               _ai-tools = ai-tools;
+              _claude-code-overlay = claude-code-overlay;
               mozuku-lsp = mozuku.packages.${system}.default;
             })
             (import ./nix/overlays)
@@ -174,6 +181,7 @@
             dotfilesDir = "${linuxHomedir}/ghq/github.com/cons-tan-tan/dotfiles";
           };
           modules = [
+            claude-code-overlay.homeManagerModules.default
             ./nix/modules/home
             {
               home = {
@@ -210,6 +218,7 @@
               { pkgs, ... }:
               {
                 imports = [
+                  claude-code-overlay.homeManagerModules.default
                   ./nix/modules/home
                   ./nix/modules/darwin
                 ];
