@@ -22,6 +22,7 @@ in
     renovate
     typos
     typos-lsp
+    reuse
 
     # Git
     ghq
