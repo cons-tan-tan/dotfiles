@@ -21,6 +21,7 @@ in
     genact
     renovate
     typos
+    typos-lsp
 
     # Git
     ghq
