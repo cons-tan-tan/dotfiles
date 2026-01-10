@@ -53,6 +53,7 @@ in
     # Python
     uv
     ruff
+    ty
     basedpyright
 
     # Go
