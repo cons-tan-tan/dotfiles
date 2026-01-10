@@ -22,7 +22,6 @@ in
     renovate
 
     # Git
-    gh
     ghq
     lefthook
     git-cliff
