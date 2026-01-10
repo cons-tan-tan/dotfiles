@@ -20,6 +20,7 @@ in
     redocly
     genact
     renovate
+    typos
 
     # Git
     ghq
