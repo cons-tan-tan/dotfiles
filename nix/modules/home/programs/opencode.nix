@@ -1,9 +1,22 @@
-{ pkgs, ... }:
+{
+  config,
+  dotfilesDir,
+  ...
+}:
 {
   programs.opencode = {
     enable = true;
     settings = {
-      theme = "transparent";
+      theme = "lucent-orng";
+      instructions = [
+        "${config.home.homeDirectory}/.claude/output-styles/faust.md"
+      ];
+      command = {
+        git-commit-crafter = {
+          description = "Call git-commit-crafter skill";
+          template = "Call git-commit-crafter skill and follow it. Ask any required questions before proceeding.";
+        };
+      };
     };
     themes = {
       transparent = {
@@ -22,4 +35,7 @@
       };
     };
   };
+
+  home.file.".config/opencode/command".source =
+    config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/claude/commands";
 }
