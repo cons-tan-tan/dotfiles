@@ -14,7 +14,7 @@
       command = {
         git-commit-crafter = {
           description = "Call git-commit-crafter skill";
-          template = "Call git-commit-crafter skill and follow it. Ask any required questions before proceeding.";
+          template = "Call git-commit-crafter skill and follow it.";
         };
       };
     };

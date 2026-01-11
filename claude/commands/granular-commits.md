@@ -1,4 +1,4 @@
-Call git-commit-crafter skill
+Call git-commit-crafter skill and follow it.
 
 ## Override Instructions
 
