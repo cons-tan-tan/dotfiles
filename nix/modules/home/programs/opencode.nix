@@ -10,6 +10,7 @@
       theme = "lucent-orng";
       instructions = [
         "${config.home.homeDirectory}/.claude/output-styles/faust.md"
+        "${config.home.homeDirectory}/.claude/rules/*.md"
       ];
       command = {
         git-commit-crafter = {
