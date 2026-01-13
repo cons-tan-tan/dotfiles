@@ -27,6 +27,19 @@
       url = "github:t3tra-dev/MoZuKu";
     };
 
+    # Homebrew casks managed via Nix (macOS only)
+    brew-nix = {
+      url = "github:BatteredBunny/brew-nix";
+      inputs.brew-api.follows = "brew-api";
+      inputs.nix-darwin.follows = "nix-darwin";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    brew-api = {
+      url = "github:BatteredBunny/brew-api";
+      flake = false;
+    };
+
   };
 
   outputs =
@@ -38,6 +51,7 @@
       llm-agents,
       treefmt-nix,
       mozuku,
+      brew-nix,
       ...
     }:
     let
@@ -66,6 +80,9 @@
       # Create pkgs with overlays
       mkPkgs =
         system:
+        let
+          isDarwin = builtins.match ".*-darwin" system != null;
+        in
         import nixpkgs {
           inherit system;
           config.allowUnfree = true;
@@ -75,6 +92,9 @@
               mozuku-lsp = mozuku.packages.${system}.default;
             })
             (import ./nix/overlays)
+          ]
+          ++ nixpkgs.lib.optionals isDarwin [
+            brew-nix.overlays.default
           ];
         };
 
