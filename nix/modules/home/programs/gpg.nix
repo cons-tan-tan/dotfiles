@@ -1,5 +1,7 @@
 { pkgs, lib, ... }:
 let
+  isDarwin = pkgs.stdenv.isDarwin;
+
   # https://gist.github.com/mrgrain/9c3519952d9af811bd7bf50bfcfaa16f
   pinentry-1password = pkgs.writeShellScriptBin "pinentry-1password" ''
     if grep -qi microsoft /proc/version 2>/dev/null; then
@@ -37,10 +39,14 @@ in
   services.gpg-agent = {
     enable = true;
     enableSshSupport = false;
-    pinentry = {
-      package = pinentry-1password;
-      program = "pinentry-1password";
-    };
+    pinentry =
+      if isDarwin then
+        { package = pkgs.pinentry_mac; }
+      else
+        {
+          package = pinentry-1password;
+          program = "pinentry-1password";
+        };
     defaultCacheTtl = 43200;
     maxCacheTtl = 43200;
   };
