@@ -23,6 +23,7 @@ in
     typos
     typos-lsp
     reuse
+    ast-grep
 
     # Git
     ghq
