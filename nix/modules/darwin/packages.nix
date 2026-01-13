@@ -6,9 +6,11 @@
     [
       # nixpkgs packages (macOS only)
       ghostty-bin
+      raycast
     ]
     # brew-nix packages (Homebrew casks managed via Nix)
     ++ (with pkgs.brewCasks; [
       aqua-voice
+      azookey
     ]);
 }
