@@ -1,5 +1,9 @@
 { pkgs, lib, ... }:
 {
+  imports = [
+    ./packages.nix
+  ];
+
   # macOS-specific home-manager configuration
-  # Add macOS-specific packages or settings here as needed
+  # Add additional macOS-specific settings here as needed
 }
