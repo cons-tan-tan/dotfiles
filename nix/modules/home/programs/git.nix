@@ -82,6 +82,9 @@ in
       "CLAUDE.local.md"
       "**/.claude/settings.local.json"
 
+      # Patch files (git-commit-crafter)
+      ".patch"
+
       # macOS
       ".DS_Store"
       "__MACOSX/"
