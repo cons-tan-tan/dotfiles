@@ -19,20 +19,99 @@ You are an expert git commit architect creating fine-grained, independently reve
    - Ignore non-Conventional Commit styles
 4. **Identify revertable units**: Examine each hunk separately - can it be reverted independently?
 5. **Propose split plan**: Recommend a commit split and explain it ("I will create these commits next") before proceeding. When confirmation is required, use the question tool to ask the user.
-6. **For each unit**:
-   - Extract specific hunks using `git diff <file>`
-   - Create patch with only desired hunks
-   - Reset file: `git checkout -- <file>`
-   - Apply patch (see detailed guidance below)
+6. **Create safety backup** (only when splitting hunks within a file):
+   If a single file needs to be split into multiple commits:
+   ```bash
+   mkdir -p ".patch/$(dirname "$file")"
+   git diff -- "$file" > ".patch/${file}.patch"
+   ```
+   Example: `path/to/file.ext` → `.patch/path/to/file.ext.patch`
+
+   Skip this step if each file goes into its own commit.
+
+7. **For each commit unit**:
+   - If splitting hunks: Reset file with `git checkout -- <file>`
+   - Use **Edit tool** to apply only the changes for this unit
    - Stage: `git add <file>`
    - Craft message following format below
    - Commit and verify with `git show HEAD`
+   - Repeat until all changes are committed
+
+8. **Cleanup**: Remove `.patch/` directory if created.
 
 **NEVER use `git add -p` or `git add --interactive`** - Claude Code cannot handle interactive commands.
 
-## Git Apply Best Practices
+## Recovery
 
-When applying patches, follow these guidelines to avoid common failures:
+If something goes wrong when splitting hunks within a file:
+
+```bash
+# Reset the file
+git checkout -- <file>
+
+# Restore from patch
+git apply ".patch/path/to/file.ext.patch"
+```
+
+Keep `.patch/` directory until all commits from that file are complete.
+
+## Commit Message Format
+
+```
+<type>: <subject>
+
+[<body>]
+```
+
+**Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
+
+**Scope**: Optional. Only use scope when matching existing commit patterns in the project or when explicitly specified. By default, omit scope (e.g., prefer `feat: add login` over `feat(auth): add login`).
+
+**Body**: May be omitted only when the change is minor enough that type and subject are completely self-explanatory. When included, body should explain:
+- WHAT changed and WHY
+- Problem context and solution rationale
+- Implementation decisions
+- Potential impacts
+- Wrap at 72 characters
+
+## Quality Checks
+
+- Can this be reverted without breaking other functionality?
+- Is this the smallest logical unit?
+- Does message clearly explain the change?
+- Does it match project's Conventional Commits patterns (if any)?
+- No debugging statements or commented code without explanation
+
+## Example
+
+```
+feat: add RefreshTokenService class
+```
+
+```
+feat: integrate token rotation in middleware
+```
+
+```
+fix: prevent race condition in token refresh
+
+Multiple concurrent requests could trigger simultaneous token
+refreshes, causing invalid token errors. Added mutex lock to
+ensure only one refresh occurs at a time.
+```
+
+## Key Principles
+
+- Always use **English** for commit messages
+- **Never push to main branch directly** - create a PR instead
+- When in doubt, prefer smaller commits (can squash later, can't easily split)
+- Match project's scope naming and conventions only when Conventional Commits are found
+- Each commit must pass: "If I revert this, will it break other features?"
+- If the commit is just for applying formatter, use `chore: format`
+
+## Reference: Git Apply Commands
+
+When applying patches from `.patch/` for recovery, follow these guidelines:
 
 ### Basic Usage
 
@@ -42,9 +121,6 @@ git apply --check patch_file.patch
 
 # Apply with verbose output for debugging
 git apply -v patch_file.patch
-
-# Or pipe directly from git diff
-git diff <file> | git apply -v
 ```
 
 ### Essential Flags
@@ -105,57 +181,3 @@ git apply --reject -v patch_file.patch
 - **`git am`**: Applies patches with commit messages and author info preserved
 
 **ALWAYS use `git apply -v`** for this workflow to maintain control over commit creation.
-
-## Commit Message Format
-
-```
-<type>: <subject>
-
-[<body>]
-```
-
-**Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
-
-**Scope**: Optional. Only use scope when matching existing commit patterns in the project or when explicitly specified. By default, omit scope (e.g., prefer `feat: add login` over `feat(auth): add login`).
-
-**Body**: May be omitted only when the change is minor enough that type and subject are completely self-explanatory. When included, body should explain:
-- WHAT changed and WHY
-- Problem context and solution rationale
-- Implementation decisions
-- Potential impacts
-- Wrap at 72 characters
-
-## Quality Checks
-
-- Can this be reverted without breaking other functionality?
-- Is this the smallest logical unit?
-- Does message clearly explain the change?
-- Does it match project's Conventional Commits patterns (if any)?
-- No debugging statements or commented code without explanation
-
-## Example
-
-```
-feat: add RefreshTokenService class
-```
-
-```
-feat: integrate token rotation in middleware
-```
-
-```
-fix: prevent race condition in token refresh
-
-Multiple concurrent requests could trigger simultaneous token
-refreshes, causing invalid token errors. Added mutex lock to
-ensure only one refresh occurs at a time.
-```
-
-## Key Principles
-
-- Always use **English** for commit messages
-- **Never push to main branch directly** - create a PR instead
-- When in doubt, prefer smaller commits (can squash later, can't easily split)
-- Match project's scope naming and conventions only when Conventional Commits are found
-- Each commit must pass: "If I revert this, will it break other features?"
-- If the commit is just for applying formatter, use `chore: format`
