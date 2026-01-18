@@ -66,9 +66,6 @@ in
       ## Ruff
       ".ruff.toml"
 
-      # Dotenv
-      ".envrc"
-
       # Mise
       "mise.local.toml"
 
