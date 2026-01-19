@@ -8,6 +8,8 @@
       ghostty-bin
       raycast
       zed-editor
+      R
+      rstudio
     ]
     # brew-nix packages (Homebrew casks managed via Nix)
     ++ (with pkgs.brewCasks; [
