@@ -5,7 +5,6 @@
     with pkgs;
     [
       # nixpkgs packages (macOS only)
-      ghostty-bin
       raycast
       zed-editor
       R
