@@ -24,6 +24,7 @@ in
     typos-lsp
     reuse
     ast-grep
+    watchexec
 
     # Git
     ghq
