@@ -26,6 +26,9 @@ in
     ast-grep
     watchexec
 
+    # Editor
+    neovim
+
     # Git
     ghq
     lefthook
