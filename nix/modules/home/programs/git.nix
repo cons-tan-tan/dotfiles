@@ -45,6 +45,8 @@ in
         template = "${commitTemplate}";
       };
 
+      wt.basedir = ".worktrees";
+
       url = {
         "https://github.com/" = {
           insteadOf = [

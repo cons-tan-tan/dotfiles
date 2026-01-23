@@ -31,6 +31,7 @@ in
 
     # Git
     ghq
+    git-wt
     lefthook
     git-cliff
     pinact
