@@ -6,6 +6,8 @@ let
     ./llm-agents.nix
     # Rust tools
     ./rustup.nix
+    # Git worktree manager
+    ./git-wt.nix
   ];
 
   # Apply each overlay and merge results
