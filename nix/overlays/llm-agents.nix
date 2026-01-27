@@ -6,5 +6,6 @@ final: prev: {
     opencode
     ccusage
     ccusage-codex
+    agent-browser
     ;
 }

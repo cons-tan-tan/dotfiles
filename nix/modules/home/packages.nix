@@ -47,6 +47,7 @@ in
     github-copilot-cli
     ccusage
     ccusage-codex
+    agent-browser
 
     # Google Cloud
     google-cloud-sdk
