@@ -6,6 +6,9 @@
       includeCoAuthoredBy = false;
       language = "japanese";
       model = "claude-opus-4-5-20251101";
+      env = {
+        USE_BUILTIN_RIPGREP = "0";
+      };
     };
   };
 
