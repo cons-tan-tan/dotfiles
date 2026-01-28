@@ -74,6 +74,9 @@ in
     nixd
     nil
 
+    # R
+    R
+
     # Japanese Language Server
     mozuku-lsp
   ];
