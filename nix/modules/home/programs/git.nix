@@ -82,7 +82,7 @@ in
       "**/.claude/settings.local.json"
 
       # Patch files (git-commit-crafter)
-      ".patch"
+      "*.local.patch"
 
       # macOS
       ".DS_Store"
