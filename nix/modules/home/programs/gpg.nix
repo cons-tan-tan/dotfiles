@@ -38,7 +38,7 @@ in
 
   services.gpg-agent = {
     enable = true;
-    enableSshSupport = false;
+    enableSshSupport = true;
     pinentry =
       if isDarwin then
         { package = pkgs.pinentry_mac; }
@@ -49,5 +49,9 @@ in
         };
     defaultCacheTtl = 43200;
     maxCacheTtl = 43200;
+    sshKeys = [
+      # keygrip
+      "60DE257CE1919B3D6DCF4E6E239CD1FFE63B45FD"
+    ];
   };
 }
