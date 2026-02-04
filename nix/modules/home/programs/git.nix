@@ -62,6 +62,10 @@ in
       ".vscode"
       ".idea"
 
+      # direnv
+      ".direnv"
+      ".envrc"
+
       # Python
       ".venv"
 
