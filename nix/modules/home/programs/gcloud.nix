@@ -12,6 +12,12 @@ let
         account = "zhouchengt@gmail.com";
       };
     };
+
+    tdu = {
+      core = {
+        account = "makisyu.tdu@gmail.com";
+      };
+    };
   };
 in
 {
