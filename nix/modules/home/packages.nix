@@ -50,9 +50,6 @@ in
     ccusage-codex
     agent-browser
 
-    # Google Cloud
-    google-cloud-sdk
-
     # Node.js
     ni
     pnpm
