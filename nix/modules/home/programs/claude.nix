@@ -5,7 +5,7 @@
     settings = {
       includeCoAuthoredBy = false;
       language = "japanese";
-      model = "claude-opus-4-5-20251101";
+      model = "opus";
       env = {
         USE_BUILTIN_RIPGREP = "0";
       };
