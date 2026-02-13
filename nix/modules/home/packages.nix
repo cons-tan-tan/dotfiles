@@ -19,7 +19,7 @@ in
     protobuf
     redocly
     genact
-    renovate
+    # renovate # FIXME: nixpkgs-unstable で better-sqlite3 ビルド時に libtool が見つからずビルド失敗する
     typos
     typos-lsp
     reuse
