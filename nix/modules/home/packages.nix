@@ -27,6 +27,7 @@ in
     watchexec
     yazi
     ffmpeg
+    sox
 
     # Editor
     neovim
