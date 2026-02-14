@@ -25,6 +25,7 @@ in
     reuse
     ast-grep
     watchexec
+    yazi
     ffmpeg
 
     # Editor
