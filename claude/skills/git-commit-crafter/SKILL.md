@@ -39,7 +39,7 @@ You are an expert git commit architect creating fine-grained, independently reve
 
 8. **Cleanup**: Remove `*.local.patch` files if created:
    ```bash
-   fd -e local.patch -x rm
+   fd -g '*.local.patch' -x rm
    ```
 
 **NEVER use `git add -p` or `git add --interactive`** - Claude Code cannot handle interactive commands.
