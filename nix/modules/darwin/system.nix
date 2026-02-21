@@ -68,12 +68,12 @@
   #   };
   # };
 
-  # Homebrew configuration (uncomment to enable)
-  # homebrew = {
-  #   enable = true;
-  #   onActivation.cleanup = "uninstall";
-  #   brews = [ ];
-  #   casks = [ ];
-  #   masApps = { };
-  # };
+  # Homebrew configuration
+  homebrew = {
+    enable = true;
+    onActivation.cleanup = "uninstall";
+    brews = [ ];
+    casks = [ "tailscale" ];
+    masApps = { };
+  };
 }
