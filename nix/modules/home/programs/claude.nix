@@ -5,7 +5,7 @@
     settings = {
       includeCoAuthoredBy = false;
       language = "japanese";
-      model = "opus";
+      model = "opus[1m]";
       env = {
         USE_BUILTIN_RIPGREP = "0";
       };
