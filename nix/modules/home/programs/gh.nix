@@ -10,6 +10,7 @@
 
     extensions = [
       pkgs.gh-do
+      pkgs.gh-poi
     ];
   };
 }
