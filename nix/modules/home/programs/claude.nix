@@ -9,6 +9,25 @@
       env = {
         USE_BUILTIN_RIPGREP = "0";
       };
+      permissions = {
+        allow = [
+          "Bash(rg *)"
+          "Bash(bat *)"
+          "Bash(eza *)"
+          "Bash(jq *)"
+          "Bash(fd *)"
+          "Bash(gh issue view *)"
+          "Bash(gh pr view *)"
+          "Bash(gh api-get *)"
+        ];
+        deny = [
+          "Bash(rm -rf *)"
+          "Bash(fd *--exec*)"
+          "Bash(fd *--exec-batch*)"
+          "Bash(fd *-x *)"
+          "Bash(fd *-X *)"
+        ];
+      };
       hooks = {
         PreToolUse = [
           {
