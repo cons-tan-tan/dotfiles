@@ -1,5 +1,5 @@
 ---
-name: git-commit-crafter
+name: commit
 description: Creates atomic, revertable git commits following Conventional Commits. Splits changes into logical units by hunk. Use when committing code (e.g., "commit this" or "done, let's commit").
 ---
 
