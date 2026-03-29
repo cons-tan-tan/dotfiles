@@ -19,15 +19,11 @@ in
     protobuf
     redocly
     genact
-    # renovate # FIXME: nixpkgs-unstable で better-sqlite3 ビルド時に libtool が見つからずビルド失敗する
-    typos
-    typos-lsp
     reuse
     ast-grep
     watchexec
     yazi
     ffmpeg
-    sox
 
     # Editor
     neovim
@@ -71,7 +67,6 @@ in
 
     # Nix
     nixd
-    nil
 
     # R
     R
