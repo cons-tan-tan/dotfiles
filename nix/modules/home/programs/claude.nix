@@ -9,6 +9,19 @@
       env = {
         USE_BUILTIN_RIPGREP = "0";
       };
+      hooks = {
+        PreToolUse = [
+          {
+            matcher = "Bash";
+            hooks = [
+              {
+                type = "command";
+                command = "~/.claude/hooks/validate-gh-api.sh";
+              }
+            ];
+          }
+        ];
+      };
     };
   };
 
@@ -22,4 +35,6 @@
     config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/claude/rules";
   home.file.".claude/output-styles".source =
     config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/claude/output-styles";
+  home.file.".claude/hooks".source =
+    config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/claude/hooks";
 }

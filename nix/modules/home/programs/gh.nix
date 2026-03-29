@@ -12,5 +12,9 @@
       pkgs.gh-do
       pkgs.gh-poi
     ];
+
+    settings.aliases = {
+      api-get = ''!gh api "$@" --method GET'';
+    };
   };
 }
