@@ -1,7 +1,10 @@
-{ config, dotfilesDir, ... }:
+{ config, dotfilesDir, codex-plugin-cc, ... }:
 {
   programs.claude-code = {
     enable = true;
+    plugins = [
+      "${codex-plugin-cc}/plugins/codex"
+    ];
     settings = {
       includeCoAuthoredBy = false;
       language = "japanese";

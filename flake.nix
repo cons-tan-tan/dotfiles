@@ -27,6 +27,11 @@
       url = "github:t3tra-dev/MoZuKu";
     };
 
+    codex-plugin-cc = {
+      url = "github:openai/codex-plugin-cc";
+      flake = false;
+    };
+
     # Homebrew casks managed via Nix (macOS only)
     brew-nix = {
       url = "github:BatteredBunny/brew-nix";
@@ -51,6 +56,7 @@
       llm-agents,
       treefmt-nix,
       mozuku,
+      codex-plugin-cc,
       brew-nix,
       ...
     }:
@@ -193,6 +199,7 @@
           pkgs = mkPkgs linuxSystem;
           extraSpecialArgs = {
             dotfilesDir = "${linuxHomedir}/ghq/github.com/cons-tan-tan/dotfiles";
+            inherit codex-plugin-cc;
           };
           modules = [
             ./nix/modules/home
@@ -226,6 +233,7 @@
             home-manager.extraSpecialArgs = {
               pkgs = mkPkgs darwinSystem;
               dotfilesDir = "${darwinHomedir}/ghq/github.com/cons-tan-tan/dotfiles";
+              inherit codex-plugin-cc;
             };
             home-manager.users.${username} =
               { pkgs, ... }:

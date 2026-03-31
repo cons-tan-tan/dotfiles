@@ -118,6 +118,22 @@
         "type": "github"
       }
     },
+    "codex-plugin-cc": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1774896315,
+        "narHash": "sha256-117sb1fyrT0xHQG5ecAjsFGj37e/UT3V09wlMCygM1Y=",
+        "owner": "openai",
+        "repo": "codex-plugin-cc",
+        "rev": "f4d65d9641fadc7632afecd5735daf8e16060c98",
+        "type": "github"
+      },
+      "original": {
+        "owner": "openai",
+        "repo": "codex-plugin-cc",
+        "type": "github"
+      }
+    },
     "crfpp": {
       "flake": false,
       "locked": {
@@ -181,11 +197,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1770930784,
-        "narHash": "sha256-J5YzA89ctwpSpfk+SJWVRWLzhuziXRRcFmo+cs+1K5M=",
+        "lastModified": 1774898676,
+        "narHash": "sha256-0Utnqo+FbB+0CVUi0MI3oonF0Kuzy9VcgRkxl53Euvk=",
         "owner": "nix-community",
         "repo": "home-manager",
-        "rev": "2cc195b4783991b30fb8499c0dd2f9a7bf44d347",
+        "rev": "a184bd2f8426087bae93f203403cd4b86c99e57d",
         "type": "github"
       },
       "original": {
@@ -341,6 +357,7 @@
       "inputs": {
         "brew-api": "brew-api",
         "brew-nix": "brew-nix",
+        "codex-plugin-cc": "codex-plugin-cc",
         "home-manager": "home-manager",
         "llm-agents": "llm-agents",
         "mozuku": "mozuku",
