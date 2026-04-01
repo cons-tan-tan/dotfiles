@@ -32,6 +32,23 @@
       flake = false;
     };
 
+    # Agent skills management
+    agent-skills = {
+      url = "github:Kyure-A/agent-skills-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    # External skill sources
+    ast-grep-skill = {
+      url = "github:ast-grep/claude-skill";
+      flake = false;
+    };
+
+    agent-browser-skill = {
+      url = "github:vercel-labs/agent-browser";
+      flake = false;
+    };
+
     # Homebrew casks managed via Nix (macOS only)
     brew-nix = {
       url = "github:BatteredBunny/brew-nix";
@@ -57,6 +74,9 @@
       treefmt-nix,
       mozuku,
       codex-plugin-cc,
+      agent-skills,
+      ast-grep-skill,
+      agent-browser-skill,
       brew-nix,
       ...
     }:
@@ -199,9 +219,10 @@
           pkgs = mkPkgs linuxSystem;
           extraSpecialArgs = {
             dotfilesDir = "${linuxHomedir}/ghq/github.com/cons-tan-tan/dotfiles";
-            inherit codex-plugin-cc;
+            inherit codex-plugin-cc ast-grep-skill agent-browser-skill;
           };
           modules = [
+            agent-skills.homeManagerModules.default
             ./nix/modules/home
             {
               home = {
@@ -233,12 +254,13 @@
             home-manager.extraSpecialArgs = {
               pkgs = mkPkgs darwinSystem;
               dotfilesDir = "${darwinHomedir}/ghq/github.com/cons-tan-tan/dotfiles";
-              inherit codex-plugin-cc;
+              inherit codex-plugin-cc ast-grep-skill agent-browser-skill;
             };
             home-manager.users.${username} =
               { pkgs, ... }:
               {
                 imports = [
+                  agent-skills.homeManagerModules.default
                   ./nix/modules/home
                   ./nix/modules/darwin
                 ];

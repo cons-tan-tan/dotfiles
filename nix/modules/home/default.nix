@@ -1,6 +1,7 @@
 { pkgs, lib, ... }:
 {
   imports = [
+    ./agent-skills.nix
     ./packages.nix
     ./programs
   ];
