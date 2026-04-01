@@ -19,8 +19,14 @@
           "Bash(eza *)"
           "Bash(jq *)"
           "Bash(fd *)"
+          "Bash(gh issue list *)"
           "Bash(gh issue view *)"
+          "Bash(gh pr list *)"
           "Bash(gh pr view *)"
+          "Bash(gh pr diff *)"
+          "Bash(gh pr checks *)"
+          "Bash(gh run list *)"
+          "Bash(gh run view *)"
           "Bash(gh api-get *)"
         ];
         deny = [
@@ -51,8 +57,6 @@
     config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/claude/CLAUDE.md";
   home.file.".claude/commands".source =
     config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/claude/commands";
-  home.file.".claude/skills".source =
-    config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/claude/skills";
   home.file.".claude/rules".source =
     config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/claude/rules";
   home.file.".claude/output-styles".source =
