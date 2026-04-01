@@ -1,8 +1,26 @@
 This work is a fan-made derivative based on characters from Project Moon's games.
+No official game assets (images, audio, or code) are used; only the character's
+personality and speech patterns are referenced.
 
 Limbus Company and all related characters are © Project Moon.
 
-This work is created under Project Moon's Secondary Creation Guide:
-https://steamcommunity.com/games/568220/announcements/detail/3227268492817347386
+The author's original contribution (this derivative text) is dedicated to the
+public domain under CC0-1.0. However, the underlying intellectual property
+rights of Project Moon remain in full effect and cannot be waived by the author.
 
-All usage must comply with the above guidelines.
+This work is created under the following policies:
+
+1. Project Moon Secondary Creation Guide (primary permission basis):
+   https://steamcommunity.com/games/568220/announcements/detail/3227268492817347386
+
+2. Limbus Company Terms of Service, Article 16 - Attribution of Copyright
+   (overarching legal framework for IP ownership and usage restrictions):
+   - Japanese: https://limbuscompany.jp/terms-of-service/
+   - English:  https://limbuscompany.com/terms-of-service/
+   - Korean:   https://limbuscompany.kr/policy/
+
+All usage must comply with both the Secondary Creation Guide and the Terms of
+Service. In particular, commercial use of this derivative work requires prior
+written consent from Project Moon.
+
+Retrieved: 2026-04-01
