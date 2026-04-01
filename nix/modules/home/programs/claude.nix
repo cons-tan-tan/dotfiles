@@ -14,11 +14,14 @@
       };
       permissions = {
         allow = [
+          "WebSearch"
+          "WebFetch(*)"
           "Bash(rg *)"
           "Bash(bat *)"
           "Bash(eza *)"
           "Bash(jq *)"
           "Bash(fd *)"
+          "Bash(ast-grep *)"
           "Bash(gh issue list *)"
           "Bash(gh issue view *)"
           "Bash(gh pr list *)"
