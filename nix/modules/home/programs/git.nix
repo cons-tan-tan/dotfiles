@@ -86,8 +86,8 @@ in
       "CLAUDE.local.md"
       "**/.claude/settings.local.json"
 
-      # Patch files (git-commit-crafter)
-      "*.local.patch"
+      # Backup files (commit skill)
+      "*.local.bak"
 
       # macOS
       ".DS_Store"

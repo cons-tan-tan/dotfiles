@@ -2,4 +2,4 @@ SPDX-FileCopyrightText: 2022 Ryotaro "Justin" Kimura
 
 SPDX-License-Identifier: MIT
 
-Based on: https://github.com/ryoppippi/dotfiles/blob/main/claude/skills/git-commit-crafter/SKILL.md
+Based on: https://github.com/ryoppippi/dotfiles/blob/64fcb1e2173358547ab6fb3f634d795e04a8821e/agents/skills/commit/SKILL.md
