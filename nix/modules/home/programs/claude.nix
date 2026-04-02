@@ -11,6 +11,7 @@
       model = "opus[1m]";
       env = {
         USE_BUILTIN_RIPGREP = "0";
+        CLAUDE_CODE_NO_FLICKER = "1";
       };
       permissions = {
         allow = [
