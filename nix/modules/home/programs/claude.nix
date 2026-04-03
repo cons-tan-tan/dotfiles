@@ -32,6 +32,7 @@
           "Bash(gh run list *)"
           "Bash(gh run view *)"
           "Bash(gh api-get *)"
+          "Bash(curl-fetch *)"
         ];
         deny = [
           "Bash(rm -rf *)"
