@@ -5,7 +5,6 @@ in
 {
   home.packages = with pkgs; [
     # CLI tools
-    curl
     mise
     chezmoi
     jq
