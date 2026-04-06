@@ -12,6 +12,7 @@
       env = {
         USE_BUILTIN_RIPGREP = "0";
         CLAUDE_CODE_NO_FLICKER = "1";
+        CLAUDE_CODE_SCROLL_SPEED = "6";  # default is 3
       };
       permissions = {
         allow = [
