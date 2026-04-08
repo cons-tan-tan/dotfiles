@@ -1,4 +1,4 @@
-{ config, dotfilesDir, codex-plugin-cc, ... }:
+{ config, pkgs, dotfilesDir, codex-plugin-cc, ... }:
 {
   programs.claude-code = {
     enable = true;
@@ -12,7 +12,8 @@
       env = {
         USE_BUILTIN_RIPGREP = "0";
         CLAUDE_CODE_NO_FLICKER = "1";
-        CLAUDE_CODE_SCROLL_SPEED = "6";  # default is 3
+        # macOS のトラックパッドだと速すぎるのでデフォルトの 3 のまま
+        CLAUDE_CODE_SCROLL_SPEED = if pkgs.stdenv.isDarwin then "3" else "6";
       };
       permissions = {
         allow = [
