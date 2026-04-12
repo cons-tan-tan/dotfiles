@@ -37,6 +37,22 @@
         "type": "github"
       }
     },
+    "agent-slack-skill": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1775954149,
+        "narHash": "sha256-JyI530erIvlYJw6y8I2+lZvPJRstMbKafrhOf/DH5oQ=",
+        "owner": "stablyai",
+        "repo": "agent-slack",
+        "rev": "d0023f1fcd566a47562c828d8d4e7a5b97a89c74",
+        "type": "github"
+      },
+      "original": {
+        "owner": "stablyai",
+        "repo": "agent-slack",
+        "type": "github"
+      }
+    },
     "ast-grep-skill": {
       "flake": false,
       "locked": {
@@ -431,6 +447,7 @@
       "inputs": {
         "agent-browser-skill": "agent-browser-skill",
         "agent-skills": "agent-skills",
+        "agent-slack-skill": "agent-slack-skill",
         "ast-grep-skill": "ast-grep-skill",
         "brew-api": "brew-api",
         "brew-nix": "brew-nix",

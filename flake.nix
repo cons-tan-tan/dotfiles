@@ -49,6 +49,11 @@
       flake = false;
     };
 
+    agent-slack-skill = {
+      url = "github:stablyai/agent-slack";
+      flake = false;
+    };
+
     # Homebrew casks managed via Nix (macOS only)
     brew-nix = {
       url = "github:BatteredBunny/brew-nix";
@@ -77,6 +82,7 @@
       agent-skills,
       ast-grep-skill,
       agent-browser-skill,
+      agent-slack-skill,
       brew-nix,
       ...
     }:
@@ -219,7 +225,7 @@
           pkgs = mkPkgs linuxSystem;
           extraSpecialArgs = {
             dotfilesDir = "${linuxHomedir}/ghq/github.com/cons-tan-tan/dotfiles";
-            inherit codex-plugin-cc ast-grep-skill agent-browser-skill;
+            inherit codex-plugin-cc ast-grep-skill agent-browser-skill agent-slack-skill;
           };
           modules = [
             agent-skills.homeManagerModules.default
@@ -254,7 +260,7 @@
             home-manager.extraSpecialArgs = {
               pkgs = mkPkgs darwinSystem;
               dotfilesDir = "${darwinHomedir}/ghq/github.com/cons-tan-tan/dotfiles";
-              inherit codex-plugin-cc ast-grep-skill agent-browser-skill;
+              inherit codex-plugin-cc ast-grep-skill agent-browser-skill agent-slack-skill;
             };
             home-manager.users.${username} =
               { pkgs, ... }:

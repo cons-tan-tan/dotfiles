@@ -6,6 +6,7 @@
 {
   ast-grep-skill,
   agent-browser-skill,
+  agent-slack-skill,
   ...
 }:
 {
@@ -22,6 +23,11 @@
       # External: agent-browser skill
       agent-browser = {
         path = agent-browser-skill;
+        subdir = "skills";
+      };
+      # External: agent-slack skill
+      agent-slack = {
+        path = agent-slack-skill;
         subdir = "skills";
       };
       # Local: skills from this dotfiles repo
@@ -42,6 +48,11 @@
     skills.explicit.agent-browser = {
       from = "agent-browser";
       path = "agent-browser";
+    };
+
+    skills.explicit.agent-slack = {
+      from = "agent-slack";
+      path = "agent-slack";
     };
 
     # Deploy to skills directories (use built-in default paths)
