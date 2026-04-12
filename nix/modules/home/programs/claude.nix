@@ -9,9 +9,11 @@
       includeCoAuthoredBy = false;
       language = "japanese";
       model = "opus[1m]";
+      effortLevel = "high";
       env = {
         USE_BUILTIN_RIPGREP = "0";
         CLAUDE_CODE_NO_FLICKER = "1";
+        CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING = "1";
         # macOS のトラックパッドだと速すぎるのでデフォルトの 3 のまま
         CLAUDE_CODE_SCROLL_SPEED = if pkgs.stdenv.isDarwin then "3" else "6";
       };
