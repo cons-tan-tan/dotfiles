@@ -8,6 +8,8 @@ let
     ./rustup.nix
     # Git worktree manager
     ./git-wt.nix
+    # Slack automation CLI for AI agents
+    ./agent-slack.nix
   ];
 
   # Apply each overlay and merge results

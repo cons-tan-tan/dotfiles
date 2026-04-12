@@ -46,6 +46,7 @@ in
     ccusage
     ccusage-codex
     agent-browser
+    agent-slack
 
     # Node.js
     ni
