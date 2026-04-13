@@ -54,6 +54,11 @@
       flake = false;
     };
 
+    anthropic-skills = {
+      url = "github:anthropics/skills";
+      flake = false;
+    };
+
     # Homebrew casks managed via Nix (macOS only)
     brew-nix = {
       url = "github:BatteredBunny/brew-nix";
@@ -83,6 +88,7 @@
       ast-grep-skill,
       agent-browser-skill,
       agent-slack-skill,
+      anthropic-skills,
       brew-nix,
       ...
     }:
@@ -225,7 +231,7 @@
           pkgs = mkPkgs linuxSystem;
           extraSpecialArgs = {
             dotfilesDir = "${linuxHomedir}/ghq/github.com/cons-tan-tan/dotfiles";
-            inherit codex-plugin-cc ast-grep-skill agent-browser-skill agent-slack-skill;
+            inherit codex-plugin-cc ast-grep-skill agent-browser-skill agent-slack-skill anthropic-skills;
           };
           modules = [
             agent-skills.homeManagerModules.default
@@ -260,7 +266,7 @@
             home-manager.extraSpecialArgs = {
               pkgs = mkPkgs darwinSystem;
               dotfilesDir = "${darwinHomedir}/ghq/github.com/cons-tan-tan/dotfiles";
-              inherit codex-plugin-cc ast-grep-skill agent-browser-skill agent-slack-skill;
+              inherit codex-plugin-cc ast-grep-skill agent-browser-skill agent-slack-skill anthropic-skills;
             };
             home-manager.users.${username} =
               { pkgs, ... }:

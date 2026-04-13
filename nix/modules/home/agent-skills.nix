@@ -7,6 +7,7 @@
   ast-grep-skill,
   agent-browser-skill,
   agent-slack-skill,
+  anthropic-skills,
   ...
 }:
 {
@@ -28,6 +29,11 @@
       # External: agent-slack skill
       agent-slack = {
         path = agent-slack-skill;
+        subdir = "skills";
+      };
+      # External: Anthropic official skills
+      anthropic = {
+        path = anthropic-skills;
         subdir = "skills";
       };
       # Local: skills from this dotfiles repo
@@ -53,6 +59,11 @@
     skills.explicit.agent-slack = {
       from = "agent-slack";
       path = "agent-slack";
+    };
+
+    skills.explicit.pptx = {
+      from = "anthropic";
+      path = "pptx";
     };
 
     # Deploy to skills directories (use built-in default paths)
