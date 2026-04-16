@@ -73,7 +73,10 @@
     enable = true;
     onActivation.cleanup = "uninstall";
     brews = [ ];
-    casks = [ "tailscale" ];
+    casks = [
+      "scroll-reverser"
+      "tailscale"
+    ];
     masApps = { };
   };
 }
