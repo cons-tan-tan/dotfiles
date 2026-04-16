@@ -75,7 +75,7 @@
     brews = [ ];
     casks = [
       "scroll-reverser"
-      "tailscale"
+      "tailscale-app"
     ];
     masApps = { };
   };
