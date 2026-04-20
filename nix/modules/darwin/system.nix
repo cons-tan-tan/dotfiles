@@ -74,6 +74,7 @@
     onActivation.cleanup = "uninstall";
     brews = [ ];
     casks = [
+      "fiji"
       "scroll-reverser"
       "tailscale-app"
     ];
