@@ -237,6 +237,22 @@
         "type": "github"
       }
     },
+    "drawio-skill": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1776444966,
+        "narHash": "sha256-MWqaqaFxg2U4huDR5pAUyemmTUDvi3h5Iv+eH/QxvGM=",
+        "owner": "jgraph",
+        "repo": "drawio-mcp",
+        "rev": "b3bcf98f0cfe49e431e4503ad3a8e6c59de9cd12",
+        "type": "github"
+      },
+      "original": {
+        "owner": "jgraph",
+        "repo": "drawio-mcp",
+        "type": "github"
+      }
+    },
     "flake-parts": {
       "inputs": {
         "nixpkgs-lib": [
@@ -470,6 +486,7 @@
         "brew-api": "brew-api",
         "brew-nix": "brew-nix",
         "codex-plugin-cc": "codex-plugin-cc",
+        "drawio-skill": "drawio-skill",
         "home-manager": "home-manager_2",
         "llm-agents": "llm-agents",
         "mozuku": "mozuku",

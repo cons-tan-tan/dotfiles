@@ -59,6 +59,11 @@
       flake = false;
     };
 
+    drawio-skill = {
+      url = "github:jgraph/drawio-mcp";
+      flake = false;
+    };
+
     # Homebrew casks managed via Nix (macOS only)
     brew-nix = {
       url = "github:BatteredBunny/brew-nix";
@@ -89,6 +94,7 @@
       agent-browser-skill,
       agent-slack-skill,
       anthropic-skills,
+      drawio-skill,
       brew-nix,
       ...
     }:
@@ -231,7 +237,14 @@
           pkgs = mkPkgs linuxSystem;
           extraSpecialArgs = {
             dotfilesDir = "${linuxHomedir}/ghq/github.com/cons-tan-tan/dotfiles";
-            inherit codex-plugin-cc ast-grep-skill agent-browser-skill agent-slack-skill anthropic-skills;
+            inherit
+              codex-plugin-cc
+              ast-grep-skill
+              agent-browser-skill
+              agent-slack-skill
+              anthropic-skills
+              drawio-skill
+              ;
           };
           modules = [
             agent-skills.homeManagerModules.default
@@ -266,7 +279,14 @@
             home-manager.extraSpecialArgs = {
               pkgs = mkPkgs darwinSystem;
               dotfilesDir = "${darwinHomedir}/ghq/github.com/cons-tan-tan/dotfiles";
-              inherit codex-plugin-cc ast-grep-skill agent-browser-skill agent-slack-skill anthropic-skills;
+              inherit
+                codex-plugin-cc
+                ast-grep-skill
+                agent-browser-skill
+                agent-slack-skill
+                anthropic-skills
+                drawio-skill
+                ;
             };
             home-manager.users.${username} =
               { pkgs, ... }:

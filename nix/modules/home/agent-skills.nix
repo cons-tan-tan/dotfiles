@@ -8,6 +8,7 @@
   agent-browser-skill,
   agent-slack-skill,
   anthropic-skills,
+  drawio-skill,
   ...
 }:
 {
@@ -35,6 +36,11 @@
       anthropic = {
         path = anthropic-skills;
         subdir = "skills";
+      };
+      # External: draw.io skill
+      drawio = {
+        path = drawio-skill;
+        subdir = "skill-cli";
       };
       # Local: skills from this dotfiles repo
       local = {
@@ -64,6 +70,11 @@
     skills.explicit.pptx = {
       from = "anthropic";
       path = "pptx";
+    };
+
+    skills.explicit.drawio = {
+      from = "drawio";
+      path = "drawio";
     };
 
     # Deploy to skills directories (use built-in default paths)
