@@ -10,6 +10,8 @@ let
     ./git-wt.nix
     # Slack automation CLI for AI agents
     ./agent-slack.nix
+    # WSL2-compatible drawio-headless replacement
+    ./drawio-headless.nix
   ];
 
   # Apply each overlay and merge results
