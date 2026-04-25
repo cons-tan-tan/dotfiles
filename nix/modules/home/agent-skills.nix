@@ -4,6 +4,7 @@
 # All skills (external and local) are managed here via agent-skills-nix.
 # Skills are deployed to ~/.claude/skills and ~/.agents/skills
 {
+  lib,
   ast-grep-skill,
   agent-browser-skill,
   agent-slack-skill,
@@ -75,6 +76,23 @@
     skills.explicit.drawio = {
       from = "drawio";
       path = "drawio";
+      transform =
+        { original, ... }:
+        let
+          parts = lib.splitString "\n---\n" original;
+          hasFm = builtins.length parts > 1 && lib.hasPrefix "---\n" original;
+          frontmatter = if hasFm then builtins.head parts + "\n---\n" else "";
+          body = if hasFm then lib.concatStringsSep "\n---\n" (builtins.tail parts) else original;
+          override = ''
+
+            > **Local override (WSL2)**: use `drawio` from `$PATH` for exports —
+            > it is a Linux headless wrapper that already injects `--no-sandbox`,
+            > `--disable-gpu`, and starts Xvfb / D-Bus. Do not add these flags or
+            > call `/mnt/c/.../draw.io.exe` for the export step; the "Opening the
+            > result" instructions below still apply.
+          '';
+        in
+        frontmatter + override + body;
     };
 
     # Deploy to skills directories (use built-in default paths)
