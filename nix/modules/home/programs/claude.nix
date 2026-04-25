@@ -1,4 +1,10 @@
-{ config, pkgs, dotfilesDir, codex-plugin-cc, ... }:
+{
+  config,
+  pkgs,
+  dotfilesDir,
+  codex-plugin-cc,
+  ...
+}:
 {
   programs.claude-code = {
     enable = true;

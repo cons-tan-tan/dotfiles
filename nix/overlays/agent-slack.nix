@@ -23,9 +23,7 @@ let
 
   system = prev.stdenv.hostPlatform.system;
 
-  asset =
-    assetBySystem.${system}
-      or (throw "agent-slack: unsupported system '${system}'");
+  asset = assetBySystem.${system} or (throw "agent-slack: unsupported system '${system}'");
 in
 {
   agent-slack = prev.stdenvNoCC.mkDerivation {

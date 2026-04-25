@@ -45,9 +45,12 @@ in
     crudini="${pkgs.crudini}/bin/crudini"
 
     # 各プロファイルの login_session を退避
-    ${lib.concatMapStringsSep "\n    " (name:
-      let varName = "login_session_${lib.replaceStrings [ "profile " "-" ] [ "" "_" ] name}";
-      in ''${varName}=$($crudini --get "$config_file" "${name}" login_session 2>/dev/null || true)''
+    ${lib.concatMapStringsSep "\n    " (
+      name:
+      let
+        varName = "login_session_${lib.replaceStrings [ "profile " "-" ] [ "" "_" ] name}";
+      in
+      ''${varName}=$($crudini --get "$config_file" "${name}" login_session 2>/dev/null || true)''
     ) (lib.attrNames profiles)}
 
     # baseline で上書き
@@ -55,9 +58,12 @@ in
     chmod 600 "$config_file"
 
     # login_session を復元
-    ${lib.concatMapStringsSep "\n    " (name:
-      let varName = "login_session_${lib.replaceStrings [ "profile " "-" ] [ "" "_" ] name}";
-      in ''
+    ${lib.concatMapStringsSep "\n    " (
+      name:
+      let
+        varName = "login_session_${lib.replaceStrings [ "profile " "-" ] [ "" "_" ] name}";
+      in
+      ''
         if [ -n "''${${varName}}" ]; then
           $crudini --set "$config_file" "${name}" login_session "''${${varName}}"
         fi''

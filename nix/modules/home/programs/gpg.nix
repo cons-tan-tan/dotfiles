@@ -12,11 +12,7 @@ in
   services.gpg-agent = {
     enable = true;
     enableSshSupport = true;
-    pinentry =
-      if isDarwin then
-        { package = pkgs.pinentry_mac; }
-      else
-        { package = null; };
+    pinentry = if isDarwin then { package = pkgs.pinentry_mac; } else { package = null; };
     extraConfig = lib.optionalString (!isDarwin) ''
       pinentry-program /mnt/c/Users/zhouc/scoop/apps/gpg4win/current/Gpg4win/bin/pinentry.exe
     '';
