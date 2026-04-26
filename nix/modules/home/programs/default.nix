@@ -10,5 +10,6 @@
     ./gpg.nix
     ./opencode.nix
     ./starship.nix
+    ./wsl-open.nix
   ];
 }
