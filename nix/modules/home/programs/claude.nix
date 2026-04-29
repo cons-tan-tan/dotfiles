@@ -41,6 +41,7 @@
           "Bash(gh pr checks *)"
           "Bash(gh run list *)"
           "Bash(gh run view *)"
+          "Bash(gh search *)"
           "Bash(gh api-get *)"
           "Bash(curl-fetch *)"
         ];
