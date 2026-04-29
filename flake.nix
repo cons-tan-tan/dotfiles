@@ -81,21 +81,9 @@
 
   outputs =
     inputs@{
-      self,
       nixpkgs,
-      nix-darwin,
       home-manager,
-      llm-agents,
       treefmt-nix,
-      mozuku,
-      codex-plugin-cc,
-      agent-skills,
-      ast-grep-skill,
-      agent-browser-skill,
-      agent-slack-skill,
-      anthropic-skills,
-      drawio-skill,
-      brew-nix,
       ...
     }:
     let
@@ -108,10 +96,6 @@
       darwinHostname = "${username}";
 
       # Linux configuration
-      linuxSystems = [
-        "x86_64-linux"
-        "aarch64-linux"
-      ];
       linuxHomedir = "/home/${username}";
 
       # All supported systems
@@ -121,26 +105,55 @@
         "aarch64-darwin"
       ];
 
-      # Create pkgs with overlays
-      mkPkgs =
-        system:
-        let
-          isDarwin = builtins.match ".*-darwin" system != null;
-        in
-        import nixpkgs {
-          inherit system;
-          config.allowUnfree = true;
-          overlays = [
-            (final: prev: {
-              _llm-agents = llm-agents;
-              mozuku-lsp = mozuku.packages.${system}.default;
-            })
-            (import ./nix/overlays)
-          ]
-          ++ nixpkgs.lib.optionals isDarwin [
-            brew-nix.overlays.default
-          ];
-        };
+      # pkgs builder shared across hosts
+      mkPkgs = import ./nix/lib/mk-pkgs.nix { inherit inputs; };
+
+      # Home Manager configuration builder for Linux/WSL hosts
+      mkHost = import ./nix/lib/mk-host.nix {
+        inherit inputs username;
+        homedir = linuxHomedir;
+      };
+
+      # nix-darwin configuration builder
+      mkDarwin = import ./nix/lib/mk-darwin.nix {
+        inherit inputs username;
+        homedir = darwinHomedir;
+      };
+
+      # Linux/WSL host matrix: pair each architecture with each host kind
+      linuxHostMatrix = [
+        {
+          hostKind = "linux";
+          system = "x86_64-linux";
+          hostFile = ./nix/hosts/linux.nix;
+        }
+        {
+          hostKind = "linux";
+          system = "aarch64-linux";
+          hostFile = ./nix/hosts/linux.nix;
+        }
+        {
+          hostKind = "wsl";
+          system = "x86_64-linux";
+          hostFile = ./nix/hosts/wsl.nix;
+        }
+        {
+          hostKind = "wsl";
+          system = "aarch64-linux";
+          hostFile = ./nix/hosts/wsl.nix;
+        }
+      ];
+
+      # Homedir for Linux/WSL apps (matches mkHost)
+      linuxConfigName =
+        { hostKind, system, ... }:
+        "${username}@${hostKind}-${
+          {
+            "x86_64-linux" = "x86_64";
+            "aarch64-linux" = "aarch64";
+          }
+          .${system}
+        }";
 
       # Create treefmt wrapper
       mkTreefmtWrapper =
@@ -162,53 +175,37 @@
           };
         };
 
-      # Common apps for both Darwin and Linux
-      mkCommonApps =
-        system: homedir: hostname:
+      # Apps for darwin host
+      mkDarwinApps =
+        system:
         let
           pkgs = mkPkgs system;
-          isDarwin = pkgs.stdenv.isDarwin;
           treefmtWrapper = mkTreefmtWrapper pkgs;
         in
         {
-          # Build configuration (platform-specific)
           build = {
             type = "app";
-            meta.description = "Build the system/home configuration without activating it";
+            meta.description = "Build the nix-darwin configuration without activating it";
             program = toString (
-              pkgs.writeShellScript (if isDarwin then "darwin-build" else "home-manager-build") ''
+              pkgs.writeShellScript "darwin-build" ''
                 set -e
-                echo "Building ${if isDarwin then "darwin" else "Home Manager"} configuration..."
-                nix build .#${
-                  if isDarwin then
-                    "darwinConfigurations.${hostname}.system"
-                  else
-                    "homeConfigurations.${username}.activationPackage"
-                }
+                echo "Building darwin configuration..."
+                nix build .#darwinConfigurations.${darwinHostname}.system
                 echo "Build successful! Run 'nix run .#switch' to apply."
               ''
             );
           };
-
-          # Apply configuration (platform-specific)
           switch = {
             type = "app";
-            meta.description = "Build and activate the system/home configuration";
+            meta.description = "Build and activate the nix-darwin configuration";
             program = toString (
-              pkgs.writeShellScript (if isDarwin then "darwin-switch" else "home-manager-switch") ''
+              pkgs.writeShellScript "darwin-switch" ''
                 set -e
-                echo "Building and switching to ${if isDarwin then "darwin" else "Home Manager"} configuration..."
-                ${
-                  if isDarwin then
-                    "sudo nix run nix-darwin -- switch --flake .#${hostname}"
-                  else
-                    "${home-manager.packages.${system}.default}/bin/home-manager switch --flake .#${username}"
-                }
+                echo "Building and switching to darwin configuration..."
+                sudo nix run nix-darwin -- switch --flake .#${darwinHostname}
               ''
             );
           };
-
-          # Update flake.lock
           update = {
             type = "app";
             meta.description = "Update flake.lock to the latest input revisions";
@@ -221,8 +218,6 @@
               ''
             );
           };
-
-          # Format code with treefmt
           fmt = {
             type = "app";
             meta.description = "Format the repository with treefmt";
@@ -234,94 +229,98 @@
           };
         };
 
-      # Helper to create Linux home configuration
-      mkLinuxHomeConfig =
-        linuxSystem:
-        home-manager.lib.homeManagerConfiguration {
-          pkgs = mkPkgs linuxSystem;
-          extraSpecialArgs = {
-            dotfilesDir = "${linuxHomedir}/ghq/github.com/cons-tan-tan/dotfiles";
-            inherit
-              codex-plugin-cc
-              ast-grep-skill
-              agent-browser-skill
-              agent-slack-skill
-              anthropic-skills
-              drawio-skill
-              ;
-          };
-          modules = [
-            agent-skills.homeManagerModules.default
-            ./nix/modules/home
+      # Apps for Linux/WSL hosts: switch auto-detects WSL vs native Linux at runtime
+      mkLinuxApps =
+        system:
+        let
+          pkgs = mkPkgs system;
+          arch =
             {
-              home = {
-                username = username;
-                homeDirectory = linuxHomedir;
-              };
+              "x86_64-linux" = "x86_64";
+              "aarch64-linux" = "aarch64";
             }
-          ];
+            .${system};
+          treefmtWrapper = mkTreefmtWrapper pkgs;
+          hmBin = "${home-manager.packages.${system}.default}/bin/home-manager";
+        in
+        {
+          build = {
+            type = "app";
+            meta.description = "Build the Home Manager configuration without activating it (auto-detects WSL/Linux)";
+            program = toString (
+              pkgs.writeShellScript "home-manager-build" ''
+                set -e
+                if [[ -n "''${WSL_DISTRO_NAME:-}" ]]; then
+                  target="${username}@wsl-${arch}"
+                else
+                  target="${username}@linux-${arch}"
+                fi
+                echo "Building Home Manager configuration: $target"
+                nix build ".#homeConfigurations.\"$target\".activationPackage"
+                echo "Build successful! Run 'nix run .#switch' to apply."
+              ''
+            );
+          };
+          switch = {
+            type = "app";
+            meta.description = "Build and activate the Home Manager configuration (auto-detects WSL/Linux)";
+            program = toString (
+              pkgs.writeShellScript "home-manager-switch" ''
+                set -e
+                if [[ -n "''${WSL_DISTRO_NAME:-}" ]]; then
+                  target="${username}@wsl-${arch}"
+                else
+                  target="${username}@linux-${arch}"
+                fi
+                echo "Switching to Home Manager configuration: $target"
+                ${hmBin} switch --flake ".#$target"
+              ''
+            );
+          };
+          update = {
+            type = "app";
+            meta.description = "Update flake.lock to the latest input revisions";
+            program = toString (
+              pkgs.writeShellScript "flake-update" ''
+                set -e
+                echo "Updating flake.lock..."
+                nix flake update
+                echo "Done! Run 'nix run .#switch' to apply changes."
+              ''
+            );
+          };
+          fmt = {
+            type = "app";
+            meta.description = "Format the repository with treefmt";
+            program = toString (
+              pkgs.writeShellScript "treefmt-wrapper" ''
+                exec ${treefmtWrapper}/bin/treefmt "$@"
+              ''
+            );
+          };
         };
     in
     {
       # macOS configuration with nix-darwin
-      darwinConfigurations.${darwinHostname} = nix-darwin.lib.darwinSystem {
+      darwinConfigurations.${darwinHostname} = mkDarwin {
+        hostname = darwinHostname;
         system = darwinSystem;
-        modules = [
-          # Darwin system configuration
-          (import ./nix/modules/darwin/system.nix {
-            pkgs = mkPkgs darwinSystem;
-            lib = nixpkgs.lib;
-            username = username;
-            homedir = darwinHomedir;
-          })
-
-          # Home Manager integration for macOS
-          home-manager.darwinModules.home-manager
-          {
-            home-manager.useGlobalPkgs = false;
-            home-manager.useUserPackages = true;
-            home-manager.extraSpecialArgs = {
-              pkgs = mkPkgs darwinSystem;
-              dotfilesDir = "${darwinHomedir}/ghq/github.com/cons-tan-tan/dotfiles";
-              inherit
-                codex-plugin-cc
-                ast-grep-skill
-                agent-browser-skill
-                agent-slack-skill
-                anthropic-skills
-                drawio-skill
-                ;
-            };
-            home-manager.users.${username} =
-              { pkgs, ... }:
-              {
-                imports = [
-                  agent-skills.homeManagerModules.default
-                  ./nix/modules/home
-                  ./nix/modules/darwin
-                ];
-                home = {
-                  username = username;
-                  homeDirectory = darwinHomedir;
-                };
-              };
-          }
-        ];
+        hostFile = ./nix/hosts/darwin.nix;
       };
 
-      # Linux configurations with standalone Home Manager
-      homeConfigurations = {
-        # x86_64-linux configuration
-        ${username} = mkLinuxHomeConfig "x86_64-linux";
-        # aarch64-linux configuration
-        "${username}-aarch64" = mkLinuxHomeConfig "aarch64-linux";
-      };
+      # Linux/WSL configurations with standalone Home Manager
+      homeConfigurations = lib.listToAttrs (
+        map (entry: {
+          name = linuxConfigName entry;
+          value = mkHost entry;
+        }) linuxHostMatrix
+      );
 
       # Apps for common tasks
       apps = {
-        ${darwinSystem} = mkCommonApps darwinSystem darwinHomedir darwinHostname;
-        "x86_64-linux" = mkCommonApps "x86_64-linux" linuxHomedir username;
-        "aarch64-linux" = mkCommonApps "aarch64-linux" linuxHomedir username;
+        ${darwinSystem} = mkDarwinApps darwinSystem;
+        "x86_64-linux" = mkLinuxApps "x86_64-linux";
+        "aarch64-linux" = mkLinuxApps "aarch64-linux";
       };
 
       # Formatter for all systems

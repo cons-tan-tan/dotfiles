@@ -1,7 +1,5 @@
-{ pkgs, lib, ... }:
+{ pkgs, ... }:
 let
-  isDarwin = pkgs.stdenv.isDarwin;
-
   wsl-open-bin = pkgs.writeShellApplication {
     name = "wsl-open";
     runtimeInputs = [ pkgs.coreutils ];
@@ -37,9 +35,9 @@ let
   };
 in
 {
-  home.packages = lib.optionals (!isDarwin) [ wsl-open ];
+  home.packages = [ wsl-open ];
 
-  home.sessionVariables = lib.optionalAttrs (!isDarwin) {
+  home.sessionVariables = {
     BROWSER = "wsl-open";
   };
 }
