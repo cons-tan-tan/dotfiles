@@ -174,6 +174,7 @@
           # Build configuration (platform-specific)
           build = {
             type = "app";
+            meta.description = "Build the system/home configuration without activating it";
             program = toString (
               pkgs.writeShellScript (if isDarwin then "darwin-build" else "home-manager-build") ''
                 set -e
@@ -192,6 +193,7 @@
           # Apply configuration (platform-specific)
           switch = {
             type = "app";
+            meta.description = "Build and activate the system/home configuration";
             program = toString (
               pkgs.writeShellScript (if isDarwin then "darwin-switch" else "home-manager-switch") ''
                 set -e
@@ -209,6 +211,7 @@
           # Update flake.lock
           update = {
             type = "app";
+            meta.description = "Update flake.lock to the latest input revisions";
             program = toString (
               pkgs.writeShellScript "flake-update" ''
                 set -e
@@ -222,6 +225,7 @@
           # Format code with treefmt
           fmt = {
             type = "app";
+            meta.description = "Format the repository with treefmt";
             program = toString (
               pkgs.writeShellScript "treefmt-wrapper" ''
                 exec ${treefmtWrapper}/bin/treefmt "$@"
