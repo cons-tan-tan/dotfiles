@@ -7,7 +7,6 @@
   programs.opencode = {
     enable = true;
     settings = {
-      theme = "lucent-orng";
       instructions = [
         "${config.home.homeDirectory}/.claude/output-styles/faust.md"
         "${config.home.homeDirectory}/.claude/rules/*.md"
@@ -18,6 +17,9 @@
           template = "Call git-commit-crafter skill and follow it.";
         };
       };
+    };
+    tui = {
+      theme = "lucent-orng";
     };
     themes = {
       transparent = {
