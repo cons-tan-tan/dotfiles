@@ -1,17 +1,26 @@
 {
   config,
   pkgs,
+  lib,
+  hostKind,
   dotfilesDir,
+  windowsHomedir,
   codex-plugin-cc,
   ...
 }:
-{
-  programs.claude-code = {
-    enable = true;
-    plugins = [
-      "${codex-plugin-cc}/plugins/codex"
-    ];
-    settings = {
+let
+  hk = import ../../../lib/host-kind.nix { inherit hostKind; };
+
+  mkSettings =
+    { hostKind }:
+    let
+      isDarwin = hostKind == "darwin";
+      isWindows = hostKind == "windows";
+
+      hooksPath =
+        if isWindows then "C:/Users/zhouc/.claude/hooks/validate-gh-api.sh" else "~/.claude/hooks/validate-gh-api.sh";
+    in
+    {
       includeCoAuthoredBy = false;
       language = "japanese";
       model = "opus[1m]";
@@ -21,7 +30,7 @@
         CLAUDE_CODE_NO_FLICKER = "1";
         CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING = "1";
         # macOS のトラックパッドだと速すぎるのでデフォルトの 3 のまま
-        CLAUDE_CODE_SCROLL_SPEED = if pkgs.stdenv.isDarwin then "3" else "6";
+        CLAUDE_CODE_SCROLL_SPEED = if isDarwin then "3" else "6";
       };
       permissions = {
         allow = [
@@ -44,6 +53,10 @@
           "Bash(gh search *)"
           "Bash(gh api-get *)"
           "Bash(curl-fetch *)"
+        ]
+        ++ lib.optionals isWindows [
+          "Bash(wsl.exe *)"
+          "Bash(pwsh.exe *)"
         ];
         deny = [
           "Bash(rm -rf *)"
@@ -51,6 +64,9 @@
           "Bash(fd *--exec-batch*)"
           "Bash(fd *-x *)"
           "Bash(fd *-X *)"
+        ]
+        ++ lib.optionals isWindows [
+          "Bash(Remove-Item -Recurse -Force *)"
         ];
       };
       hooks = {
@@ -60,13 +76,25 @@
             hooks = [
               {
                 type = "command";
-                command = "~/.claude/hooks/validate-gh-api.sh";
+                command = hooksPath;
               }
             ];
           }
         ];
       };
     };
+
+  windowsSettings = mkSettings { hostKind = "windows"; };
+  windowsSettingsFile =
+    (pkgs.formats.json { }).generate "claude-windows-settings.json" windowsSettings;
+in
+{
+  programs.claude-code = {
+    enable = true;
+    plugins = [
+      "${codex-plugin-cc}/plugins/codex"
+    ];
+    settings = mkSettings { inherit hostKind; };
   };
 
   home.file.".claude/CLAUDE.md".source =
@@ -79,4 +107,11 @@
     config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/claude/output-styles";
   home.file.".claude/hooks".source =
     config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/claude/hooks";
+
+  home.activation = lib.mkIf hk.hasWindowsCompanion {
+    deployWindowsClaudeSettings = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      run mkdir -p ${windowsHomedir}/.claude
+      run install -m644 ${windowsSettingsFile} ${windowsHomedir}/.claude/settings.json
+    '';
+  };
 }
