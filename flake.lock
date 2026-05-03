@@ -208,11 +208,11 @@
     "codex-plugin-cc": {
       "flake": false,
       "locked": {
-        "lastModified": 1774896315,
-        "narHash": "sha256-117sb1fyrT0xHQG5ecAjsFGj37e/UT3V09wlMCygM1Y=",
+        "lastModified": 1776544913,
+        "narHash": "sha256-zWddz18c3E15TPuEvjMkBkrwiFlK3ZqIG5YP5xX6ZII=",
         "owner": "openai",
         "repo": "codex-plugin-cc",
-        "rev": "f4d65d9641fadc7632afecd5735daf8e16060c98",
+        "rev": "807e03ac9d5aa23bc395fdec8c3767500a86b3cf",
         "type": "github"
       },
       "original": {
