@@ -2,6 +2,8 @@
   inputs,
   username,
   homedir,
+  windowsUsername,
+  windowsHomedir,
 }:
 {
   hostKind,
@@ -14,7 +16,7 @@ in
 inputs.home-manager.lib.homeManagerConfiguration {
   inherit pkgs;
   extraSpecialArgs = {
-    inherit hostKind;
+    inherit hostKind windowsUsername windowsHomedir;
     dotfilesDir = "${homedir}/ghq/github.com/cons-tan-tan/dotfiles";
     inherit (inputs)
       codex-plugin-cc

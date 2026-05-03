@@ -110,6 +110,10 @@
       # Linux configuration
       linuxHomedir = "/home/${username}";
 
+      # Windows companion (WSL host only)
+      windowsUsername = "zhouc";
+      windowsHomedir = "/mnt/c/Users/${windowsUsername}";
+
       # All supported systems
       systems = [
         "x86_64-linux"
@@ -122,7 +126,7 @@
 
       # Home Manager configuration builder for Linux/WSL hosts
       mkHost = import ./nix/lib/mk-host.nix {
-        inherit inputs username;
+        inherit inputs username windowsUsername windowsHomedir;
         homedir = linuxHomedir;
       };
 

@@ -11,6 +11,8 @@
 let
   pkgs = (import ./mk-pkgs.nix { inherit inputs; }) system;
   hostKind = "darwin";
+  windowsUsername = null;
+  windowsHomedir = null;
 in
 inputs.nix-darwin.lib.darwinSystem {
   inherit system;
@@ -31,7 +33,7 @@ inputs.nix-darwin.lib.darwinSystem {
       home-manager.useGlobalPkgs = true;
       home-manager.useUserPackages = true;
       home-manager.extraSpecialArgs = {
-        inherit hostKind;
+        inherit hostKind windowsUsername windowsHomedir;
         dotfilesDir = "${homedir}/ghq/github.com/cons-tan-tan/dotfiles";
         inherit (inputs)
           codex-plugin-cc
