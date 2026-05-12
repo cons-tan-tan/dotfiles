@@ -8,6 +8,7 @@
       raycast
       zed-editor
       rstudio
+      hackgen-nf-font
     ]
     # brew-nix packages (Homebrew casks managed via Nix)
     ++ (with pkgs.brewCasks; [
