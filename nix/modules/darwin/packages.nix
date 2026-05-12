@@ -14,5 +14,6 @@
     ++ (with pkgs.brewCasks; [
       aqua-voice
       azookey
+      codex-app
     ]);
 }
