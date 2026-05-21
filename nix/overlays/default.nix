@@ -4,8 +4,6 @@ let
   overlayFiles = [
     # LLM agents
     ./llm-agents.nix
-    # Rust tools
-    ./rustup.nix
     # Git worktree manager
     ./git-wt.nix
     # Slack automation CLI for AI agents
