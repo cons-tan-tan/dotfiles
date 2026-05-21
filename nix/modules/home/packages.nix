@@ -41,7 +41,6 @@
     gemini-cli
     github-copilot-cli
     ccusage
-    ccusage-codex
     agent-browser
     agent-slack
 

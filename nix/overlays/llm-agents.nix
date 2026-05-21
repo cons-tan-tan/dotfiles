@@ -8,7 +8,6 @@ in
     codex
     opencode
     ccusage
-    ccusage-codex
     agent-browser
     ;
 
