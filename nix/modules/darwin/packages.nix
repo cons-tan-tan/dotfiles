@@ -6,7 +6,6 @@
     [
       # nixpkgs packages (macOS only)
       raycast
-      zed-editor
       rstudio
       hackgen-nf-font
     ]
@@ -15,5 +14,6 @@
       aqua-voice
       azookey
       codex-app
+      zed
     ]);
 }
