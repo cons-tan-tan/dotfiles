@@ -6,6 +6,7 @@
     ./direnv.nix
     ./gcloud.nix
     ./gh.nix
+    ./ghq-sync.nix
     ./git.nix
     ./gpg.nix
     ./opencode.nix
