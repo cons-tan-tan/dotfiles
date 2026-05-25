@@ -66,6 +66,27 @@
     skills.explicit.agent-slack = {
       from = "agent-slack";
       path = "agent-slack";
+      transform =
+        { original, ... }:
+        let
+          parts = lib.splitString "\n---\n" original;
+          hasFm = builtins.length parts > 1 && lib.hasPrefix "---\n" original;
+          body = if hasFm then lib.concatStringsSep "\n---\n" (builtins.tail parts) else original;
+          # Keep skill descriptions compact because some metadata consumers impose
+          # length limits; avoid a separate trigger-word list unless it adds signal.
+          frontmatter = ''
+            ---
+            name: agent-slack
+            description: |
+              Slack automation CLI for AI agents. Use when the user asks to read,
+              search, send, reply to, edit, delete, or react to Slack messages;
+              inspect threads, channels, DMs, unread messages, saved-for-later items,
+              files, canvases, users, or workflows; upload local files to Slack; or
+              manage channels and conversations.
+            ---
+          '';
+        in
+        frontmatter + body;
     };
 
     skills.explicit.pptx = {
