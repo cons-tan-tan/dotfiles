@@ -24,6 +24,9 @@ let
       coreutils
       findutils
     ];
+    # The `sh -c '...'` body intentionally defers `$1` expansion to the child
+    # shell spawned by xargs, so SC2016 is a false positive here.
+    excludeShellChecks = [ "SC2016" ];
     text = ''
       ghq list -p \
         | xargs -P${toString maxJobs} -I{} sh -c '
