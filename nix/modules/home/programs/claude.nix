@@ -31,6 +31,10 @@ let
         CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING = "1";
         # macOS のトラックパッドだと速すぎるのでデフォルトの 3 のまま
         CLAUDE_CODE_SCROLL_SPEED = if isDarwin then "3" else "6";
+        # サブエージェントを最新 Sonnet に固定する。
+        # この変数はエイリアス (sonnet) を受け付けず完全なモデル名のみ許容するため、
+        # Sonnet 更新時はここを書き換える必要がある。
+        CLAUDE_CODE_SUBAGENT_MODEL = "claude-sonnet-4-6";
       };
       permissions = {
         allow = [
