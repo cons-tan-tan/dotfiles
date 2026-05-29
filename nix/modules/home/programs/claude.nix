@@ -24,11 +24,14 @@ let
       includeCoAuthoredBy = false;
       language = "japanese";
       model = "opus[1m]";
-      effortLevel = "xhigh";
       env = {
         USE_BUILTIN_RIPGREP = "0";
         CLAUDE_CODE_NO_FLICKER = "1";
         CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING = "1";
+        # コーディング用途は xhigh 推奨 (Opus 4.8 公式ガイド)。
+        # settings.json の effortLevel は起動時にモデル既定値 (high) へ
+        # 上書きされ効かないため、env 変数で強制する。
+        CLAUDE_CODE_EFFORT_LEVEL = "xhigh";
         # macOS のトラックパッドだと速すぎるのでデフォルトの 3 のまま
         CLAUDE_CODE_SCROLL_SPEED = if isDarwin then "3" else "6";
         # サブエージェントを最新 Sonnet に固定する。
