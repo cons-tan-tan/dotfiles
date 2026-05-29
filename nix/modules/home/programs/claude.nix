@@ -24,7 +24,7 @@ let
       includeCoAuthoredBy = false;
       language = "japanese";
       model = "opus[1m]";
-      effortLevel = "high";
+      effortLevel = "xhigh";
       env = {
         USE_BUILTIN_RIPGREP = "0";
         CLAUDE_CODE_NO_FLICKER = "1";
