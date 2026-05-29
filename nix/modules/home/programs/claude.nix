@@ -29,8 +29,11 @@ let
         CLAUDE_CODE_NO_FLICKER = "1";
         CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING = "1";
         # コーディング用途は xhigh 推奨 (Opus 4.8 公式ガイド)。
-        # settings.json の effortLevel は起動時にモデル既定値 (high) へ
-        # 上書きされ効かないため、env 変数で強制する。
+        # settings.json の effortLevel では xhigh 固定にできない (実測で確認済み):
+        #   - Opus 4.8 初回起動時にモデル既定値 (high) へリセットされる仕様
+        #   - さらに毎セッション再発火するバグ anthropics/claude-code#62783 (未解決)
+        # env 変数はハードピン (最優先・上書き不可) なので両方を回避できる。
+        # 修正されたら settings.json 側へ戻すか要検討。
         CLAUDE_CODE_EFFORT_LEVEL = "xhigh";
         # macOS のトラックパッドだと速すぎるのでデフォルトの 3 のまま
         CLAUDE_CODE_SCROLL_SPEED = if isDarwin then "3" else "6";
