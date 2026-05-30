@@ -22,6 +22,7 @@ let
     in
     {
       includeCoAuthoredBy = false;
+      autoMemoryEnabled = false;
       language = "japanese";
       model = "opus[1m]";
       env = {
