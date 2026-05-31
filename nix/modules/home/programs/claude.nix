@@ -32,6 +32,9 @@ let
         USE_BUILTIN_RIPGREP = "0";
         CLAUDE_CODE_NO_FLICKER = "1";
         CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING = "1";
+        # 1M context は維持しつつ、Codex と近い 270k tokens 付近で自動圧縮する。
+        CLAUDE_CODE_AUTO_COMPACT_WINDOW = "300000";
+        CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = "90";
         # コーディング用途は xhigh 推奨 (Opus 4.8 公式ガイド)。
         # settings.json の effortLevel では xhigh 固定にできない (実測で確認済み):
         #   - Opus 4.8 初回起動時にモデル既定値 (high) へリセットされる仕様
