@@ -43,6 +43,7 @@
     ccusage
     agent-browser
     agent-slack
+    hcom
 
     # Node.js
     ni
