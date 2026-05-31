@@ -10,6 +10,7 @@
   agent-slack-skill,
   anthropic-skills,
   drawio-skill,
+  hcom-src,
   ...
 }:
 {
@@ -42,6 +43,11 @@
       drawio = {
         path = drawio-skill;
         subdir = "skill-cli";
+      };
+      # External: hcom inter-agent messaging skill (binary packaged in overlays/hcom.nix)
+      hcom = {
+        path = hcom-src;
+        subdir = "skills";
       };
       # Local: skills from this dotfiles repo
       local = {
@@ -114,6 +120,11 @@
           '';
         in
         frontmatter + override + body;
+    };
+
+    skills.explicit.hcom-agent-messaging = {
+      from = "hcom";
+      path = "hcom-agent-messaging";
     };
 
     # Deploy to skills directories (use built-in default paths)

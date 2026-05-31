@@ -25,6 +25,7 @@ inputs.home-manager.lib.homeManagerConfiguration {
       agent-slack-skill
       anthropic-skills
       drawio-skill
+      hcom-src
       ;
   };
   modules = [
