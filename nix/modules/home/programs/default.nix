@@ -2,6 +2,7 @@
   imports = [
     ./aws.nix
     ./claude.nix
+    ./codex
     ./curl.nix
     ./direnv.nix
     ./gcloud.nix
