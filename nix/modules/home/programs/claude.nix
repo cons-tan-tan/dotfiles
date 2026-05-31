@@ -11,6 +11,9 @@
 let
   hk = import ../../../lib/host-kind.nix { inherit hostKind; };
 
+  # overlay (hcom-claude-hooks) が hcom 実行で生成したもの。手で写さず版に追従させる。
+  hcomGenerated = builtins.fromJSON (builtins.readFile "${pkgs.hcom-claude-hooks}");
+
   mkSettings =
     { hostKind }:
     let
@@ -42,6 +45,10 @@ let
         # この変数はエイリアス (sonnet) を受け付けず完全なモデル名のみ許容するため、
         # Sonnet 更新時はここを書き換える必要がある。
         CLAUDE_CODE_SUBAGENT_MODEL = "claude-sonnet-4-6";
+      }
+      // lib.optionalAttrs (!isWindows) {
+        # フックが参照する hcom を store path に固定し PATH 非依存にする。
+        HCOM = "${pkgs.hcom}/bin/hcom";
       };
       permissions = {
         allow = [
@@ -66,6 +73,8 @@ let
           "Bash(gh api-get *)"
           "Bash(curl-fetch *)"
         ]
+        # hcom 分は生成物から取る (手書きで二重管理しない)。
+        ++ lib.optionals (!isWindows) hcomGenerated.permissions.allow
         ++ lib.optionals isWindows [
           "Bash(wsl.exe *)"
           "Bash(pwsh.exe *)"
@@ -81,9 +90,9 @@ let
           "Bash(Remove-Item -Recurse -Force *)"
         ];
       };
-      hooks = {
-        PreToolUse = [
-          {
+      hooks =
+        let
+          ghApiHook = {
             matcher = "Bash";
             hooks = [
               {
@@ -91,9 +100,17 @@ let
                 command = hooksPath;
               }
             ];
-          }
-        ];
-      };
+          };
+        in
+        # Windows companion には hcom (linux/darwin バイナリ) が無いので gh-api guard だけ。
+        if isWindows then
+          { PreToolUse = [ ghApiHook ]; }
+        else
+          hcomGenerated.hooks
+          // {
+            # hcom も PreToolUse を使うため、gh-api guard と両立させる。
+            PreToolUse = hcomGenerated.hooks.PreToolUse ++ [ ghApiHook ];
+          };
     };
 
   windowsSettings = mkSettings { hostKind = "windows"; };
