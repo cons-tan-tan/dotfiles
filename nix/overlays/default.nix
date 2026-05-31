@@ -8,6 +8,8 @@ let
     ./git-wt.nix
     # Slack automation CLI for AI agents
     ./agent-slack.nix
+    # Cross-agent messaging CLI (single binary)
+    ./hcom.nix
     # WSL2-compatible drawio-headless replacement
     ./drawio-headless.nix
   ];

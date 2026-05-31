@@ -292,6 +292,22 @@
         "type": "github"
       }
     },
+    "hcom-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1779969027,
+        "narHash": "sha256-58x35on2dbOUQGCfdNo7X41Bpmg8yIotPoVq+Da2r54=",
+        "owner": "aannoo",
+        "repo": "hcom",
+        "rev": "0148daa15e6165ddd624637ff0eb16e02fec6840",
+        "type": "github"
+      },
+      "original": {
+        "owner": "aannoo",
+        "repo": "hcom",
+        "type": "github"
+      }
+    },
     "home-manager": {
       "inputs": {
         "nixpkgs": [
@@ -451,6 +467,7 @@
         "brew-nix": "brew-nix",
         "codex-plugin-cc": "codex-plugin-cc",
         "drawio-skill": "drawio-skill",
+        "hcom-src": "hcom-src",
         "home-manager": "home-manager",
         "llm-agents": "llm-agents",
         "mozuku": "mozuku",

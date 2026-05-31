@@ -76,6 +76,12 @@
       flake = false;
     };
 
+    # hcom skill source (the binary itself is packaged in nix/overlays/hcom.nix)
+    hcom-src = {
+      url = "github:aannoo/hcom";
+      flake = false;
+    };
+
     # Homebrew casks managed via Nix (macOS only)
     brew-nix = {
       url = "github:BatteredBunny/brew-nix";
@@ -376,6 +382,17 @@
           pkgs = mkPkgs system;
         in
         mkTreefmtWrapper pkgs
+      );
+
+      # Individual packages (e.g. `nix build .#hcom`)
+      packages = lib.genAttrs systems (
+        system:
+        let
+          pkgs = mkPkgs system;
+        in
+        {
+          inherit (pkgs) hcom hcom-claude-hooks hcom-codex-hooks;
+        }
       );
     };
 }
