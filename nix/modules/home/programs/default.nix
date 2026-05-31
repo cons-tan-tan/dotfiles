@@ -11,6 +11,7 @@
     ./git.nix
     ./gpg.nix
     ./opencode.nix
+    ./pi.nix
     ./starship.nix
   ];
 }

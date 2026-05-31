@@ -38,6 +38,7 @@
 
     # AI Tools
     codex
+    pi
     gemini-cli
     github-copilot-cli
     ccusage

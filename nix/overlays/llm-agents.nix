@@ -7,6 +7,7 @@ in
   inherit (llm)
     codex
     opencode
+    pi
     ccusage
     agent-browser
     ;
