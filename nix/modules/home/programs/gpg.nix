@@ -8,19 +8,29 @@
 let
   hk = import ../../../lib/host-kind.nix { inherit hostKind; };
 
-  pinentryProgram = {
-    darwin = null; # pinentry_mac は package で指定
-    linux = null; # X11/curses pinentry を使う場合は別途設定
-    wsl = "/mnt/c/Program Files/Gpg4win/bin/pinentry.exe";
-    windows = "C:/Program Files/Gpg4win/bin/pinentry.exe";
-  }.${hostKind};
+  pinentryProgram =
+    {
+      darwin = null; # pinentry_mac は package で指定
+      linux = null; # X11/curses pinentry を使う場合は別途設定
+      wsl = "/mnt/c/Program Files/Gpg4win/bin/pinentry.exe";
+      windows = "C:/Program Files/Gpg4win/bin/pinentry.exe";
+    }
+    .${hostKind};
 
-  pinentryPackage = {
-    darwin = { package = pkgs.pinentry_mac; };
-    linux = { package = null; };
-    wsl = { package = null; };
-    windows = null;
-  }.${hostKind};
+  pinentryPackage =
+    {
+      darwin = {
+        package = pkgs.pinentry_mac;
+      };
+      linux = {
+        package = null;
+      };
+      wsl = {
+        package = null;
+      };
+      windows = null;
+    }
+    .${hostKind};
 
   cacheTtl = 43200;
   sshKeygrips = [

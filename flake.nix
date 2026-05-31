@@ -132,7 +132,12 @@
 
       # Home Manager configuration builder for Linux/WSL hosts
       mkHost = import ./nix/lib/mk-host.nix {
-        inherit inputs username windowsUsername windowsHomedir;
+        inherit
+          inputs
+          username
+          windowsUsername
+          windowsHomedir
+          ;
         homedir = linuxHomedir;
       };
 

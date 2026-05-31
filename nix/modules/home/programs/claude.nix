@@ -21,7 +21,10 @@ let
       isWindows = hostKind == "windows";
 
       hooksPath =
-        if isWindows then "C:/Users/zhouc/.claude/hooks/validate-gh-api.sh" else "~/.claude/hooks/validate-gh-api.sh";
+        if isWindows then
+          "C:/Users/zhouc/.claude/hooks/validate-gh-api.sh"
+        else
+          "~/.claude/hooks/validate-gh-api.sh";
     in
     {
       includeCoAuthoredBy = false;
@@ -118,7 +121,8 @@ let
 
   windowsSettings = mkSettings { hostKind = "windows"; };
   windowsSettingsFile =
-    (pkgs.formats.json { }).generate "claude-windows-settings.json" windowsSettings;
+    (pkgs.formats.json { }).generate "claude-windows-settings.json"
+      windowsSettings;
 in
 {
   programs.claude-code = {

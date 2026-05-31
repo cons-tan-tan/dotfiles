@@ -17,7 +17,9 @@ let
     "web-fetch.md.license"
   ];
 
-  rsyncExcludeArgs = lib.concatMapStringsSep " " (f: "--exclude=${lib.escapeShellArg f}") windowsExcludedRules;
+  rsyncExcludeArgs = lib.concatMapStringsSep " " (
+    f: "--exclude=${lib.escapeShellArg f}"
+  ) windowsExcludedRules;
 in
 {
   home.activation = lib.mkIf hk.hasWindowsCompanion {

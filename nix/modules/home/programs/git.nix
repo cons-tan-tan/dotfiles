@@ -101,11 +101,7 @@ let
 
       commit = {
         cleanup = "strip";
-        template =
-          if isWindows then
-            "C:/Users/zhouc/.gitconfig.d/commit-template"
-          else
-            "${commitTemplate}";
+        template = if isWindows then "C:/Users/zhouc/.gitconfig.d/commit-template" else "${commitTemplate}";
       };
 
       gpg = lib.optionalAttrs isWindows {
