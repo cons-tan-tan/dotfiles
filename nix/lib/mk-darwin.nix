@@ -42,6 +42,7 @@ inputs.nix-darwin.lib.darwinSystem {
           agent-slack-skill
           anthropic-skills
           drawio-skill
+          hcom-src
           ;
       };
       home-manager.users.${username} = {
