@@ -5,29 +5,35 @@
   ...
 }:
 let
-  # Keep Pi's package-manager npm isolated from the user's normal Node/npm setup.
+  # Keep Pi's package-manager pnpm isolated from the user's normal Node/npm setup.
   # Pi-managed packages still install into ~/.pi/agent/npm or project .pi/npm;
-  # this wrapper only controls the npm binary, cache, and npm config files.
-  piNpm = pkgs.writeShellScript "pi-npm" ''
+  # this wrapper only controls the package-manager binary, cache, and configs.
+  # The executable name must stay "pnpm"; Pi detects it to use pnpm-specific
+  # install flags.
+  piPnpm = pkgs.writeShellScriptBin "pnpm" ''
     set -euo pipefail
 
     pi_npm_home="''${PI_NPM_HOME:-$HOME/.pi/npm-env}"
-    export NPM_CONFIG_PREFIX="$pi_npm_home/prefix"
-    export NPM_CONFIG_CACHE="$pi_npm_home/cache"
+    export PNPM_HOME="$pi_npm_home/pnpm-home"
+    export XDG_CACHE_HOME="$pi_npm_home/cache"
+    export XDG_DATA_HOME="$pi_npm_home/data"
+    export XDG_STATE_HOME="$pi_npm_home/state"
     export NPM_CONFIG_USERCONFIG="$pi_npm_home/npmrc"
     export NPM_CONFIG_GLOBALCONFIG="$pi_npm_home/global-npmrc"
     export NPM_CONFIG_FUND=false
     export NPM_CONFIG_AUDIT=false
 
     mkdir -p \
-      "$NPM_CONFIG_PREFIX" \
-      "$NPM_CONFIG_CACHE" \
+      "$PNPM_HOME" \
+      "$XDG_CACHE_HOME" \
+      "$XDG_DATA_HOME" \
+      "$XDG_STATE_HOME" \
       "$(dirname "$NPM_CONFIG_USERCONFIG")" \
       "$(dirname "$NPM_CONFIG_GLOBALCONFIG")"
     touch "$NPM_CONFIG_USERCONFIG" "$NPM_CONFIG_GLOBALCONFIG"
 
-    export PATH="${pkgs.nodejs}/bin:$PATH"
-    exec ${pkgs.nodejs}/bin/npm "$@"
+    export PATH="${pkgs.nodejs}/bin:$PNPM_HOME:$PATH"
+    exec ${pkgs.pnpm}/bin/pnpm "$@"
   '';
 
   piPackages = [
@@ -36,8 +42,8 @@ let
 
   managedSettings = {
     # Force Pi's package manager to use the isolated wrapper above even when
-    # node/npm are available in the user's interactive PATH.
-    npmCommand = [ piNpm ];
+    # node/npm/pnpm are available in the user's interactive PATH.
+    npmCommand = [ "${piPnpm}/bin/pnpm" ];
 
     packages = piPackages;
 
