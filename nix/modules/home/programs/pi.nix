@@ -1,14 +1,10 @@
 {
   config,
   pkgs,
-  lib,
   dotfilesDir,
   ...
 }:
 let
-  piAgentDir = "${config.home.homeDirectory}/.pi/agent";
-  settingsPath = "${piAgentDir}/settings.json";
-
   # Keep Pi's package-manager npm isolated from the user's normal Node/npm setup.
   # Pi-managed packages still install into ~/.pi/agent/npm or project .pi/npm;
   # this wrapper only controls the npm binary, cache, and npm config files.
@@ -42,33 +38,30 @@ let
     enableInstallTelemetry = false;
   };
   managedSettingsJson = (pkgs.formats.json { }).generate "pi-managed-settings.json" managedSettings;
+
+  packageDir = "${config.home.homeDirectory}/.pi/agent/package";
+  pi = pkgs.writeShellScriptBin "pi" ''
+    export PI_PACKAGE_DIR="${packageDir}"
+    export PI_SKIP_VERSION_CHECK=1
+    export PI_TELEMETRY=0
+
+    exec ${pkgs.pi}/bin/pi "$@"
+  '';
 in
 {
-  home.sessionVariables = {
-    PI_SKIP_VERSION_CHECK = "1";
-    PI_TELEMETRY = "0";
-  };
+  home.packages = [ pi ];
 
   home.file.".pi/agent/AGENTS.md".source =
     config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/claude/CLAUDE.md";
 
-  # Keep settings mutable for Pi-owned fields, but make selected keys
-  # declarative. Project .pi/settings.json can still add packages and resources.
-  home.activation.piSettings = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    settings="${settingsPath}"
-    desired="${managedSettingsJson}"
-    run mkdir -p "$(dirname "$settings")"
-    if [ -f "$settings" ]; then
-      run ${pkgs.bash}/bin/bash -euo pipefail -c ${lib.escapeShellArg ''
-        settings="$1"
-        desired="$2"
-        candidate=$(${pkgs.coreutils}/bin/mktemp "$settings.nix-XXXXXX")
-        trap '${pkgs.coreutils}/bin/rm -f "$candidate"' EXIT
-        ${pkgs.jq}/bin/jq -s '.[0] * .[1]' "$settings" "$desired" > "$candidate"
-        ${pkgs.coreutils}/bin/mv -f "$candidate" "$settings"
-      ''} _ "$settings" "$desired"
-    else
-      run ${pkgs.coreutils}/bin/cp "$desired" "$settings"
-    fi
-  '';
+  home.file.".pi/agent/package".source =
+    "${pkgs.pi}/lib/node_modules/@earendil-works/pi-coding-agent";
+
+  # Global settings are declarative. Pi may try to persist UI choices, installs,
+  # or extension configuration here; those writes should fail instead of
+  # mutating global state outside Nix.
+  home.file.".pi/agent/settings.json" = {
+    source = managedSettingsJson;
+    force = true;
+  };
 }
