@@ -30,10 +30,16 @@ let
     exec ${pkgs.nodejs}/bin/npm "$@"
   '';
 
+  piPackages = [
+    "npm:pi-web-access@0.10.7"
+  ];
+
   managedSettings = {
     # Force Pi's package manager to use the isolated wrapper above even when
     # node/npm are available in the user's interactive PATH.
     npmCommand = [ piNpm ];
+
+    packages = piPackages;
 
     enableInstallTelemetry = false;
   };
