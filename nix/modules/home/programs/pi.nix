@@ -41,6 +41,10 @@ let
   ];
 
   managedSettings = {
+    defaultProvider = "openai-codex";
+    defaultModel = "gpt-5.5";
+    defaultThinkingLevel = "high";
+
     # Force Pi's package manager to use the isolated wrapper above even when
     # node/npm/pnpm are available in the user's interactive PATH.
     npmCommand = [ "${piPnpm}/bin/pnpm" ];
