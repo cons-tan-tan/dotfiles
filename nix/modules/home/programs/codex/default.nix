@@ -18,6 +18,8 @@ let
   # 実環境パスを組み立てる。
   hooksState = builtins.fromJSON (builtins.readFile "${hcomCodex}/hooks-state.json");
   mergePayload = {
+    approval_policy = "on-request";
+    approvals_reviewer = "auto_review";
     features.hooks = true;
     hooks.state = lib.mapAttrs' (
       label: value: lib.nameValuePair "${hooksJsonPath}:${label}:0:0" value
