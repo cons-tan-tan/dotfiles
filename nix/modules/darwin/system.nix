@@ -72,6 +72,7 @@
     onActivation.cleanup = "uninstall";
     brews = [ ];
     casks = [
+      "azookey"
       "fiji"
       "scroll-reverser"
       "tailscale-app"

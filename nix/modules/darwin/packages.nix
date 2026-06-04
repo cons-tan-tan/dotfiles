@@ -12,7 +12,6 @@
     # brew-nix packages (Homebrew casks managed via Nix)
     ++ (with pkgs.brewCasks; [
       aqua-voice
-      azookey
       codex-app
       zed
     ]);
