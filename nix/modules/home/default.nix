@@ -4,6 +4,7 @@
     ./agent-skills.nix
     ./packages.nix
     ./programs
+    ./registries.nix
   ];
 
   home = {

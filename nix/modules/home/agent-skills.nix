@@ -98,6 +98,31 @@
     skills.explicit.pptx = {
       from = "anthropic";
       path = "pptx";
+      transform =
+        { original, ... }:
+        let
+          parts = lib.splitString "\n---\n" original;
+          hasFm = builtins.length parts > 1 && lib.hasPrefix "---\n" original;
+          frontmatter = if hasFm then builtins.head parts + "\n---\n" else "";
+          body = if hasFm then lib.concatStringsSep "\n---\n" (builtins.tail parts) else original;
+          override = ''
+
+            > **Local override**: run shell commands in this skill through the
+            > declarative PPTX tool environment:
+            >
+            > `nix run dotfiles#pptx -- <command>`
+            >
+            > Examples:
+            >
+            > `nix run dotfiles#pptx -- python -m markitdown input.pptx`
+            > `nix run dotfiles#pptx -- pdftoppm -jpeg -r 150 output.pdf slide`
+            >
+            > Helper scripts such as `python scripts/thumbnail.py ...` are also
+            > resolved from the installed `/pptx` skill when the current project
+            > does not have its own `scripts/` directory.
+          '';
+        in
+        frontmatter + override + body;
     };
 
     skills.explicit.drawio = {

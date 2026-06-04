@@ -34,6 +34,24 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    pyproject-nix = {
+      url = "github:pyproject-nix/pyproject.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    uv2nix = {
+      url = "github:pyproject-nix/uv2nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.pyproject-nix.follows = "pyproject-nix";
+    };
+
+    pyproject-build-systems = {
+      url = "github:pyproject-nix/build-system-pkgs";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.pyproject-nix.follows = "pyproject-nix";
+      inputs.uv2nix.follows = "uv2nix";
+    };
+
     mozuku = {
       url = "github:t3tra-dev/MoZuKu";
     };
@@ -99,9 +117,13 @@
 
   outputs =
     inputs@{
+      anthropic-skills,
       nixpkgs,
       home-manager,
+      pyproject-build-systems,
+      pyproject-nix,
       treefmt-nix,
+      uv2nix,
       ...
     }:
     let
@@ -254,6 +276,15 @@
               ''
             );
           };
+          pptx = import ./nix/apps/pptx {
+            inherit
+              anthropic-skills
+              pkgs
+              pyproject-build-systems
+              pyproject-nix
+              uv2nix
+              ;
+          };
         };
 
       # Apps for Linux/WSL hosts: switch auto-detects WSL vs native Linux at runtime
@@ -324,6 +355,15 @@
                 exec ${treefmtWrapper}/bin/treefmt "$@"
               ''
             );
+          };
+          pptx = import ./nix/apps/pptx {
+            inherit
+              anthropic-skills
+              pkgs
+              pyproject-build-systems
+              pyproject-nix
+              uv2nix
+              ;
           };
           winget-apply = {
             type = "app";
