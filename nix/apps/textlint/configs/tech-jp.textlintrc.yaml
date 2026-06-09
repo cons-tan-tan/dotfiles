@@ -1,0 +1,39 @@
+rules:
+  # Japanese technical writing fundamentals:
+  # sentence length, punctuation count, mixed styles, redundant expressions, etc.
+  preset-ja-technical-writing:
+    # Keep enough room for occasional longer sentences so humanize-jp can vary
+    # sentence rhythm without fighting the technical-writing preset.
+    sentence-length:
+      max: 140
+    max-ten:
+      max: 5
+    max-comma:
+      max: 5
+    no-mix-dearu-desumasu:
+      preferInHeader: ""
+      preferInBody: "である"
+      preferInList: "である"
+      strict: false
+
+  # Japanese spacing style. Most findings are auto-fixable with textlint --fix.
+  preset-ja-spacing: true
+
+  # Avoid rigid report-like numbering in headings and bullets.
+  "@0x6b/no-numbered-headings-and-bullets": true
+
+  # AI-writing heuristics are useful as suggestions, but should not block on their own.
+  "@textlint-ja/preset-ai-writing":
+    ai-tech-writing-guideline:
+      severity: info
+      enableDocumentAnalysis: true
+
+  # Synonym drift is a suggestion until we define preferred project terms.
+  "@textlint-ja/no-synonyms":
+    severity: info
+
+  # These are concrete enough to fail the lint.
+  "@textlint-ja/no-filler": true
+  ja-no-inappropriate-words: true
+  no-mixed-zenkaku-and-hankaku-alphabet: true
+  prefer-tari-tari: true

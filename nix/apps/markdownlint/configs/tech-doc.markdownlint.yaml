@@ -1,0 +1,47 @@
+# Markdown structure lint for technical documentation.
+#
+# Most markdownlint rules are enabled by default. The overrides below document
+# rules with real tradeoffs for repository docs and AI-assisted writing.
+default: true
+
+# Enforce ATX headings (`# Heading`) instead of Setext headings.
+MD003:
+  style: atx
+
+# Prefer `-` for unordered lists.
+MD004:
+  style: dash
+
+# Two spaces keeps nested Markdown lists compact and common in GitHub docs.
+MD007:
+  indent: 2
+
+# Long lines are common in Markdown because of URLs, tables, code, and Japanese
+# text. textlint handles sentence length better than Markdown line wrapping.
+MD013: false
+
+# Allow duplicate headings in different sections, but reject duplicates among
+# siblings where generated anchors and table-of-contents links can collide.
+MD024:
+  siblings_only: true
+
+# Reject trailing heading punctuation such as `.`, `!`, `。`, and `！`.
+# Question marks (`?` and `？`) are allowed by markdownlint's default punctuation list.
+MD026: true
+
+# Ordered lists should use explicit increasing numbers (`1.`, `2.`, `3.`).
+# This catches duplicated or skipped numbers in source Markdown.
+MD029:
+  style: ordered
+
+# A single H1 is useful for published documents, but snippets, partial docs, and
+# generated fragments often do not start with an H1.
+MD041: false
+
+# Prefer fenced code blocks over indented code blocks.
+MD046:
+  style: fenced
+
+# Prefer backticks for fenced code blocks.
+MD048:
+  style: backtick

@@ -285,6 +285,12 @@
               uv2nix
               ;
           };
+          markdownlint = import ./nix/apps/markdownlint {
+            inherit pkgs;
+          };
+          textlint = import ./nix/apps/textlint {
+            inherit pkgs;
+          };
         };
 
       # Apps for Linux/WSL hosts: switch auto-detects WSL vs native Linux at runtime
@@ -364,6 +370,12 @@
               pyproject-nix
               uv2nix
               ;
+          };
+          markdownlint = import ./nix/apps/markdownlint {
+            inherit pkgs;
+          };
+          textlint = import ./nix/apps/textlint {
+            inherit pkgs;
           };
           winget-apply = {
             type = "app";
