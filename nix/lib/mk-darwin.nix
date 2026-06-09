@@ -43,6 +43,7 @@ inputs.nix-darwin.lib.darwinSystem {
           anthropic-skills
           drawio-skill
           hcom-src
+          humanizer-jp-skill
           ;
       };
       home-manager.users.${username} = {

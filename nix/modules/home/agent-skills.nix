@@ -5,14 +5,27 @@
 # Skills are deployed to ~/.claude/skills and ~/.agents/skills
 {
   lib,
+  pkgs,
   ast-grep-skill,
   agent-browser-skill,
   agent-slack-skill,
   anthropic-skills,
   drawio-skill,
   hcom-src,
+  humanizer-jp-skill,
   ...
 }:
+let
+  # docs/ sits at the repo root, outside the skill dir, so feeding
+  # humanizer-jp-skill straight to the source would leave SKILL.md's docs/ links
+  # dangling.
+  humanizer-jp-with-docs = pkgs.runCommandLocal "humanizer-jp-with-docs" { } ''
+    skill="$out/.claude/skills/humanize-jp"
+    mkdir -p "$skill"
+    cp -r ${humanizer-jp-skill}/.claude/skills/humanize-jp/. "$skill/"
+    cp -r ${humanizer-jp-skill}/docs "$skill/docs"
+  '';
+in
 {
   programs.agent-skills = {
     enable = true;
@@ -48,6 +61,11 @@
       hcom = {
         path = hcom-src;
         subdir = "skills";
+      };
+      # External: humanize-jp skill (suppress "AI-ness" in Japanese writing)
+      humanizer-jp = {
+        path = humanizer-jp-with-docs;
+        subdir = ".claude/skills";
       };
       # Local: skills from this dotfiles repo
       local = {
@@ -150,6 +168,40 @@
     skills.explicit.hcom-agent-messaging = {
       from = "hcom";
       path = "hcom-agent-messaging";
+    };
+
+    skills.explicit.humanize-jp = {
+      from = "humanizer-jp";
+      path = "humanize-jp";
+      transform =
+        { original, ... }:
+        let
+          # Upstream's command assumes a system python3 and $HOME as the cwd.
+          #   - uv run drops the python3 dependency; --no-project keeps uv from
+          #     syncing whatever caller project we land in (script is stdlib-only).
+          #   - skill-relative path resolves from any cwd and under ~/.agents,
+          #     unlike upstream's $HOME-relative, Claude-specific one.
+          rewritten =
+            builtins.replaceStrings
+              [ "python3 .claude/skills/humanize-jp/reference/humanize_check.py" ]
+              [ "uv run --no-project reference/humanize_check.py" ]
+              original;
+          parts = lib.splitString "\n---\n" rewritten;
+          hasFm = builtins.length parts > 1 && lib.hasPrefix "---\n" rewritten;
+          body = if hasFm then lib.concatStringsSep "\n---\n" (builtins.tail parts) else rewritten;
+          frontmatter = ''
+            ---
+            name: humanize-jp
+            description: |
+              Suppress the telltale "AI-ness" of Japanese writing so it reads as
+              human-written. Use when asked to proofread or rewrite AI-generated
+              Japanese, make text sound more human, evade AI-text detection, or
+              naturalize note or blog articles. Japanese only; not for English or
+              other languages.
+            ---
+          '';
+        in
+        frontmatter + body;
     };
 
     # Deploy to skills directories (use built-in default paths)

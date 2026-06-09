@@ -26,6 +26,7 @@ inputs.home-manager.lib.homeManagerConfiguration {
       anthropic-skills
       drawio-skill
       hcom-src
+      humanizer-jp-skill
       ;
   };
   modules = [

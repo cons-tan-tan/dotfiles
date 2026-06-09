@@ -328,6 +328,22 @@
         "type": "github"
       }
     },
+    "humanizer-jp-skill": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1780463887,
+        "narHash": "sha256-GOLCxrfbjnWxRSP4GBoDg5Qfto29L7ly29AWVD3thMg=",
+        "owner": "yourbright-jp",
+        "repo": "humanizer-jp",
+        "rev": "e252b87c39270a0b9359c1e1e1f8d48b710ff4de",
+        "type": "github"
+      },
+      "original": {
+        "owner": "yourbright-jp",
+        "repo": "humanizer-jp",
+        "type": "github"
+      }
+    },
     "llm-agents": {
       "inputs": {
         "blueprint": "blueprint",
@@ -515,6 +531,7 @@
         "drawio-skill": "drawio-skill",
         "hcom-src": "hcom-src",
         "home-manager": "home-manager",
+        "humanizer-jp-skill": "humanizer-jp-skill",
         "llm-agents": "llm-agents",
         "mozuku": "mozuku",
         "nix-darwin": "nix-darwin",
