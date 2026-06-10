@@ -31,6 +31,8 @@ let
       autoMemoryEnabled = false;
       language = "japanese";
       model = "opus[1m]";
+      # Fable 5 の安全分類でフラグされた時に Opus へ自動継続せず、確認で止める。
+      switchModelsOnFlag = false;
       env = {
         USE_BUILTIN_RIPGREP = "0";
         CLAUDE_CODE_NO_FLICKER = "1";
