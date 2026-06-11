@@ -13,19 +13,25 @@ let
   configPath = "${codexHome}/config.toml";
   hooksJsonPath = "${codexHome}/hooks.json";
 
-  # merge.py に hcom 固有の知識を持たせないため、merge 内容は全てここ (Nix) で
-  # 組み立てて渡す。state key の絶対パスは sandbox では決まらないので label から
-  # 実環境パスを組み立てる。
-  hooksState = builtins.fromJSON (builtins.readFile "${hcomCodex}/hooks-state.json");
-  mergePayload = {
-    approval_policy = "on-request";
-    approvals_reviewer = "auto_review";
-    features.hooks = true;
-    hooks.state = lib.mapAttrs' (
-      label: value: lib.nameValuePair "${hooksJsonPath}:${label}:0:0" value
-    ) hooksState;
-  };
-  mergePayloadJson = (pkgs.formats.json { }).generate "codex-hcom-merge.json" mergePayload;
+  # merge.py に hcom 固有の知識を持たせないため、merge 内容は全てここで組み立てて
+  # 渡す。state key の絶対パスは sandbox では決まらないので label から実環境パスを
+  # 組み立てる。変換は eval 時でなく build 時 (jq) に行う — eval 時に生成 JSON を
+  # 読む (IFD) と異種プラットフォーム向け構成の評価 (nix flake check 等) が壊れる。
+  mergePayloadJson =
+    pkgs.runCommand "codex-hcom-merge.json"
+      {
+        nativeBuildInputs = [ pkgs.jq ];
+      }
+      ''
+        jq --arg hooksJsonPath ${lib.escapeShellArg hooksJsonPath} '
+          { approval_policy: "on-request",
+            approvals_reviewer: "auto_review",
+            features: { hooks: true },
+            hooks: { state: (to_entries
+                             | map({ key: ($hooksJsonPath + ":" + .key + ":0:0"), value: .value })
+                             | from_entries) } }
+        ' ${hcomCodex}/hooks-state.json > $out
+      '';
 
   # オフライン・再現的に検証するため schema を store に固定 (activation 時にネット
   # アクセスしない)。更新は nix-prefetch-url で hash を取り直す。
