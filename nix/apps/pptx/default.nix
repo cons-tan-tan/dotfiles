@@ -28,7 +28,7 @@ let
 
   pythonEnv = pythonSet.mkVirtualEnv "pptx-python-env" pythonWorkspace.deps.default;
 
-  pythonWrapper = pkgs.runCommand "pptx-python-wrapper" { } ''
+  pythonWrapper = pkgs.runCommandLocal "pptx-python-wrapper" { } ''
     mkdir -p "$out/bin"
 
     cat > "$out/bin/python" <<'EOF'
@@ -64,7 +64,7 @@ let
     };
   };
 
-  nodeWrapper = pkgs.runCommand "pptx-node-wrapper" { } ''
+  nodeWrapper = pkgs.runCommandLocal "pptx-node-wrapper" { } ''
     mkdir -p "$out/bin"
 
     cat > "$out/bin/node" <<'EOF'
