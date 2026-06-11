@@ -1,7 +1,7 @@
 { ... }:
 {
   imports = [
-    ./agent-skills.nix
+    ./agent-skills
     ./packages.nix
     ./programs
     ./registries.nix

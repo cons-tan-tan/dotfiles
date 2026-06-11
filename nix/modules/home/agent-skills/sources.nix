@@ -1,19 +1,6 @@
-# Agent skills deployment for Claude Code and other agents.
-#
-# Skills (external flake inputs + local agents/skills/) are bundled and
-# symlinked into ~/.claude/skills and ~/.agents/skills.
-#
-# NOTE: 以前は agent-skills-nix (flake input) を使っていたが、同モジュールは
-# ソースの safe-copy derivation を eval 時に readFile する (IFD) ため、異種
-# プラットフォーム構成の評価 (nix flake check 等) を壊す。必要な機能は
-# 「skill ディレクトリを集め、SKILL.md を変換して配置する」だけなので自前で
-# 実装する。eval 時に読むのは flake input / リポジトリ内の純パスのみ。
-{
-  lib,
-  pkgs,
-  inputs,
-  ...
-}:
+# デプロイ対象 skill の定義。root は SKILL.md を含むディレクトリ、transform
+# (任意) は SKILL.md 全文を受け取り書き換える関数。
+{ lib, inputs }:
 let
   inherit (inputs)
     ast-grep-skill
@@ -25,29 +12,12 @@ let
     humanizer-jp-skill
     ;
 
-  # SKILL.md を YAML frontmatter と本文に分ける。frontmatter が無い場合は
-  # 全体を本文として扱う。
-  splitFrontmatter =
-    text:
-    let
-      parts = lib.splitString "\n---\n" text;
-      hasFm = builtins.length parts > 1 && lib.hasPrefix "---\n" text;
-    in
-    {
-      frontmatter = if hasFm then builtins.head parts + "\n---\n" else "";
-      body = if hasFm then lib.concatStringsSep "\n---\n" (builtins.tail parts) else text;
-    };
+  inherit (import ./frontmatter.nix { inherit lib; })
+    replaceFrontmatter
+    injectAfterFrontmatter
+    ;
 
-  replaceFrontmatter = frontmatter: original: frontmatter + (splitFrontmatter original).body;
-
-  injectAfterFrontmatter =
-    note: original:
-    let
-      s = splitFrontmatter original;
-    in
-    s.frontmatter + note + s.body;
-
-  # 外部 skill。root は SKILL.md を含むディレクトリ。
+  # 外部 skill (flake inputs)
   externalSkills = {
     # ast-grep official skill
     ast-grep = {
@@ -156,38 +126,9 @@ let
   };
 
   # このリポジトリの agents/skills/ 配下は全て自動デプロイする
-  localSkillsDir = ../../../agents/skills;
+  localSkillsDir = ../../../../agents/skills;
   localSkills = lib.mapAttrs (name: _: { root = localSkillsDir + "/${name}"; }) (
     lib.filterAttrs (_: type: type == "directory") (builtins.readDir localSkillsDir)
   );
-
-  skills = externalSkills // localSkills;
-
-  # transform がある skill は SKILL.md を差し替えたコピーを作る。無ければ
-  # ソースをそのまま symlink する。
-  mkSkillSource =
-    name: skill:
-    if skill ? transform then
-      pkgs.runCommandLocal "skill-${name}"
-        {
-          skillMd = skill.transform (builtins.readFile (skill.root + "/SKILL.md"));
-          passAsFile = [ "skillMd" ];
-        }
-        ''
-          cp -rL --no-preserve=mode ${skill.root} $out
-          cp "$skillMdPath" "$out/SKILL.md"
-        ''
-    else
-      skill.root;
-
-  skillSources = lib.mapAttrs mkSkillSource skills;
-
-  deployTo =
-    prefix:
-    lib.mapAttrs' (
-      name: source: lib.nameValuePair "${prefix}/${name}" { inherit source; }
-    ) skillSources;
 in
-{
-  home.file = deployTo ".claude/skills" // deployTo ".agents/skills";
-}
+externalSkills // localSkills
