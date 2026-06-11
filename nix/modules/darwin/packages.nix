@@ -6,7 +6,6 @@
     [
       # nixpkgs packages (macOS only)
       raycast
-      rstudio
       hackgen-nf-font # ghostty 用フォント (nix/modules/darwin/programs/ghostty.nix)
     ]
     # brew-nix packages (Homebrew casks managed via Nix)

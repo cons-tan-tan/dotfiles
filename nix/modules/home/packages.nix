@@ -15,9 +15,6 @@
     zoxide
     eza
     fastfetch
-    protobuf
-    redocly
-    genact
     reuse
     ast-grep
     watchexec
@@ -66,9 +63,6 @@
 
     # Nix
     nixd
-
-    # R
-    R
 
     # Japanese Language Server
     mozuku-lsp
