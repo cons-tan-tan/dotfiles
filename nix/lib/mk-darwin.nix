@@ -48,7 +48,6 @@ inputs.nix-darwin.lib.darwinSystem {
       };
       home-manager.users.${username} = {
         imports = [
-          inputs.agent-skills.homeManagerModules.default
           hostFile
         ];
         home = {

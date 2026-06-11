@@ -30,7 +30,6 @@ inputs.home-manager.lib.homeManagerConfiguration {
       ;
   };
   modules = [
-    inputs.agent-skills.homeManagerModules.default
     hostFile
     {
       home = {

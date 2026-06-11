@@ -1,8 +1,13 @@
-# Agent skills configuration for Claude Code
-# https://github.com/Kyure-A/agent-skills-nix
+# Agent skills deployment for Claude Code and other agents.
 #
-# All skills (external and local) are managed here via agent-skills-nix.
-# Skills are deployed to ~/.claude/skills and ~/.agents/skills
+# Skills (external flake inputs + local agents/skills/) are bundled and
+# symlinked into ~/.claude/skills and ~/.agents/skills.
+#
+# NOTE: 以前は agent-skills-nix (flake input) を使っていたが、同モジュールは
+# ソースの safe-copy derivation を eval 時に readFile する (IFD) ため、異種
+# プラットフォーム構成の評価 (nix flake check 等) を壊す。必要な機能は
+# 「skill ディレクトリを集め、SKILL.md を変換して配置する」だけなので自前で
+# 実装する。eval 時に読むのは flake input / リポジトリ内の純パスのみ。
 {
   lib,
   pkgs,
@@ -16,183 +21,112 @@
   ...
 }:
 let
-  # docs/ sits at the repo root, outside the skill dir, so feeding
-  # humanizer-jp-skill straight to the source would leave SKILL.md's docs/ links
-  # dangling.
-  humanizer-jp-with-docs = pkgs.runCommandLocal "humanizer-jp-with-docs" { } ''
-    skill="$out/.claude/skills/humanize-jp"
-    mkdir -p "$skill"
-    cp -r ${humanizer-jp-skill}/.claude/skills/humanize-jp/. "$skill/"
-    cp -r ${humanizer-jp-skill}/docs "$skill/docs"
-    mkdir -p "$skill/scripts"
-    cp "$skill/reference/humanize_check.py" "$skill/scripts/humanize_check.py"
-  '';
-in
-{
-  programs.agent-skills = {
-    enable = true;
-
-    # Skill sources (from flake inputs)
-    sources = {
-      # External: ast-grep official skill
-      ast-grep = {
-        path = ast-grep-skill;
-        subdir = "ast-grep/skills";
-      };
-      # External: agent-browser skill
-      agent-browser = {
-        path = agent-browser-skill;
-        subdir = "skills";
-      };
-      # External: agent-slack skill
-      agent-slack = {
-        path = agent-slack-skill;
-        subdir = "skills";
-      };
-      # External: Anthropic official skills
-      anthropic = {
-        path = anthropic-skills;
-        subdir = "skills";
-      };
-      # External: draw.io skill
-      drawio = {
-        path = drawio-skill;
-        subdir = "skill-cli";
-      };
-      # External: hcom inter-agent messaging skill (binary packaged in overlays/hcom.nix)
-      hcom = {
-        path = hcom-src;
-        subdir = "skills";
-      };
-      # External: humanize-jp skill (suppress "AI-ness" in Japanese writing)
-      humanizer-jp = {
-        path = humanizer-jp-with-docs;
-        subdir = ".claude/skills";
-      };
-      # Local: skills from this dotfiles repo
-      local = {
-        path = ../../..;
-        subdir = "agents/skills";
-      };
+  # SKILL.md を YAML frontmatter と本文に分ける。frontmatter が無い場合は
+  # 全体を本文として扱う。
+  splitFrontmatter =
+    text:
+    let
+      parts = lib.splitString "\n---\n" text;
+      hasFm = builtins.length parts > 1 && lib.hasPrefix "---\n" text;
+    in
+    {
+      frontmatter = if hasFm then builtins.head parts + "\n---\n" else "";
+      body = if hasFm then lib.concatStringsSep "\n---\n" (builtins.tail parts) else text;
     };
 
-    # Enable all local skills
-    skills.enableAll = [ "local" ];
+  replaceFrontmatter = frontmatter: original: frontmatter + (splitFrontmatter original).body;
 
-    skills.explicit.ast-grep = {
-      from = "ast-grep";
-      path = "ast-grep";
+  injectAfterFrontmatter =
+    note: original:
+    let
+      s = splitFrontmatter original;
+    in
+    s.frontmatter + note + s.body;
+
+  # 外部 skill。root は SKILL.md を含むディレクトリ。
+  externalSkills = {
+    # ast-grep official skill
+    ast-grep = {
+      root = "${ast-grep-skill}/ast-grep/skills/ast-grep";
     };
 
-    skills.explicit.agent-browser = {
-      from = "agent-browser";
-      path = "agent-browser";
+    # agent-browser skill
+    agent-browser = {
+      root = "${agent-browser-skill}/skills/agent-browser";
     };
 
-    skills.explicit.agent-slack = {
-      from = "agent-slack";
-      path = "agent-slack";
+    # agent-slack skill (binary packaged in overlays/agent-slack.nix)
+    agent-slack = {
+      root = "${agent-slack-skill}/skills/agent-slack";
+      # Keep skill descriptions compact because some metadata consumers impose
+      # length limits; avoid a separate trigger-word list unless it adds signal.
+      transform = replaceFrontmatter ''
+        ---
+        name: agent-slack
+        description: |
+          Slack automation CLI for AI agents. Use when the user asks to read,
+          search, send, reply to, edit, delete, or react to Slack messages;
+          inspect threads, channels, DMs, unread messages, saved-for-later items,
+          files, canvases, users, or workflows; upload local files to Slack; or
+          manage channels and conversations.
+        ---
+      '';
+    };
+
+    # Anthropic official pptx skill
+    pptx = {
+      root = "${anthropic-skills}/skills/pptx";
+      transform = injectAfterFrontmatter ''
+
+        > **Local override**: run shell commands in this skill through the
+        > declarative PPTX tool environment:
+        >
+        > `nix run dotfiles#pptx -- <command>`
+        >
+        > Examples:
+        >
+        > `nix run dotfiles#pptx -- python -m markitdown input.pptx`
+        > `nix run dotfiles#pptx -- pdftoppm -jpeg -r 150 output.pdf slide`
+        >
+        > Helper scripts such as `python scripts/thumbnail.py ...` are also
+        > resolved from the installed `/pptx` skill when the current project
+        > does not have its own `scripts/` directory.
+      '';
+    };
+
+    # draw.io skill
+    drawio = {
+      root = "${drawio-skill}/skill-cli/drawio";
+      transform = injectAfterFrontmatter ''
+
+        > **Local override (WSL2)**: use `drawio` from `$PATH` for exports —
+        > it is a Linux headless wrapper that already injects `--no-sandbox`,
+        > `--disable-gpu`, and starts Xvfb / D-Bus. Do not add these flags or
+        > call `/mnt/c/.../draw.io.exe` for the export step; the "Opening the
+        > result" instructions below still apply.
+      '';
+    };
+
+    # hcom inter-agent messaging skill (binary packaged in overlays/hcom.nix)
+    hcom-agent-messaging = {
+      root = "${hcom-src}/skills/hcom-agent-messaging";
+    };
+
+    # humanize-jp skill (suppress "AI-ness" in Japanese writing)
+    humanize-jp = {
+      root = "${humanizer-jp-skill}/.claude/skills/humanize-jp";
+      # Upstream's command assumes a system python3 and $HOME as the cwd, and
+      # references docs/ at the repo root (outside the skill dir, so the
+      # deployed copy would have dangling links).
+      #   - uv run drops the python3 dependency; --no-project keeps uv from
+      #     syncing whatever caller project we land in (script is stdlib-only).
+      #   - Script and docs are pointed at the flake input's store path: it is
+      #     absolute (stable from any cwd / both ~/.agents and ~/.claude
+      #     targets) and the reference keeps the source in the closure.
       transform =
-        { original, ... }:
-        let
-          parts = lib.splitString "\n---\n" original;
-          hasFm = builtins.length parts > 1 && lib.hasPrefix "---\n" original;
-          body = if hasFm then lib.concatStringsSep "\n---\n" (builtins.tail parts) else original;
-          # Keep skill descriptions compact because some metadata consumers impose
-          # length limits; avoid a separate trigger-word list unless it adds signal.
-          frontmatter = ''
-            ---
-            name: agent-slack
-            description: |
-              Slack automation CLI for AI agents. Use when the user asks to read,
-              search, send, reply to, edit, delete, or react to Slack messages;
-              inspect threads, channels, DMs, unread messages, saved-for-later items,
-              files, canvases, users, or workflows; upload local files to Slack; or
-              manage channels and conversations.
-            ---
-          '';
-        in
-        frontmatter + body;
-    };
-
-    skills.explicit.pptx = {
-      from = "anthropic";
-      path = "pptx";
-      transform =
-        { original, ... }:
-        let
-          parts = lib.splitString "\n---\n" original;
-          hasFm = builtins.length parts > 1 && lib.hasPrefix "---\n" original;
-          frontmatter = if hasFm then builtins.head parts + "\n---\n" else "";
-          body = if hasFm then lib.concatStringsSep "\n---\n" (builtins.tail parts) else original;
-          override = ''
-
-            > **Local override**: run shell commands in this skill through the
-            > declarative PPTX tool environment:
-            >
-            > `nix run dotfiles#pptx -- <command>`
-            >
-            > Examples:
-            >
-            > `nix run dotfiles#pptx -- python -m markitdown input.pptx`
-            > `nix run dotfiles#pptx -- pdftoppm -jpeg -r 150 output.pdf slide`
-            >
-            > Helper scripts such as `python scripts/thumbnail.py ...` are also
-            > resolved from the installed `/pptx` skill when the current project
-            > does not have its own `scripts/` directory.
-          '';
-        in
-        frontmatter + override + body;
-    };
-
-    skills.explicit.drawio = {
-      from = "drawio";
-      path = "drawio";
-      transform =
-        { original, ... }:
-        let
-          parts = lib.splitString "\n---\n" original;
-          hasFm = builtins.length parts > 1 && lib.hasPrefix "---\n" original;
-          frontmatter = if hasFm then builtins.head parts + "\n---\n" else "";
-          body = if hasFm then lib.concatStringsSep "\n---\n" (builtins.tail parts) else original;
-          override = ''
-
-            > **Local override (WSL2)**: use `drawio` from `$PATH` for exports —
-            > it is a Linux headless wrapper that already injects `--no-sandbox`,
-            > `--disable-gpu`, and starts Xvfb / D-Bus. Do not add these flags or
-            > call `/mnt/c/.../draw.io.exe` for the export step; the "Opening the
-            > result" instructions below still apply.
-          '';
-        in
-        frontmatter + override + body;
-    };
-
-    skills.explicit.hcom-agent-messaging = {
-      from = "hcom";
-      path = "hcom-agent-messaging";
-    };
-
-    skills.explicit.humanize-jp = {
-      from = "humanizer-jp";
-      path = "humanize-jp";
-      transform =
-        { original, ... }:
-        let
-          # Upstream's command assumes a system python3 and $HOME as the cwd.
-          #   - uv run drops the python3 dependency; --no-project keeps uv from
-          #     syncing whatever caller project we land in (script is stdlib-only).
-          #   - The final Nix store bundle is shared by ~/.agents and ~/.claude
-          #     targets, so an absolute bundle path is stable from any cwd.
-          humanizeCheck = "${builtins.placeholder "out"}/humanize-jp/scripts/humanize_check.py";
-          rewritten =
-            builtins.replaceStrings
-              [ "python3 .claude/skills/humanize-jp/reference/humanize_check.py" ]
-              [ "uv run --no-project ${humanizeCheck}" ]
-              original;
-          parts = lib.splitString "\n---\n" rewritten;
-          hasFm = builtins.length parts > 1 && lib.hasPrefix "---\n" rewritten;
-          body = if hasFm then lib.concatStringsSep "\n---\n" (builtins.tail parts) else rewritten;
-          frontmatter = ''
+        original:
+        replaceFrontmatter
+          ''
             ---
             name: humanize-jp
             description: |
@@ -201,15 +135,55 @@ in
               Japanese, make text sound more natural, or polish note and blog
               articles. Japanese only; not for English or other languages.
             ---
-          '';
-        in
-        frontmatter + body;
-    };
-
-    # Deploy to skills directories (use built-in default paths)
-    targets = {
-      agents.enable = true;
-      claude.enable = true;
+          ''
+          (
+            builtins.replaceStrings
+              [
+                "python3 .claude/skills/humanize-jp/reference/humanize_check.py"
+                "`docs/"
+              ]
+              [
+                "uv run --no-project ${humanizer-jp-skill}/.claude/skills/humanize-jp/reference/humanize_check.py"
+                "`${humanizer-jp-skill}/docs/"
+              ]
+              original
+          );
     };
   };
+
+  # このリポジトリの agents/skills/ 配下は全て自動デプロイする
+  localSkillsDir = ../../../agents/skills;
+  localSkills = lib.mapAttrs (name: _: { root = localSkillsDir + "/${name}"; }) (
+    lib.filterAttrs (_: type: type == "directory") (builtins.readDir localSkillsDir)
+  );
+
+  skills = externalSkills // localSkills;
+
+  # transform がある skill は SKILL.md を差し替えたコピーを作る。無ければ
+  # ソースをそのまま symlink する。
+  mkSkillSource =
+    name: skill:
+    if skill ? transform then
+      pkgs.runCommandLocal "skill-${name}"
+        {
+          skillMd = skill.transform (builtins.readFile (skill.root + "/SKILL.md"));
+          passAsFile = [ "skillMd" ];
+        }
+        ''
+          cp -rL --no-preserve=mode ${skill.root} $out
+          cp "$skillMdPath" "$out/SKILL.md"
+        ''
+    else
+      skill.root;
+
+  skillSources = lib.mapAttrs mkSkillSource skills;
+
+  deployTo =
+    prefix:
+    lib.mapAttrs' (
+      name: source: lib.nameValuePair "${prefix}/${name}" { inherit source; }
+    ) skillSources;
+in
+{
+  home.file = deployTo ".claude/skills" // deployTo ".agents/skills";
 }
