@@ -8,12 +8,13 @@
 let
   hk = import ../../../lib/host-kind.nix { inherit hostKind; };
 
+  # hostKind は darwin / linux / wsl のみ (Windows companion の設定は
+  # windowsGpgAgentConf 以下で別途生成する)。
   pinentryProgram =
     {
       darwin = null; # pinentry_mac は package で指定
-      linux = null; # X11/curses pinentry を使う場合は別途設定
+      linux = null; # pinentry-curses は package で指定
       wsl = "/mnt/c/Program Files/Gpg4win/bin/pinentry.exe";
-      windows = "C:/Program Files/Gpg4win/bin/pinentry.exe";
     }
     .${hostKind};
 
@@ -23,12 +24,13 @@ let
         package = pkgs.pinentry_mac;
       };
       linux = {
-        package = null;
+        # package 未指定だと PATH 頼みになり、passphrase 入力が静かに失敗する
+        package = pkgs.pinentry-curses;
       };
       wsl = {
+        # Windows 側 pinentry.exe を extraConfig (pinentry-program) で指定する
         package = null;
       };
-      windows = null;
     }
     .${hostKind};
 
