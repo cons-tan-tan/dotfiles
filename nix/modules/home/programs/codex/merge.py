@@ -11,6 +11,7 @@ mv することで、検証を通った設定だけが本番に置かれる (置
 
 Usage: merge.py <source.toml> <payload.json> <output.toml>
 """
+
 from collections.abc import MutableMapping
 import json
 import os
@@ -50,4 +51,6 @@ with open(output_path, "w", encoding="utf-8") as f:
 
 # config には project trust 等の機密が入るため mv 後に権限を緩めない。open 任せ
 # だと umask 依存 (例 0644) で緩むので、権限を明示的に設定する。
-os.chmod(output_path, (os.stat(source_path).st_mode & 0o7777) if source_exists else 0o600)
+os.chmod(
+    output_path, (os.stat(source_path).st_mode & 0o7777) if source_exists else 0o600
+)
