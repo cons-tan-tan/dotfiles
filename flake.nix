@@ -27,6 +27,9 @@
 
     llm-agents = {
       url = "github:numtide/llm-agents.nix";
+      # upstream も nixpkgs-unstable を追っており、lock 上は元々同一 rev に
+      # dedup されていた。follows で恒久的に一本化する。
+      inputs.nixpkgs.follows = "nixpkgs";
     };
 
     treefmt-nix = {
@@ -53,6 +56,10 @@
     };
 
     mozuku = {
+      # nixpkgs を follows しない (意図的): mozuku-lsp は cabocha / crfpp の
+      # C++ チェーンごと source build になり、どのバイナリキャッシュにも無い。
+      # follows にすると nixpkgs 更新の度に再ビルドが走る (実測 3 drv) ため、
+      # upstream の pin のままにして再ビルドを mozuku 更新時だけに抑える。
       url = "github:t3tra-dev/MoZuKu";
     };
 
