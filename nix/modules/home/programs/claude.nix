@@ -11,9 +11,6 @@
 let
   hk = import ../../../lib/host-kind.nix { inherit hostKind; };
 
-  # overlay (hcom-claude-hooks) が hcom 実行で生成したもの。手で写さず版に追従させる。
-  hcomGenerated = builtins.fromJSON (builtins.readFile "${pkgs.hcom-claude-hooks}");
-
   claudeCodePackage = pkgs.claude-code.overrideAttrs (old: {
     nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ pkgs.makeWrapper ];
     postFixup =
@@ -92,8 +89,6 @@ let
           "Bash(gh api-get *)"
           "Bash(curl-fetch *)"
         ]
-        # hcom 分は生成物から取る (手書きで二重管理しない)。
-        ++ lib.optionals (!isWindows) hcomGenerated.permissions.allow
         ++ lib.optionals isWindows [
           "Bash(wsl.exe *)"
           "Bash(pwsh.exe *)"
@@ -109,33 +104,51 @@ let
           "Bash(Remove-Item -Recurse -Force *)"
         ];
       };
-      hooks =
-        let
-          ghApiHook = {
-            matcher = "Bash";
-            hooks = [
-              {
-                type = "command";
-                command = hooksPath;
-              }
-            ];
-          };
-        in
-        # Windows companion には hcom (linux/darwin バイナリ) が無いので gh-api guard だけ。
-        if isWindows then
-          { PreToolUse = [ ghApiHook ]; }
-        else
-          hcomGenerated.hooks
-          // {
-            # hcom も PreToolUse を使うため、gh-api guard と両立させる。
-            PreToolUse = hcomGenerated.hooks.PreToolUse ++ [ ghApiHook ];
-          };
+      # hcom 分の hooks/permissions はここに書かず、build 時に hcom の生成物と
+      # マージする (mergedSettingsFile)。eval 時に生成 JSON を読む (IFD) と、
+      # 異種プラットフォーム向け構成の評価 (nix flake check 等) が壊れるため。
+      hooks.PreToolUse = [
+        {
+          matcher = "Bash";
+          hooks = [
+            {
+              type = "command";
+              command = hooksPath;
+            }
+          ];
+        }
+      ];
+      # programs.claude-code.settings 経由で HM が付与していた schema と揃える。
+      "$schema" = "https://json.schemastore.org/claude-code-settings.json";
     };
 
-  windowsSettings = mkSettings { hostKind = "windows"; };
-  windowsSettingsFile =
-    (pkgs.formats.json { }).generate "claude-windows-settings.json"
-      windowsSettings;
+  jsonFormat = pkgs.formats.json { };
+
+  # Windows companion には hcom (linux/darwin バイナリ) が無いので gh-api guard
+  # のみ。マージ不要なのでそのまま書き出す。
+  windowsSettingsFile = jsonFormat.generate "claude-windows-settings.json" (mkSettings {
+    hostKind = "windows";
+  });
+
+  baseSettingsFile = jsonFormat.generate "claude-settings-base.json" (mkSettings {
+    inherit hostKind;
+  });
+
+  # hcom 分は生成物 (overlay が hcom 実行で生成) から取り、手書きで二重管理しない。
+  # hcom も PreToolUse を使うため、gh-api guard と両立させる。
+  mergedSettingsFile =
+    pkgs.runCommand "claude-settings.json"
+      {
+        nativeBuildInputs = [ pkgs.jq ];
+      }
+      ''
+        jq -s '
+          .[0] as $base | .[1] as $hcom |
+          $base
+          | .permissions.allow += $hcom.permissions.allow
+          | .hooks = ($hcom.hooks + { PreToolUse: (($hcom.hooks.PreToolUse // []) + $base.hooks.PreToolUse) })
+        ' ${baseSettingsFile} ${pkgs.hcom-claude-hooks} > $out
+      '';
 in
 {
   programs.claude-code = {
@@ -144,8 +157,11 @@ in
     plugins = [
       "${codex-plugin-cc}/plugins/codex"
     ];
-    settings = mkSettings { inherit hostKind; };
+    # settings は指定しない: settings = { } なら HM モジュールは settings.json を
+    # 書かないので、build 時マージ結果 (mergedSettingsFile) を home.file で置ける。
   };
+
+  home.file.".claude/settings.json".source = mergedSettingsFile;
 
   home.file.".claude/CLAUDE.md".source =
     config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/claude/CLAUDE.md";
