@@ -61,14 +61,7 @@
       flake = false;
     };
 
-    # Agent skills management
-    agent-skills = {
-      url = "github:Kyure-A/agent-skills-nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-      inputs.home-manager.follows = "home-manager";
-    };
-
-    # External skill sources
+    # External skill sources (deployed by nix/modules/home/agent-skills.nix)
     ast-grep-skill = {
       url = "github:ast-grep/claude-skill";
       flake = false;
@@ -123,6 +116,7 @@
 
   outputs =
     inputs@{
+      self,
       anthropic-skills,
       nixpkgs,
       home-manager,
@@ -210,16 +204,15 @@
           .${system}
         }";
 
-      # Create treefmt wrapper
-      mkTreefmtWrapper =
+      # treefmt: formatter 出力 (wrapper) と checks 出力 (check) の両方に使う
+      mkTreefmtEval =
         pkgs:
-        treefmt-nix.lib.mkWrapper pkgs {
+        treefmt-nix.lib.evalModule pkgs {
           projectRootFile = "flake.nix";
           programs = {
-            nixfmt = {
-              enable = true;
-              package = pkgs.nixfmt;
-            };
+            nixfmt.enable = true;
+            shfmt.enable = true;
+            ruff-format.enable = true;
           };
           settings = {
             global.excludes = [
@@ -229,6 +222,7 @@
             ];
           };
         };
+      mkTreefmtWrapper = pkgs: (mkTreefmtEval pkgs).config.build.wrapper;
 
       # Apps for darwin host
       mkDarwinApps =
@@ -414,13 +408,13 @@
             );
           };
         };
-    in
-    {
       # macOS configuration with nix-darwin
-      darwinConfigurations.${darwinHostname} = mkDarwin {
-        hostname = darwinHostname;
-        system = darwinSystem;
-        hostFile = ./nix/hosts/darwin.nix;
+      darwinConfigurations = {
+        ${darwinHostname} = mkDarwin {
+          hostname = darwinHostname;
+          system = darwinSystem;
+          hostFile = ./nix/hosts/darwin.nix;
+        };
       };
 
       # Linux/WSL configurations with standalone Home Manager
@@ -430,6 +424,9 @@
           value = mkHost entry;
         }) linuxHostMatrix
       );
+    in
+    {
+      inherit darwinConfigurations homeConfigurations;
 
       # Apps for common tasks
       apps = {
@@ -456,6 +453,23 @@
         {
           inherit (pkgs) hcom hcom-claude-hooks hcom-codex-hooks;
         }
+      );
+
+      # `nix flake check` で全ホスト構成の評価とフォーマットを検証する
+      checks = lib.genAttrs systems (
+        system:
+        {
+          treefmt = (mkTreefmtEval (mkPkgs system)).config.build.check self;
+        }
+        // lib.optionalAttrs (system == darwinSystem) {
+          darwin-system = darwinConfigurations.${darwinHostname}.system;
+        }
+        // lib.listToAttrs (
+          map (entry: {
+            name = "home-${entry.hostKind}";
+            value = homeConfigurations.${linuxConfigName entry}.activationPackage;
+          }) (builtins.filter (entry: entry.system == system) linuxHostMatrix)
+        )
       );
     };
 }
