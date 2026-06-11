@@ -1,3 +1,0 @@
-# https://github.com/astral-sh/ruff
-[pre-commit.commands.ruff]
-run = "ruff format && ruff check"

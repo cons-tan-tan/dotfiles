@@ -1,3 +1,0 @@
-# https://github.com/PyCQA/flake8
-[pre-commit.commands.flake8]
-run = "flake8"
