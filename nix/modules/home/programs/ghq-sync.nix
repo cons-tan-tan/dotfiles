@@ -1,12 +1,10 @@
 {
+  config,
   pkgs,
   lib,
-  hostKind,
   ...
 }:
 let
-  hk = import ../../../lib/host-kind.nix { inherit hostKind; };
-
   intervalMin = 10;
   maxJobs = 8;
   perRepoTimeoutSec = 60;
@@ -40,7 +38,7 @@ let
 
 in
 lib.mkMerge [
-  (lib.mkIf (hk.isLinux || hk.isWsl) {
+  (lib.mkIf (config.my.isLinux || config.my.isWsl) {
     systemd.user.services.ghq-fetch = {
       Unit = {
         Description = "Fetch all ghq-managed git repositories";
@@ -68,7 +66,7 @@ lib.mkMerge [
     };
   })
 
-  (lib.mkIf hk.isDarwin {
+  (lib.mkIf config.my.isDarwin {
     launchd.agents.ghq-fetch = {
       enable = true;
       config = {

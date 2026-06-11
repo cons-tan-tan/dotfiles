@@ -1,12 +1,11 @@
 {
+  config,
   pkgs,
   lib,
-  hostKind,
-  windowsHomedir,
   ...
 }:
 let
-  hk = import ../../../lib/host-kind.nix { inherit hostKind; };
+  windowsHomedir = config.my.windows.homedir;
 
   yamlFormat = pkgs.formats.yaml { };
 
@@ -166,10 +165,8 @@ let
       '';
 in
 {
-  home.activation = lib.mkIf hk.hasWindowsCompanion {
-    deployWingetConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      run mkdir -p ${windowsHomedir}/.config
-      run install -m644 ${wingetConfigFile} ${windowsHomedir}/.config/dev.winget
-    '';
-  };
+  home.activation.deployWingetConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    run mkdir -p ${windowsHomedir}/.config
+    run install -m644 ${wingetConfigFile} ${windowsHomedir}/.config/dev.winget
+  '';
 }

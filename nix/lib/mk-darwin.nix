@@ -7,51 +7,21 @@
   system,
   hostFile,
 }:
-let
-  pkgs = (import ./mk-pkgs.nix { inherit inputs; }) system;
-  hostKind = "darwin";
-  windowsUsername = null;
-  windowsHomedir = null;
-in
 inputs.nix-darwin.lib.darwinSystem {
   inherit system;
-  specialArgs = {
-    inherit
-      username
-      homedir
-      hostKind
-      ;
-  };
+  specialArgs = { inherit username homedir; };
   modules = [
-    { nixpkgs.pkgs = pkgs; }
+    { nixpkgs.pkgs = (import ./mk-pkgs.nix { inherit inputs; }) system; }
     ../modules/darwin/system.nix
 
     inputs.home-manager.darwinModules.home-manager
     {
       home-manager.useGlobalPkgs = true;
       home-manager.useUserPackages = true;
-      home-manager.extraSpecialArgs = {
-        inherit hostKind windowsUsername windowsHomedir;
-        dotfilesDir = "${homedir}/ghq/github.com/cons-tan-tan/dotfiles";
-        inherit (inputs)
-          codex-plugin-cc
-          ast-grep-skill
-          agent-browser-skill
-          agent-slack-skill
-          anthropic-skills
-          drawio-skill
-          hcom-src
-          humanizer-jp-skill
-          ;
-      };
-      home-manager.users.${username} = {
-        imports = [
-          hostFile
-        ];
-        home = {
-          inherit username;
-          homeDirectory = homedir;
-        };
+      home-manager.extraSpecialArgs = { inherit inputs; };
+      home-manager.users.${username}.imports = import ./mk-home-modules.nix {
+        inherit username homedir hostFile;
+        hostKind = "darwin";
       };
     }
   ];

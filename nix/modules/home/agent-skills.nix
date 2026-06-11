@@ -11,16 +11,20 @@
 {
   lib,
   pkgs,
-  ast-grep-skill,
-  agent-browser-skill,
-  agent-slack-skill,
-  anthropic-skills,
-  drawio-skill,
-  hcom-src,
-  humanizer-jp-skill,
+  inputs,
   ...
 }:
 let
+  inherit (inputs)
+    ast-grep-skill
+    agent-browser-skill
+    agent-slack-skill
+    anthropic-skills
+    drawio-skill
+    hcom-src
+    humanizer-jp-skill
+    ;
+
   # SKILL.md を YAML frontmatter と本文に分ける。frontmatter が無い場合は
   # 全体を本文として扱う。
   splitFrontmatter =

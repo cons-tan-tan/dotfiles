@@ -1,6 +1,5 @@
 {
   config,
-  dotfilesDir,
   ...
 }:
 {
@@ -43,5 +42,5 @@
   };
 
   home.file.".config/opencode/command".source =
-    config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/claude/commands";
+    config.lib.file.mkOutOfStoreSymlink "${config.my.dotfilesDir}/claude/commands";
 }

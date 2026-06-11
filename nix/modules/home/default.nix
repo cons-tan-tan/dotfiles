@@ -1,4 +1,4 @@
-{ pkgs, lib, ... }:
+{ ... }:
 {
   imports = [
     ./agent-skills.nix
@@ -10,7 +10,8 @@
   home = {
     stateVersion = "24.11";
 
-    # Enable Home Manager
+    # nixpkgs と home-manager のリリース系列不一致の警告を抑止する
+    # (follows 一本化後に有効へ戻す予定: plan.md Phase 3)
     enableNixpkgsReleaseCheck = false;
   };
 

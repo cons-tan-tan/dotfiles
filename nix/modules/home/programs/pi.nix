@@ -1,7 +1,6 @@
 {
   config,
   pkgs,
-  dotfilesDir,
   ...
 }:
 let
@@ -68,7 +67,7 @@ in
   home.packages = [ pi ];
 
   home.file.".pi/agent/AGENTS.md".source =
-    config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/claude/CLAUDE.md";
+    config.lib.file.mkOutOfStoreSymlink "${config.my.dotfilesDir}/claude/CLAUDE.md";
 
   home.file.".pi/agent/package".source =
     "${pkgs.pi}/lib/node_modules/@earendil-works/pi-coding-agent";

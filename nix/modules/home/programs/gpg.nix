@@ -1,59 +1,31 @@
 {
+  config,
   pkgs,
   lib,
-  hostKind,
-  windowsHomedir,
   ...
 }:
 let
-  hk = import ../../../lib/host-kind.nix { inherit hostKind; };
+  inherit (import ../../../lib/settings/gpg.nix) cacheTtl sshKeygrips;
 
-  # hostKind は darwin / linux / wsl のみ (Windows companion の設定は
-  # windowsGpgAgentConf 以下で別途生成する)。
-  pinentryProgram =
-    {
-      darwin = null; # pinentry_mac は package で指定
-      linux = null; # pinentry-curses は package で指定
-      wsl = "/mnt/c/Program Files/Gpg4win/bin/pinentry.exe";
-    }
-    .${hostKind};
-
-  pinentryPackage =
+  # Windows companion の gpg 設定は modules/wsl/windows/gpg.nix で別途生成する。
+  pinentry =
     {
       darwin = {
+        program = null;
         package = pkgs.pinentry_mac;
       };
       linux = {
         # package 未指定だと PATH 頼みになり、passphrase 入力が静かに失敗する
+        program = null;
         package = pkgs.pinentry-curses;
       };
       wsl = {
         # Windows 側 pinentry.exe を extraConfig (pinentry-program) で指定する
+        program = "/mnt/c/Program Files/Gpg4win/bin/pinentry.exe";
         package = null;
       };
     }
-    .${hostKind};
-
-  cacheTtl = 43200;
-  sshKeygrips = [
-    "60DE257CE1919B3D6DCF4E6E239CD1FFE63B45FD"
-  ];
-
-  # Windows companion 用 gpg-agent.conf (Windows native path に固定)
-  windowsPinentryProgram = "C:/Program Files/Gpg4win/bin/pinentry.exe";
-
-  windowsGpgAgentConf = pkgs.writeText "windows-gpg-agent.conf" ''
-    default-cache-ttl ${toString cacheTtl}
-    max-cache-ttl ${toString cacheTtl}
-    enable-ssh-support
-    pinentry-program ${windowsPinentryProgram}
-  '';
-
-  windowsGpgConf = pkgs.writeText "windows-gpg.conf" ''
-    use-agent
-  '';
-
-  windowsSshcontrol = pkgs.writeText "windows-sshcontrol" (lib.concatStringsSep "\n" sshKeygrips);
+    .${config.my.hostKind};
 
   wslSetSshAuthSock = pkgs.writeShellScript "set-SSH_AUTH_SOCK-wsl" ''
     if [ -z "''${SSH_AUTH_SOCK:-}" ] || [ -z "''${SSH_CONNECTION:-}" ]; then
@@ -75,26 +47,18 @@ in
   services.gpg-agent = {
     enable = true;
     enableSshSupport = true;
-    pinentry = pinentryPackage;
-    extraConfig = lib.optionalString (pinentryProgram != null) ''
-      pinentry-program ${pinentryProgram}
+    pinentry = {
+      inherit (pinentry) package;
+    };
+    extraConfig = lib.optionalString (pinentry.program != null) ''
+      pinentry-program ${pinentry.program}
     '';
     defaultCacheTtl = cacheTtl;
     maxCacheTtl = cacheTtl;
     sshKeys = sshKeygrips;
   };
 
-  systemd.user.services.set-SSH_AUTH_SOCK.Service.ExecStart = lib.mkIf hk.isWsl (
+  systemd.user.services.set-SSH_AUTH_SOCK.Service.ExecStart = lib.mkIf config.my.isWsl (
     lib.mkForce wslSetSshAuthSock
   );
-
-  home.activation = lib.mkIf hk.hasWindowsCompanion {
-    deployWindowsGpg = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-      WIN_GNUPGHOME=${windowsHomedir}/AppData/Roaming/gnupg
-      run mkdir -p "$WIN_GNUPGHOME"
-      run install -m644 ${windowsGpgAgentConf} "$WIN_GNUPGHOME/gpg-agent.conf"
-      run install -m644 ${windowsGpgConf} "$WIN_GNUPGHOME/gpg.conf"
-      run install -m644 ${windowsSshcontrol} "$WIN_GNUPGHOME/sshcontrol"
-    '';
-  };
 }

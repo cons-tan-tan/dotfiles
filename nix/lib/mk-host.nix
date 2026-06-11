@@ -10,32 +10,17 @@
   system,
   hostFile,
 }:
-let
-  pkgs = (import ./mk-pkgs.nix { inherit inputs; }) system;
-in
 inputs.home-manager.lib.homeManagerConfiguration {
-  inherit pkgs;
-  extraSpecialArgs = {
-    inherit hostKind windowsUsername windowsHomedir;
-    dotfilesDir = "${homedir}/ghq/github.com/cons-tan-tan/dotfiles";
-    inherit (inputs)
-      codex-plugin-cc
-      ast-grep-skill
-      agent-browser-skill
-      agent-slack-skill
-      anthropic-skills
-      drawio-skill
-      hcom-src
-      humanizer-jp-skill
+  pkgs = (import ./mk-pkgs.nix { inherit inputs; }) system;
+  extraSpecialArgs = { inherit inputs; };
+  modules = import ./mk-home-modules.nix {
+    inherit
+      username
+      homedir
+      hostKind
+      hostFile
+      windowsUsername
+      windowsHomedir
       ;
   };
-  modules = [
-    hostFile
-    {
-      home = {
-        inherit username;
-        homeDirectory = homedir;
-      };
-    }
-  ];
 }

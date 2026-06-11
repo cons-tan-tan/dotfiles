@@ -1,4 +1,4 @@
-{ dotfilesDir, ... }:
+{ config, ... }:
 {
   nix.registry.dotfiles = {
     from = {
@@ -8,7 +8,7 @@
 
     to = {
       type = "path";
-      path = dotfilesDir;
+      path = config.my.dotfilesDir;
     };
   };
 }
