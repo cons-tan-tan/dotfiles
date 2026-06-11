@@ -4,26 +4,26 @@ let
   # 更新手順: version を書き換え、各 hash を以下で再計算する。
   #   nix store prefetch-file --json \
   #     https://github.com/aannoo/hcom/releases/download/v<ver>/<asset> | jq -r .hash
-  version = "0.7.19";
+  version = "0.7.21";
 
   # Linux uses the static musl build: no glibc dependency, so autoPatchelfHook
   # is unnecessary. macOS has no musl variant, so use the native darwin build.
   assetBySystem = {
     aarch64-darwin = {
       name = "hcom-aarch64-apple-darwin.tar.gz";
-      hash = "ce55e13fd843a4e75f8163a1216cbe71f67f003cd7f19edf2bed22abe5708a66";
+      hash = "sha256-KE1c/9BgbqPMyOw15/Cf04vfQmhkkcl18BLelKsJwvw=";
     };
     x86_64-darwin = {
       name = "hcom-x86_64-apple-darwin.tar.gz";
-      hash = "56d926a248f15b8c866ee02382ea77ab6746249ab8cda72de0e8929d95df291a";
+      hash = "sha256-rdBIxfS5ZPIPuVJ4acqfvINvezhlIO7uNMgduRN0ZA4=";
     };
     aarch64-linux = {
       name = "hcom-aarch64-unknown-linux-musl.tar.gz";
-      hash = "31dc202d55a6b38dac087be5f3bdc7c4451a4df2c9dae270520bba5791b2fdf6";
+      hash = "sha256-P/4qH/pP1RVZwIClEPbkmN1u1+DA04MN+EfkyYmyAs8=";
     };
     x86_64-linux = {
       name = "hcom-x86_64-unknown-linux-musl.tar.gz";
-      hash = "2afde145cea3e6dbdfecc5aad638eaa2aa910743e653aea0850c815206b87a32";
+      hash = "sha256-FzMqt/EwOJ+tUKjb+fIN7ExpEjn8tEdKfmSRJgFgHZk=";
     };
   };
 
@@ -37,7 +37,7 @@ in
 
     src = prev.fetchurl {
       url = "https://github.com/aannoo/hcom/releases/download/v${version}/${asset.name}";
-      sha256 = asset.hash;
+      inherit (asset) hash;
     };
 
     # Don't hardcode the inner target-named dir; locate the binary instead so a
