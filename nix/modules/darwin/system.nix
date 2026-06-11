@@ -26,47 +26,12 @@
   # Enable Touch ID for sudo
   security.pam.services.sudo_local.touchIdAuth = true;
 
-  # macOS system defaults (uncomment as needed)
-  # system.defaults = {
-  #   # Dock settings
-  #   dock = {
-  #     autohide = true;
-  #     tilesize = 45;
-  #     show-recents = false;
-  #     orientation = "bottom";
-  #   };
-  #
-  #   # Finder settings
-  #   finder = {
-  #     AppleShowAllExtensions = true;
-  #     AppleShowAllFiles = true;
-  #     ShowPathbar = true;
-  #     ShowStatusBar = true;
-  #     FXEnableExtensionChangeWarning = false;
-  #     FXPreferredViewStyle = "Nlsv";
-  #   };
-  #
-  #   # Global macOS settings
-  #   NSGlobalDomain = {
-  #     AppleInterfaceStyle = "Dark";
-  #     AppleShowAllExtensions = true;
-  #     KeyRepeat = 2;
-  #     InitialKeyRepeat = 25;
-  #     NSAutomaticCapitalizationEnabled = false;
-  #     NSAutomaticDashSubstitutionEnabled = false;
-  #     NSAutomaticPeriodSubstitutionEnabled = false;
-  #     NSAutomaticQuoteSubstitutionEnabled = false;
-  #     NSAutomaticSpellingCorrectionEnabled = false;
-  #   };
-  #
-  #   # Screenshot settings
-  #   screencapture = {
-  #     location = "~/Pictures/Screenshots";
-  #     type = "png";
-  #   };
-  # };
-
   # Homebrew configuration
+  # casks の置き場所の基準:
+  #   - 単純な .app バンドルとして動く GUI アプリ
+  #     → pkgs.brewCasks (nix/modules/darwin/packages.nix, brew-nix 管理)
+  #   - インストーラ / 特権ヘルパー / 入力メソッド等のシステム統合を伴うもの
+  #     → ここの homebrew.casks (実 Homebrew に任せる)
   homebrew = {
     enable = true;
     onActivation.cleanup = "uninstall";
