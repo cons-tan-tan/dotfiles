@@ -40,33 +40,30 @@ in
 
   # aws login が ~/.aws/config に直接書き込むため、mutable なファイルとして管理する。
   # baseline で上書きし、login_session のみ復元することで宣言外の設定を除外する。
+  # 候補ファイルを組み立ててから最後にアトミックに mv する — 途中で失敗しても
+  # 既存の login_session を失わないため。書き込み系は run 経由 (dry-run 安全)。
   home.activation.awsConfigMerge = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    config_file="$HOME/.aws/config"
-    crudini="${pkgs.crudini}/bin/crudini"
+    (
+      set -e
+      config_file="$HOME/.aws/config"
+      crudini="${pkgs.crudini}/bin/crudini"
 
-    # 各プロファイルの login_session を退避
-    ${lib.concatMapStringsSep "\n    " (
-      name:
-      let
-        varName = "login_session_${lib.replaceStrings [ "profile " "-" ] [ "" "_" ] name}";
-      in
-      ''${varName}=$($crudini --get "$config_file" "${name}" login_session 2>/dev/null || true)''
-    ) (lib.attrNames profiles)}
+      candidate=$(${pkgs.coreutils}/bin/mktemp)
+      trap '${pkgs.coreutils}/bin/rm -f "$candidate"' EXIT
+      ${pkgs.coreutils}/bin/cp ${baselineFile} "$candidate"
+      ${pkgs.coreutils}/bin/chmod 600 "$candidate"
 
-    # baseline で上書き
-    cp ${baselineFile} "$config_file"
-    chmod 600 "$config_file"
+      # 既存 config の login_session を候補へ移植
+      if [ -f "$config_file" ]; then
+        ${lib.concatMapStringsSep "\n        " (name: ''
+          session=$($crudini --get "$config_file" ${lib.escapeShellArg name} login_session 2>/dev/null || true)
+          if [ -n "$session" ]; then
+            $crudini --set "$candidate" ${lib.escapeShellArg name} login_session "$session"
+          fi'') (lib.attrNames profiles)}
+      fi
 
-    # login_session を復元
-    ${lib.concatMapStringsSep "\n    " (
-      name:
-      let
-        varName = "login_session_${lib.replaceStrings [ "profile " "-" ] [ "" "_" ] name}";
-      in
-      ''
-        if [ -n "''${${varName}}" ]; then
-          $crudini --set "$config_file" "${name}" login_session "''${${varName}}"
-        fi''
-    ) (lib.attrNames profiles)}
+      run mkdir -p "$HOME/.aws"
+      run ${pkgs.coreutils}/bin/mv -f "$candidate" "$config_file"
+    )
   '';
 }
