@@ -10,9 +10,9 @@
   home = {
     stateVersion = "24.11";
 
-    # nixpkgs と home-manager のリリース系列不一致の警告を抑止する
-    # (follows 一本化後に有効へ戻す予定: plan.md Phase 3)
-    enableNixpkgsReleaseCheck = false;
+    # home-manager / nixpkgs とも unstable 系列を follows で一本化しているので
+    # リリース不一致チェックは有効のままにできる (デフォルト true を明示)。
+    enableNixpkgsReleaseCheck = true;
   };
 
   programs.home-manager.enable = true;
