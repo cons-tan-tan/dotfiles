@@ -2,6 +2,7 @@
   pkgs,
   lib,
   hostKind,
+  windowsUsername,
   windowsHomedir,
   ...
 }:
@@ -43,14 +44,8 @@ let
     ## Ruff
     ".ruff.toml"
 
-    # Mise
-    "mise.local.toml"
-
     # Docker
     "docker-compose.override.yml"
-
-    # Lefthook
-    "*lefthook-local.*"
 
     # Claude Code
     "CLAUDE.local.md"
@@ -101,7 +96,11 @@ let
 
       commit = {
         cleanup = "strip";
-        template = if isWindows then "C:/Users/zhouc/.gitconfig.d/commit-template" else "${commitTemplate}";
+        template =
+          if isWindows then
+            "C:/Users/${windowsUsername}/.gitconfig.d/commit-template"
+          else
+            "${commitTemplate}";
       };
 
       gpg = lib.optionalAttrs isWindows {

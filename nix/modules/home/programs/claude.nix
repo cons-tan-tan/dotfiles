@@ -4,6 +4,7 @@
   lib,
   hostKind,
   dotfilesDir,
+  windowsUsername,
   windowsHomedir,
   codex-plugin-cc,
   ...
@@ -33,7 +34,7 @@ let
 
       hooksPath =
         if isWindows then
-          "C:/Users/zhouc/.claude/hooks/validate-gh-api.sh"
+          "C:/Users/${windowsUsername}/.claude/hooks/validate-gh-api.sh"
         else
           "~/.claude/hooks/validate-gh-api.sh";
     in
