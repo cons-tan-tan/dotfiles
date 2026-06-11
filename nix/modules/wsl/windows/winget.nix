@@ -129,11 +129,6 @@ let
       description = "Windows Terminal";
     }
     {
-      id = "vscode";
-      packageId = "Microsoft.VisualStudioCode";
-      description = "Visual Studio Code";
-    }
-    {
       id = "pwsh";
       packageId = "Microsoft.PowerShell";
       description = "PowerShell 7";
