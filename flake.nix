@@ -87,7 +87,9 @@
       flake = false;
     };
 
-    # hcom skill source (the binary itself is packaged in nix/overlays/hcom.nix)
+    # hcom skill source (the binary itself is packaged in nix/overlays/hcom.nix).
+    # NOTE: nix flake update でこの input を上げたら、nix/overlays/hcom.nix の
+    # version / hash も同じタグへ手動で同期すること。
     hcom-src = {
       url = "github:aannoo/hcom";
       flake = false;
@@ -117,13 +119,9 @@
   outputs =
     inputs@{
       self,
-      anthropic-skills,
       nixpkgs,
       home-manager,
-      pyproject-build-systems,
-      pyproject-nix,
       treefmt-nix,
-      uv2nix,
       ...
     }:
     let
@@ -224,87 +222,46 @@
         };
       mkTreefmtWrapper = pkgs: (mkTreefmtEval pkgs).config.build.wrapper;
 
-      # Apps for darwin host
-      mkDarwinApps =
-        system:
-        let
-          pkgs = mkPkgs system;
-          treefmtWrapper = mkTreefmtWrapper pkgs;
-        in
-        {
-          build = {
-            type = "app";
-            meta.description = "Build the nix-darwin configuration without activating it";
-            program = toString (
-              pkgs.writeShellScript "darwin-build" ''
-                set -e
-                echo "Building darwin configuration..."
-                nix build .#darwinConfigurations.${darwinHostname}.system
-                echo "Build successful! Run 'nix run .#switch' to apply."
-              ''
-            );
-          };
-          switch = {
-            type = "app";
-            meta.description = "Build and activate the nix-darwin configuration";
-            program = toString (
-              pkgs.writeShellScript "darwin-switch" ''
-                set -e
-                echo "Building and switching to darwin configuration..."
-                sudo nix run nix-darwin -- switch --flake .#${darwinHostname}
-              ''
-            );
-          };
-          update = {
-            type = "app";
-            meta.description = "Update flake.lock to the latest input revisions";
-            program = toString (
-              pkgs.writeShellScript "flake-update" ''
-                set -e
-                echo "Updating flake.lock..."
-                nix flake update
-                echo "Done! Run 'nix run .#switch' to apply changes."
-              ''
-            );
-          };
-          fmt = {
-            type = "app";
-            meta.description = "Format the repository with treefmt";
-            program = toString (
-              pkgs.writeShellScript "treefmt-wrapper" ''
-                exec ${treefmtWrapper}/bin/treefmt "$@"
-              ''
-            );
-          };
-          pptx = import ./nix/apps/pptx {
-            inherit
-              anthropic-skills
-              pkgs
-              pyproject-build-systems
-              pyproject-nix
-              uv2nix
-              ;
-          };
-          markdownlint = import ./nix/apps/markdownlint {
-            inherit pkgs;
-          };
-          textlint = import ./nix/apps/textlint {
-            inherit pkgs;
-          };
-        };
+      # 共通 apps (update / fmt / pptx / markdownlint / textlint)
+      mkCommonApps = import ./nix/lib/mk-apps.nix { inherit inputs; };
 
-      # Apps for Linux/WSL hosts: switch auto-detects WSL vs native Linux at runtime
-      mkLinuxApps =
-        system:
+      # darwin ホスト固有 apps
+      mkDarwinHostApps = pkgs: {
+        build = {
+          type = "app";
+          meta.description = "Build the nix-darwin configuration without activating it";
+          program = toString (
+            pkgs.writeShellScript "darwin-build" ''
+              set -e
+              echo "Building darwin configuration..."
+              nix build .#darwinConfigurations.${darwinHostname}.system
+              echo "Build successful! Run 'nix run .#switch' to apply."
+            ''
+          );
+        };
+        switch = {
+          type = "app";
+          meta.description = "Build and activate the nix-darwin configuration";
+          program = toString (
+            pkgs.writeShellScript "darwin-switch" ''
+              set -e
+              echo "Building and switching to darwin configuration..."
+              sudo nix run nix-darwin -- switch --flake .#${darwinHostname}
+            ''
+          );
+        };
+      };
+
+      # Linux/WSL ホスト固有 apps: switch は実行時に WSL か native Linux かを判定
+      mkLinuxHostApps =
+        system: pkgs:
         let
-          pkgs = mkPkgs system;
           arch =
             {
               "x86_64-linux" = "x86_64";
               "aarch64-linux" = "aarch64";
             }
             .${system};
-          treefmtWrapper = mkTreefmtWrapper pkgs;
           hmBin = "${home-manager.packages.${system}.default}/bin/home-manager";
         in
         {
@@ -340,42 +297,6 @@
                 ${hmBin} switch --flake ".#$target"
               ''
             );
-          };
-          update = {
-            type = "app";
-            meta.description = "Update flake.lock to the latest input revisions";
-            program = toString (
-              pkgs.writeShellScript "flake-update" ''
-                set -e
-                echo "Updating flake.lock..."
-                nix flake update
-                echo "Done! Run 'nix run .#switch' to apply changes."
-              ''
-            );
-          };
-          fmt = {
-            type = "app";
-            meta.description = "Format the repository with treefmt";
-            program = toString (
-              pkgs.writeShellScript "treefmt-wrapper" ''
-                exec ${treefmtWrapper}/bin/treefmt "$@"
-              ''
-            );
-          };
-          pptx = import ./nix/apps/pptx {
-            inherit
-              anthropic-skills
-              pkgs
-              pyproject-build-systems
-              pyproject-nix
-              uv2nix
-              ;
-          };
-          markdownlint = import ./nix/apps/markdownlint {
-            inherit pkgs;
-          };
-          textlint = import ./nix/apps/textlint {
-            inherit pkgs;
           };
           winget-apply = {
             type = "app";
@@ -427,12 +348,18 @@
     {
       inherit darwinConfigurations homeConfigurations;
 
-      # Apps for common tasks
-      apps = {
-        ${darwinSystem} = mkDarwinApps darwinSystem;
-        "x86_64-linux" = mkLinuxApps "x86_64-linux";
-        "aarch64-linux" = mkLinuxApps "aarch64-linux";
-      };
+      # Apps for common tasks (全 system で同一集合を保証するため genAttrs)
+      apps = lib.genAttrs systems (
+        system:
+        let
+          pkgs = mkPkgs system;
+        in
+        mkCommonApps {
+          inherit pkgs;
+          treefmtWrapper = mkTreefmtWrapper pkgs;
+        }
+        // (if system == darwinSystem then mkDarwinHostApps pkgs else mkLinuxHostApps system pkgs)
+      );
 
       # Formatter for all systems
       formatter = lib.genAttrs systems (

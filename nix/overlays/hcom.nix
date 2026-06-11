@@ -1,5 +1,9 @@
 final: prev:
 let
+  # NOTE: flake input hcom-src (skill ドキュメント) と同じタグに揃えること。
+  # 更新手順: version を書き換え、各 hash を以下で再計算する。
+  #   nix store prefetch-file --json \
+  #     https://github.com/aannoo/hcom/releases/download/v<ver>/<asset> | jq -r .hash
   version = "0.7.19";
 
   # Linux uses the static musl build: no glibc dependency, so autoPatchelfHook
