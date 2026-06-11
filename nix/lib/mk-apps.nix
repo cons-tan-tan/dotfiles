@@ -64,11 +64,11 @@
 
   # sops secrets の明示適用 (案 B: switch と完全分離し、GPG 鍵未導入でも
   # 環境構築が secrets に依存しないことを保証する)。secrets/README.md 参照。
-  secrets-apply = {
+  apply-secrets = {
     type = "app";
     meta.description = "Decrypt sops-managed secrets into place (skips gracefully without the GPG key)";
     program = toString (
-      pkgs.writeShellScript "secrets-apply" ''
+      pkgs.writeShellScript "apply-secrets" ''
         set -euo pipefail
         export PATH=${pkgs.lib.makeBinPath [ pkgs.gnupg ]}:$PATH
 
@@ -76,7 +76,7 @@
         dst="$HOME/.ssh/config.d/50-private.conf"
 
         if [ ! -f "$src" ]; then
-          echo "secrets-apply: secrets/ssh-private.conf is not in the repo yet; nothing to apply" >&2
+          echo "apply-secrets: secrets/ssh-private.conf is not in the repo yet; nothing to apply" >&2
           exit 0
         fi
 
@@ -86,13 +86,13 @@
         tmp=$(mktemp "$dst.XXXXXX")
         trap 'rm -f "$tmp"' EXIT
         if ! ${pkgs.sops}/bin/sops --decrypt "$src" > "$tmp"; then
-          echo "secrets-apply: decryption failed (GPG key not imported?); skipping" >&2
+          echo "apply-secrets: decryption failed (GPG key not imported?); skipping" >&2
           exit 0
         fi
         chmod 600 "$tmp"
         mv "$tmp" "$dst"
         trap - EXIT
-        echo "secrets-apply: wrote $dst"
+        echo "apply-secrets: wrote $dst"
       ''
     );
   };

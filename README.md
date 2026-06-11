@@ -14,7 +14,7 @@ nix run .#switch
 
 # (任意・後からで良い) GPG 秘密鍵を導入して secrets を有効化
 gpg --import <key>
-nix run .#secrets-apply
+nix run .#apply-secrets
 ```
 
 ## コマンド
@@ -26,7 +26,7 @@ nix run .#secrets-apply
 | `nix run .#update` | flake.lock を更新 |
 | `nix run .#update-pins` | バイナリ pin(`nix/pins/*.json`)を最新リリースへ同期 |
 | `nix run .#fmt` | treefmt で整形 |
-| `nix run .#secrets-apply` | sops secrets の復号・配置(鍵が無ければスキップ) |
+| `nix run .#apply-secrets` | sops secrets の復号・配置(鍵が無ければスキップ) |
 | `nix run .#winget-apply` | Windows 側パッケージの適用(WSL のみ) |
 
 ## 構成
@@ -45,7 +45,7 @@ claude/            # Claude Code 設定
 secrets/           # sops + GPG 暗号化 secrets (運用は secrets/README.md)
 ```
 
-ssh は `~/.ssh/config`(Include 1 行)と `~/.ssh/config.d/` の断片を Nix が管理し、秘匿ホストは sops で暗号化して `secrets-apply` で復号する。
+ssh は `~/.ssh/config`(Include 1 行)と `~/.ssh/config.d/` の断片を Nix が管理し、秘匿ホストは sops で暗号化して `apply-secrets` で復号する。
 デバイス固有の設定は `~/.ssh/config.d/90-local.conf` のように手で置く。
 
 ## ライセンス

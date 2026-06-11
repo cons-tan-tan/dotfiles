@@ -14,10 +14,10 @@ sops + GPG で暗号化した secrets を置くディレクトリ。平文はコ
 sops edit secrets/ssh-private.conf
 
 # 適用(復号して ~/.ssh/config.d/50-private.conf に配置)
-nix run .#secrets-apply
+nix run .#apply-secrets
 ```
 
-GPG 秘密鍵が未導入のデバイスでは `secrets-apply` は警告だけ出してスキップする
+GPG 秘密鍵が未導入のデバイスでは `apply-secrets` は警告だけ出してスキップする
 (switch は secrets に依存しないので、復号できなくても環境構築は完結する)。
 
 ## ファイル

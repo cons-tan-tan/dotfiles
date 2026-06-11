@@ -3,14 +3,14 @@
 #
 #   10-common.conf  - 全環境共通 (このモジュールが配置)
 #   50-private.conf - 秘匿ホスト (sops 暗号化の secrets/ssh-private.conf を
-#                     `nix run .#secrets-apply` で復号して配置)
+#                     `nix run .#apply-secrets` で復号して配置)
 #   90-local.conf 等 - デバイス固有の一時設定が必要なら手で置く (Nix 管理外)
 #
 # OpenSSH の Include はマッチしない glob を黙って無視するため、秘匿断片が
 # 未復号でも ssh は壊れない (GPG 鍵導入前の新デバイスでも switch だけで成立)。
 #
 # 秘匿断片を home.file にしないのは、Nix store が全ユーザー読み取り可能で
-# 秘匿情報を置けないため。runtime 復号 (secrets-apply) が正しい置き場になる。
+# 秘匿情報を置けないため。runtime 復号 (apply-secrets) が正しい置き場になる。
 #
 # 既存の手書き ~/.ssh/config があるデバイスでは HM が黙って上書きせず
 # .hm-backup に退避してログに明示する (darwin: backupFileExtension /
