@@ -1,34 +1,14 @@
 final: prev:
 let
-  # NOTE: flake input hcom-src (skill ドキュメント) と同じタグに揃えること。
-  # 更新手順: version を書き換え、各 hash を以下で再計算する。
-  #   nix store prefetch-file --json \
-  #     https://github.com/aannoo/hcom/releases/download/v<ver>/<asset> | jq -r .hash
-  version = "0.7.21";
-
+  # version / hash は nix/pins/hcom.json に固定し、`nix run .#update-pins` で
+  # 自動更新する (flake input hcom-src も同時に更新される)。
   # Linux uses the static musl build: no glibc dependency, so autoPatchelfHook
   # is unnecessary. macOS has no musl variant, so use the native darwin build.
-  assetBySystem = {
-    aarch64-darwin = {
-      name = "hcom-aarch64-apple-darwin.tar.gz";
-      hash = "sha256-KE1c/9BgbqPMyOw15/Cf04vfQmhkkcl18BLelKsJwvw=";
-    };
-    x86_64-darwin = {
-      name = "hcom-x86_64-apple-darwin.tar.gz";
-      hash = "sha256-rdBIxfS5ZPIPuVJ4acqfvINvezhlIO7uNMgduRN0ZA4=";
-    };
-    aarch64-linux = {
-      name = "hcom-aarch64-unknown-linux-musl.tar.gz";
-      hash = "sha256-P/4qH/pP1RVZwIClEPbkmN1u1+DA04MN+EfkyYmyAs8=";
-    };
-    x86_64-linux = {
-      name = "hcom-x86_64-unknown-linux-musl.tar.gz";
-      hash = "sha256-FzMqt/EwOJ+tUKjb+fIN7ExpEjn8tEdKfmSRJgFgHZk=";
-    };
-  };
+  pin = builtins.fromJSON (builtins.readFile ../pins/hcom.json);
+  inherit (pin) version;
 
   system = prev.stdenv.hostPlatform.system;
-  asset = assetBySystem.${system} or (throw "hcom: unsupported system '${system}'");
+  asset = pin.assets.${system} or (throw "hcom: unsupported system '${system}'");
 in
 {
   hcom = prev.stdenvNoCC.mkDerivation {
@@ -59,7 +39,7 @@ in
       description = "Let AI agents message, watch, and spawn each other across terminals";
       homepage = "https://github.com/aannoo/hcom";
       license = licenses.mit;
-      platforms = builtins.attrNames assetBySystem;
+      platforms = builtins.attrNames pin.assets;
       mainProgram = "hcom";
       sourceProvenance = with sourceTypes; [ binaryNativeCode ];
     };

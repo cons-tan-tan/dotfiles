@@ -95,8 +95,8 @@
     };
 
     # hcom skill source (the binary itself is packaged in nix/overlays/hcom.nix).
-    # NOTE: nix flake update でこの input を上げたら、nix/overlays/hcom.nix の
-    # version / hash も同じタグへ手動で同期すること。
+    # バイナリ側の pin (nix/pins/hcom.json) とは `nix run .#update-pins` が
+    # この input ごと同期する。
     hcom-src = {
       url = "github:aannoo/hcom";
       flake = false;
@@ -386,7 +386,13 @@
           pkgs = mkPkgs system;
         in
         {
-          inherit (pkgs) hcom hcom-claude-hooks hcom-codex-hooks;
+          inherit (pkgs)
+            hcom
+            hcom-claude-hooks
+            hcom-codex-hooks
+            agent-slack
+            git-wt
+            ;
         }
       );
 

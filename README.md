@@ -101,16 +101,20 @@ secrets/               # sops + GPG 暗号化 secrets
 secrets の運用は [secrets/README.md](secrets/README.md) を参照。鍵を伴う認証
 (commit 署名・ssh)は GPG 鍵に寄せる方針で、sops の recipient も同じ鍵。
 
-## 保守メモ(更新時に手で合わせる値)
+## 保守メモ
+
+バイナリ系の pin(version / hash)は `nix/pins/*.json` に集約してあり、
+**`nix run .#update-pins` で upstream の最新リリースへ自動同期**できる
+(hcom / agent-slack / git-wt / codex config schema。hcom は flake input
+`hcom-src` も同時に更新される)。差分を確認して `nix run .#build` を通して
+からコミットする。
+
+手で合わせる値は以下のみ:
 
 | 値 | 場所 |
 | --- | --- |
-| hcom バイナリの version / hash | `nix/overlays/hcom.nix`(flake input `hcom-src` と同タグに同期) |
 | `CLAUDE_CODE_SUBAGENT_MODEL` | `nix/lib/settings/claude.nix`(Sonnet 更新時) |
 | Pi の `defaultModel` | `nix/modules/home/programs/pi.nix` |
-| codex config schema の hash | `nix/modules/home/programs/codex/default.nix` |
-| agent-slack の version / hash | `nix/overlays/agent-slack.nix` |
-| git-wt の version / hash | `nix/overlays/git-wt.nix` |
 | GPG 鍵(署名鍵 ID / sops recipient) | `nix/lib/settings/git.nix` / `.sops.yaml` |
 
 ## ライセンス

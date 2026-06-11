@@ -1,16 +1,23 @@
-final: prev: {
+final: prev:
+let
+  # version / hash は nix/pins/git-wt.json に固定し、`nix run .#update-pins` で
+  # 自動更新する。vendorHash = "" は「未計算」の印で、lib.fakeHash に解決される
+  # (update-pins がビルドエラーから実 hash を取り出して埋める)。
+  pin = builtins.fromJSON (builtins.readFile ../pins/git-wt.json);
+in
+{
   git-wt = prev.buildGoModule rec {
     pname = "git-wt";
-    version = "0.15.0";
+    inherit (pin) version;
 
     src = prev.fetchFromGitHub {
       owner = "k1LoW";
       repo = "git-wt";
       rev = "v${version}";
-      hash = "sha256-A8vkwa8+RfupP9UaUuSVjkt5HtWvqR5VmSsVg2KpeMo=";
+      hash = pin.srcHash;
     };
 
-    vendorHash = "sha256-K5geAvG+mvnKeixOyZt0C1T5ojSBFmx2K/Msol0HsSg=";
+    vendorHash = if pin.vendorHash == "" then prev.lib.fakeHash else pin.vendorHash;
 
     nativeBuildInputs = [ prev.makeWrapper ];
     nativeCheckInputs = [ prev.git ];

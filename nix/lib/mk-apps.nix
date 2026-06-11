@@ -29,6 +29,25 @@
     );
   };
 
+  # nix/pins/*.json (hcom / agent-slack / git-wt / codex schema) を upstream の
+  # 最新リリースへ同期する。git-wt の vendorHash 計算で `nix build .#git-wt` を
+  # 使うため、packages 出力 (flake.nix) に git-wt が必要。
+  update-pins = {
+    type = "app";
+    meta.description = "Sync nix/pins/*.json to the latest upstream releases";
+    program = pkgs.lib.getExe (
+      pkgs.writeShellApplication {
+        name = "update-pins";
+        runtimeInputs = [
+          pkgs.curl
+          pkgs.jq
+          pkgs.gitMinimal
+        ];
+        text = builtins.readFile ../apps/update-pins.sh;
+      }
+    );
+  };
+
   pptx = import ../apps/pptx {
     inherit pkgs;
     inherit (inputs)

@@ -34,12 +34,13 @@ let
       '';
 
   # オフライン・再現的に検証するため schema を store に固定 (activation 時にネット
-  # アクセスしない)。更新手順:
-  #   nix store prefetch-file --json \
-  #     https://developers.openai.com/codex/config-schema.json | jq -r .hash
+  # アクセスしない)。hash は nix/pins/codex-schema.json に固定し、
+  # `nix run .#update-pins` で自動更新する。
   codexSchema = pkgs.fetchurl {
-    url = "https://developers.openai.com/codex/config-schema.json";
-    hash = "sha256-0J783Imhc6Df/YsYHg9PdxU2bGqhHveJ946oSDEre9k=";
+    inherit (builtins.fromJSON (builtins.readFile ../../../../pins/codex-schema.json))
+      url
+      hash
+      ;
   };
 
   pythonWithTomlkit = pkgs.python3.withPackages (p: [ p.tomlkit ]);
