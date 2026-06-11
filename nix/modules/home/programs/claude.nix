@@ -14,6 +14,20 @@ let
   # overlay (hcom-claude-hooks) が hcom 実行で生成したもの。手で写さず版に追従させる。
   hcomGenerated = builtins.fromJSON (builtins.readFile "${pkgs.hcom-claude-hooks}");
 
+  claudeCodePackage = pkgs.claude-code.overrideAttrs (old: {
+    nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ pkgs.makeWrapper ];
+    postFixup =
+      let
+        oldPostFixup = old.postFixup or "";
+      in
+      oldPostFixup
+      + ''
+        wrapProgram $out/bin/.claude-wrapped \
+          --prefix PATH : ${pkgs.nodejs}/bin \
+          --add-flags "--effort xhigh"
+      '';
+  });
+
   mkSettings =
     { hostKind }:
     let
@@ -31,6 +45,7 @@ let
       autoMemoryEnabled = false;
       language = "japanese";
       model = "opus[1m]";
+      effortLevel = "xhigh";
       # Fable 5 の安全分類でフラグされた時に Opus へ自動継続せず、確認で止める。
       switchModelsOnFlag = false;
       env = {
@@ -40,13 +55,9 @@ let
         # 1M context は維持しつつ、Codex と近い 270k tokens 付近で自動圧縮する。
         CLAUDE_CODE_AUTO_COMPACT_WINDOW = "300000";
         CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = "90";
-        # コーディング用途は xhigh 推奨 (Opus 4.8 公式ガイド)。
-        # settings.json の effortLevel では xhigh 固定にできない (実測で確認済み):
-        #   - Opus 4.8 初回起動時にモデル既定値 (high) へリセットされる仕様
-        #   - さらに毎セッション再発火するバグ anthropics/claude-code#62783 (未解決)
-        # env 変数はハードピン (最優先・上書き不可) なので両方を回避できる。
-        # 修正されたら settings.json 側へ戻すか要検討。
-        CLAUDE_CODE_EFFORT_LEVEL = "xhigh";
+        # CLAUDE_CODE_EFFORT_LEVEL はハードピンされ、起動後のモデル/effort
+        # 切り替えより優先されるため使わない。起動時の xhigh 既定値は
+        # claude-code wrapper の --effort xhigh で指定する。
         # macOS のトラックパッドだと速すぎるのでデフォルトの 3 のまま
         CLAUDE_CODE_SCROLL_SPEED = if isDarwin then "3" else "6";
         # サブエージェントを最新 Sonnet に固定する。
@@ -129,6 +140,7 @@ in
 {
   programs.claude-code = {
     enable = true;
+    package = claudeCodePackage;
     plugins = [
       "${codex-plugin-cc}/plugins/codex"
     ];
