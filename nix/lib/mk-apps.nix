@@ -42,4 +42,39 @@
   markdownlint = import ../apps/markdownlint { inherit pkgs; };
 
   textlint = import ../apps/textlint { inherit pkgs; };
+
+  # sops secrets の明示適用 (案 B: switch と完全分離し、GPG 鍵未導入でも
+  # 環境構築が secrets に依存しないことを保証する)。secrets/README.md 参照。
+  secrets-apply = {
+    type = "app";
+    meta.description = "Decrypt sops-managed secrets into place (skips gracefully without the GPG key)";
+    program = toString (
+      pkgs.writeShellScript "secrets-apply" ''
+        set -euo pipefail
+        export PATH=${pkgs.lib.makeBinPath [ pkgs.gnupg ]}:$PATH
+
+        src=${inputs.self}/secrets/ssh-private.conf
+        dst="$HOME/.ssh/config.d/50-private.conf"
+
+        if [ ! -f "$src" ]; then
+          echo "secrets-apply: secrets/ssh-private.conf is not in the repo yet; nothing to apply" >&2
+          exit 0
+        fi
+
+        mkdir -p "$HOME/.ssh/config.d"
+        chmod 700 "$HOME/.ssh/config.d"
+
+        tmp=$(mktemp "$dst.XXXXXX")
+        trap 'rm -f "$tmp"' EXIT
+        if ! ${pkgs.sops}/bin/sops --decrypt "$src" > "$tmp"; then
+          echo "secrets-apply: decryption failed (GPG key not imported?); skipping" >&2
+          exit 0
+        fi
+        chmod 600 "$tmp"
+        mv "$tmp" "$dst"
+        trap - EXIT
+        echo "secrets-apply: wrote $dst"
+      ''
+    );
+  };
 }

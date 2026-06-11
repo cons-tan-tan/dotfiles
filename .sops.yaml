@@ -1,0 +1,9 @@
+# sops 設定: secrets/ 配下は GPG (PGP) で暗号化してコミットする。
+# recipient は commit 署名にも使っている GPG 鍵 (認証系を GPG に寄せる方針)。
+keys:
+  - &constantan 7B3F36D6C622479E2EAC2E6C6250E02A31E09AFE
+creation_rules:
+  - path_regex: ^secrets/
+    key_groups:
+      - pgp:
+          - *constantan
