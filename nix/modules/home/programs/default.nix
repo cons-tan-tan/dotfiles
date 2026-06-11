@@ -12,6 +12,7 @@
     ./gpg.nix
     ./opencode.nix
     ./pi.nix
+    ./ssh.nix
     ./starship.nix
   ];
 }
