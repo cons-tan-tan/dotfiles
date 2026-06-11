@@ -108,6 +108,11 @@
       flake = false;
     };
 
+    improve-skill = {
+      url = "github:shadcn/improve";
+      flake = false;
+    };
+
     # Homebrew casks managed via Nix (macOS only)
     brew-nix = {
       url = "github:BatteredBunny/brew-nix";

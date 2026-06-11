@@ -10,6 +10,7 @@ let
     drawio-skill
     hcom-src
     humanizer-jp-skill
+    improve-skill
     ;
 
   inherit (import ./frontmatter.nix { inherit lib; })
@@ -116,6 +117,10 @@ let
               ]
               original
           );
+    };
+
+    improve = {
+      root = "${improve-skill}/skills/improve";
     };
   };
 
