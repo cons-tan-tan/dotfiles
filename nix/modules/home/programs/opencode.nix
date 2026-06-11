@@ -7,14 +7,17 @@
   programs.opencode = {
     enable = true;
     settings = {
+      # instructions は opencode 側で glob 展開される (claude.nix が配置する
+      # ~/.claude 配下の symlink に依存)。
       instructions = [
         "${config.home.homeDirectory}/.claude/output-styles/faust.md"
         "${config.home.homeDirectory}/.claude/rules/*.md"
       ];
       command = {
-        git-commit-crafter = {
-          description = "Call git-commit-crafter skill";
-          template = "Call git-commit-crafter skill and follow it.";
+        # agents/skills/commit (~/.agents/skills/commit に配置) を呼ぶ
+        commit = {
+          description = "Call commit skill";
+          template = "Call commit skill and follow it.";
         };
       };
     };
