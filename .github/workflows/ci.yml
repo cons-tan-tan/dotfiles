@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/determinate-nix-action@v3
+      # eval 時 IFD を排除してあるため、darwin を含む全システムの構成評価が
+      # 単一の Linux ランナーで完結する (--no-build なのでビルドはしない)。
+      - run: nix flake check --no-build --all-systems --print-build-logs
+
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/determinate-nix-action@v3
+      - run: nix run .#fmt -- --ci
