@@ -1,17 +1,11 @@
 { pkgs }:
 
 let
-  markdownlintNodePackage = pkgs.lib.importJSON ./node/package.json;
-
-  markdownlintNodeModules = pkgs.importNpmLock.buildNodeModules {
-    package = markdownlintNodePackage;
-    packageLock = pkgs.lib.importJSON ./node/package-lock.json;
-    inherit (pkgs) nodejs;
-    derivationArgs = {
-      pname = "markdownlint-node-modules";
-      version = markdownlintNodePackage.version;
-    };
+  nodeLint = import ../mk-node-lint-app.nix { inherit pkgs; } {
+    name = "markdownlint";
+    nodeDir = ./node;
   };
+
   techDocConfig = ./configs/tech-doc.markdownlint.yaml;
 
   runner = pkgs.writeShellScript "markdownlint-run" ''
@@ -35,9 +29,7 @@ let
         ;;
     esac
 
-    export NODE_PATH="${markdownlintNodeModules}/node_modules''${NODE_PATH:+:$NODE_PATH}"
-    exec ${pkgs.nodejs}/bin/node \
-      "${markdownlintNodeModules}/node_modules/markdownlint-cli/markdownlint.js" \
+    ${nodeLint.mkExec "markdownlint-cli/markdownlint.js"} \
       --config "${techDocConfig}" \
       "$@"
   '';

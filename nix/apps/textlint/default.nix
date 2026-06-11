@@ -1,17 +1,11 @@
 { pkgs }:
 
 let
-  textlintNodePackage = pkgs.lib.importJSON ./node/package.json;
-
-  textlintNodeModules = pkgs.importNpmLock.buildNodeModules {
-    package = textlintNodePackage;
-    packageLock = pkgs.lib.importJSON ./node/package-lock.json;
-    inherit (pkgs) nodejs;
-    derivationArgs = {
-      pname = "textlint-node-modules";
-      version = textlintNodePackage.version;
-    };
+  nodeLint = import ../mk-node-lint-app.nix { inherit pkgs; } {
+    name = "textlint";
+    nodeDir = ./node;
   };
+
   techJpConfig = ./configs/tech-jp.textlintrc.yaml;
 
   runner = pkgs.writeShellScript "textlint-run" ''
@@ -54,9 +48,7 @@ let
       exit 64
     fi
 
-    export NODE_PATH="${textlintNodeModules}/node_modules''${NODE_PATH:+:$NODE_PATH}"
-    exec ${pkgs.nodejs}/bin/node \
-      "${textlintNodeModules}/node_modules/textlint/bin/textlint.js" \
+    ${nodeLint.mkExec "textlint/bin/textlint.js"} \
       --config "$config" \
       "$@"
   '';
