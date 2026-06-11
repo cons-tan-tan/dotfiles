@@ -21,7 +21,11 @@ let
   ) windowsExcludedRules;
 in
 {
-  home.activation.deployWindowsClaudeStatic = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+  # linkGeneration の後に実行する: ~/.claude/skills と ~/.agents/skills は
+  # home.file (agent-skills モジュール) が同じ activation 内で張る symlink
+  # なので、writeBoundary 基準だと初回 switch でまだ存在せず skills が
+  # Windows 側へ配られない。
+  home.activation.deployWindowsClaudeStatic = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
     WIN_CLAUDE=${windowsHomedir}/.claude
     WIN_AGENTS=${windowsHomedir}/.agents
 
@@ -41,16 +45,12 @@ in
         "$WIN_CLAUDE/$dir/"
     done
 
-    if [ -d "$HOME/.claude/skills" ]; then
-      run ${pkgs.rsync}/bin/rsync -aL --delete \
-        "$HOME/.claude/skills/" \
-        "$WIN_CLAUDE/skills/"
-    fi
+    run ${pkgs.rsync}/bin/rsync -aL --delete \
+      "$HOME/.claude/skills/" \
+      "$WIN_CLAUDE/skills/"
 
-    if [ -d "$HOME/.agents/skills" ]; then
-      run ${pkgs.rsync}/bin/rsync -aL --delete \
-        "$HOME/.agents/skills/" \
-        "$WIN_AGENTS/skills/"
-    fi
+    run ${pkgs.rsync}/bin/rsync -aL --delete \
+      "$HOME/.agents/skills/" \
+      "$WIN_AGENTS/skills/"
   '';
 }
