@@ -34,10 +34,12 @@ let
       '';
 
   # オフライン・再現的に検証するため schema を store に固定 (activation 時にネット
-  # アクセスしない)。更新は nix-prefetch-url で hash を取り直す。
+  # アクセスしない)。更新手順:
+  #   nix store prefetch-file --json \
+  #     https://developers.openai.com/codex/config-schema.json | jq -r .hash
   codexSchema = pkgs.fetchurl {
     url = "https://developers.openai.com/codex/config-schema.json";
-    sha256 = "1nbv5cqlia4fyy4zf7m1d9n3c5bp9w7iw64bzpgs0wx1i7fgr7nh";
+    hash = "sha256-0J783Imhc6Df/YsYHg9PdxU2bGqhHveJ946oSDEre9k=";
   };
 
   pythonWithTomlkit = pkgs.python3.withPackages (p: [ p.tomlkit ]);
