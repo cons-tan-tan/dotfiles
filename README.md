@@ -83,23 +83,20 @@ secrets/               # sops + GPG 暗号化 secrets
 
 ## ssh / secrets
 
-方針: **既存の `~/.ssh/config` は Nix が一切触らない**(Mac と WSL で内容が
-乖離しているため)。Nix が管理するのは `~/.ssh/config.d/` の断片だけ。
+`~/.ssh/config` 本体は `Include ~/.ssh/config.d/*.conf` の 1 行だけの定型
+ファイルとして Nix が管理し、実際の設定は `~/.ssh/config.d/` の断片に置く。
 
-1. switch すると `~/.ssh/config.d/10-common.conf`(全環境共通の断片)が
-   配置される
-2. 有効化するには、既存 `~/.ssh/config` の**先頭に手動で 1 行追加**する:
-
-   ```sshconfig
-   Include ~/.ssh/config.d/*.conf
-   ```
-
-   OpenSSH の Include はマッチしない glob を黙って無視するので、断片が
-   未配置でも壊れない
-3. 秘匿ホスト(実 IP・アカウント名等)は `secrets/ssh-private.conf` に
+1. switch すると `~/.ssh/config`(Include 1 行)と
+   `~/.ssh/config.d/10-common.conf`(全環境共通の断片)が配置される。
+   既存の手書き `~/.ssh/config` があった場合は黙って上書きせず
+   `.hm-backup` に退避される(必要な内容は断片へ移すこと)
+2. 秘匿ホスト(実 IP・アカウント名等)は `secrets/ssh-private.conf` に
    sops + GPG で暗号化してコミットし、`nix run .#secrets-apply` で
    `~/.ssh/config.d/50-private.conf` へ復号する。GPG 鍵が無いデバイスでは
-   スキップされるだけで何も壊れない
+   スキップされるだけで何も壊れない(Include はマッチしない glob を
+   黙って無視する)
+3. デバイス固有の一時設定が必要なら `~/.ssh/config.d/90-local.conf` の
+   ように Nix 管理外の断片を手で置く(本体は編集しない)
 
 secrets の運用は [secrets/README.md](secrets/README.md) を参照。鍵を伴う認証
 (commit 署名・ssh)は GPG 鍵に寄せる方針で、sops の recipient も同じ鍵。

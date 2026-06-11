@@ -1,22 +1,30 @@
-# ssh 設定の段階的 Nix 管理 (詳細は README の「ssh / secrets」を参照)。
+# ssh 設定の Nix 管理 (詳細は README の「ssh / secrets」を参照)。
 #
-# 既存の ~/.ssh/config は Nix 管理外のまま一切触らない: Mac と WSL で内容が
-# 乖離しており、どちらかの内容で上書きすると壊れるため。Nix が管理するのは
-# ~/.ssh/config.d/ 配下の断片だけで、利用者が既存 config の先頭に
+# ~/.ssh/config 本体は Include 1 行のみの定型ファイルとして Nix 管理し、
+# 実際の設定はすべて ~/.ssh/config.d/ 配下の断片に置く:
 #
-#   Include ~/.ssh/config.d/*.conf
+#   10-common.conf  - 全環境共通 (このモジュールが配置)
+#   50-private.conf - 秘匿ホスト (sops 暗号化の secrets/ssh-private.conf を
+#                     `nix run .#secrets-apply` で復号して配置)
+#   90-local.conf 等 - デバイス固有の一時設定が必要なら手で置く (Nix 管理外)
 #
-# を 1 行手動で追加して有効化する。OpenSSH の Include はマッチしない glob を
-# 黙って無視するため、断片が未配置でも ssh は壊れない (新デバイスでもこの
-# モジュールが入るだけで害はない)。
+# OpenSSH の Include はマッチしない glob を黙って無視するため、秘匿断片が
+# 未復号でも ssh は壊れない (GPG 鍵導入前の新デバイスでも switch だけで成立)。
 #
-# 秘匿ホスト (実 IP・アカウント名等) は secrets/ssh-private.conf (sops 暗号化)
-# を `nix run .#secrets-apply` で ~/.ssh/config.d/50-private.conf に復号して
-# 配置する。未復号でも Include glob のおかげで自然にフォールバックする。
+# 秘匿断片を home.file にしないのは、Nix store が全ユーザー読み取り可能で
+# 秘匿情報を置けないため。runtime 復号 (secrets-apply) が正しい置き場になる。
+#
+# 既存の手書き ~/.ssh/config があるデバイスでは HM が黙って上書きせず
+# .hm-backup に退避してログに明示する (darwin: backupFileExtension /
+# standalone: switch app の -b hm-backup)。
 { ... }:
 {
+  home.file.".ssh/config".text = ''
+    Include ~/.ssh/config.d/*.conf
+  '';
+
   # 全環境共通の断片のみ置く。環境固有の差分はこのファイルに足さず、
-  # 50-private.conf (sops) か各環境の手書き config に残す。
+  # 50-private.conf (sops) か手置きの断片に残す。
   home.file.".ssh/config.d/10-common.conf".text = ''
     # Managed by Nix (nix/modules/home/programs/ssh.nix) - do not edit directly
 
