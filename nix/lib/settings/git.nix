@@ -27,9 +27,9 @@ rec {
     ".vscode"
     ".idea"
 
-    # direnv
+    # direnv (.envrc は ignore しない: プロジェクトが意図的にコミットする
+    # 場合があり、グローバル ignore だと差分が不可視になる)
     ".direnv"
-    ".envrc"
 
     # Python
     ".venv"
