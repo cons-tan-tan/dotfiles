@@ -8,7 +8,6 @@ import inputs.nixpkgs {
   inherit system;
   config.allowUnfree = true;
   overlays = [
-    # flake inputs 由来のパッケージ
     (final: prev: {
       mozuku-lsp = inputs.mozuku.packages.${system}.default;
     })

@@ -68,7 +68,7 @@
       flake = false;
     };
 
-    # External skill sources (deployed by nix/modules/home/agent-skills.nix)
+    # External skill sources (deployed by nix/modules/home/agent-skills/)
     ast-grep-skill = {
       url = "github:ast-grep/claude-skill";
       flake = false;
@@ -135,29 +135,24 @@
       lib = nixpkgs.lib;
       username = "constantan";
 
-      # macOS configuration
       darwinSystem = "aarch64-darwin";
       darwinHomedir = "/Users/${username}";
       darwinHostname = "${username}";
 
-      # Linux configuration
       linuxHomedir = "/home/${username}";
 
       # Windows companion (WSL host only)
       windowsUsername = "zhouc";
       windowsHomedir = "/mnt/c/Users/${windowsUsername}";
 
-      # All supported systems
       systems = [
         "x86_64-linux"
         "aarch64-linux"
         "aarch64-darwin"
       ];
 
-      # pkgs builder shared across hosts
       mkPkgs = import ./nix/lib/mk-pkgs.nix { inherit inputs; };
 
-      # Home Manager configuration builder for Linux/WSL hosts
       mkHost = import ./nix/lib/mk-host.nix {
         inherit
           inputs
@@ -168,13 +163,11 @@
         homedir = linuxHomedir;
       };
 
-      # nix-darwin configuration builder
       mkDarwin = import ./nix/lib/mk-darwin.nix {
         inherit inputs username;
         homedir = darwinHomedir;
       };
 
-      # Linux/WSL host matrix: pair each architecture with each host kind
       linuxHostMatrix = [
         {
           hostKind = "linux";
@@ -198,7 +191,8 @@
         }
       ];
 
-      # Homedir for Linux/WSL apps (matches mkHost)
+      # build / switch app が実行時に組み立てる構成名 (mkLinuxHostApps 内の
+      # $target) と一致させること。ずれると switch が構成を見つけられない。
       linuxConfigName =
         { hostKind, system, ... }:
         "${username}@${hostKind}-${
@@ -229,10 +223,8 @@
         };
       mkTreefmtWrapper = pkgs: (mkTreefmtEval pkgs).config.build.wrapper;
 
-      # 共通 apps (update / fmt / pptx / markdownlint / textlint)
       mkCommonApps = import ./nix/lib/mk-apps.nix { inherit inputs; };
 
-      # darwin ホスト固有 apps
       mkDarwinHostApps = pkgs: {
         build = {
           type = "app";
@@ -259,7 +251,6 @@
         };
       };
 
-      # Linux/WSL ホスト固有 apps: switch は実行時に WSL か native Linux かを判定
       mkLinuxHostApps =
         system: pkgs:
         let
@@ -338,7 +329,6 @@
             );
           };
         };
-      # macOS configuration with nix-darwin
       darwinConfigurations = {
         ${darwinHostname} = mkDarwin {
           system = darwinSystem;
@@ -346,7 +336,6 @@
         };
       };
 
-      # Linux/WSL configurations with standalone Home Manager
       homeConfigurations = lib.listToAttrs (
         map (entry: {
           name = linuxConfigName entry;
@@ -357,7 +346,7 @@
     {
       inherit darwinConfigurations homeConfigurations;
 
-      # Apps for common tasks (全 system で同一集合を保証するため genAttrs)
+      # 全 system で同一の app 集合になるよう genAttrs で生成する
       apps = lib.genAttrs systems (
         system:
         let
@@ -370,7 +359,6 @@
         // (if system == darwinSystem then mkDarwinHostApps pkgs else mkLinuxHostApps system pkgs)
       );
 
-      # Formatter for all systems
       formatter = lib.genAttrs systems (
         system:
         let
@@ -379,7 +367,6 @@
         mkTreefmtWrapper pkgs
       );
 
-      # Individual packages (e.g. `nix build .#hcom`)
       packages = lib.genAttrs systems (
         system:
         let
@@ -396,7 +383,6 @@
         }
       );
 
-      # `nix flake check` で全ホスト構成の評価とフォーマットを検証する
       checks = lib.genAttrs systems (
         system:
         {

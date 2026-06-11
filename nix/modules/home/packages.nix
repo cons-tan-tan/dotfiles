@@ -47,7 +47,6 @@
     # Node.js
     ni
     pnpm
-    # google-clasp
 
     # Python
     uv

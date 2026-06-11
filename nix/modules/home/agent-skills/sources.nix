@@ -17,19 +17,16 @@ let
     injectAfterFrontmatter
     ;
 
-  # 外部 skill (flake inputs)
   externalSkills = {
-    # ast-grep official skill
     ast-grep = {
       root = "${ast-grep-skill}/ast-grep/skills/ast-grep";
     };
 
-    # agent-browser skill
     agent-browser = {
       root = "${agent-browser-skill}/skills/agent-browser";
     };
 
-    # agent-slack skill (binary packaged in overlays/agent-slack.nix)
+    # バイナリ本体は overlays/agent-slack.nix (skill doc とは別 input)
     agent-slack = {
       root = "${agent-slack-skill}/skills/agent-slack";
       # Keep skill descriptions compact because some metadata consumers impose
@@ -47,7 +44,6 @@ let
       '';
     };
 
-    # Anthropic official pptx skill
     pptx = {
       root = "${anthropic-skills}/skills/pptx";
       transform = injectAfterFrontmatter ''
@@ -68,7 +64,6 @@ let
       '';
     };
 
-    # draw.io skill
     drawio = {
       root = "${drawio-skill}/skill-cli/drawio";
       transform = injectAfterFrontmatter ''
@@ -81,12 +76,11 @@ let
       '';
     };
 
-    # hcom inter-agent messaging skill (binary packaged in overlays/hcom.nix)
+    # バイナリ本体は overlays/hcom.nix (hcom-src input とは update-pins が同期)
     hcom-agent-messaging = {
       root = "${hcom-src}/skills/hcom-agent-messaging";
     };
 
-    # humanize-jp skill (suppress "AI-ness" in Japanese writing)
     humanize-jp = {
       root = "${humanizer-jp-skill}/.claude/skills/humanize-jp";
       # Upstream's command assumes a system python3 and $HOME as the cwd, and

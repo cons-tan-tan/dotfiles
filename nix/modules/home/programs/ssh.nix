@@ -1,5 +1,3 @@
-# ssh 設定の Nix 管理 (詳細は README の「ssh / secrets」を参照)。
-#
 # ~/.ssh/config 本体は Include 1 行のみの定型ファイルとして Nix 管理し、
 # 実際の設定はすべて ~/.ssh/config.d/ 配下の断片に置く:
 #

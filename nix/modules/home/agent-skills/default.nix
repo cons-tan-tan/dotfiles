@@ -1,7 +1,5 @@
-# Agent skills deployment for Claude Code and other agents.
-#
-# Skills (external flake inputs + local agents/skills/) are bundled and
-# symlinked into ~/.claude/skills and ~/.agents/skills.
+# skill (flake inputs + agents/skills/) を ~/.claude/skills と
+# ~/.agents/skills へ配置する。
 #
 # NOTE: 以前は agent-skills-nix (flake input) を使っていたが、同モジュールは
 # ソースの safe-copy derivation を eval 時に readFile する (IFD) ため、異種

@@ -19,15 +19,13 @@ let
   awsLoginWrapper = pkgs.writeShellScriptBin "aws-login" ''
     config_file="''${AWS_CONFIG_FILE:-$HOME/.aws/config}"
 
-    # credential_process なしの一時 config を作成
     login_config=$(mktemp)
     cp ${loginConfigFile} "$login_config"
     chmod 600 "$login_config"
 
-    # 一時 config に向けて aws login を実行（login_session が一時 config に書き込まれる）
+    # login 結果 (login_session) は一時 config 側に書き込まれる
     AWS_CONFIG_FILE="$login_config" ${pkgs.awscli2}/bin/aws login "$@"
 
-    # login_session を本来の config にマージし、一時ファイルを削除
     ${pkgs.crudini}/bin/crudini --merge "$config_file" < "$login_config"
     rm -f "$login_config"
   '';
@@ -53,7 +51,6 @@ in
       ${pkgs.coreutils}/bin/cp ${baselineFile} "$candidate"
       ${pkgs.coreutils}/bin/chmod 600 "$candidate"
 
-      # 既存 config の login_session を候補へ移植
       if [ -f "$config_file" ]; then
         ${lib.concatMapStringsSep "\n        " (name: ''
           session=$($crudini --get "$config_file" ${lib.escapeShellArg name} login_session 2>/dev/null || true)
