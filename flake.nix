@@ -411,7 +411,6 @@
       # macOS configuration with nix-darwin
       darwinConfigurations = {
         ${darwinHostname} = mkDarwin {
-          hostname = darwinHostname;
           system = darwinSystem;
           hostFile = ./nix/hosts/darwin.nix;
         };

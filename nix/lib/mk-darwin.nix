@@ -4,7 +4,6 @@
   homedir,
 }:
 {
-  hostname,
   system,
   hostFile,
 }:
@@ -20,7 +19,6 @@ inputs.nix-darwin.lib.darwinSystem {
     inherit
       username
       homedir
-      hostname
       hostKind
       ;
   };
