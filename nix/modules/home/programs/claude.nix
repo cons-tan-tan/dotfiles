@@ -8,19 +8,21 @@
 let
   inherit (config.my) dotfilesDir;
 
-  claudeCodePackage = pkgs.claude-code.overrideAttrs (old: {
-    nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ pkgs.makeWrapper ];
-    postFixup =
-      let
-        oldPostFixup = old.postFixup or "";
-      in
-      oldPostFixup
-      + ''
-        wrapProgram $out/bin/.claude-wrapped \
-          --prefix PATH : ${pkgs.nodejs}/bin \
-          --add-flags "--effort xhigh"
-      '';
-  });
+  # 上流パッケージの内部実装 (.claude-wrapped という wrapper 名) に依存しない
+  # よう、パッケージはそのままに symlinkJoin の上から wrapProgram で包む。
+  # HM 側 (programs.claude-code) が plugins 用にさらに symlinkJoin で包むが、
+  # 各 wrapper は絶対パスで自身の実体を参照するため多段でも安全に合成される。
+  claudeCodePackage = pkgs.symlinkJoin {
+    name = "claude-code-wrapped";
+    paths = [ pkgs.claude-code ];
+    nativeBuildInputs = [ pkgs.makeWrapper ];
+    postBuild = ''
+      wrapProgram $out/bin/claude \
+        --prefix PATH : ${pkgs.nodejs}/bin \
+        --add-flags "--effort xhigh"
+    '';
+    inherit (pkgs.claude-code) meta;
+  };
 
   settingsLib = import ../../../lib/settings/claude.nix { inherit lib; };
 
