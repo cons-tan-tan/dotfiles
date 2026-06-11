@@ -2,8 +2,6 @@
 {
   home.packages = with pkgs; [
     # CLI tools
-    mise
-    chezmoi
     jq
     ripgrep
     fd
@@ -27,7 +25,6 @@
     # Git
     ghq
     git-wt
-    lefthook
     git-cliff
     pinact
 
