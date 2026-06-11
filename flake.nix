@@ -301,7 +301,9 @@
                   target="${username}@linux-${arch}"
                 fi
                 echo "Switching to Home Manager configuration: $target"
-                ${hmBin} switch --flake ".#$target"
+                # -b: 非管理ファイルと衝突したらバックアップを残して置換する
+                # (darwin 側の home-manager.backupFileExtension と同じ方針)
+                ${hmBin} switch -b hm-backup --flake ".#$target"
               ''
             );
           };
