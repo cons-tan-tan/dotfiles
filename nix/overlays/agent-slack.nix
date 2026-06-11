@@ -26,7 +26,11 @@ let
   asset = assetBySystem.${system} or (throw "agent-slack: unsupported system '${system}'");
 in
 {
-  agent-slack = prev.stdenvNoCC.mkDerivation {
+  # Linux 版は glibc 動的リンク (interpreter /lib64/ld-linux-*.so.2) なので、
+  # autoPatchelfHook で Nix の glibc に向ける (Ubuntu-WSL では素でも動くが、
+  # NixOS では patch なしだと実行できない)。autoPatchelfHook は stdenv の
+  # dynamic linker 情報を使うため Linux では full stdenv にする。
+  agent-slack = (if prev.stdenv.isLinux then prev.stdenv else prev.stdenvNoCC).mkDerivation {
     pname = "agent-slack";
     inherit version;
 
@@ -36,6 +40,10 @@ in
     };
 
     dontUnpack = true;
+
+    nativeBuildInputs = prev.lib.optionals prev.stdenv.isLinux [ prev.autoPatchelfHook ];
+    # libsecret-1.so.0 は dlopen 参照 (DT_NEEDED ではない) なので不要。
+    # 必要になったら buildInputs に prev.libsecret を追加する。
 
     installPhase = ''
       runHook preInstall
