@@ -32,7 +32,7 @@ in
     if [ -x "$GH_EXE" ]; then
     ${setAliasCommands}
     else
-      echo "deployWindowsGhAliases: gh.exe not found, skipping (run winget-apply first)" >&2
+      echo "deployWindowsGhAliases: gh.exe not found, skipping (run apply-winget first)" >&2
     fi
   '';
 }

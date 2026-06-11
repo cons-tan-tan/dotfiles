@@ -298,26 +298,26 @@
               ''
             );
           };
-          winget-apply = {
+          apply-winget = {
             type = "app";
             meta.description = "Apply the WinGet DSC configuration on the Windows host (WSL only)";
             program = toString (
-              pkgs.writeShellScript "winget-apply" ''
+              pkgs.writeShellScript "apply-winget" ''
                 set -e
                 if [[ -z "''${WSL_DISTRO_NAME:-}" ]]; then
-                  echo "winget-apply: not running under WSL" >&2
+                  echo "apply-winget: not running under WSL" >&2
                   exit 1
                 fi
 
                 WIN_CONFIG="${windowsHomedir}/.config/dev.winget"
                 if [ ! -f "$WIN_CONFIG" ]; then
-                  echo "winget-apply: $WIN_CONFIG not found. Run 'nix run .#switch' first." >&2
+                  echo "apply-winget: $WIN_CONFIG not found. Run 'nix run .#switch' first." >&2
                   exit 1
                 fi
 
                 WINGET_BIN=$(command -v winget.exe || true)
                 if [ -z "$WINGET_BIN" ]; then
-                  echo "winget-apply: winget.exe not found in PATH. Ensure WSL interop is enabled." >&2
+                  echo "apply-winget: winget.exe not found in PATH. Ensure WSL interop is enabled." >&2
                   exit 1
                 fi
 

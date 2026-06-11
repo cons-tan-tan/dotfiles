@@ -2,7 +2,7 @@
 #
 # 適用は 2 段階フロー:
 #   1. `nix run .#switch`       — この activation が dev.winget を Windows 側へ配置
-#   2. `nix run .#winget-apply` — WSL から winget.exe configure を起動して適用
+#   2. `nix run .#apply-winget` — WSL から winget.exe configure を起動して適用
 # switch だけでは Windows 側のパッケージは変わらない点に注意。
 #
 # バージョンは useLatest 運用でピン留めしない: ピンすると手動でのバージョン

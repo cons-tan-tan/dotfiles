@@ -27,7 +27,7 @@ nix run .#apply-secrets
 | `nix run .#update-pins` | バイナリ pin(`nix/pins/*.json`)を最新リリースへ同期 |
 | `nix run .#fmt` | treefmt で整形 |
 | `nix run .#apply-secrets` | sops secrets の復号・配置(鍵が無ければスキップ) |
-| `nix run .#winget-apply` | Windows 側パッケージの適用(WSL のみ) |
+| `nix run .#apply-winget` | Windows 側パッケージの適用(WSL のみ) |
 
 ## 構成
 

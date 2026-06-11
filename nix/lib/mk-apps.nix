@@ -1,4 +1,4 @@
-# darwin / linux 共通の flake apps。ホスト固有の build / switch / winget-apply
+# darwin / linux 共通の flake apps。ホスト固有の build / switch / apply-winget
 # は flake.nix 側で合成する。
 { inputs }:
 {
