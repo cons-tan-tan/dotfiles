@@ -24,6 +24,8 @@ let
     mkdir -p "$skill"
     cp -r ${humanizer-jp-skill}/.claude/skills/humanize-jp/. "$skill/"
     cp -r ${humanizer-jp-skill}/docs "$skill/docs"
+    mkdir -p "$skill/scripts"
+    cp "$skill/reference/humanize_check.py" "$skill/scripts/humanize_check.py"
   '';
 in
 {
@@ -179,12 +181,13 @@ in
           # Upstream's command assumes a system python3 and $HOME as the cwd.
           #   - uv run drops the python3 dependency; --no-project keeps uv from
           #     syncing whatever caller project we land in (script is stdlib-only).
-          #   - skill-relative path resolves from any cwd and under ~/.agents,
-          #     unlike upstream's $HOME-relative, Claude-specific one.
+          #   - The final Nix store bundle is shared by ~/.agents and ~/.claude
+          #     targets, so an absolute bundle path is stable from any cwd.
+          humanizeCheck = "${builtins.placeholder "out"}/humanize-jp/scripts/humanize_check.py";
           rewritten =
             builtins.replaceStrings
               [ "python3 .claude/skills/humanize-jp/reference/humanize_check.py" ]
-              [ "uv run --no-project reference/humanize_check.py" ]
+              [ "uv run --no-project ${humanizeCheck}" ]
               original;
           parts = lib.splitString "\n---\n" rewritten;
           hasFm = builtins.length parts > 1 && lib.hasPrefix "---\n" rewritten;
@@ -195,9 +198,8 @@ in
             description: |
               Suppress the telltale "AI-ness" of Japanese writing so it reads as
               human-written. Use when asked to proofread or rewrite AI-generated
-              Japanese, make text sound more human, evade AI-text detection, or
-              naturalize note or blog articles. Japanese only; not for English or
-              other languages.
+              Japanese, make text sound more natural, or polish note and blog
+              articles. Japanese only; not for English or other languages.
             ---
           '';
         in
