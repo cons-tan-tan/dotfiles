@@ -8,7 +8,8 @@ let
   # Pi-managed packages still install into ~/.pi/agent/npm or project .pi/npm;
   # this wrapper only controls the package-manager binary, cache, and configs.
   # The executable name must stay "pnpm"; Pi detects it to use pnpm-specific
-  # install flags.
+  # install flags. home.packages には入れず npmCommand から絶対パスで参照する
+  # だけなので、packages.nix の素の pnpm と PATH 上で衝突することはない。
   piPnpm = pkgs.writeShellScriptBin "pnpm" ''
     set -euo pipefail
 
@@ -74,9 +75,8 @@ in
 
   # Global settings are declarative. Pi may try to persist UI choices, installs,
   # or extension configuration here; those writes should fail instead of
-  # mutating global state outside Nix.
-  home.file.".pi/agent/settings.json" = {
-    source = managedSettingsJson;
-    force = true;
-  };
+  # mutating global state outside Nix. force は付けない: Pi が symlink を実
+  # ファイルに置き換えた場合、黙って戻すより switch 時の衝突エラーで気付ける
+  # 方が良い (リポジトリ方針として home.file の force = true は原則禁止)。
+  home.file.".pi/agent/settings.json".source = managedSettingsJson;
 }
