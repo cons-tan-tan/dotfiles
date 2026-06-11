@@ -74,8 +74,8 @@ lib.mkMerge [
         StartInterval = intervalMin * 60;
         Nice = 10;
         ProcessType = "Background";
-        StandardOutPath = "/tmp/ghq-fetch.out.log";
-        StandardErrorPath = "/tmp/ghq-fetch.err.log";
+        StandardOutPath = "${config.home.homeDirectory}/Library/Logs/ghq-fetch.out.log";
+        StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/ghq-fetch.err.log";
       };
     };
   })
