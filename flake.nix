@@ -456,6 +456,33 @@
             name = "app-scripts";
             paths = common.scripts ++ host.scripts;
           };
+          # frontmatter.nix の純関数テスト。eval 時に assert するので
+          # --no-build の CI でも検知される
+          frontmatter-tests =
+            let
+              failures = import ./nix/modules/home/agent-skills/frontmatter-tests.nix { inherit lib; };
+            in
+            if failures == [ ] then
+              pkgs.runCommand "frontmatter-tests" { } "touch $out"
+            else
+              throw "frontmatter tests failed: ${builtins.toJSON failures}";
+          # merge.py のテスト。ビルド時実行なので build-linux ジョブが強制する
+          merge-py-tests =
+            pkgs.runCommand "merge-py-tests"
+              {
+                nativeBuildInputs = [
+                  (pkgs.python3.withPackages (ps: [
+                    ps.tomlkit
+                    ps.pytest
+                  ]))
+                ];
+              }
+              ''
+                cp ${./nix/modules/home/programs/codex/merge.py} merge.py
+                cp ${./nix/modules/home/programs/codex/test_merge.py} test_merge.py
+                pytest -q test_merge.py
+                touch $out
+              '';
         }
         // lib.optionalAttrs (system == darwinSystem) {
           darwin-system = darwinConfigurations.${darwinHostname}.system;
