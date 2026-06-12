@@ -237,31 +237,43 @@
 
       mkCommonApps = import ./nix/lib/mk-apps.nix { inherit inputs; };
 
-      mkDarwinHostApps = pkgs: {
-        build = {
-          type = "app";
-          meta.description = "Build the nix-darwin configuration without activating it";
-          program = toString (
-            pkgs.writeShellScript "darwin-build" ''
-              set -e
+      mkDarwinHostApps =
+        pkgs:
+        let
+          buildScript = pkgs.writeShellApplication {
+            name = "darwin-build";
+            text = ''
               echo "Building darwin configuration..."
               nix build .#darwinConfigurations.${darwinHostname}.system
               echo "Build successful! Run 'nix run .#switch' to apply."
-            ''
-          );
-        };
-        switch = {
-          type = "app";
-          meta.description = "Build and activate the nix-darwin configuration";
-          program = toString (
-            pkgs.writeShellScript "darwin-switch" ''
-              set -e
+            '';
+          };
+          switchScript = pkgs.writeShellApplication {
+            name = "darwin-switch";
+            text = ''
               echo "Building and switching to darwin configuration..."
               sudo nix run nix-darwin -- switch --flake .#${darwinHostname}
-            ''
-          );
+            '';
+          };
+        in
+        {
+          apps = {
+            build = {
+              type = "app";
+              meta.description = "Build the nix-darwin configuration without activating it";
+              program = pkgs.lib.getExe buildScript;
+            };
+            switch = {
+              type = "app";
+              meta.description = "Build and activate the nix-darwin configuration";
+              program = pkgs.lib.getExe switchScript;
+            };
+          };
+          scripts = [
+            buildScript
+            switchScript
+          ];
         };
-      };
 
       mkLinuxHostApps =
         system: pkgs:
@@ -273,73 +285,83 @@
             }
             .${system};
           hmBin = "${home-manager.packages.${system}.default}/bin/home-manager";
+          buildScript = pkgs.writeShellApplication {
+            name = "home-manager-build";
+            text = ''
+              if [[ -n "''${WSL_DISTRO_NAME:-}" ]]; then
+                target="${username}@wsl-${arch}"
+              else
+                target="${username}@linux-${arch}"
+              fi
+              echo "Building Home Manager configuration: $target"
+              nix build ".#homeConfigurations.\"$target\".activationPackage"
+              echo "Build successful! Run 'nix run .#switch' to apply."
+            '';
+          };
+          switchScript = pkgs.writeShellApplication {
+            name = "home-manager-switch";
+            text = ''
+              if [[ -n "''${WSL_DISTRO_NAME:-}" ]]; then
+                target="${username}@wsl-${arch}"
+              else
+                target="${username}@linux-${arch}"
+              fi
+              echo "Switching to Home Manager configuration: $target"
+              # -b: 非管理ファイルと衝突したらバックアップを残して置換する
+              # (darwin 側の home-manager.backupFileExtension と同じ方針)
+              ${hmBin} switch -b hm-backup --flake ".#$target"
+            '';
+          };
+          applyWingetScript = pkgs.writeShellApplication {
+            name = "apply-winget";
+            text = ''
+              if [[ -z "''${WSL_DISTRO_NAME:-}" ]]; then
+                echo "apply-winget: not running under WSL" >&2
+                exit 1
+              fi
+
+              WIN_CONFIG="${windowsHomedir}/.config/dev.winget"
+              if [ ! -f "$WIN_CONFIG" ]; then
+                echo "apply-winget: $WIN_CONFIG not found. Run 'nix run .#switch' first." >&2
+                exit 1
+              fi
+
+              WINGET_BIN=$(command -v winget.exe || true)
+              if [ -z "$WINGET_BIN" ]; then
+                echo "apply-winget: winget.exe not found in PATH. Ensure WSL interop is enabled." >&2
+                exit 1
+              fi
+
+              WIN_CONFIG_PATH="C:\\Users\\${windowsUsername}\\.config\\dev.winget"
+              exec "$WINGET_BIN" configure \
+                --accept-configuration-agreements \
+                -f "$WIN_CONFIG_PATH" "$@"
+            '';
+          };
         in
         {
-          build = {
-            type = "app";
-            meta.description = "Build the Home Manager configuration without activating it (auto-detects WSL/Linux)";
-            program = toString (
-              pkgs.writeShellScript "home-manager-build" ''
-                set -e
-                if [[ -n "''${WSL_DISTRO_NAME:-}" ]]; then
-                  target="${username}@wsl-${arch}"
-                else
-                  target="${username}@linux-${arch}"
-                fi
-                echo "Building Home Manager configuration: $target"
-                nix build ".#homeConfigurations.\"$target\".activationPackage"
-                echo "Build successful! Run 'nix run .#switch' to apply."
-              ''
-            );
+          apps = {
+            build = {
+              type = "app";
+              meta.description = "Build the Home Manager configuration without activating it (auto-detects WSL/Linux)";
+              program = pkgs.lib.getExe buildScript;
+            };
+            switch = {
+              type = "app";
+              meta.description = "Build and activate the Home Manager configuration (auto-detects WSL/Linux)";
+              program = pkgs.lib.getExe switchScript;
+            };
+            apply-winget = {
+              type = "app";
+              meta.description = "Apply the WinGet DSC configuration on the Windows host (WSL only)";
+              program = pkgs.lib.getExe applyWingetScript;
+            };
           };
-          switch = {
-            type = "app";
-            meta.description = "Build and activate the Home Manager configuration (auto-detects WSL/Linux)";
-            program = toString (
-              pkgs.writeShellScript "home-manager-switch" ''
-                set -e
-                if [[ -n "''${WSL_DISTRO_NAME:-}" ]]; then
-                  target="${username}@wsl-${arch}"
-                else
-                  target="${username}@linux-${arch}"
-                fi
-                echo "Switching to Home Manager configuration: $target"
-                # -b: 非管理ファイルと衝突したらバックアップを残して置換する
-                # (darwin 側の home-manager.backupFileExtension と同じ方針)
-                ${hmBin} switch -b hm-backup --flake ".#$target"
-              ''
-            );
-          };
-          apply-winget = {
-            type = "app";
-            meta.description = "Apply the WinGet DSC configuration on the Windows host (WSL only)";
-            program = toString (
-              pkgs.writeShellScript "apply-winget" ''
-                set -e
-                if [[ -z "''${WSL_DISTRO_NAME:-}" ]]; then
-                  echo "apply-winget: not running under WSL" >&2
-                  exit 1
-                fi
-
-                WIN_CONFIG="${windowsHomedir}/.config/dev.winget"
-                if [ ! -f "$WIN_CONFIG" ]; then
-                  echo "apply-winget: $WIN_CONFIG not found. Run 'nix run .#switch' first." >&2
-                  exit 1
-                fi
-
-                WINGET_BIN=$(command -v winget.exe || true)
-                if [ -z "$WINGET_BIN" ]; then
-                  echo "apply-winget: winget.exe not found in PATH. Ensure WSL interop is enabled." >&2
-                  exit 1
-                fi
-
-                WIN_CONFIG_PATH="C:\\Users\\${windowsUsername}\\.config\\dev.winget"
-                exec "$WINGET_BIN" configure \
-                  --accept-configuration-agreements \
-                  -f "$WIN_CONFIG_PATH" "$@"
-              ''
-            );
-          };
+          scripts = [
+            buildScript
+            switchScript
+            applyWingetScript
+          ];
         };
       darwinConfigurations = {
         ${darwinHostname} = mkDarwin {
@@ -363,12 +385,13 @@
         system:
         let
           pkgs = pkgsFor.${system};
+          common = mkCommonApps {
+            inherit pkgs;
+            treefmtWrapper = mkTreefmtWrapper pkgs;
+          };
+          host = if system == darwinSystem then mkDarwinHostApps pkgs else mkLinuxHostApps system pkgs;
         in
-        mkCommonApps {
-          inherit pkgs;
-          treefmtWrapper = mkTreefmtWrapper pkgs;
-        }
-        // (if system == darwinSystem then mkDarwinHostApps pkgs else mkLinuxHostApps system pkgs)
+        common.apps // host.apps
       );
 
       # 作業用ツール (テスト・lint・secrets 編集) の宣言的な入口。
@@ -417,8 +440,22 @@
 
       checks = lib.genAttrs systems (
         system:
+        let
+          pkgs = pkgsFor.${system};
+          common = mkCommonApps {
+            inherit pkgs;
+            treefmtWrapper = mkTreefmtWrapper pkgs;
+          };
+          host = if system == darwinSystem then mkDarwinHostApps pkgs else mkLinuxHostApps system pkgs;
+        in
         {
-          treefmt = (mkTreefmtEval pkgsFor.${system}).config.build.check self;
+          treefmt = (mkTreefmtEval pkgs).config.build.check self;
+          # 全 app スクリプトをビルドし、writeShellApplication のビルド時
+          # shellcheck を CI (plans/003 の build-linux) で強制する
+          app-scripts = pkgs.symlinkJoin {
+            name = "app-scripts";
+            paths = common.scripts ++ host.scripts;
+          };
         }
         // lib.optionalAttrs (system == darwinSystem) {
           darwin-system = darwinConfigurations.${darwinHostname}.system;
