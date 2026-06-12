@@ -2,6 +2,11 @@
 # 実行: nix run .#update-pins
 # 変更が出たら git diff を確認し、nix run .#build を通してからコミットする。
 
+# 失敗時に一時ファイルを残さない。各ブロックは TMPFILES に追記してから使う。
+TMPFILES=()
+cleanup() { rm -f "${TMPFILES[@]}"; }
+trap cleanup EXIT
+
 root=$(git rev-parse --show-toplevel)
 cd "$root"
 
@@ -38,13 +43,16 @@ update_release_pin() {
   fi
   echo "$label: $cur -> $ver (prefetching assets...)"
   tmp=$(mktemp)
+  TMPFILES+=("$tmp")
   jq --arg version "$ver" '.version = $version' "$pin" >"$tmp"
-  local system name hash
+  local system name hash next
   while IFS= read -r system; do
     name=$(jq -r --arg s "$system" '.assets[$s].name' "$pin")
     hash=$(prefetch "https://github.com/$repo/releases/download/$tag/$name")
-    jq --arg s "$system" --arg h "$hash" '.assets[$s].hash = $h' "$tmp" >"$tmp.next"
-    mv "$tmp.next" "$tmp"
+    next=$(mktemp)
+    TMPFILES+=("$next")
+    jq --arg s "$system" --arg h "$hash" '.assets[$s].hash = $h' "$tmp" >"$next"
+    mv "$next" "$tmp"
   done < <(jq -r '.assets | keys[]' "$pin")
   mv "$tmp" "$pin"
 }
@@ -72,6 +80,7 @@ else
   echo "git-wt: $cur -> $ver (prefetching source...)"
   src_hash=$(prefetch_unpack "https://github.com/k1LoW/git-wt/archive/refs/tags/$tag.tar.gz")
   tmp=$(mktemp)
+  TMPFILES+=("$tmp")
   # vendorHash は go modules のダウンロード結果から決まるため事前計算できない。
   # 空にして lib.fakeHash でビルドし、hash mismatch エラーから実値を取り出す。
   jq --arg v "$ver" --arg s "$src_hash" \
@@ -86,6 +95,7 @@ else
     exit 1
   fi
   tmp=$(mktemp)
+  TMPFILES+=("$tmp")
   jq --arg h "$vendor_hash" '.vendorHash = $h' "$pin" >"$tmp"
   mv "$tmp" "$pin"
   echo "git-wt: verifying build..."
@@ -100,6 +110,7 @@ if [ "$new_hash" = "$(jq -r .hash "$pin")" ]; then
 else
   echo "codex-schema: upstream schema changed; updating hash"
   tmp=$(mktemp)
+  TMPFILES+=("$tmp")
   jq --arg h "$new_hash" '.hash = $h' "$pin" >"$tmp"
   mv "$tmp" "$pin"
 fi

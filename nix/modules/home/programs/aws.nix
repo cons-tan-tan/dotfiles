@@ -15,20 +15,29 @@ let
   baselineFile = pkgs.writeText "aws-config-baseline" (lib.generators.toINI { } profiles);
   loginConfigFile = pkgs.writeText "aws-config-login" (lib.generators.toINI { } loginProfiles);
 
-  # aws login → login_session を本来の config にマージするラッパー
-  awsLoginWrapper = pkgs.writeShellScriptBin "aws-login" ''
-    config_file="''${AWS_CONFIG_FILE:-$HOME/.aws/config}"
+  # aws login → login_session を本来の config にマージするラッパー。
+  # login が失敗したら merge せず非ゼロで抜ける (部分的な結果を本番 config に
+  # 混ぜない)。後始末は trap (中断時も一時 config を残さない)。
+  awsLoginWrapper = pkgs.writeShellApplication {
+    name = "aws-login";
+    runtimeInputs = [
+      pkgs.awscli2
+      pkgs.crudini
+    ];
+    text = ''
+      config_file="''${AWS_CONFIG_FILE:-$HOME/.aws/config}"
 
-    login_config=$(mktemp)
-    cp ${loginConfigFile} "$login_config"
-    chmod 600 "$login_config"
+      login_config=$(mktemp)
+      trap 'rm -f "$login_config"' EXIT
+      cp ${loginConfigFile} "$login_config"
+      chmod 600 "$login_config"
 
-    # login 結果 (login_session) は一時 config 側に書き込まれる
-    AWS_CONFIG_FILE="$login_config" ${pkgs.awscli2}/bin/aws login "$@"
+      # login 結果 (login_session) は一時 config 側に書き込まれる
+      AWS_CONFIG_FILE="$login_config" aws login "$@"
 
-    ${pkgs.crudini}/bin/crudini --merge "$config_file" < "$login_config"
-    rm -f "$login_config"
-  '';
+      crudini --merge "$config_file" < "$login_config"
+    '';
+  };
 in
 {
   home.packages = with pkgs; [
