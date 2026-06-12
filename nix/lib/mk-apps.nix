@@ -33,33 +33,74 @@ let
     text = builtins.readFile ../apps/update-pins.sh;
   };
 
+  # 適用する secrets の宣言。追加はここに 1 エントリ足すだけ
+  # (ファイル自体は `sops edit secrets/<name>` で作る。secrets/README.md 参照)。
+  # dst は $HOME 相対。dirMode は dst の親ディレクトリに適用する。
+  secretsManifest = [
+    {
+      src = "secrets/ssh-private.conf";
+      dst = ".ssh/config.d/50-private.conf";
+      mode = "600";
+      dirMode = "700";
+    }
+  ];
+
+  secretsManifestFile = pkgs.writeText "secrets-manifest.json" (builtins.toJSON secretsManifest);
+
   applySecretsScript = mkScript "apply-secrets" {
     runtimeInputs = [
       pkgs.gnupg
       pkgs.sops
+      pkgs.jq
     ];
     text = ''
-      src=${inputs.self}/secrets/ssh-private.conf
-      dst="$HOME/.ssh/config.d/50-private.conf"
-
-      if [ ! -f "$src" ]; then
-        echo "apply-secrets: secrets/ssh-private.conf is not in the repo yet; nothing to apply" >&2
-        exit 0
+      # --dry-run: 書き込み先の一覧だけ出して終了する (実環境を触らない検証用)
+      dry_run=false
+      if [ "''${1:-}" = "--dry-run" ]; then
+        dry_run=true
       fi
 
-      mkdir -p "$HOME/.ssh/config.d"
-      chmod 700 "$HOME/.ssh/config.d"
+      failed=0
+      while IFS= read -r entry; do
+        rel_src=$(jq -r .src <<<"$entry")
+        rel_dst=$(jq -r .dst <<<"$entry")
+        mode=$(jq -r .mode <<<"$entry")
+        dir_mode=$(jq -r .dirMode <<<"$entry")
+        src="${inputs.self}/$rel_src"
+        dst="$HOME/$rel_dst"
 
-      tmp=$(mktemp "$dst.XXXXXX")
-      trap 'rm -f "$tmp"' EXIT
-      if ! sops --decrypt "$src" > "$tmp"; then
-        echo "apply-secrets: decryption failed (GPG key not imported?); skipping" >&2
-        exit 0
+        if [ ! -f "$src" ]; then
+          echo "apply-secrets: $rel_src is not in the repo; skipping" >&2
+          continue
+        fi
+
+        if $dry_run; then
+          echo "apply-secrets: would write $dst (mode $mode)"
+          continue
+        fi
+
+        mkdir -p "$(dirname "$dst")"
+        chmod "$dir_mode" "$(dirname "$dst")"
+
+        tmp=$(mktemp "$dst.XXXXXX")
+        trap 'rm -f "$tmp"' EXIT
+        if ! sops --decrypt "$src" > "$tmp"; then
+          # GPG 鍵未導入でも switch を阻害しない方針 (案 B) はファイル単位で維持
+          echo "apply-secrets: decryption of $rel_src failed (GPG key not imported?); skipping" >&2
+          rm -f "$tmp"
+          trap - EXIT
+          failed=$((failed + 1))
+          continue
+        fi
+        chmod "$mode" "$tmp"
+        mv "$tmp" "$dst"
+        trap - EXIT
+        echo "apply-secrets: wrote $dst"
+      done < <(jq -c '.[]' ${secretsManifestFile})
+
+      if [ "$failed" -gt 0 ]; then
+        echo "apply-secrets: $failed file(s) skipped (decryption failed)" >&2
       fi
-      chmod 600 "$tmp"
-      mv "$tmp" "$dst"
-      trap - EXIT
-      echo "apply-secrets: wrote $dst"
     '';
   };
 in
