@@ -72,3 +72,28 @@ run_hook() {
   run bash -c 'echo "{}" | bash "$1"' _ "$HOOK"
   [ "$status" -eq 0 ]
 }
+
+@test "env-prefixed api-get with --method is blocked" {
+  run_hook "FOO=1 gh api-get repos/o/r --method DELETE"
+  [ "$status" -eq 2 ]
+}
+
+@test "chained api-get with -X is blocked" {
+  run_hook "true && gh api-get repos/o/r -X DELETE"
+  [ "$status" -eq 2 ]
+}
+
+@test "env-prefixed plain api-get is allowed" {
+  run_hook "FOO=1 gh api-get repos/o/r"
+  [ "$status" -eq 0 ]
+}
+
+@test "absolute-path gh api-get with --method is blocked" {
+  run_hook "/usr/bin/gh api-get repos/o/r --method DELETE"
+  [ "$status" -eq 2 ]
+}
+
+@test "unrelated command containing similar name is allowed" {
+  run_hook "mygh api-get repos/o/r --method DELETE"
+  [ "$status" -eq 0 ]
+}

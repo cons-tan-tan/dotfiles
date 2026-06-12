@@ -86,6 +86,26 @@ teardown() {
   [ "$status" -eq 1 ]
 }
 
+@test "--libcurl is denied" {
+  run bash "$SCRIPT" --libcurl /tmp/evil.c https://example.com
+  [ "$status" -eq 1 ]
+}
+
+@test "--libcurl=file is denied" {
+  run bash "$SCRIPT" --libcurl=/tmp/evil.c https://example.com
+  [ "$status" -eq 1 ]
+}
+
+@test "--hsts is denied" {
+  run bash "$SCRIPT" --hsts /tmp/evil https://example.com
+  [ "$status" -eq 1 ]
+}
+
+@test "--alt-svc is denied" {
+  run bash "$SCRIPT" --alt-svc /tmp/evil https://example.com
+  [ "$status" -eq 1 ]
+}
+
 # 既存挙動のリグレッション確認
 @test "-X is denied (regression)" {
   run bash "$SCRIPT" -X POST https://example.com

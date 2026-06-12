@@ -24,6 +24,7 @@ DENY_LONG_FLAGS=(
   --dump-header --cookie-jar
   --trace --trace-ascii
   --etag-save
+  --libcurl --hsts --alt-svc
 )
 
 # -H/--header/--proxy-header の次の引数を検査するためのフラグ

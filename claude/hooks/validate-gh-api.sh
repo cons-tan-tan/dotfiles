@@ -4,8 +4,10 @@ set -euo pipefail
 INPUT=$(cat)
 COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty')
 
-# gh api-get 以外はスキップ
-if [[ ! $COMMAND =~ ^gh[[:space:]]+api-get ]]; then
+# gh api-get を含まないコマンドはスキップ。行頭アンカーだと env 前置
+# (FOO=1 gh api-get) やコマンド連結 (true && gh api-get) でフックごと
+# バイパスされるため、単語境界付きでコマンド全体を走査する。
+if [[ ! $COMMAND =~ (^|[^[:alnum:]_-])gh[[:space:]]+api-get ]]; then
   exit 0
 fi
 
