@@ -203,17 +203,14 @@
         }
       ];
 
-      # build / switch app が実行時に組み立てる構成名 (mkLinuxHostApps 内の
-      # $target) と一致させること。ずれると switch が構成を見つけられない。
-      linuxConfigName =
-        { hostKind, system, ... }:
-        "${username}@${hostKind}-${
-          {
-            "x86_64-linux" = "x86_64";
-            "aarch64-linux" = "aarch64";
-          }
-          .${system}
-        }";
+      # Nix system → 構成名・$target で使う短縮 arch 名。linuxConfigName と
+      # mkLinuxHostApps の双方で使い、構成名と switch 実行時の組み立てを一致させる。
+      linuxShortArch = {
+        "x86_64-linux" = "x86_64";
+        "aarch64-linux" = "aarch64";
+      };
+
+      linuxConfigName = { hostKind, system, ... }: "${username}@${hostKind}-${linuxShortArch.${system}}";
 
       # treefmt: formatter 出力 (wrapper) と checks 出力 (check) の両方に使う
       mkTreefmtEval =
@@ -233,7 +230,9 @@
             ];
           };
         };
-      mkTreefmtWrapper = pkgs: (mkTreefmtEval pkgs).config.build.wrapper;
+      # treefmt の module 評価は重いので system ごとに 1 回だけ行い、
+      # apps / formatter / checks で同じ評価を共有する
+      treefmtEvalFor = lib.genAttrs systems (system: mkTreefmtEval pkgsFor.${system});
 
       mkCommonApps = import ./nix/lib/mk-apps.nix { inherit inputs; };
 
@@ -278,12 +277,7 @@
       mkLinuxHostApps =
         system: pkgs:
         let
-          arch =
-            {
-              "x86_64-linux" = "x86_64";
-              "aarch64-linux" = "aarch64";
-            }
-            .${system};
+          arch = linuxShortArch.${system};
           hmBin = "${home-manager.packages.${system}.default}/bin/home-manager";
           buildScript = pkgs.writeShellApplication {
             name = "home-manager-build";
@@ -387,7 +381,7 @@
           pkgs = pkgsFor.${system};
           common = mkCommonApps {
             inherit pkgs;
-            treefmtWrapper = mkTreefmtWrapper pkgs;
+            treefmtWrapper = treefmtEvalFor.${system}.config.build.wrapper;
           };
           host = if system == darwinSystem then mkDarwinHostApps pkgs else mkLinuxHostApps system pkgs;
         in
@@ -414,13 +408,7 @@
         }
       );
 
-      formatter = lib.genAttrs systems (
-        system:
-        let
-          pkgs = pkgsFor.${system};
-        in
-        mkTreefmtWrapper pkgs
-      );
+      formatter = lib.genAttrs systems (system: treefmtEvalFor.${system}.config.build.wrapper);
 
       packages = lib.genAttrs systems (
         system:
@@ -444,14 +432,14 @@
           pkgs = pkgsFor.${system};
           common = mkCommonApps {
             inherit pkgs;
-            treefmtWrapper = mkTreefmtWrapper pkgs;
+            treefmtWrapper = treefmtEvalFor.${system}.config.build.wrapper;
           };
           host = if system == darwinSystem then mkDarwinHostApps pkgs else mkLinuxHostApps system pkgs;
         in
         {
-          treefmt = (mkTreefmtEval pkgs).config.build.check self;
+          treefmt = treefmtEvalFor.${system}.config.build.check self;
           # 全 app スクリプトをビルドし、writeShellApplication のビルド時
-          # shellcheck を CI (plans/003 の build-linux) で強制する
+          # shellcheck を CI (build-linux ジョブ) で強制する
           app-scripts = pkgs.symlinkJoin {
             name = "app-scripts";
             paths = common.scripts ++ host.scripts;
