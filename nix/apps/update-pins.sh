@@ -12,12 +12,19 @@ cd "$root"
 
 # GitHub API: gh があれば認証付きで叩く (rate limit 回避)。無ければ素の curl。
 latest_tag() {
-  local repo=$1
+  local repo=$1 tag
   if command -v gh >/dev/null 2>&1; then
-    gh api "repos/$repo/releases/latest" --jq .tag_name
+    tag=$(gh api "repos/$repo/releases/latest" --jq .tag_name)
   else
-    curl -fsSL "https://api.github.com/repos/$repo/releases/latest" | jq -r .tag_name
+    tag=$(curl -fsSL "https://api.github.com/repos/$repo/releases/latest" | jq -r .tag_name)
   fi
+  # API がリリースを返さない場合に "null" のまま download URL を組み立てて
+  # 意味不明なエラーで落ちるのを防ぎ、根本原因をここで報告する
+  if [[ -z $tag || $tag == "null" ]]; then
+    echo "latest_tag: $repo の latest release tag を取得できなかった" >&2
+    return 1
+  fi
+  printf '%s\n' "$tag"
 }
 
 prefetch() {
@@ -67,7 +74,13 @@ if [ "$(jq -r .version nix/pins/hcom.json)" != "$hcom_before" ]; then
 fi
 
 echo "== agent-slack"
+agent_slack_before=$(jq -r .version nix/pins/agent-slack.json)
 update_release_pin "agent-slack" "stablyai/agent-slack" "nix/pins/agent-slack.json"
+if [ "$(jq -r .version nix/pins/agent-slack.json)" != "$agent_slack_before" ]; then
+  # バイナリと skill ドキュメント (flake input agent-slack-skill) の版ズレを防ぐ
+  echo "agent-slack: updating flake input agent-slack-skill to match"
+  nix flake update agent-slack-skill
+fi
 
 echo "== git-wt"
 pin=nix/pins/git-wt.json
