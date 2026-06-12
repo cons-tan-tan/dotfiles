@@ -28,6 +28,9 @@ nix run .#apply-secrets
 | `nix run .#fmt` | treefmt で整形 |
 | `nix run .#apply-secrets` | sops secrets の復号・配置(鍵が無ければスキップ) |
 | `nix run .#apply-winget` | Windows 側パッケージの適用(WSL のみ) |
+| `nix run .#pptx -- <cmd>` | PPTX 変換ツールチェーン(markitdown / python-pptx / LibreOffice)入り環境でコマンド実行 |
+| `nix run .#markdownlint` | リポジトリ管理の技術文書モードで markdownlint 実行 |
+| `nix run .#textlint` | リポジトリ管理の日本語技術文書モードで textlint 実行 |
 
 ## 構成
 
