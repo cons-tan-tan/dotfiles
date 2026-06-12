@@ -364,6 +364,26 @@
         // (if system == darwinSystem then mkDarwinHostApps pkgs else mkLinuxHostApps system pkgs)
       );
 
+      # 作業用ツール (テスト・lint・secrets 編集) の宣言的な入口。
+      # 構成の build / switch には不要 — apps だけで完結する。
+      devShells = lib.genAttrs systems (
+        system:
+        let
+          pkgs = mkPkgs system;
+        in
+        {
+          default = pkgs.mkShell {
+            packages = with pkgs; [
+              bats
+              shellcheck
+              jq
+              sops
+              reuse
+            ];
+          };
+        }
+      );
+
       formatter = lib.genAttrs systems (
         system:
         let
