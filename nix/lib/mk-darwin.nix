@@ -2,6 +2,7 @@
   inputs,
   username,
   homedir,
+  pkgsFor,
 }:
 {
   system,
@@ -11,7 +12,7 @@ inputs.nix-darwin.lib.darwinSystem {
   inherit system;
   specialArgs = { inherit username homedir; };
   modules = [
-    { nixpkgs.pkgs = (import ./mk-pkgs.nix { inherit inputs; }) system; }
+    { nixpkgs.pkgs = pkgsFor.${system}; }
     ../modules/darwin/system.nix
 
     inputs.home-manager.darwinModules.home-manager

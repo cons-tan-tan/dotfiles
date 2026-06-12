@@ -27,9 +27,11 @@
 
     llm-agents = {
       url = "github:numtide/llm-agents.nix";
-      # upstream も nixpkgs-unstable を追っており、lock 上は元々同一 rev に
-      # dedup されていた。follows で恒久的に一本化する。
+      # upstream も nixpkgs-unstable / treefmt-nix を追っており、follows で
+      # root の pin に一本化する。なお lock 上の "nixpkgs" ノードは mozuku
+      # 専用の古い pin (root の nixpkgs とは別物 — mozuku のコメント参照)。
       inputs.nixpkgs.follows = "nixpkgs";
+      inputs.treefmt-nix.follows = "treefmt-nix";
     };
 
     treefmt-nix = {
@@ -158,18 +160,23 @@
 
       mkPkgs = import ./nix/lib/mk-pkgs.nix { inherit inputs; };
 
+      # nixpkgs の import + overlay 適用は重いので system ごとに一度だけ行い、
+      # 全出力とホスト構成で同じインスタンスを共有する。
+      pkgsFor = lib.genAttrs systems mkPkgs;
+
       mkHost = import ./nix/lib/mk-host.nix {
         inherit
           inputs
           username
           windowsUsername
           windowsHomedir
+          pkgsFor
           ;
         homedir = linuxHomedir;
       };
 
       mkDarwin = import ./nix/lib/mk-darwin.nix {
-        inherit inputs username;
+        inherit inputs username pkgsFor;
         homedir = darwinHomedir;
       };
 
@@ -355,7 +362,7 @@
       apps = lib.genAttrs systems (
         system:
         let
-          pkgs = mkPkgs system;
+          pkgs = pkgsFor.${system};
         in
         mkCommonApps {
           inherit pkgs;
@@ -369,7 +376,7 @@
       devShells = lib.genAttrs systems (
         system:
         let
-          pkgs = mkPkgs system;
+          pkgs = pkgsFor.${system};
         in
         {
           default = pkgs.mkShell {
@@ -387,7 +394,7 @@
       formatter = lib.genAttrs systems (
         system:
         let
-          pkgs = mkPkgs system;
+          pkgs = pkgsFor.${system};
         in
         mkTreefmtWrapper pkgs
       );
@@ -395,7 +402,7 @@
       packages = lib.genAttrs systems (
         system:
         let
-          pkgs = mkPkgs system;
+          pkgs = pkgsFor.${system};
         in
         {
           inherit (pkgs)
@@ -411,7 +418,7 @@
       checks = lib.genAttrs systems (
         system:
         {
-          treefmt = (mkTreefmtEval (mkPkgs system)).config.build.check self;
+          treefmt = (mkTreefmtEval pkgsFor.${system}).config.build.check self;
         }
         // lib.optionalAttrs (system == darwinSystem) {
           darwin-system = darwinConfigurations.${darwinHostname}.system;

@@ -4,6 +4,7 @@
   homedir,
   windowsUsername,
   windowsHomedir,
+  pkgsFor,
 }:
 {
   hostKind,
@@ -11,7 +12,7 @@
   hostFile,
 }:
 inputs.home-manager.lib.homeManagerConfiguration {
-  pkgs = (import ./mk-pkgs.nix { inherit inputs; }) system;
+  pkgs = pkgsFor.${system};
   extraSpecialArgs = { inherit inputs; };
   modules = import ./mk-home-modules.nix {
     inherit
