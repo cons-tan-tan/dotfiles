@@ -38,3 +38,16 @@ jobs:
       - uses: DeterminateSystems/determinate-nix-action@v3
       - run: nix profile install --inputs-from . nixpkgs#bats
       - run: bats tests/
+
+  # x86_64-linux の checks (home-linux / home-wsl / treefmt) を実ビルドする。
+  # eval だけでは hash 切れや vendorHash 不一致が素通りするため。
+  # mozuku-lsp はキャッシュに無くソースビルドになるが、それ自体が検証対象。
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/determinate-nix-action@v3
+        with:
+          extra-conf: |
+            accept-flake-config = true
+      - run: nix flake check --print-build-logs
