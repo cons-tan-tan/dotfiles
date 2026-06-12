@@ -54,53 +54,9 @@ let
       pkgs.jq
     ];
     text = ''
-      # --dry-run: 書き込み先の一覧だけ出して終了する (実環境を触らない検証用)
-      dry_run=false
-      if [ "''${1:-}" = "--dry-run" ]; then
-        dry_run=true
-      fi
-
-      failed=0
-      while IFS= read -r entry; do
-        rel_src=$(jq -r .src <<<"$entry")
-        rel_dst=$(jq -r .dst <<<"$entry")
-        mode=$(jq -r .mode <<<"$entry")
-        dir_mode=$(jq -r .dirMode <<<"$entry")
-        src="${inputs.self}/$rel_src"
-        dst="$HOME/$rel_dst"
-
-        if [ ! -f "$src" ]; then
-          echo "apply-secrets: $rel_src is not in the repo; skipping" >&2
-          continue
-        fi
-
-        if $dry_run; then
-          echo "apply-secrets: would write $dst (mode $mode)"
-          continue
-        fi
-
-        mkdir -p "$(dirname "$dst")"
-        chmod "$dir_mode" "$(dirname "$dst")"
-
-        tmp=$(mktemp "$dst.XXXXXX")
-        trap 'rm -f "$tmp"' EXIT
-        if ! sops --decrypt "$src" > "$tmp"; then
-          # GPG 鍵未導入でも switch を阻害しない方針 (案 B) はファイル単位で維持
-          echo "apply-secrets: decryption of $rel_src failed (GPG key not imported?); skipping" >&2
-          rm -f "$tmp"
-          trap - EXIT
-          failed=$((failed + 1))
-          continue
-        fi
-        chmod "$mode" "$tmp"
-        mv "$tmp" "$dst"
-        trap - EXIT
-        echo "apply-secrets: wrote $dst"
-      done < <(jq -c '.[]' ${secretsManifestFile})
-
-      if [ "$failed" -gt 0 ]; then
-        echo "apply-secrets: $failed file(s) skipped (decryption failed)" >&2
-      fi
+      export APPLY_SECRETS_ROOT=${inputs.self}
+      export APPLY_SECRETS_MANIFEST=${secretsManifestFile}
+      ${builtins.readFile ../apps/apply-secrets.sh}
     '';
   };
 in
