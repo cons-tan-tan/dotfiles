@@ -43,6 +43,7 @@ rec {
     # Claude Code
     "CLAUDE.local.md"
     "**/.claude/settings.local.json"
+    "**/.claude/worktrees/"
 
     # Backup files (commit skill)
     "*.local.bak"
