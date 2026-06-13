@@ -26,14 +26,14 @@ nix flake check --print-build-logs --show-trace
 
 ## CI Usage
 
-In CI environments, prefer `nix profile install` over `nix develop` for faster setup:
+In CI environments, prefer `nix profile add` over `nix develop` for faster setup:
 
 ```bash
 # Install specific tools from nixpkgs
-nix profile install --inputs-from . nixpkgs#uv nixpkgs#just nixpkgs#ruff
+nix profile add --inputs-from . nixpkgs#uv nixpkgs#just nixpkgs#ruff
 
 # Or from the flake's packages
-nix profile install .#my-package
+nix profile add .#my-package
 ```
 
 This avoids the overhead of setting up a full dev shell in CI.

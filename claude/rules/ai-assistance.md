@@ -2,7 +2,7 @@
 
 ## Code Analysis
 
-Use the **ast-grep** skill for:
+Use the `ast-grep` skill for:
 
 - Codebase structure analysis
 - Searching for specific code patterns
