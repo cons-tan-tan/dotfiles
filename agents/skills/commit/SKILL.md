@@ -31,7 +31,7 @@ Revertibility first: Each commit must be independently revertible without breaki
 
 6. For each commit unit:
    - If splitting hunks: Reset the worktree file with `git restore --worktree -- <file>`, then reference the backup
-   - Use Edit to apply only the changes for this unit
+   - Edit the file to apply only the changes for this unit
    - Stage: `git add <file>`
    - Craft message following format below
    - Commit and verify with `git show HEAD`
@@ -69,22 +69,31 @@ Keep `*.local.bak` files until all commits from that file are complete.
 [<body>]
 ```
 
-Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
+### Type
 
-Scope: Optional. Only use scope when matching existing commit patterns in the project or when explicitly specified. By default, omit scope (e.g., prefer `feat: add login` over `feat(auth): add login`).
+Choose one of: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`.
 
-Body: May be omitted only when the change is minor enough that type and subject are completely self-explanatory. When included, body should explain:
-- WHAT changed and WHY
-- Problem context and solution rationale
-- Implementation decisions
-- Potential impacts
-- Wrap at 72 characters
+### Scope
+
+Omit by default. Use a scope only when matching existing commit patterns in the project or when explicitly specified (e.g., prefer `feat: add login` over `feat(auth): add login`).
+
+### Subject
+
+Summarize what changed in a concise, imperative phrase.
+
+### Body
+
+Omit unless the subject and diff leave important context unstated. When included, explain why the change exists, plus relevant constraints, tradeoffs, or impact. Do not restate the diff.
+
+Include only relevant context, rationale, constraints, tradeoffs, or impact.
+
+Wrap body lines at 72 characters.
 
 ## Quality Checks
 
 - Can this be reverted without breaking other functionality?
 - Is this the smallest logical unit?
-- Does message clearly explain the change?
+- If a body is needed, does it explain the reason or context for the change?
 - Does it match project's Conventional Commits patterns (if any)?
 - No debugging statements or commented code without explanation
 
