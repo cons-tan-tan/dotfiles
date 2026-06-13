@@ -89,6 +89,21 @@ Include only relevant context, rationale, constraints, tradeoffs, or impact.
 
 Wrap body lines at 72 characters.
 
+### Command
+
+For subject-only commits, use `git commit -m "<type>: <subject>"`.
+
+For commit messages with a body, pass the full message on stdin so
+line breaks and wrapping are explicit:
+
+```bash
+git commit --file - <<'EOF'
+<type>: <subject>
+
+<body wrapped at 72 characters>
+EOF
+```
+
 ## Quality Checks
 
 - Can this be reverted without breaking other functionality?
