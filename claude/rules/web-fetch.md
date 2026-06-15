@@ -3,7 +3,7 @@
 When fetching web content, try methods in this order. Move to the next if the current one fails (e.g. 403, timeout, aborted):
 
 1. WebFetch tool - Default. Try this first.
-2. curl fallback - If WebFetch returns 403, retry with `curl-fetch -sL -A "claude-code/1.0" <url>`. Many 403s are caused by Cloudflare blocking the default `Claude-User` User-Agent. `curl-fetch` is a GET-only curl wrapper that blocks dangerous flags like `-X`, `-d`, `-F`. Use instead of raw `curl`.
+2. curl fallback - If WebFetch returns 403, retry with `curl-fetch -sL -A "claude-code/1.0" <url>`. Many 403s are caused by Cloudflare blocking the default `Claude-User` User-Agent. `curl-fetch` is a read-only HTTP(S) fetcher, not a general curl replacement. It allows GET/HEAD-style fetches, explicit `-o/--output` paths, literal `--write-out` formats, and basic retry/timeout/header controls. It blocks request mutation (`-X`, `-d`, `-F`), local file reads (`@file`, config/cookie/cert files), remote-derived filenames (`-O`, `-J`), curl state/trace files, proxy/destination overrides, and non-HTTP(S) protocols. Use raw `curl` with explicit approval for those cases.
 3. `agent-browser` skill - Use the `agent-browser` skill for browser-based fetching.
 
 ## Social Media Posts (FxEmbed)

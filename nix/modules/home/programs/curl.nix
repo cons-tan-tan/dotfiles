@@ -1,6 +1,6 @@
 { pkgs, ... }:
 let
-  # GET 専用 curl ラッパー。フラグ検査ロジックは bats でテストするため
+  # read-only HTTP(S) curl ラッパー。フラグ検査ロジックは bats でテストするため
   # 素の bash ファイル (curl-fetch.sh) に分離している。
   # writeShellApplication なのでビルド時に shellcheck がかかる。
   curl-fetch = pkgs.writeShellApplication {

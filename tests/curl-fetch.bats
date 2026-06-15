@@ -57,29 +57,53 @@ teardown() {
   [[ "$output" == *"curl-stub-called"* ]]
 }
 
-@test "-o is denied" {
-  run bash "$SCRIPT" -o /tmp/evil https://example.com
-  [ "$status" -eq 1 ]
+@test "-I HEAD request passes through" {
+  run bash "$SCRIPT" -I https://example.com
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"curl-stub-called"* ]]
+}
+
+@test "-i show headers passes through" {
+  run bash "$SCRIPT" -i https://example.com
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"curl-stub-called"* ]]
+}
+
+@test "--globoff passes through" {
+  run bash "$SCRIPT" --globoff "https://example.com/path[1]"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"curl-stub-called"* ]]
+}
+
+@test "-o explicit output path passes through" {
+  run bash "$SCRIPT" -o /tmp/output.html https://example.com
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"curl-stub-called"* ]]
 }
 
 @test "-O is denied" {
   run bash "$SCRIPT" -O https://example.com/payload
   [ "$status" -eq 1 ]
+  [[ "$output" == *"Reason:"* ]]
+  [[ "$output" == *"Alternative:"* ]]
 }
 
-@test "combined -sLo is denied" {
-  run bash "$SCRIPT" -sLo /tmp/evil https://example.com
-  [ "$status" -eq 1 ]
+@test "combined -sLo explicit output path passes through" {
+  run bash "$SCRIPT" -sLo /tmp/output.html https://example.com
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"curl-stub-called"* ]]
 }
 
-@test "--output is denied" {
-  run bash "$SCRIPT" --output /tmp/evil https://example.com
-  [ "$status" -eq 1 ]
+@test "--output explicit output path passes through" {
+  run bash "$SCRIPT" --output /tmp/output.html https://example.com
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"curl-stub-called"* ]]
 }
 
-@test "--output=file is denied" {
-  run bash "$SCRIPT" --output=/tmp/evil https://example.com
-  [ "$status" -eq 1 ]
+@test "--output=file explicit output path passes through" {
+  run bash "$SCRIPT" --output=/tmp/output.html https://example.com
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"curl-stub-called"* ]]
 }
 
 @test "--remote-name is denied" {
@@ -157,9 +181,24 @@ teardown() {
   [ "$status" -eq 1 ]
 }
 
-@test "--write-out @file is denied" {
+@test "--write-out literal format passes through" {
+  run bash "$SCRIPT" --write-out "%{http_code}" https://example.com
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"curl-stub-called"* ]]
+}
+
+@test "--write-out @file is denied with guidance" {
   run bash "$SCRIPT" --write-out @/etc/passwd https://example.com
   [ "$status" -eq 1 ]
+  [[ "$output" == *"@file syntax reads a local format string"* ]]
+  [[ "$output" == *"Alternative:"* ]]
+}
+
+@test "-w @file is denied with guidance" {
+  run bash "$SCRIPT" -w @/etc/passwd https://example.com
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"@file syntax reads a local format string"* ]]
+  [[ "$output" == *"Alternative:"* ]]
 }
 
 @test "unknown long flag is denied" {
@@ -191,6 +230,7 @@ teardown() {
 @test "-X is denied (regression)" {
   run bash "$SCRIPT" -X POST https://example.com
   [ "$status" -eq 1 ]
+  [[ "$output" == *"read-only fetch"* ]]
 }
 
 @test "--data is denied (regression)" {
