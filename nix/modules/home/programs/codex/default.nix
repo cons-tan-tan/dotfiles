@@ -27,6 +27,17 @@ let
           { approval_policy: "on-request",
             approvals_reviewer: "auto_review",
             features: { hooks: true },
+            tui: {
+              status_line: [
+                "model-with-reasoning",
+                "current-dir",
+                "git-branch",
+                "context-remaining",
+                "five-hour-limit",
+                "weekly-limit",
+                "fast-mode"
+              ]
+            },
             hooks: { state: (to_entries
                              | map({ key: ($hooksJsonPath + ":" + .key + ":0:0"), value: .value })
                              | from_entries) } }
