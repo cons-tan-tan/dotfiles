@@ -38,14 +38,22 @@ let
   # dst は $HOME 相対。dirMode は dst の親ディレクトリに適用する。
   secretsManifest = [
     {
-      src = "secrets/ssh-private.conf";
+      src = "secrets/ssh-private.yaml";
       dst = ".ssh/config.d/50-private.conf";
+      format = "ssh-config-yaml";
       mode = "600";
       dirMode = "700";
     }
   ];
 
   secretsManifestFile = pkgs.writeText "secrets-manifest.json" (builtins.toJSON secretsManifest);
+
+  applySecretsRenderers = pkgs.linkFarm "apply-secrets-renderers" [
+    {
+      name = "ssh-config-yaml.jq";
+      path = ../apps/apply-secrets/renderers/ssh-config-yaml.jq;
+    }
+  ];
 
   applySecretsScript = mkScript "apply-secrets" {
     runtimeInputs = [
@@ -56,7 +64,8 @@ let
     text = ''
       export APPLY_SECRETS_ROOT=${inputs.self}
       export APPLY_SECRETS_MANIFEST=${secretsManifestFile}
-      ${builtins.readFile ../apps/apply-secrets.sh}
+      export APPLY_SECRETS_RENDERERS_DIR=${applySecretsRenderers}
+      ${builtins.readFile ../apps/apply-secrets/apply-secrets.sh}
     '';
   };
 in

@@ -1,8 +1,9 @@
 # sops secrets をマニフェストに従って $HOME へ復号配置する本体。
 # nix/lib/mk-apps.nix の applySecretsScript が以下を export して埋め込む:
-#   APPLY_SECRETS_ROOT     — secrets/ を含むソースルート (flake の self)
-#   APPLY_SECRETS_MANIFEST — 適用エントリの JSON 配列ファイル
-# テスト (tests/apply-secrets.bats) はこの 2 変数を fixture に差し替えて
+#   APPLY_SECRETS_ROOT          — secrets/ を含むソースルート (flake の self)
+#   APPLY_SECRETS_MANIFEST      — 適用エントリの JSON 配列ファイル
+#   APPLY_SECRETS_RENDERERS_DIR — secret format ごとの renderer 置き場
+# テスト (tests/apply-secrets.bats) はこれらを fixture に差し替えて
 # 本体を直接実行する。
 : "${APPLY_SECRETS_ROOT:?APPLY_SECRETS_ROOT must be set}"
 : "${APPLY_SECRETS_MANIFEST:?APPLY_SECRETS_MANIFEST must be set}"
@@ -19,6 +20,35 @@ manifest_errors=0
 manifest_string_field() {
   local field=$1
   jq -er --arg field "$field" '.[$field] | select(type == "string" and length > 0)' <<<"$entry"
+}
+
+manifest_optional_string_field() {
+  local field=$1
+  jq -er --arg field "$field" '.[$field] // empty | select(type == "string" and length > 0)' <<<"$entry"
+}
+
+render_secret() {
+  local format=$1
+  local src=$2
+  local renderer
+
+  case "$format" in
+  raw)
+    sops --decrypt "$src"
+    ;;
+  ssh-config-yaml)
+    : "${APPLY_SECRETS_RENDERERS_DIR:?APPLY_SECRETS_RENDERERS_DIR must be set}"
+    renderer="$APPLY_SECRETS_RENDERERS_DIR/ssh-config-yaml.jq"
+    if [ ! -f "$renderer" ]; then
+      echo "apply-secrets: renderer not found: $renderer" >&2
+      return 1
+    fi
+    sops --decrypt --output-type json "$src" | jq -r -f "$renderer"
+    ;;
+  *)
+    return 64
+    ;;
+  esac
 }
 
 while IFS= read -r entry; do
@@ -42,6 +72,10 @@ while IFS= read -r entry; do
     manifest_errors=$((manifest_errors + 1))
     continue
   fi
+  format="raw"
+  if entry_format=$(manifest_optional_string_field format); then
+    format=$entry_format
+  fi
   src="$APPLY_SECRETS_ROOT/$rel_src"
   dst="$HOME/$rel_dst"
 
@@ -62,6 +96,15 @@ while IFS= read -r entry; do
     continue
   fi
 
+  case "$format" in
+  raw | ssh-config-yaml) ;;
+  *)
+    echo "apply-secrets: manifest error: unsupported format '$format'; skipping" >&2
+    manifest_errors=$((manifest_errors + 1))
+    continue
+    ;;
+  esac
+
   if $dry_run; then
     echo "apply-secrets: would write $dst (mode $mode)"
     continue
@@ -72,9 +115,9 @@ while IFS= read -r entry; do
 
   tmp=$(mktemp "$dst.XXXXXX")
   trap 'rm -f "$tmp"' EXIT
-  if ! sops --decrypt "$src" >"$tmp"; then
+  if ! render_secret "$format" "$src" >"$tmp"; then
     # GPG 鍵未導入でも switch を阻害しない方針 (案 B) はファイル単位で維持
-    echo "apply-secrets: decryption of $rel_src failed (GPG key not imported?); skipping" >&2
+    echo "apply-secrets: decryption/rendering of $rel_src failed (GPG key not imported, or malformed secret?); skipping" >&2
     rm -f "$tmp"
     trap - EXIT
     decrypt_failures=$((decrypt_failures + 1))

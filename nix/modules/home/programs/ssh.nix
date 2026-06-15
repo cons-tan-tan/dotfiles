@@ -2,8 +2,8 @@
 # 実際の設定はすべて ~/.ssh/config.d/ 配下の断片に置く:
 #
 #   10-common.conf  - 全環境共通 (このモジュールが配置)
-#   50-private.conf - 秘匿ホスト (sops 暗号化の secrets/ssh-private.conf を
-#                     `nix run .#apply-secrets` で復号して配置)
+#   50-private.conf - 秘匿ホスト (sops 暗号化の secrets/ssh-private.yaml を
+#                     `nix run .#apply-secrets` で復号・レンダリングして配置)
 #   90-local.conf 等 - デバイス固有の一時設定が必要なら手で置く (Nix 管理外)
 #
 # OpenSSH の Include はマッチしない glob を黙って無視するため、秘匿断片が
