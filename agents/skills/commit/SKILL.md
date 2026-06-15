@@ -16,7 +16,7 @@ Revertibility first: Each commit must be independently revertible without breaki
 ## Workflow
 
 1. Analyze the changes above: Review the git state already provided. Summarize what changed before asking any splitting questions.
-2. Review history: Match existing Conventional Commits patterns (structure, scope naming, message style) from the log above. Ignore non-Conventional Commit styles.
+2. Review history: Match existing Conventional Commits patterns for type, scope naming, subject style, and tone. Ignore non-Conventional Commit styles. Do not add or omit a body merely to match recent history; decide body presence from the Body rules below.
 3. Identify revertible units: Examine each hunk separately - can it be reverted independently?
 4. Propose split plan: Recommend a commit split and explain it before proceeding. When confirmation is required, ask the user.
 
@@ -83,7 +83,7 @@ Summarize what changed in a concise, imperative phrase.
 
 ### Body
 
-Omit unless the subject and diff leave important context unstated. When included, explain why the change exists, plus relevant constraints, tradeoffs, or impact. Do not restate the diff.
+Omit unless the subject and diff leave important context unstated. Do not omit a body solely because recent commits are subject-only, and do not add one solely because recent commits include bodies. When included, explain why the change exists, plus relevant constraints, tradeoffs, or impact. Do not restate the diff.
 
 Include only relevant context, rationale, constraints, tradeoffs, or impact.
 
