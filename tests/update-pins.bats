@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# update-pins の git-wt vendorHash 経路を fake repo とスタブだけで検査する。
+# update-pins の全体 transaction を fake repo とスタブだけで検査する。
 
 setup() {
   REPO_ROOT="$(git rev-parse --show-toplevel)"
@@ -7,28 +7,23 @@ setup() {
   mkdir -p "$WORK/nix/apps" "$WORK/nix/pins"
   cp "$REPO_ROOT/nix/apps/update-pins.sh" "$WORK/nix/apps/update-pins.sh"
   cp "$REPO_ROOT"/nix/pins/*.json "$WORK/nix/pins/"
+  cp "$REPO_ROOT/flake.lock" "$WORK/flake.lock"
+
+  (
+    cd "$WORK"
+    git init -q
+    git config user.email update-pins-test@example.invalid
+    git config user.name "update-pins test"
+    git add flake.lock nix/apps/update-pins.sh nix/pins/*.json
+    git commit -q -m "initial managed files"
+  )
 
   STUB_DIR="$WORK/stub"
   mkdir -p "$STUB_DIR"
   export UPDATE_PINS_FAKE_ROOT="$WORK"
   export UPDATE_PINS_NIX_BUILD_COUNT="$WORK/nix-build-count"
-
-  cat >"$STUB_DIR/git" <<'EOS'
-#!/usr/bin/env bash
-set -euo pipefail
-
-if [ "$1" = "rev-parse" ] && [ "${2:-}" = "--show-toplevel" ]; then
-  printf '%s\n' "$UPDATE_PINS_FAKE_ROOT"
-  exit 0
-fi
-
-if [ "$1" = "diff" ] && [ "${2:-}" = "--quiet" ]; then
-  exit "${GIT_DIFF_STATUS:-1}"
-fi
-
-echo "unexpected git invocation: $*" >&2
-exit 1
-EOS
+  export UPDATE_PINS_REAL_MV
+  UPDATE_PINS_REAL_MV=$(command -v mv)
 
   cat >"$STUB_DIR/gh" <<'EOS'
 #!/usr/bin/env bash
@@ -36,13 +31,13 @@ set -euo pipefail
 
 case "$*" in
 "api repos/aannoo/hcom/releases/latest --jq .tag_name")
-  printf 'v%s\n' "$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/hcom.json")"
+  printf '%s\n' "${UPDATE_PINS_HCOM_TAG:-v$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/hcom.json")}"
   ;;
 "api repos/stablyai/agent-slack/releases/latest --jq .tag_name")
-  printf 'v%s\n' "$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/agent-slack.json")"
+  printf '%s\n' "${UPDATE_PINS_AGENT_SLACK_TAG:-v$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/agent-slack.json")}"
   ;;
 "api repos/k1LoW/git-wt/releases/latest --jq .tag_name")
-  printf 'v999.0.0\n'
+  printf '%s\n' "${UPDATE_PINS_GIT_WT_TAG:-v999.0.0}"
   ;;
 *)
   echo "unexpected gh invocation: $*" >&2
@@ -56,10 +51,14 @@ EOS
 set -euo pipefail
 
 if [ "$1" = "store" ] && [ "${2:-}" = "prefetch-file" ]; then
-  if [[ " $* " == *" --unpack "* ]]; then
+  if [[ "$*" == *"config-schema.json"* ]]; then
+    if [ "${UPDATE_PINS_CODEX_PREFETCH_FAIL:-}" = "1" ]; then
+      echo "codex schema prefetch failed" >&2
+      exit 1
+    fi
+    printf '{"hash":"%s"}\n' "${UPDATE_PINS_CODEX_HASH:-$(jq -r .hash "$UPDATE_PINS_FAKE_ROOT/nix/pins/codex-schema.json")}"
+  elif [[ " $* " == *" --unpack "* ]]; then
     printf '{"hash":"sha256-src-for-test"}\n'
-  elif [[ "$*" == *"config-schema.json"* ]]; then
-    printf '{"hash":"%s"}\n' "$(jq -r .hash "$UPDATE_PINS_FAKE_ROOT/nix/pins/codex-schema.json")"
   else
     printf '{"hash":"sha256-asset-for-test"}\n'
   fi
@@ -104,6 +103,12 @@ if [ "$1" = "build" ] && [ "${2:-}" = ".#git-wt" ] && [ "${3:-}" = "--no-link" ]
 fi
 
 if [ "$1" = "flake" ] && [ "${2:-}" = "update" ]; then
+  input=${3:-}
+  printf '{"updated":"%s"}\n' "$input" >"$UPDATE_PINS_FAKE_ROOT/flake.lock"
+  if [ "${UPDATE_PINS_FAIL_FLAKE_UPDATE:-}" = "$input" ]; then
+    echo "flake update failed for $input" >&2
+    exit 1
+  fi
   exit 0
 fi
 
@@ -111,7 +116,19 @@ echo "unexpected nix invocation: $*" >&2
 exit 1
 EOS
 
-  chmod +x "$STUB_DIR/git" "$STUB_DIR/gh" "$STUB_DIR/nix"
+  cat >"$STUB_DIR/mv" <<'EOS'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "${UPDATE_PINS_CODEX_UPDATE_FAIL:-}" = "1" ] && [ "${2:-}" = "nix/pins/codex-schema.json" ]; then
+  echo "codex schema update failed" >&2
+  exit 1
+fi
+
+exec "$UPDATE_PINS_REAL_MV" "$@"
+EOS
+
+  chmod +x "$STUB_DIR/gh" "$STUB_DIR/nix" "$STUB_DIR/mv"
   export PATH="$STUB_DIR:$PATH"
 }
 
@@ -120,38 +137,158 @@ teardown() {
 }
 
 run_update_pins() {
-  run bash -eu -o pipefail "$WORK/nix/apps/update-pins.sh"
+  run bash -eu -o pipefail -c 'cd "$UPDATE_PINS_FAKE_ROOT"; bash -eu -o pipefail nix/apps/update-pins.sh 2>&1'
 }
 
-@test "git-wt pin is restored when vendorHash cannot be extracted" {
-  original="$WORK/original-git-wt.json"
-  cp "$WORK/nix/pins/git-wt.json" "$original"
+save_managed() {
+  local dst=$1
+  mkdir -p "$dst/nix/pins"
+  cp "$WORK/flake.lock" "$dst/flake.lock"
+  cp "$WORK"/nix/pins/*.json "$dst/nix/pins/"
+}
+
+assert_managed_matches() {
+  local expected=$1 pin name
+  cmp -s "$WORK/flake.lock" "$expected/flake.lock" || return 1
+  for pin in "$expected"/nix/pins/*.json; do
+    name=$(basename "$pin")
+    cmp -s "$WORK/nix/pins/$name" "$pin" || return 1
+  done
+}
+
+@test "managed dirty files are rejected without changing contents" {
+  printf '{"dirty":true}\n' >"$WORK/nix/pins/hcom.json"
+  original="$WORK/original"
+  save_managed "$original"
+
+  run_update_pins
+
+  [ "$status" -ne 0 ]
+  assert_managed_matches "$original"
+}
+
+@test "managed staged dirty files are rejected without changing contents" {
+  printf '{"dirty":true}\n' >"$WORK/nix/pins/hcom.json"
+  original="$WORK/original"
+  save_managed "$original"
+  git -C "$WORK" add nix/pins/hcom.json
+
+  run_update_pins
+
+  [ "$status" -ne 0 ]
+  assert_managed_matches "$original"
+}
+
+@test "deleted tracked pin is rejected as managed dirty" {
+  original="$WORK/original"
+  save_managed "$original"
+  rm "$WORK/nix/pins/hcom.json"
+
+  run_update_pins
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"managed files already have unstaged changes"* ]]
+  [ ! -e "$WORK/nix/pins/hcom.json" ]
+}
+
+@test "hcom flake update failure restores hcom pin and flake.lock" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_HCOM_TAG=v1.2.3
+  export UPDATE_PINS_FAIL_FLAKE_UPDATE=hcom-src
+
+  run_update_pins
+
+  [ "$status" -ne 0 ]
+  assert_managed_matches "$original"
+}
+
+@test "agent-slack flake update failure restores earlier pin changes" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_HCOM_TAG=v1.2.3
+  export UPDATE_PINS_AGENT_SLACK_TAG=v4.5.6
+  export UPDATE_PINS_FAIL_FLAKE_UPDATE=agent-slack-skill
+
+  run_update_pins
+
+  [ "$status" -ne 0 ]
+  assert_managed_matches "$original"
+}
+
+@test "git-wt vendorHash extraction failure restores all managed files" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_HCOM_TAG=v1.2.3
+  export UPDATE_PINS_AGENT_SLACK_TAG=v4.5.6
   export UPDATE_PINS_BUILD_MODE=no-hash
 
   run_update_pins
 
   [ "$status" -ne 0 ]
-  cmp -s "$WORK/nix/pins/git-wt.json" "$original"
+  assert_managed_matches "$original"
 }
 
-@test "git-wt pin is updated after vendorHash extraction and verification" {
-  export UPDATE_PINS_BUILD_MODE=success
-
-  run_update_pins
-
-  [ "$status" -eq 0 ]
-  [ "$(jq -r .version "$WORK/nix/pins/git-wt.json")" = "999.0.0" ]
-  [ "$(jq -r .srcHash "$WORK/nix/pins/git-wt.json")" = "sha256-src-for-test" ]
-  [ "$(jq -r .vendorHash "$WORK/nix/pins/git-wt.json")" = "sha256-vendor-for-test" ]
-}
-
-@test "git-wt pin is restored when verification build fails" {
-  original="$WORK/original-git-wt.json"
-  cp "$WORK/nix/pins/git-wt.json" "$original"
+@test "git-wt verification build failure restores all managed files" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_HCOM_TAG=v1.2.3
+  export UPDATE_PINS_AGENT_SLACK_TAG=v4.5.6
   export UPDATE_PINS_BUILD_MODE=verify-fails
 
   run_update_pins
 
   [ "$status" -ne 0 ]
-  cmp -s "$WORK/nix/pins/git-wt.json" "$original"
+  assert_managed_matches "$original"
+}
+
+@test "codex-schema prefetch failure restores all managed files" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_HCOM_TAG=v1.2.3
+  export UPDATE_PINS_AGENT_SLACK_TAG=v4.5.6
+  export UPDATE_PINS_BUILD_MODE=success
+  export UPDATE_PINS_CODEX_PREFETCH_FAIL=1
+
+  run_update_pins
+
+  [ "$status" -ne 0 ]
+  assert_managed_matches "$original"
+}
+
+@test "codex-schema update failure restores all managed files" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_HCOM_TAG=v1.2.3
+  export UPDATE_PINS_AGENT_SLACK_TAG=v4.5.6
+  export UPDATE_PINS_BUILD_MODE=success
+  export UPDATE_PINS_CODEX_HASH=sha256-codex-for-test
+  export UPDATE_PINS_CODEX_UPDATE_FAIL=1
+
+  run_update_pins
+
+  [ "$status" -ne 0 ]
+  assert_managed_matches "$original"
+}
+
+@test "successful update leaves expected managed file changes" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_HCOM_TAG=v1.2.3
+  export UPDATE_PINS_AGENT_SLACK_TAG=v4.5.6
+  export UPDATE_PINS_BUILD_MODE=success
+  export UPDATE_PINS_CODEX_HASH=sha256-codex-for-test
+
+  run_update_pins
+
+  [ "$status" -eq 0 ]
+  [ "$(jq -r .version "$WORK/nix/pins/hcom.json")" = "1.2.3" ]
+  [ "$(jq -r '.assets["aarch64-darwin"].hash' "$WORK/nix/pins/hcom.json")" = "sha256-asset-for-test" ]
+  [ "$(jq -r .version "$WORK/nix/pins/agent-slack.json")" = "4.5.6" ]
+  [ "$(jq -r .version "$WORK/nix/pins/git-wt.json")" = "999.0.0" ]
+  [ "$(jq -r .srcHash "$WORK/nix/pins/git-wt.json")" = "sha256-src-for-test" ]
+  [ "$(jq -r .vendorHash "$WORK/nix/pins/git-wt.json")" = "sha256-vendor-for-test" ]
+  [ "$(jq -r .hash "$WORK/nix/pins/codex-schema.json")" = "sha256-codex-for-test" ]
+  [ "$(jq -r .updated "$WORK/flake.lock")" = "agent-slack-skill" ]
+  ! assert_managed_matches "$original"
 }

@@ -4,23 +4,81 @@
 
 # 失敗時に一時ファイルを残さない。各ブロックは TMPFILES に追記してから使う。
 TMPFILES=()
-restore_git_wt_pin=false
-git_wt_pin_backup=""
-git_wt_pin_path=""
-restore_git_wt_pin_now() {
-  if $restore_git_wt_pin && [ -n "$git_wt_pin_backup" ] && [ -n "$git_wt_pin_path" ] && [ -f "$git_wt_pin_backup" ]; then
-    cp "$git_wt_pin_backup" "$git_wt_pin_path"
-    restore_git_wt_pin=false
+TMPDIRS=()
+managed_files=()
+managed_pathspecs=(':(glob)nix/pins/*.json' flake.lock)
+managed_backup_dir=""
+restore_managed_files=false
+
+restore_managed_files_now() {
+  local file backup
+  if ! $restore_managed_files || [ -z "$managed_backup_dir" ]; then
+    return 0
   fi
+  echo "update-pins: failed; restoring managed files from backup" >&2
+  for file in "${managed_files[@]}"; do
+    backup="$managed_backup_dir/$file"
+    if [ -f "$backup" ]; then
+      case $file in
+      */*) mkdir -p "${file%/*}" ;;
+      esac
+      cp "$backup" "$file"
+    else
+      rm -f "$file"
+    fi
+  done
+  restore_managed_files=false
 }
+
 cleanup() {
-  restore_git_wt_pin_now
+  local status=$?
+  set +e
+  if [ "$status" -ne 0 ]; then
+    restore_managed_files_now
+  fi
   rm -f "${TMPFILES[@]}"
+  rm -rf "${TMPDIRS[@]}"
+  exit "$status"
 }
 trap cleanup EXIT
 
 root=$(git rev-parse --show-toplevel)
 cd "$root"
+
+check_managed_files_clean() {
+  if ! git diff --quiet -- "${managed_pathspecs[@]}"; then
+    echo "update-pins: managed files already have unstaged changes; refusing to overwrite them" >&2
+    return 1
+  fi
+  if ! git diff --cached --quiet -- "${managed_pathspecs[@]}"; then
+    echo "update-pins: managed files already have staged changes; refusing to overwrite them" >&2
+    return 1
+  fi
+}
+
+load_managed_files() {
+  local file
+  managed_files=()
+  while IFS= read -r -d '' file; do
+    managed_files+=("$file")
+  done < <(git ls-files -z -- "${managed_pathspecs[@]}")
+}
+
+backup_managed_files() {
+  local file backup
+  load_managed_files
+  managed_backup_dir=$(mktemp -d)
+  TMPDIRS+=("$managed_backup_dir")
+  for file in "${managed_files[@]}"; do
+    backup="$managed_backup_dir/$file"
+    mkdir -p "${backup%/*}"
+    cp "$file" "$backup"
+  done
+  restore_managed_files=true
+}
+
+check_managed_files_clean
+backup_managed_files
 
 # GitHub API: gh があれば認証付きで叩く (rate limit 回避)。無ければ素の curl。
 latest_tag() {
@@ -104,11 +162,6 @@ if [ "$ver" = "$cur" ]; then
 else
   echo "git-wt: $cur -> $ver (prefetching source...)"
   src_hash=$(prefetch_unpack "https://github.com/k1LoW/git-wt/archive/refs/tags/$tag.tar.gz")
-  git_wt_pin_path=$pin
-  git_wt_pin_backup=$(mktemp)
-  TMPFILES+=("$git_wt_pin_backup")
-  cp "$pin" "$git_wt_pin_backup"
-  restore_git_wt_pin=true
   tmp=$(mktemp)
   TMPFILES+=("$tmp")
   # vendorHash は go modules のダウンロード結果から決まるため事前計算できない。
@@ -122,7 +175,6 @@ else
   if [ -z "$vendor_hash" ]; then
     echo "git-wt: failed to extract vendorHash from build output:" >&2
     echo "$build_log" | tail -10 >&2
-    restore_git_wt_pin_now
     exit 1
   fi
   tmp=$(mktemp)
@@ -131,11 +183,9 @@ else
   mv "$tmp" "$pin"
   echo "git-wt: verifying build..."
   if ! nix build .#git-wt --no-link; then
-    echo "git-wt: verification build failed; restoring previous pin" >&2
-    restore_git_wt_pin_now
+    echo "git-wt: verification build failed" >&2
     exit 1
   fi
-  restore_git_wt_pin=false
 fi
 
 echo "== codex-schema"
@@ -152,8 +202,9 @@ else
 fi
 
 echo
-if git diff --quiet -- nix/pins flake.lock; then
+if git diff --quiet -- "${managed_pathspecs[@]}"; then
   echo "All pins up to date."
 else
   echo "Pins updated. Review with 'git diff', verify with 'nix run .#build', then commit."
 fi
+restore_managed_files=false
