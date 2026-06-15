@@ -13,12 +13,35 @@ if [ "${1:-}" = "--dry-run" ]; then
   dry_run=true
 fi
 
-failed=0
+decrypt_failures=0
+manifest_errors=0
+
+manifest_string_field() {
+  local field=$1
+  jq -er --arg field "$field" '.[$field] | select(type == "string" and length > 0)' <<<"$entry"
+}
+
 while IFS= read -r entry; do
-  rel_src=$(jq -r .src <<<"$entry")
-  rel_dst=$(jq -r .dst <<<"$entry")
-  mode=$(jq -r .mode <<<"$entry")
-  dir_mode=$(jq -r .dirMode <<<"$entry")
+  if ! rel_src=$(manifest_string_field src); then
+    echo "apply-secrets: manifest error: src must be a non-empty string; skipping" >&2
+    manifest_errors=$((manifest_errors + 1))
+    continue
+  fi
+  if ! rel_dst=$(manifest_string_field dst); then
+    echo "apply-secrets: manifest error: dst must be a non-empty string; skipping" >&2
+    manifest_errors=$((manifest_errors + 1))
+    continue
+  fi
+  if ! mode=$(manifest_string_field mode); then
+    echo "apply-secrets: manifest error: mode must be a non-empty string; skipping" >&2
+    manifest_errors=$((manifest_errors + 1))
+    continue
+  fi
+  if ! dir_mode=$(manifest_string_field dirMode); then
+    echo "apply-secrets: manifest error: dirMode must be a non-empty string; skipping" >&2
+    manifest_errors=$((manifest_errors + 1))
+    continue
+  fi
   src="$APPLY_SECRETS_ROOT/$rel_src"
   dst="$HOME/$rel_dst"
 
@@ -27,14 +50,15 @@ while IFS= read -r entry; do
   # (dst の親はまだ存在しないことがあり、正規化は逆に複雑になる)。
   case "$rel_dst" in
   /* | .. | ../* | */.. | */../*)
-    echo "apply-secrets: dst '$rel_dst' escapes HOME; skipping" >&2
-    failed=$((failed + 1))
+    echo "apply-secrets: manifest error: dst '$rel_dst' escapes HOME; skipping" >&2
+    manifest_errors=$((manifest_errors + 1))
     continue
     ;;
   esac
 
   if [ ! -f "$src" ]; then
-    echo "apply-secrets: $rel_src is not in the repo; skipping" >&2
+    echo "apply-secrets: manifest error: $rel_src is not in the repo; skipping" >&2
+    manifest_errors=$((manifest_errors + 1))
     continue
   fi
 
@@ -53,7 +77,7 @@ while IFS= read -r entry; do
     echo "apply-secrets: decryption of $rel_src failed (GPG key not imported?); skipping" >&2
     rm -f "$tmp"
     trap - EXIT
-    failed=$((failed + 1))
+    decrypt_failures=$((decrypt_failures + 1))
     continue
   fi
   chmod "$mode" "$tmp"
@@ -62,6 +86,11 @@ while IFS= read -r entry; do
   echo "apply-secrets: wrote $dst"
 done < <(jq -c '.[]' "$APPLY_SECRETS_MANIFEST")
 
-if [ "$failed" -gt 0 ]; then
-  echo "apply-secrets: $failed file(s) skipped (decryption failed)" >&2
+if [ "$decrypt_failures" -gt 0 ]; then
+  echo "apply-secrets: $decrypt_failures file(s) skipped because decryption failed" >&2
+fi
+
+if [ "$manifest_errors" -gt 0 ]; then
+  echo "apply-secrets: $manifest_errors manifest error(s); fix the manifest" >&2
+  exit 1
 fi

@@ -21,6 +21,42 @@ teardown() {
   [[ "$output" == *"curl-stub-called"* ]]
 }
 
+@test "documented fallback command passes through" {
+  run bash "$SCRIPT" -sL -A "claude-code/1.0" https://example.com
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"curl-stub-called"* ]]
+}
+
+@test "long form fallback command passes through" {
+  run bash "$SCRIPT" --silent --location --user-agent "claude-code/1.0" https://example.com
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"curl-stub-called"* ]]
+}
+
+@test "timeout and retry flags pass through" {
+  run bash "$SCRIPT" --max-time 10 --connect-timeout 5 --retry 2 https://example.com
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"curl-stub-called"* ]]
+}
+
+@test "literal header passes through" {
+  run bash "$SCRIPT" -H "Accept: text/html" https://example.com
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"curl-stub-called"* ]]
+}
+
+@test "--url https URL passes through" {
+  run bash "$SCRIPT" --url https://example.com
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"curl-stub-called"* ]]
+}
+
+@test "--url=https URL passes through" {
+  run bash "$SCRIPT" --url=https://example.com
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"curl-stub-called"* ]]
+}
+
 @test "-o is denied" {
   run bash "$SCRIPT" -o /tmp/evil https://example.com
   [ "$status" -eq 1 ]
@@ -103,6 +139,51 @@ teardown() {
 
 @test "--alt-svc is denied" {
   run bash "$SCRIPT" --alt-svc /tmp/evil https://example.com
+  [ "$status" -eq 1 ]
+}
+
+@test "--stderr is denied" {
+  run bash "$SCRIPT" --stderr /tmp/log https://example.com
+  [ "$status" -eq 1 ]
+}
+
+@test "--ssl-sessions is denied" {
+  run bash "$SCRIPT" --ssl-sessions /tmp/sessions https://example.com
+  [ "$status" -eq 1 ]
+}
+
+@test "--variable @file is denied" {
+  run bash "$SCRIPT" --variable name=@/etc/passwd https://example.com
+  [ "$status" -eq 1 ]
+}
+
+@test "--write-out @file is denied" {
+  run bash "$SCRIPT" --write-out @/etc/passwd https://example.com
+  [ "$status" -eq 1 ]
+}
+
+@test "unknown long flag is denied" {
+  run bash "$SCRIPT" --cacert /tmp/ca.pem https://example.com
+  [ "$status" -eq 1 ]
+}
+
+@test "bare file URL is denied" {
+  run bash "$SCRIPT" file:///etc/passwd
+  [ "$status" -eq 1 ]
+}
+
+@test "bare ftp URL is denied" {
+  run bash "$SCRIPT" ftp://example.com/file
+  [ "$status" -eq 1 ]
+}
+
+@test "--url=file URL is denied" {
+  run bash "$SCRIPT" --url=file:///etc/passwd
+  [ "$status" -eq 1 ]
+}
+
+@test "--url file URL is denied" {
+  run bash "$SCRIPT" --url file:///etc/passwd
   [ "$status" -eq 1 ]
 }
 

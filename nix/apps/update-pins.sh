@@ -4,7 +4,19 @@
 
 # 失敗時に一時ファイルを残さない。各ブロックは TMPFILES に追記してから使う。
 TMPFILES=()
-cleanup() { rm -f "${TMPFILES[@]}"; }
+restore_git_wt_pin=false
+git_wt_pin_backup=""
+git_wt_pin_path=""
+restore_git_wt_pin_now() {
+  if $restore_git_wt_pin && [ -n "$git_wt_pin_backup" ] && [ -n "$git_wt_pin_path" ] && [ -f "$git_wt_pin_backup" ]; then
+    cp "$git_wt_pin_backup" "$git_wt_pin_path"
+    restore_git_wt_pin=false
+  fi
+}
+cleanup() {
+  restore_git_wt_pin_now
+  rm -f "${TMPFILES[@]}"
+}
 trap cleanup EXIT
 
 root=$(git rev-parse --show-toplevel)
@@ -92,6 +104,11 @@ if [ "$ver" = "$cur" ]; then
 else
   echo "git-wt: $cur -> $ver (prefetching source...)"
   src_hash=$(prefetch_unpack "https://github.com/k1LoW/git-wt/archive/refs/tags/$tag.tar.gz")
+  git_wt_pin_path=$pin
+  git_wt_pin_backup=$(mktemp)
+  TMPFILES+=("$git_wt_pin_backup")
+  cp "$pin" "$git_wt_pin_backup"
+  restore_git_wt_pin=true
   tmp=$(mktemp)
   TMPFILES+=("$tmp")
   # vendorHash は go modules のダウンロード結果から決まるため事前計算できない。
@@ -101,10 +118,11 @@ else
   mv "$tmp" "$pin"
   echo "git-wt: computing vendorHash (expect one failing build)..."
   build_log=$(nix build .#git-wt --no-link 2>&1 || true)
-  vendor_hash=$(echo "$build_log" | grep -Eo 'got: *sha256-[A-Za-z0-9+/=]+' | head -1 | grep -Eo 'sha256-[A-Za-z0-9+/=]+' || true)
+  vendor_hash=$(echo "$build_log" | grep -Eo 'got: *sha256-[A-Za-z0-9+/=_-]+' | head -1 | grep -Eo 'sha256-[A-Za-z0-9+/=_-]+' || true)
   if [ -z "$vendor_hash" ]; then
     echo "git-wt: failed to extract vendorHash from build output:" >&2
     echo "$build_log" | tail -10 >&2
+    restore_git_wt_pin_now
     exit 1
   fi
   tmp=$(mktemp)
@@ -112,7 +130,12 @@ else
   jq --arg h "$vendor_hash" '.vendorHash = $h' "$pin" >"$tmp"
   mv "$tmp" "$pin"
   echo "git-wt: verifying build..."
-  nix build .#git-wt --no-link
+  if ! nix build .#git-wt --no-link; then
+    echo "git-wt: verification build failed; restoring previous pin" >&2
+    restore_git_wt_pin_now
+    exit 1
+  fi
+  restore_git_wt_pin=false
 fi
 
 echo "== codex-schema"

@@ -22,6 +22,7 @@ nix run .#apply-secrets
 
 GPG 秘密鍵が未導入のデバイスでは `apply-secrets` は警告だけ出してスキップする
 (switch は secrets に依存しないので、復号できなくても環境構築は完結する)。
+ただし manifest の missing source や unsafe dst はリポジトリ誤りとして失敗する。
 
 ## 新しい secret の追加手順
 

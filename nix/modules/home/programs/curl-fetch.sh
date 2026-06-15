@@ -1,42 +1,135 @@
-# curl の GET 専用ラッパー。HTTP 書き込み系に加え、レスポンスをローカル
-# ファイルへ書き出すフラグも拒否する (エージェントの自動許可前提のため、
-# 「読み取り専用」をフラグ面で保証する)。
+# curl の GET 専用ラッパー。エージェントの自動許可前提なので、用途を
+# 取得系の小さなフラグ集合に閉じ込めて監査可能にする。
 # nix/modules/home/programs/curl.nix が writeShellApplication で包む。
 set -euo pipefail
 
-# X=request d=data F=form T=upload K=config Q=quote :=next
-# o=output O=remote-name J=remote-header-name D=dump-header c=cookie-jar
-DENY_SHORT_CHARS="XdFTKQ:oOJDc"
 ATFILE_ERR="Error: '@file' syntax is not allowed in header values"
 
-DENY_LONG_FLAGS=(
-  --request --request-target
-  --data --data-ascii --data-binary --data-raw --data-urlencode
-  --form --form-string
-  --upload-file
-  --json
-  --config
-  --quote
-  --next
-  --post301 --post302 --post303
-  --output --remote-name --remote-name-all --remote-header-name
-  --output-dir --create-dirs
-  --dump-header --cookie-jar
-  --trace --trace-ascii
-  --etag-save
-  --libcurl --hsts --alt-svc
+LONG_NO_VALUE_FLAGS=(
+  --silent
+  --show-error
+  --location
+  --fail
+  --fail-with-body
+  --compressed
+  --no-progress-meter
+  --ipv4
+  --ipv6
 )
 
-# -H/--header/--proxy-header の次の引数を検査するためのフラグ
-check_header_value=false
+LONG_VALUE_FLAGS=(
+  --user-agent
+  --header
+  --max-time
+  --connect-timeout
+  --retry
+  --retry-delay
+  --retry-max-time
+  --url
+)
+
+pending_option=""
+
+contains() {
+  local needle=$1
+  shift
+  local item
+  for item in "$@"; do
+    if [[ $needle == "$item" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+reject_option() {
+  echo "Error: '$1' is not allowed" >&2
+  exit 1
+}
+
+check_url() {
+  local value=$1
+  case "$value" in
+  http://* | https://*)
+    ;;
+  *)
+    echo "Error: URL '$value' must use http:// or https://" >&2
+    exit 1
+    ;;
+  esac
+}
+
+check_value() {
+  local option=$1
+  local value=$2
+  if [[ $option == "-H" || $option == "--header" ]] && [[ $value == @* ]]; then
+    echo "$ATFILE_ERR" >&2
+    exit 1
+  fi
+  if [[ $option == "--url" ]]; then
+    check_url "$value"
+  fi
+}
+
+parse_long_option() {
+  local arg=$1
+  local flag=${arg%%=*}
+  local value
+
+  if contains "$flag" "${LONG_NO_VALUE_FLAGS[@]}"; then
+    if [[ $arg == *=* ]]; then
+      reject_option "$flag"
+    fi
+    return 0
+  fi
+
+  if contains "$flag" "${LONG_VALUE_FLAGS[@]}"; then
+    if [[ $arg == *=* ]]; then
+      value=${arg#*=}
+      check_value "$flag" "$value"
+    else
+      pending_option=$flag
+    fi
+    return 0
+  fi
+
+  reject_option "$flag"
+}
+
+parse_short_option() {
+  local arg=$1
+  local chars=${arg#-}
+  local c rest
+
+  if [[ -z $chars ]]; then
+    reject_option "$arg"
+  fi
+
+  for ((i = 0; i < ${#chars}; i++)); do
+    c=${chars:i:1}
+    case "$c" in
+    s | S | L | f)
+      ;;
+    A | H | m)
+      rest=${chars:$((i + 1))}
+      if [[ -n $rest ]]; then
+        check_value "-$c" "$rest"
+      else
+        pending_option="-$c"
+      fi
+      return 0
+      ;;
+    *)
+      reject_option "-$c"
+      ;;
+    esac
+  done
+}
 
 for arg in "$@"; do
-  if $check_header_value; then
-    check_header_value=false
-    if [[ $arg == @* ]]; then
-      echo "$ATFILE_ERR" >&2
-      exit 1
-    fi
+  if [[ -n $pending_option ]]; then
+    check_value "$pending_option" "$arg"
+    pending_option=""
     continue
   fi
 
@@ -45,50 +138,23 @@ for arg in "$@"; do
     exit 1
   fi
 
-  # 長フラグのチェック(--flag=value 形式も考慮)
   if [[ $arg == --* ]]; then
-    flag="${arg%%=*}"
-    for denied in "${DENY_LONG_FLAGS[@]}"; do
-      if [[ $flag == "$denied" ]]; then
-        echo "Error: '$denied' is not allowed" >&2
-        exit 1
-      fi
-    done
-    # --header=@file / --proxy-header=@file の検査
-    if [[ ($flag == "--header" || $flag == "--proxy-header") && $arg == *=@* ]]; then
-      echo "$ATFILE_ERR" >&2
-      exit 1
-    fi
-    if [[ $arg == "--header" || $arg == "--proxy-header" ]]; then
-      check_header_value=true
-    fi
+    parse_long_option "$arg"
     continue
   fi
 
-  # 短フラグのチェック(結合形 -sXPOST 等も検出)
   if [[ $arg == -* ]]; then
-    chars="${arg#-}"
-    for ((i = 0; i < ${#chars}; i++)); do
-      c="${chars:i:1}"
-      if [[ $DENY_SHORT_CHARS == *"$c"* ]]; then
-        echo "Error: '-$c' is not allowed" >&2
-        exit 1
-      fi
-      # -H は引数を取るため、残りの文字が値になる
-      if [[ $c == "H" ]]; then
-        rest="${chars:$((i + 1))}"
-        if [[ -n $rest && $rest == @* ]]; then
-          echo "$ATFILE_ERR" >&2
-          exit 1
-        fi
-        if [[ -z $rest ]]; then
-          check_header_value=true
-        fi
-        break
-      fi
-    done
+    parse_short_option "$arg"
+    continue
   fi
+
+  check_url "$arg"
 done
 
+if [[ -n $pending_option ]]; then
+  echo "Error: '$pending_option' requires a value" >&2
+  exit 1
+fi
+
 # -q: .curlrc の自動読み込みを無効化し、設定ファイル経由のフラグ注入を防止
-exec curl -q "$@"
+exec curl -q --proto '=http,https' --proto-redir '=http,https' "$@"

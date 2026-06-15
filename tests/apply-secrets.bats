@@ -46,6 +46,18 @@ mode_of() {
   stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"
 }
 
+assert_required_field_error() {
+  local field=$1
+  local manifest=$2
+
+  run_apply "$manifest"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"manifest error"* ]]
+  [[ "$output" == *"$field"* ]]
+  [[ "$output" != *"decrypted-content"* ]]
+}
+
 MANIFEST='[{"src":"secrets/demo.conf","dst":".ssh/config.d/50-demo.conf","mode":"600","dirMode":"700"}]'
 
 @test "happy path writes file with mode 600 and dir 700" {
@@ -63,10 +75,27 @@ MANIFEST='[{"src":"secrets/demo.conf","dst":".ssh/config.d/50-demo.conf","mode":
   [ ! -e "$FAKE_HOME/.ssh/config.d/50-demo.conf" ]
 }
 
-@test "missing source is skipped without failure" {
+@test "missing source is a manifest error" {
   run_apply '[{"src":"secrets/nope.conf","dst":".ssh/config.d/50-nope.conf","mode":"600","dirMode":"700"}]'
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"is not in the repo; skipping"* ]]
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"manifest error"* ]]
+  [[ "$output" == *"is not in the repo"* ]]
+  [[ "$output" != *"decryption failed"* ]]
+}
+
+@test "dst missing is a manifest error and does not write HOME/null" {
+  run_apply '[{"src":"secrets/demo.conf","mode":"600","dirMode":"700"}]'
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"manifest error"* ]]
+  [[ "$output" == *"dst"* ]]
+  [ ! -e "$FAKE_HOME/null" ]
+}
+
+@test "required manifest fields must be non-empty strings" {
+  assert_required_field_error src '[{"dst":".ssh/config.d/50-demo.conf","mode":"600","dirMode":"700"}]'
+  assert_required_field_error dst '[{"src":"secrets/demo.conf","dst":"","mode":"600","dirMode":"700"}]'
+  assert_required_field_error mode '[{"src":"secrets/demo.conf","dst":".ssh/config.d/50-demo.conf","mode":null,"dirMode":"700"}]'
+  assert_required_field_error dirMode '[{"src":"secrets/demo.conf","dst":".ssh/config.d/50-demo.conf","mode":"600"}]'
 }
 
 @test "decryption failure skips, reports, leaves no temp file, exits 0" {
@@ -82,7 +111,9 @@ MANIFEST='[{"src":"secrets/demo.conf","dst":".ssh/config.d/50-demo.conf","mode":
 
 @test "dst escaping HOME is rejected" {
   run_apply '[{"src":"secrets/demo.conf","dst":"../evil.conf","mode":"600","dirMode":"700"}]'
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"escapes HOME; skipping"* ]]
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"manifest error"* ]]
+  [[ "$output" == *"escapes HOME"* ]]
+  [[ "$output" != *"decryption failed"* ]]
   [ ! -e "$WORK/evil.conf" ]
 }
