@@ -9,15 +9,18 @@
 }:
 let
   settingsLib = import ../../../lib/settings/claude.nix { inherit lib; };
+  settingsValidator = import ../../../lib/mk-claude-settings-validator.nix { inherit pkgs; };
 
   windowsHomedir = config.my.windows.homedir;
 
-  windowsSettingsFile = (pkgs.formats.json { }).generate "claude-windows-settings.json" (
+  windowsSettingsRaw = (pkgs.formats.json { }).generate "claude-windows-settings.json" (
     settingsLib.mkSettings {
       forWindows = true;
       windowsUsername = config.my.windows.username;
     }
   );
+
+  windowsSettingsFile = settingsValidator.validate "claude-windows-settings.json" windowsSettingsRaw;
 in
 {
   home.activation.deployWindowsClaudeSettings = lib.hm.dag.entryAfter [ "writeBoundary" ] ''

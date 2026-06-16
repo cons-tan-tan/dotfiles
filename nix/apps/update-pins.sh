@@ -1,4 +1,4 @@
-# nix/pins/*.json を upstream の最新リリースに同期する。
+# nix/pins/*.json を upstream の最新状態に同期する。
 # 実行: nix run .#update-pins
 # 変更が出たら git diff を確認し、nix run .#build を通してからコミットする。
 
@@ -106,6 +106,24 @@ prefetch_unpack() {
   nix store prefetch-file --json --unpack "$1" | jq -r .hash
 }
 
+update_url_pin() {
+  local label=$1 pin=$2
+  local url cur hash tmp
+  url=$(jq -r .url "$pin")
+  cur=$(jq -r .hash "$pin")
+  echo "$label: checking schema hash..."
+  hash=$(prefetch "$url")
+  if [ "$hash" = "$cur" ]; then
+    echo "$label: up to date"
+    return 0
+  fi
+  tmp=$(mktemp)
+  TMPFILES+=("$tmp")
+  jq --arg h "$hash" '.hash = $h' "$pin" >"$tmp"
+  mv "$tmp" "$pin"
+  echo "$label: hash updated"
+}
+
 # release アセット型 pin (hcom / agent-slack) の共通更新処理。
 # JSON の assets.<system>.name を読んで各アセットを prefetch し直す。
 update_release_pin() {
@@ -187,6 +205,9 @@ else
     exit 1
   fi
 fi
+
+echo "== claude-code-settings-schema"
+update_url_pin "claude-code-settings-schema" "nix/pins/claude-code-settings-schema.json"
 
 echo
 if git diff --quiet -- "${managed_pathspecs[@]}"; then

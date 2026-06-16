@@ -25,6 +25,7 @@ let
   };
 
   settingsLib = import ../../../lib/settings/claude.nix { inherit lib; };
+  settingsValidator = import ../../../lib/mk-claude-settings-validator.nix { inherit pkgs; };
 
   jsonFormat = pkgs.formats.json { };
 
@@ -37,7 +38,7 @@ let
 
   # hcom 分は生成物 (overlay が hcom 実行で生成) から取り、手書きで二重管理しない。
   # hcom も PreToolUse を使うため、gh-api guard と両立させる。
-  mergedSettingsFile =
+  mergedSettingsRaw =
     pkgs.runCommand "claude-settings.json"
       {
         nativeBuildInputs = [ pkgs.jq ];
@@ -50,6 +51,8 @@ let
           | .hooks = ($hcom.hooks + { PreToolUse: (($hcom.hooks.PreToolUse // []) + $base.hooks.PreToolUse) })
         ' ${baseSettingsFile} ${pkgs.hcom-claude-hooks} > $out
       '';
+
+  mergedSettingsFile = settingsValidator.validate "claude-settings.json" mergedSettingsRaw;
 in
 {
   programs.claude-code = {

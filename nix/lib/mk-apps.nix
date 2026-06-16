@@ -83,12 +83,12 @@ in
       program = pkgs.lib.getExe fmtScript;
     };
 
-    # nix/pins/*.json (hcom / agent-slack / git-wt) を upstream の
-    # 最新リリースへ同期する。git-wt の vendorHash 計算で `nix build .#git-wt` を
+    # nix/pins/*.json (hcom / agent-slack / git-wt / schema) を upstream の
+    # 最新状態へ同期する。git-wt の vendorHash 計算で `nix build .#git-wt` を
     # 使うため、packages 出力 (flake.nix) に git-wt が必要。
     update-pins = {
       type = "app";
-      meta.description = "Sync nix/pins/*.json to the latest upstream releases";
+      meta.description = "Sync nix/pins/*.json to the latest upstream state";
       program = pkgs.lib.getExe updatePinsScript;
     };
 

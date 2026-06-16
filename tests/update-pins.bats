@@ -14,6 +14,7 @@ setup() {
     git init -q
     git config user.email update-pins-test@example.invalid
     git config user.name "update-pins test"
+    git config commit.gpgsign false
     git add flake.lock nix/apps/update-pins.sh nix/pins/*.json
     git commit -q -m "initial managed files"
   )
@@ -49,6 +50,10 @@ EOS
 set -euo pipefail
 
 if [ "$1" = "store" ] && [ "${2:-}" = "prefetch-file" ]; then
+  if [ "${3:-}" = "--json" ] && [ "${4:-}" = "https://json.schemastore.org/claude-code-settings.json" ]; then
+    printf '{"hash":"sha256-schema-for-test"}\n'
+    exit 0
+  fi
   if [[ " $* " == *" --unpack "* ]]; then
     printf '{"hash":"sha256-src-for-test"}\n'
   else
@@ -238,6 +243,7 @@ assert_managed_matches() {
   [ "$(jq -r .version "$WORK/nix/pins/git-wt.json")" = "999.0.0" ]
   [ "$(jq -r .srcHash "$WORK/nix/pins/git-wt.json")" = "sha256-src-for-test" ]
   [ "$(jq -r .vendorHash "$WORK/nix/pins/git-wt.json")" = "sha256-vendor-for-test" ]
+  [ "$(jq -r .hash "$WORK/nix/pins/claude-code-settings-schema.json")" = "sha256-schema-for-test" ]
   [ "$(jq -r .updated "$WORK/flake.lock")" = "agent-slack-skill" ]
   ! assert_managed_matches "$original"
 }
