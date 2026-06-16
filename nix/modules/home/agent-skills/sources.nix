@@ -65,6 +65,10 @@ let
       '';
     };
 
+    frontend-design = {
+      root = "${anthropic-skills}/skills/frontend-design";
+    };
+
     drawio = {
       root = "${drawio-skill}/skill-cli/drawio";
       transform = injectAfterFrontmatter ''
