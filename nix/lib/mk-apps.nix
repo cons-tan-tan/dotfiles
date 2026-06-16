@@ -2,13 +2,17 @@
 # は flake.nix 側で合成する。
 # 戻り値は { apps, scripts }: scripts は writeShellApplication derivation の
 # リストで、checks に束ねてビルド時 shellcheck を CI で強制する。
-{ inputs }:
+{ inputs, username }:
 {
   pkgs,
   treefmtWrapper,
 }:
 let
+  lib = pkgs.lib;
   mkScript = name: attrs: pkgs.writeShellApplication ({ inherit name; } // attrs);
+  nixCustomSettings = import ./nix-custom-settings.nix { inherit lib username; };
+
+  nixCustomSettingsFile = pkgs.writeText "dotfiles-nix-custom.conf" nixCustomSettings.text;
 
   updateScript = mkScript "flake-update" {
     text = ''
@@ -68,6 +72,19 @@ let
       ${builtins.readFile ../apps/apply-secrets/apply-secrets.sh}
     '';
   };
+
+  applyNixSettingsScript = mkScript "apply-nix-settings" {
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.diffutils
+      pkgs.gawk
+      pkgs.gnugrep
+    ];
+    text = ''
+      export APPLY_NIX_SETTINGS_SNIPPET=${nixCustomSettingsFile}
+      ${builtins.readFile ../apps/apply-nix-settings.sh}
+    '';
+  };
 in
 {
   apps = {
@@ -113,6 +130,12 @@ in
       meta.description = "Decrypt sops-managed secrets into place (skips gracefully without the GPG key)";
       program = pkgs.lib.getExe applySecretsScript;
     };
+
+    apply-nix-settings = {
+      type = "app";
+      meta.description = "Sync root-level Nix daemon settings into /etc/nix/nix.custom.conf";
+      program = pkgs.lib.getExe applyNixSettingsScript;
+    };
   };
 
   scripts = [
@@ -120,5 +143,6 @@ in
     fmtScript
     updatePinsScript
     applySecretsScript
+    applyNixSettingsScript
   ];
 }

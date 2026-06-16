@@ -234,7 +234,7 @@
       # apps / formatter / checks で同じ評価を共有する
       treefmtEvalFor = lib.genAttrs systems (system: mkTreefmtEval pkgsFor.${system});
 
-      mkCommonApps = import ./nix/lib/mk-apps.nix { inherit inputs; };
+      mkCommonApps = import ./nix/lib/mk-apps.nix { inherit inputs username; };
 
       mkDarwinHostApps =
         pkgs:
@@ -454,6 +454,14 @@
               pkgs.runCommand "frontmatter-tests" { } "touch $out"
             else
               throw "frontmatter tests failed: ${builtins.toJSON failures}";
+          nix-custom-settings-tests =
+            let
+              failures = import ./nix/lib/nix-custom-settings-tests.nix { inherit lib username; };
+            in
+            if failures == [ ] then
+              pkgs.runCommand "nix-custom-settings-tests" { } "touch $out"
+            else
+              throw "nix custom settings tests failed: ${builtins.toJSON failures}";
           # merge.py のテスト。ビルド時実行なので build-linux ジョブが強制する
           merge-py-tests =
             pkgs.runCommand "merge-py-tests"
