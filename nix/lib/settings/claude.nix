@@ -23,7 +23,7 @@
       includeCoAuthoredBy = false;
       autoMemoryEnabled = false;
       language = "japanese";
-      model = "opus[1m]";
+      model = "claude-opus-4-7[1m]";
       effortLevel = "xhigh";
       # Fable 5 の安全分類でフラグされた時に Opus へ自動継続せず、確認で止める。
       switchModelsOnFlag = false;
