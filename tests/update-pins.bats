@@ -22,8 +22,6 @@ setup() {
   mkdir -p "$STUB_DIR"
   export UPDATE_PINS_FAKE_ROOT="$WORK"
   export UPDATE_PINS_NIX_BUILD_COUNT="$WORK/nix-build-count"
-  export UPDATE_PINS_REAL_MV
-  UPDATE_PINS_REAL_MV=$(command -v mv)
 
   cat >"$STUB_DIR/gh" <<'EOS'
 #!/usr/bin/env bash
@@ -51,13 +49,7 @@ EOS
 set -euo pipefail
 
 if [ "$1" = "store" ] && [ "${2:-}" = "prefetch-file" ]; then
-  if [[ "$*" == *"config-schema.json"* ]]; then
-    if [ "${UPDATE_PINS_CODEX_PREFETCH_FAIL:-}" = "1" ]; then
-      echo "codex schema prefetch failed" >&2
-      exit 1
-    fi
-    printf '{"hash":"%s"}\n' "${UPDATE_PINS_CODEX_HASH:-$(jq -r .hash "$UPDATE_PINS_FAKE_ROOT/nix/pins/codex-schema.json")}"
-  elif [[ " $* " == *" --unpack "* ]]; then
+  if [[ " $* " == *" --unpack "* ]]; then
     printf '{"hash":"sha256-src-for-test"}\n'
   else
     printf '{"hash":"sha256-asset-for-test"}\n'
@@ -116,19 +108,7 @@ echo "unexpected nix invocation: $*" >&2
 exit 1
 EOS
 
-  cat >"$STUB_DIR/mv" <<'EOS'
-#!/usr/bin/env bash
-set -euo pipefail
-
-if [ "${UPDATE_PINS_CODEX_UPDATE_FAIL:-}" = "1" ] && [ "${2:-}" = "nix/pins/codex-schema.json" ]; then
-  echo "codex schema update failed" >&2
-  exit 1
-fi
-
-exec "$UPDATE_PINS_REAL_MV" "$@"
-EOS
-
-  chmod +x "$STUB_DIR/gh" "$STUB_DIR/nix" "$STUB_DIR/mv"
+  chmod +x "$STUB_DIR/gh" "$STUB_DIR/nix"
   export PATH="$STUB_DIR:$PATH"
 }
 
@@ -242,42 +222,12 @@ assert_managed_matches() {
   assert_managed_matches "$original"
 }
 
-@test "codex-schema prefetch failure restores all managed files" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_HCOM_TAG=v1.2.3
-  export UPDATE_PINS_AGENT_SLACK_TAG=v4.5.6
-  export UPDATE_PINS_BUILD_MODE=success
-  export UPDATE_PINS_CODEX_PREFETCH_FAIL=1
-
-  run_update_pins
-
-  [ "$status" -ne 0 ]
-  assert_managed_matches "$original"
-}
-
-@test "codex-schema update failure restores all managed files" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_HCOM_TAG=v1.2.3
-  export UPDATE_PINS_AGENT_SLACK_TAG=v4.5.6
-  export UPDATE_PINS_BUILD_MODE=success
-  export UPDATE_PINS_CODEX_HASH=sha256-codex-for-test
-  export UPDATE_PINS_CODEX_UPDATE_FAIL=1
-
-  run_update_pins
-
-  [ "$status" -ne 0 ]
-  assert_managed_matches "$original"
-}
-
 @test "successful update leaves expected managed file changes" {
   original="$WORK/original"
   save_managed "$original"
   export UPDATE_PINS_HCOM_TAG=v1.2.3
   export UPDATE_PINS_AGENT_SLACK_TAG=v4.5.6
   export UPDATE_PINS_BUILD_MODE=success
-  export UPDATE_PINS_CODEX_HASH=sha256-codex-for-test
 
   run_update_pins
 
@@ -288,7 +238,6 @@ assert_managed_matches() {
   [ "$(jq -r .version "$WORK/nix/pins/git-wt.json")" = "999.0.0" ]
   [ "$(jq -r .srcHash "$WORK/nix/pins/git-wt.json")" = "sha256-src-for-test" ]
   [ "$(jq -r .vendorHash "$WORK/nix/pins/git-wt.json")" = "sha256-vendor-for-test" ]
-  [ "$(jq -r .hash "$WORK/nix/pins/codex-schema.json")" = "sha256-codex-for-test" ]
   [ "$(jq -r .updated "$WORK/flake.lock")" = "agent-slack-skill" ]
   ! assert_managed_matches "$original"
 }

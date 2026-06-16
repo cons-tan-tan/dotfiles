@@ -188,19 +188,6 @@ else
   fi
 fi
 
-echo "== codex-schema"
-pin=nix/pins/codex-schema.json
-new_hash=$(prefetch "$(jq -r .url "$pin")")
-if [ "$new_hash" = "$(jq -r .hash "$pin")" ]; then
-  echo "codex-schema: up to date"
-else
-  echo "codex-schema: upstream schema changed; updating hash"
-  tmp=$(mktemp)
-  TMPFILES+=("$tmp")
-  jq --arg h "$new_hash" '.hash = $h' "$pin" >"$tmp"
-  mv "$tmp" "$pin"
-fi
-
 echo
 if git diff --quiet -- "${managed_pathspecs[@]}"; then
   echo "All pins up to date."

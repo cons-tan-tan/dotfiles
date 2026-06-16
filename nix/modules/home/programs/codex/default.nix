@@ -44,15 +44,12 @@ let
         ' ${hcomCodex}/hooks-state.json > $out
       '';
 
-  # オフライン・再現的に検証するため schema を store に固定 (activation 時にネット
-  # アクセスしない)。hash は nix/pins/codex-schema.json に固定し、
-  # `nix run .#update-pins` で自動更新する。
-  codexSchema = pkgs.fetchurl {
-    inherit (builtins.fromJSON (builtins.readFile ../../../../pins/codex-schema.json))
-      url
-      hash
-      ;
-  };
+  # 検証に使う schema は、実際に導入する Codex CLI と同じ source tag から取り出す。
+  # developers.openai.com の live schema を直接固定すると、サイト更新だけで
+  # インストール済み Codex と検証 schema がズレるため。
+  codexSchema = pkgs.runCommand "codex-config-schema.json" { } ''
+    cp ${pkgs.codex.src}/codex-rs/core/config.schema.json $out
+  '';
 
   pythonWithTomlkit = pkgs.python3.withPackages (p: [ p.tomlkit ]);
 in
