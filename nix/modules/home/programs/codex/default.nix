@@ -13,35 +13,39 @@ let
   configPath = "${codexHome}/config.toml";
   hooksJsonPath = "${codexHome}/hooks.json";
 
-  # merge.py に hcom 固有の知識を持たせないため、merge 内容は全てここで組み立てて
-  # 渡す。state key の絶対パスは sandbox では決まらないので label から実環境パスを
-  # 組み立てる。変換は eval 時でなく build 時 (jq) に行う — eval 時に生成 JSON を
-  # 読む (IFD) と異種プラットフォーム向け構成の評価 (nix flake check 等) が壊れる。
-  mergePayloadJson =
-    pkgs.runCommand "codex-hcom-merge.json"
+  settingsLib = import ../../../../lib/settings/codex.nix { };
+  jsonFormat = pkgs.formats.json { };
+
+  baseMergePayloadJson = jsonFormat.generate "codex-config-merge-base.json" (
+    settingsLib.mkMergePayload {
+      inherit codexHome;
+    }
+  );
+
+  # hcom state key は実環境の hooks.json 絶対パスを含むため、build 時に生成する。
+  # hcomCodex の生成 JSON を eval 時に読む (IFD) と異種プラットフォーム向け構成の
+  # 評価 (nix flake check 等) が壊れる。
+  hcomHooksPayloadJson =
+    pkgs.runCommand "codex-hcom-hooks-payload.json"
       {
         nativeBuildInputs = [ pkgs.jq ];
       }
       ''
         jq --arg hooksJsonPath ${lib.escapeShellArg hooksJsonPath} '
-          { approval_policy: "on-request",
-            approvals_reviewer: "auto_review",
-            features: { hooks: true },
-            tui: {
-              status_line: [
-                "model-with-reasoning",
-                "current-dir",
-                "git-branch",
-                "context-remaining",
-                "five-hour-limit",
-                "weekly-limit",
-                "fast-mode"
-              ]
-            },
-            hooks: { state: (to_entries
-                             | map({ key: ($hooksJsonPath + ":" + .key + ":0:0"), value: .value })
-                             | from_entries) } }
+          { hooks: { state: (to_entries
+                              | map({ key: ($hooksJsonPath + ":" + .key + ":0:0"), value: .value })
+                              | from_entries) } }
         ' ${hcomCodex}/hooks-state.json > $out
+      '';
+
+  # merge.py には単一 payload を渡すため、Nix 管理設定と hcom 生成設定をここで合成する。
+  mergePayloadJson =
+    pkgs.runCommand "codex-config-merge.json"
+      {
+        nativeBuildInputs = [ pkgs.jq ];
+      }
+      ''
+        jq -s '.[0] * .[1]' ${baseMergePayloadJson} ${hcomHooksPayloadJson} > $out
       '';
 
   # 検証に使う schema は、実際に導入する Codex CLI と同じ source tag から取り出す。
