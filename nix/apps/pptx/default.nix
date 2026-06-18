@@ -121,5 +121,6 @@ let
 in
 {
   type = "app";
+  meta.description = "Run commands in the repository-managed PPTX conversion toolchain";
   program = toString runner;
 }
