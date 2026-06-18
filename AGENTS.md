@@ -9,18 +9,17 @@ Run the narrowest relevant checks. Before committing Nix or module changes, run 
 - `nix flake check --no-build --all-systems`
 - `nix run .#fmt -- --ci`
 
-Other gates:
+Other relevant gates:
 
-- `nix run .#fmt` formats the tree.
-- `nix run .#build` builds without switching the host.
-- `reuse lint` checks licensing in the dev shell.
-- `bats tests/` checks shell scripts and hooks in the dev shell.
+- `nix run .#build` when evaluation is not enough and the changed output should build.
+- `reuse lint` for licensing or provenance changes.
+- `bats tests/` for shell scripts and wrappers.
+- `nix run .#markdownlint` / `nix run .#textlint` for Markdown or prose changes.
 
 ## Rules
 
 - Keep repository agent instructions in `AGENTS.md`; `CLAUDE.md` is only a compatibility symlink.
 - Avoid IFD during eval. Do not read derivation outputs with `builtins.readFile`; eval-time reads must be repo paths or flake inputs.
-- The clone path is intentional: `nix/lib/mk-home-modules.nix` and out-of-store links expect `~/ghq/github.com/cons-tan-tan/dotfiles`.
 - Respect REUSE. The default license is CC0-1.0 from `REUSE.toml`; add a sidecar `.license` only for files with different provenance.
 - New shell tools should use `writeShellApplication`. Put nontrivial logic in `.sh` files wrapped with `builtins.readFile`, and cover behavior with Bats.
 - Avoid `home.file.*.force = true`; prefer visible collisions or the configured backup extension over silently replacing user files.
@@ -28,6 +27,8 @@ Other gates:
 
 ## Notes
 
-- Use `README.md` for setup and top-level layout instead of duplicating it here.
-- `nix/lib/settings/*` often feeds both the current host and Windows companion output; check both consumers before changing shared settings.
+- Use `README.md` for setup, top-level layout, and the canonical clone path instead of duplicating it here.
+- When editing shared settings, search import/call sites instead of assuming a single consumer.
+- Keep implementation-specific caveats next to the relevant code.
+- Keep `AGENTS.md` as a stable index of repository-wide rules and entry points.
 - Commit messages follow Conventional Commits. Comments should explain why, not restate what the code already says.
