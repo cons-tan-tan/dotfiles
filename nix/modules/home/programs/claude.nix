@@ -37,7 +37,6 @@ let
   );
 
   # hcom 分は生成物 (overlay が hcom 実行で生成) から取り、手書きで二重管理しない。
-  # hcom も PreToolUse を使うため、gh-api guard と両立させる。
   mergedSettingsRaw =
     pkgs.runCommand "claude-settings.json"
       {

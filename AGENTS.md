@@ -29,6 +29,5 @@ Other gates:
 ## Notes
 
 - Use `README.md` for setup and top-level layout instead of duplicating it here.
-- Changes to `claude/hooks/validate-gh-api.sh` require `bats tests/validate-gh-api.bats`.
 - `nix/lib/settings/*` often feeds both the current host and Windows companion output; check both consumers before changing shared settings.
 - Commit messages follow Conventional Commits. Comments should explain why, not restate what the code already says.

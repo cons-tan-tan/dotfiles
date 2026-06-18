@@ -12,13 +12,6 @@
       windowsUsername ? null,
       hcomPath ? null,
     }:
-    let
-      hooksPath =
-        if forWindows then
-          "C:/Users/${windowsUsername}/.claude/hooks/validate-gh-api.sh"
-        else
-          "~/.claude/hooks/validate-gh-api.sh";
-    in
     {
       includeCoAuthoredBy = false;
       autoMemoryEnabled = false;
@@ -90,17 +83,7 @@
       # マージする (claude.nix の mergedSettingsFile)。eval 時に生成 JSON を読む
       # (IFD) と、異種プラットフォーム向け構成の評価 (nix flake check 等) が
       # 壊れるため。
-      hooks.PreToolUse = [
-        {
-          matcher = "Bash";
-          hooks = [
-            {
-              type = "command";
-              command = hooksPath;
-            }
-          ];
-        }
-      ];
+      hooks.PreToolUse = [ ];
       # programs.claude-code.settings 経由で HM が付与していた schema と揃える。
       "$schema" = "https://json.schemastore.org/claude-code-settings.json";
     };

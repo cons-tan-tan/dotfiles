@@ -9,7 +9,7 @@ Prefer these over alternatives that need approval:
 - `gh pr list|view|diff|checks`
 - `gh run list|view`
 - `gh search`
-- `gh api-get` (Use instead of `gh api`. This alias forces `--method GET` to prevent unintended write operations.)
+- `gh api-get` (Use instead of `gh api`. This extension wrapper forces `--method GET` to prevent unintended write operations.)
 
 For other `gh` operations (e.g., `gh pr create`, `gh issue create`), user approval is required.
 
