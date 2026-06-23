@@ -10,6 +10,7 @@
     ./ghq-sync.nix
     ./git.nix
     ./gpg.nix
+    ./herdr.nix
     ./opencode.nix
     ./pi.nix
     ./ssh.nix
