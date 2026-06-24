@@ -136,6 +136,21 @@ rec {
         cp ${codexPluginJson} "$out/.codex-plugin/plugin.json"
       '';
 
+  herdr-agent-skill =
+    runCommand "herdr-agent-skill-${version}"
+      {
+        meta = {
+          description = "Herdr agent skill without plugin metadata";
+          homepage = "https://herdr.dev";
+          license = lib.licenses.agpl3Plus;
+          platforms = builtins.attrNames binaryAssets;
+        };
+      }
+      ''
+        mkdir -p "$out"
+        cp ${src}/SKILL.md "$out/SKILL.md"
+      '';
+
   herdr-codex-marketplace =
     runCommand "herdr-codex-marketplace-${version}"
       {

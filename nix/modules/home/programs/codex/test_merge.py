@@ -53,3 +53,29 @@ def test_deep_merge_preserves_untouched_keys(tmp_path):
 def test_scalar_overwrites_table(tmp_path):
     out = run_merge(tmp_path, "[a]\nx = 1\n", {"a": "flat"})
     assert 'a = "flat"' in out.read_text(encoding="utf-8")
+
+
+def test_delete_paths_remove_only_requested_tables(tmp_path):
+    source = """
+[plugins."keep@source"]
+enabled = true
+
+[plugins."herdr@herdr"]
+enabled = false
+
+[marketplaces.herdr]
+source = "old"
+"""
+    payload = {
+        "__delete": [
+            ["plugins", "herdr@herdr"],
+            ["marketplaces", "herdr"],
+        ],
+        "plugins": {"new@source": {"enabled": True}},
+    }
+    out = run_merge(tmp_path, source, payload)
+    text = out.read_text(encoding="utf-8")
+    assert "herdr@herdr" not in text
+    assert "marketplaces.herdr" not in text
+    assert "keep@source" in text
+    assert "new@source" in text

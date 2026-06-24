@@ -6,23 +6,19 @@
   mkMergePayload =
     {
       codexHome,
-      herdrMarketplace ? null,
     }:
-    let
-      herdrMarketplaceSettings =
-        if herdrMarketplace == null then
-          { }
-        else
-          {
-            marketplaces = {
-              herdr = {
-                source_type = "local";
-                source = herdrMarketplace;
-              };
-            };
-          };
-    in
     {
+      __delete = [
+        [
+          "plugins"
+          "herdr@herdr"
+        ]
+        [
+          "marketplaces"
+          "herdr"
+        ]
+      ];
+
       personality = "pragmatic";
       model = "gpt-5.5";
       model_reasoning_effort = "xhigh";
@@ -55,15 +51,16 @@
         "pdf@openai-primary-runtime" = {
           enabled = true;
         };
-        "herdr@herdr" = {
-          enabled = false;
-        };
       };
 
       skills = {
         config = [
           {
             path = "${codexHome}/skills/.system/skill-installer/SKILL.md";
+            enabled = false;
+          }
+          {
+            path = "${codexHome}/skills/herdr/SKILL.md";
             enabled = false;
           }
         ];
@@ -80,6 +77,5 @@
           "fast-mode"
         ];
       };
-    }
-    // herdrMarketplaceSettings;
+    };
 }

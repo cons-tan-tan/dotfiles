@@ -8,18 +8,23 @@
 let
   inherit (config.my) dotfilesDir;
 
-  # 上流パッケージの内部実装 (.claude-wrapped という wrapper 名) に依存しない
-  # よう、パッケージはそのままに symlinkJoin の上から wrapProgram で包む。
-  # HM 側 (programs.claude-code) が plugins 用にさらに symlinkJoin で包むが、
-  # 各 wrapper は絶対パスで自身の実体を参照するため多段でも安全に合成される。
+  # HM 側 (programs.claude-code) も plugins 用に symlinkJoin で包むため、
+  # wrapper は絶対パスで実体を参照して多段合成できるようにする。
   claudeCodePackage = pkgs.symlinkJoin {
     name = "claude-code-wrapped";
     paths = [ pkgs.claude-code ];
-    nativeBuildInputs = [ pkgs.makeWrapper ];
     postBuild = ''
-      wrapProgram $out/bin/claude \
-        --prefix PATH : ${pkgs.nodejs}/bin \
-        --add-flags "--effort xhigh"
+      mv $out/bin/claude $out/bin/.claude-wrapped-base
+      cat > $out/bin/claude <<EOF
+      #! ${pkgs.bash}/bin/bash -e
+      export PATH=${pkgs.nodejs}/bin:\$PATH
+      if [ "\''${HERDR_ENV:-}" = "1" ]; then
+        exec -a "\$0" "$out/bin/.claude-wrapped-base" --effort xhigh --plugin-dir ${pkgs.herdr-agent-plugin} "\$@"
+      fi
+
+      exec -a "\$0" "$out/bin/.claude-wrapped-base" --effort xhigh "\$@"
+      EOF
+      chmod +x $out/bin/claude
     '';
     inherit (pkgs.claude-code) meta;
   };
@@ -59,7 +64,6 @@ in
     package = claudeCodePackage;
     plugins = [
       "${inputs.codex-plugin-cc}/plugins/codex"
-      "${pkgs.herdr-agent-plugin}"
     ];
     # settings は指定しない: settings = { } なら HM モジュールは settings.json を
     # 書かないので、build 時マージ結果 (mergedSettingsFile) を home.file で置ける。

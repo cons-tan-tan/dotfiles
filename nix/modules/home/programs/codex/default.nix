@@ -15,11 +15,23 @@ let
 
   settingsLib = import ../../../../lib/settings/codex.nix { };
   jsonFormat = pkgs.formats.json { };
+  herdrSkillPath = "${codexHome}/skills/herdr/SKILL.md";
+  enableHerdrSkillOverride = "skills.config=[{path=${builtins.toJSON herdrSkillPath},enabled=true}]";
+
+  codex = pkgs.writeShellApplication {
+    name = "codex";
+    text = ''
+      if [ "''${HERDR_ENV:-}" = "1" ]; then
+        exec ${pkgs.codex}/bin/codex -c ${lib.escapeShellArg enableHerdrSkillOverride} "$@"
+      fi
+
+      exec ${pkgs.codex}/bin/codex "$@"
+    '';
+  };
 
   baseMergePayloadJson = jsonFormat.generate "codex-config-merge-base.json" (
     settingsLib.mkMergePayload {
       inherit codexHome;
-      herdrMarketplace = "${pkgs.herdr-codex-marketplace}";
     }
   );
 
@@ -59,8 +71,16 @@ let
   pythonWithTomlkit = pkgs.python3.withPackages (p: [ p.tomlkit ]);
 in
 {
+  home.packages = [ codex ];
+
   # Codex は読むだけなので read-only symlink で良い。
   home.file.".codex/hooks.json".source = "${hcomCodex}/hooks.json";
+
+  # Herdr の Codex plugin enable は SessionFlags (`-c`) で反転できないため、
+  # Codex では通常 skill として配置し、skills.config だけを wrapper から反転する。
+  # Codex の skill scanner は symlink ファイルを SKILL.md として読まないが、
+  # symlink ディレクトリは辿るため、recursive 展開せず directory symlink にする。
+  home.file.".codex/skills/herdr".source = pkgs.herdr-agent-skill;
 
   # programs.codex は config.toml を read-only symlink で置き Codex の動的書き込み
   # ([projects]/[notice]/[tui]) を壊すため使わない。候補で検証してから mv するのは

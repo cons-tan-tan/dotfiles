@@ -36,7 +36,6 @@
     trufflehog
 
     # AI Tools
-    codex
     gemini-cli
     github-copilot-cli
     ccusage

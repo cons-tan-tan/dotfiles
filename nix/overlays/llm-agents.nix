@@ -19,6 +19,7 @@ in
 
   inherit (herdrPackages)
     herdr
+    herdr-agent-skill
     herdr-agent-plugin
     herdr-codex-marketplace
     ;
