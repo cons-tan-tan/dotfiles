@@ -27,7 +27,7 @@ let
       root = "${agent-browser-skill}/skills/agent-browser";
     };
 
-    # バイナリ本体は overlays/agent-slack.nix (skill doc とは別 input)
+    # バイナリ本体は packages/agent-slack (skill doc とは別 input)
     agent-slack = {
       root = "${agent-slack-skill}/skills/agent-slack";
       # Keep skill descriptions compact because some metadata consumers impose
