@@ -422,6 +422,9 @@
             hcom-codex-hooks
             agent-slack
             git-wt
+            herdr
+            herdr-agent-plugin
+            herdr-codex-marketplace
             ;
         }
       );

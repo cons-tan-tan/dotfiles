@@ -19,6 +19,7 @@ let
   baseMergePayloadJson = jsonFormat.generate "codex-config-merge-base.json" (
     settingsLib.mkMergePayload {
       inherit codexHome;
+      herdrMarketplace = "${pkgs.herdr-codex-marketplace}";
     }
   );
 

@@ -6,7 +6,22 @@
   mkMergePayload =
     {
       codexHome,
+      herdrMarketplace ? null,
     }:
+    let
+      herdrMarketplaceSettings =
+        if herdrMarketplace == null then
+          { }
+        else
+          {
+            marketplaces = {
+              herdr = {
+                source_type = "local";
+                source = herdrMarketplace;
+              };
+            };
+          };
+    in
     {
       personality = "pragmatic";
       model = "gpt-5.5";
@@ -40,6 +55,9 @@
         "pdf@openai-primary-runtime" = {
           enabled = true;
         };
+        "herdr@herdr" = {
+          enabled = false;
+        };
       };
 
       skills = {
@@ -62,5 +80,6 @@
           "fast-mode"
         ];
       };
-    };
+    }
+    // herdrMarketplaceSettings;
 }

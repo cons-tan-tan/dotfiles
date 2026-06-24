@@ -40,6 +40,10 @@ let
     "npm:pi-web-access@0.10.7"
   ];
 
+  herdrSkillLoader = pkgs.replaceVars ../../../../pi/extensions/herdr-skill-loader.ts {
+    herdrSkillPath = "${pkgs.herdr-agent-plugin}/skills/herdr";
+  };
+
   managedSettings = {
     defaultProvider = "openai-codex";
     defaultModel = "gpt-5.5";
@@ -48,6 +52,8 @@ let
     # Force Pi's package manager to use the isolated wrapper above even when
     # node/npm/pnpm are available in the user's interactive PATH.
     npmCommand = [ "${piPnpm}/bin/pnpm" ];
+
+    extensions = [ "~/.pi/agent/extensions" ];
 
     packages = piPackages;
 
@@ -72,6 +78,8 @@ in
 
   home.file.".pi/agent/package".source =
     "${pkgs.pi}/lib/node_modules/@earendil-works/pi-coding-agent";
+
+  home.file.".pi/agent/extensions/herdr-skill-loader.ts".source = herdrSkillLoader;
 
   # Global settings are declarative. Pi may try to persist UI choices, installs,
   # or extension configuration here; those writes should fail instead of
