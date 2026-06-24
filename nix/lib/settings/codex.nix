@@ -27,8 +27,10 @@
       approvals_reviewer = "auto_review";
 
       # hcom hooks はこの module が導入するため feature gate も固定する。
-      # その他の feature flag は Codex 側の default / app state に任せる。
+      # Apps は GitHub connector の個別 disable が v0.139.0 では tool 注入へ
+      # 効かないため、機能全体を落として GitHub app の露出を止める。
       features = {
+        apps = false;
         hooks = true;
       };
 
