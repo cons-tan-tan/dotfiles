@@ -53,6 +53,12 @@
         };
       };
 
+      apps = {
+        github = {
+          enabled = false;
+        };
+      };
+
       skills = {
         config = [
           {
