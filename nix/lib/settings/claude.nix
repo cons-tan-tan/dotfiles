@@ -11,6 +11,7 @@
       isDarwin ? false,
       windowsUsername ? null,
       hcomPath ? null,
+      ccstatuslinePath ? null,
     }:
     {
       includeCoAuthoredBy = false;
@@ -86,5 +87,13 @@
       hooks.PreToolUse = [ ];
       # programs.claude-code.settings 経由で HM が付与していた schema と揃える。
       "$schema" = "https://json.schemastore.org/claude-code-settings.json";
+    }
+    // lib.optionalAttrs (ccstatuslinePath != null) {
+      statusLine = {
+        type = "command";
+        command = ccstatuslinePath;
+        refreshInterval = 10;
+        hideVimModeIndicator = true;
+      };
     };
 }

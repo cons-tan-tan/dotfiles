@@ -34,12 +34,137 @@ let
 
   jsonFormat = pkgs.formats.json { };
 
+  # Codex derives status-line colors from Catppuccin Mocha TextMate scopes and
+  # then softens truecolor RGB to 85% saturation for footer readability.
+  codexStatuslineColors = {
+    model = "hex:F6E2B7";
+    path = "hex:ABDFA7";
+    branch = "hex:8FB3EF";
+    usage = "hex:F2B590";
+    limit = "hex:E990A9";
+    separator = "hex:6C7086";
+  };
+
+  codexSeparator = id: {
+    inherit id;
+    type = "separator";
+    character = " · ";
+    color = codexStatuslineColors.separator;
+  };
+
   baseSettingsFile = jsonFormat.generate "claude-settings-base.json" (
     settingsLib.mkSettings {
       isDarwin = config.my.isDarwin;
       hcomPath = "${pkgs.hcom}/bin/hcom";
+      ccstatuslinePath = "${pkgs.ccstatusline}/bin/ccstatusline";
     }
   );
+
+  ccstatuslineSettingsFile = jsonFormat.generate "ccstatusline-settings.json" {
+    version = 3;
+    lines = [
+      [
+        {
+          id = "model";
+          type = "model";
+          rawValue = true;
+          color = codexStatuslineColors.model;
+        }
+        (codexSeparator "separator-model-effort")
+        {
+          id = "effort";
+          type = "thinking-effort";
+          rawValue = true;
+          color = codexStatuslineColors.model;
+        }
+        (codexSeparator "separator-effort-cwd")
+        {
+          id = "cwd";
+          type = "current-working-dir";
+          rawValue = true;
+          color = codexStatuslineColors.path;
+          maxWidth = 36;
+          metadata = {
+            abbreviateHome = "true";
+            segments = "2";
+          };
+        }
+        (codexSeparator "separator-cwd-branch")
+        {
+          id = "git-branch";
+          type = "git-branch";
+          rawValue = true;
+          color = codexStatuslineColors.branch;
+          metadata.hideNoGit = "true";
+        }
+        (codexSeparator "separator-branch-context")
+        {
+          id = "context-label";
+          type = "custom-text";
+          customText = "ctx ";
+          color = codexStatuslineColors.usage;
+          merge = "no-padding";
+        }
+        {
+          id = "context-left";
+          type = "context-percentage";
+          rawValue = true;
+          color = codexStatuslineColors.usage;
+          metadata.inverse = "true";
+        }
+        (codexSeparator "separator-context-session")
+        {
+          id = "session-label";
+          type = "custom-text";
+          customText = "5h ";
+          color = codexStatuslineColors.limit;
+          merge = "no-padding";
+        }
+        {
+          id = "session-usage";
+          type = "session-usage";
+          rawValue = true;
+          color = codexStatuslineColors.limit;
+        }
+        (codexSeparator "separator-session-weekly")
+        {
+          id = "weekly-label";
+          type = "custom-text";
+          customText = "7d ";
+          color = codexStatuslineColors.limit;
+          merge = "no-padding";
+        }
+        {
+          id = "weekly-usage";
+          type = "weekly-usage";
+          rawValue = true;
+          color = codexStatuslineColors.limit;
+        }
+      ]
+    ];
+    flexMode = "full-minus-40";
+    compactThreshold = 90;
+    colorLevel = 3;
+    defaultSeparator = "";
+    defaultPadding = "";
+    inheritSeparatorColors = false;
+    globalBold = false;
+    gitCacheTtlSeconds = 5;
+    minimalistMode = false;
+    powerline = {
+      enabled = false;
+      separators = [ ">" ];
+      separatorInvertBackground = [ false ];
+      startCaps = [ ];
+      endCaps = [ ];
+      autoAlign = false;
+      continueThemeAcrossLines = false;
+    };
+    installation = {
+      method = "pinned";
+      installedVersion = lib.getVersion pkgs.ccstatusline;
+    };
+  };
 
   # hcom 分は生成物 (overlay が hcom 実行で生成) から取り、手書きで二重管理しない。
   mergedSettingsRaw =
@@ -70,6 +195,7 @@ in
   };
 
   home.file.".claude/settings.json".source = mergedSettingsFile;
+  home.file.".config/ccstatusline/settings.json".source = ccstatuslineSettingsFile;
 
   home.file.".claude/CLAUDE.md".source =
     config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/claude/CLAUDE.md";
