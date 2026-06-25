@@ -13,6 +13,7 @@ in
     claude-code
     opencode
     pi
+    ccstatusline
     ccusage
     agent-browser
     ;

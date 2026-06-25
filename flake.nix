@@ -421,6 +421,7 @@
             hcom-claude-hooks
             hcom-codex-hooks
             agent-slack
+            ccstatusline
             git-wt
             herdr
             herdr-agent-skill

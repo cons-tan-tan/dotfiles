@@ -38,6 +38,7 @@
     # AI Tools
     gemini-cli
     github-copilot-cli
+    ccstatusline
     ccusage
     herdr
     agent-browser
