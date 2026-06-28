@@ -39,7 +39,6 @@
     gemini-cli
     github-copilot-cli
     ccusage
-    herdr
     agent-browser
     agent-slack
     hcom
