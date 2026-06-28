@@ -151,6 +151,58 @@ rec {
         cp ${src}/SKILL.md "$out/SKILL.md"
       '';
 
+  herdr-claude-integration =
+    runCommand "herdr-claude-integration-${version}"
+      {
+        meta = {
+          description = "Herdr Claude Code native session restore integration hook";
+          homepage = "https://herdr.dev";
+          license = lib.licenses.agpl3Plus;
+          platforms = builtins.attrNames binaryAssets;
+        };
+      }
+      ''
+        home="$NIX_BUILD_TOP/home"
+        mkdir -p "$home/.claude" "$out/hooks"
+        HOME="$home" XDG_CONFIG_HOME="$home/.config" ${herdr}/bin/herdr integration install claude >/dev/null
+        install -Dm755 "$home/.claude/hooks/herdr-agent-state.sh" "$out/hooks/herdr-agent-state.sh"
+        cp "$home/.claude/settings.json" "$out/settings.json"
+      '';
+
+  herdr-codex-integration =
+    runCommand "herdr-codex-integration-${version}"
+      {
+        meta = {
+          description = "Herdr Codex native session restore integration hook";
+          homepage = "https://herdr.dev";
+          license = lib.licenses.agpl3Plus;
+          platforms = builtins.attrNames binaryAssets;
+        };
+      }
+      ''
+        home="$NIX_BUILD_TOP/home"
+        mkdir -p "$home/.codex" "$out"
+        HOME="$home" XDG_CONFIG_HOME="$home/.config" ${herdr}/bin/herdr integration install codex >/dev/null
+        install -Dm755 "$home/.codex/herdr-agent-state.sh" "$out/herdr-agent-state.sh"
+      '';
+
+  herdr-pi-integration =
+    runCommand "herdr-pi-integration-${version}"
+      {
+        meta = {
+          description = "Herdr Pi native agent state extension";
+          homepage = "https://herdr.dev";
+          license = lib.licenses.agpl3Plus;
+          platforms = builtins.attrNames binaryAssets;
+        };
+      }
+      ''
+        home="$NIX_BUILD_TOP/home"
+        mkdir -p "$home/.pi/agent/extensions" "$out/extensions"
+        HOME="$home" XDG_CONFIG_HOME="$home/.config" ${herdr}/bin/herdr integration install pi >/dev/null
+        install -Dm644 "$home/.pi/agent/extensions/herdr-agent-state.ts" "$out/extensions/herdr-agent-state.ts"
+      '';
+
   herdr-codex-marketplace =
     runCommand "herdr-codex-marketplace-${version}"
       {

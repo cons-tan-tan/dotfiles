@@ -8,6 +8,15 @@
 let
   inherit (config.my) dotfilesDir;
 
+  claudeHome = "${config.home.homeDirectory}/.claude";
+  herdrClaudeIntegration = pkgs.herdr-claude-integration;
+  herdrHookPath = "${claudeHome}/hooks/herdr-agent-state.sh";
+  herdrHookPathEnv = lib.makeBinPath [
+    pkgs.coreutils
+    pkgs.python3
+  ];
+  herdrHookCommand = "${pkgs.coreutils}/bin/env PATH=${herdrHookPathEnv} ${pkgs.bash}/bin/bash ${lib.escapeShellArg herdrHookPath} session";
+
   # HM 側 (programs.claude-code) も plugins 用に symlinkJoin で包むため、
   # wrapper は絶対パスで実体を参照して多段合成できるようにする。
   claudeCodePackage = pkgs.symlinkJoin {
@@ -41,6 +50,17 @@ let
     }
   );
 
+  herdrSettingsFile =
+    pkgs.runCommand "claude-herdr-settings.json"
+      {
+        nativeBuildInputs = [ pkgs.jq ];
+      }
+      ''
+        jq --arg command ${lib.escapeShellArg herdrHookCommand} '
+          .hooks.SessionStart |= map(.hooks |= map(.command = $command))
+        ' ${herdrClaudeIntegration}/settings.json > $out
+      '';
+
   # hcom 分は生成物 (overlay が hcom 実行で生成) から取り、手書きで二重管理しない。
   mergedSettingsRaw =
     pkgs.runCommand "claude-settings.json"
@@ -49,11 +69,16 @@ let
       }
       ''
         jq -s '
+          def merge_hooks($first; $second; $third):
+            reduce ((($first | keys_unsorted) + ($second | keys_unsorted) + ($third | keys_unsorted)) | unique[]) as $key
+              ({}; .[$key] = (($first[$key] // []) + ($second[$key] // []) + ($third[$key] // [])));
+
           .[0] as $base | .[1] as $hcom |
+          .[2] as $herdr |
           $base
           | .permissions.allow += $hcom.permissions.allow
-          | .hooks = ($hcom.hooks + { PreToolUse: (($hcom.hooks.PreToolUse // []) + $base.hooks.PreToolUse) })
-        ' ${baseSettingsFile} ${pkgs.hcom-claude-hooks} > $out
+          | .hooks = merge_hooks(($hcom.hooks // {}); ($base.hooks // {}); ($herdr.hooks // {}))
+        ' ${baseSettingsFile} ${pkgs.hcom-claude-hooks} ${herdrSettingsFile} > $out
       '';
 
   mergedSettingsFile = settingsValidator.validate "claude-settings.json" mergedSettingsRaw;
@@ -79,6 +104,16 @@ in
     config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/claude/rules";
   home.file.".claude/output-styles".source =
     config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/claude/output-styles";
-  home.file.".claude/hooks".source =
-    config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/claude/hooks";
+  home.file.".claude/hooks/.gitkeep".source =
+    config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/claude/hooks/.gitkeep";
+  home.file.".claude/hooks/herdr-agent-state.sh".source =
+    "${herdrClaudeIntegration}/hooks/herdr-agent-state.sh";
+
+  home.activation.claudeHooksDirectoryMigration = lib.hm.dag.entryBefore [ "checkLinkTargets" ] ''
+    legacy_hooks="${claudeHome}/hooks"
+    legacy_target="${dotfilesDir}/claude/hooks"
+    if [ -L "$legacy_hooks" ] && [ "$(${pkgs.coreutils}/bin/readlink -f "$legacy_hooks")" = "$legacy_target" ]; then
+      run ${pkgs.coreutils}/bin/rm "$legacy_hooks"
+    fi
+  '';
 }

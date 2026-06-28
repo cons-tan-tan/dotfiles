@@ -21,6 +21,9 @@ in
     herdr
     herdr-agent-skill
     herdr-agent-plugin
+    herdr-claude-integration
+    herdr-codex-integration
+    herdr-pi-integration
     herdr-codex-marketplace
     ;
 }

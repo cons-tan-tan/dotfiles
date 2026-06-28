@@ -425,6 +425,9 @@
             herdr
             herdr-agent-skill
             herdr-agent-plugin
+            herdr-claude-integration
+            herdr-codex-integration
+            herdr-pi-integration
             herdr-codex-marketplace
             ;
         }
@@ -466,7 +469,7 @@
               pkgs.runCommand "nix-custom-settings-tests" { } "touch $out"
             else
               throw "nix custom settings tests failed: ${builtins.toJSON failures}";
-          # merge.py のテスト。ビルド時実行なので build-linux ジョブが強制する
+          # Codex Python helpers のテスト。ビルド時実行なので build-linux ジョブが強制する
           merge-py-tests =
             pkgs.runCommand "merge-py-tests"
               {
@@ -480,7 +483,9 @@
               ''
                 cp ${./nix/modules/home/programs/codex/merge.py} merge.py
                 cp ${./nix/modules/home/programs/codex/test_merge.py} test_merge.py
-                pytest -q test_merge.py
+                cp ${./nix/modules/home/programs/codex/generate_herdr_hook_state.py} generate_herdr_hook_state.py
+                cp ${./nix/modules/home/programs/codex/test_generate_herdr_hook_state.py} test_generate_herdr_hook_state.py
+                pytest -q test_merge.py test_generate_herdr_hook_state.py
                 touch $out
               '';
         }

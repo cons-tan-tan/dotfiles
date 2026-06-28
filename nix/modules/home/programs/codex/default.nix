@@ -8,6 +8,7 @@ let
   # 生成は overlay (hcom+codex を実行) に任せ参照のみ — Codex の内部仕様 (hash
   # アルゴリズム等) をこちらで再実装しないため。
   hcomCodex = pkgs.hcom-codex-hooks;
+  herdrCodexIntegration = pkgs.herdr-codex-integration;
 
   codexHome = "${config.home.homeDirectory}/.codex";
   configPath = "${codexHome}/config.toml";
@@ -17,6 +18,12 @@ let
   jsonFormat = pkgs.formats.json { };
   herdrSkillPath = "${codexHome}/skills/herdr/SKILL.md";
   enableHerdrSkillOverride = "skills.config=[{path=${builtins.toJSON herdrSkillPath},enabled=true}]";
+  herdrHookPath = "${codexHome}/herdr-agent-state.sh";
+  herdrHookPathEnv = lib.makeBinPath [
+    pkgs.coreutils
+    pkgs.python3
+  ];
+  herdrHookCommand = "${pkgs.coreutils}/bin/env PATH=${herdrHookPathEnv} ${pkgs.bash}/bin/bash ${lib.escapeShellArg herdrHookPath} session";
 
   codex = pkgs.writeShellApplication {
     name = "codex";
@@ -51,14 +58,60 @@ let
         ' ${hcomCodex}/hooks-state.json > $out
       '';
 
-  # merge.py には単一 payload を渡すため、Nix 管理設定と hcom 生成設定をここで合成する。
+  hooksJson =
+    pkgs.runCommand "codex-hooks.json"
+      {
+        nativeBuildInputs = [ pkgs.jq ];
+      }
+      ''
+        jq --arg command ${lib.escapeShellArg herdrHookCommand} '
+          .hooks.SessionStart = ((.hooks.SessionStart // []) + [
+            {
+              hooks: [
+                {
+                  command: $command,
+                  timeout: 10,
+                  type: "command"
+                }
+              ]
+            }
+          ])
+        ' ${hcomCodex}/hooks.json > $out
+      '';
+
+  herdrHooksStatePayloadJson =
+    pkgs.runCommand "codex-herdr-hooks-state-payload.json"
+      {
+        nativeBuildInputs = [ pkgs.python3 ];
+      }
+      ''
+        home="$NIX_BUILD_TOP/home"
+        mkdir -p "$home/.codex"
+        cp ${hooksJson} "$home/.codex/hooks.json"
+        printf '[features]\nhooks = true\n' > "$home/.codex/config.toml"
+
+        export HOME="$home"
+        export XDG_CONFIG_HOME="$home/.config"
+
+        ${pkgs.python3}/bin/python3 ${./generate_herdr_hook_state.py} \
+          --codex-bin ${lib.escapeShellArg "${pkgs.codex}/bin/codex"} \
+          --hook-command ${lib.escapeShellArg herdrHookCommand} \
+          --hooks-json-path ${lib.escapeShellArg hooksJsonPath} \
+          > "$out"
+      '';
+
+  # merge.py には単一 payload を渡すため、Nix 管理設定と hook 生成設定をここで合成する。
   mergePayloadJson =
     pkgs.runCommand "codex-config-merge.json"
       {
         nativeBuildInputs = [ pkgs.jq ];
       }
       ''
-        jq -s '.[0] * .[1]' ${baseMergePayloadJson} ${hcomHooksPayloadJson} > $out
+        jq -s '.[0] * .[1] * .[2]' \
+          ${baseMergePayloadJson} \
+          ${hcomHooksPayloadJson} \
+          ${herdrHooksStatePayloadJson} \
+          > $out
       '';
 
   # 検証に使う schema は、実際に導入する Codex CLI と同じ source tag から取り出す。
@@ -74,7 +127,8 @@ in
   home.packages = [ codex ];
 
   # Codex は読むだけなので read-only symlink で良い。
-  home.file.".codex/hooks.json".source = "${hcomCodex}/hooks.json";
+  home.file.".codex/hooks.json".source = hooksJson;
+  home.file.".codex/herdr-agent-state.sh".source = "${herdrCodexIntegration}/herdr-agent-state.sh";
 
   # Herdr の Codex plugin enable は SessionFlags (`-c`) で反転できないため、
   # Codex では通常 skill として配置し、skills.config だけを wrapper から反転する。
@@ -88,10 +142,10 @@ in
   # で一意にするのは固定名だと並行 switch が同じ候補を共有し TOCTOU になるため。
   # サブシェル + set -e + trap は、後始末を他フラグメントへ漏らさず、検証失敗時に
   # 本番へ mv させないため。
-  home.activation.codexHcomHooks = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+  home.activation.codexHooksConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     (
       set -e
-      candidate=$(${pkgs.coreutils}/bin/mktemp "${configPath}.hcom-XXXXXX")
+      candidate=$(${pkgs.coreutils}/bin/mktemp "${configPath}.hooks-XXXXXX")
       trap '${pkgs.coreutils}/bin/rm -f "$candidate"' EXIT
       run ${pythonWithTomlkit}/bin/python3 ${./merge.py} \
         "${configPath}" "${mergePayloadJson}" "$candidate"

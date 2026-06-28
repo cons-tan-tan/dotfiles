@@ -43,6 +43,7 @@ let
   herdrSkillLoader = pkgs.replaceVars ../../../../pi/extensions/herdr-skill-loader.ts {
     herdrSkillPath = "${pkgs.herdr-agent-plugin}/skills/herdr";
   };
+  herdrPiIntegration = pkgs.herdr-pi-integration;
 
   managedSettings = {
     defaultProvider = "openai-codex";
@@ -80,6 +81,9 @@ in
     "${pkgs.pi}/lib/node_modules/@earendil-works/pi-coding-agent";
 
   home.file.".pi/agent/extensions/herdr-skill-loader.ts".source = herdrSkillLoader;
+
+  home.file.".pi/agent/extensions/herdr-agent-state.ts".source =
+    "${herdrPiIntegration}/extensions/herdr-agent-state.ts";
 
   # Global settings are declarative. Pi may try to persist UI choices, installs,
   # or extension configuration here; those writes should fail instead of
