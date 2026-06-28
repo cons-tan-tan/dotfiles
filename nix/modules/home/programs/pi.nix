@@ -37,6 +37,7 @@ let
   '';
 
   piPackages = [
+    "npm:pi-skillrefs@0.1.3"
     "npm:pi-web-access@0.10.7"
   ];
 
