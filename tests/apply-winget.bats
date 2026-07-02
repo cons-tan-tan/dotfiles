@@ -6,7 +6,7 @@ setup() {
   SCRIPT="$REPO_ROOT/nix/apps/apply-winget.sh"
   BASH_BIN="$(command -v bash)"
   WORK="$(mktemp -d)"
-  WINDOWS_HOME="$WORK/windows-home"
+  WINDOWS_HOME="$WORK/windows home"
   WINDOWS_USERNAME="alice"
   STUB_DIR="$WORK/stub"
   EMPTY_PATH="$WORK/empty-path"
@@ -78,7 +78,7 @@ run_apply_winget() {
   [[ "$output" == *"apply-winget: winget.exe not found"* ]]
 }
 
-@test "execs winget.exe configure with Windows config path and extra args" {
+@test "execs winget.exe configure when Windows home path contains a space" {
   create_windows_config
   create_winget_stub
 

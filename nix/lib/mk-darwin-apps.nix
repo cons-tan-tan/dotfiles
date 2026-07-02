@@ -1,10 +1,12 @@
 { darwinHostname }:
 pkgs:
 let
+  inherit (pkgs.lib) escapeShellArg;
+
   buildScript = pkgs.writeShellApplication {
     name = "darwin-build";
     text = ''
-      export DARWIN_HOSTNAME=${darwinHostname}
+      export DARWIN_HOSTNAME=${escapeShellArg darwinHostname}
       ${builtins.readFile ../apps/darwin-build.sh}
     '';
   };
@@ -12,7 +14,7 @@ let
   switchScript = pkgs.writeShellApplication {
     name = "darwin-switch";
     text = ''
-      export DARWIN_HOSTNAME=${darwinHostname}
+      export DARWIN_HOSTNAME=${escapeShellArg darwinHostname}
       ${builtins.readFile ../apps/darwin-switch.sh}
     '';
   };

@@ -7,14 +7,16 @@
 }:
 system: pkgs:
 let
+  inherit (pkgs.lib) escapeShellArg;
+
   arch = linuxShortArch.${system};
   hmBin = "${inputs.home-manager.packages.${system}.default}/bin/home-manager";
 
   buildScript = pkgs.writeShellApplication {
     name = "home-manager-build";
     text = ''
-      export HM_USERNAME=${username}
-      export HM_ARCH=${arch}
+      export HM_USERNAME=${escapeShellArg username}
+      export HM_ARCH=${escapeShellArg arch}
       ${builtins.readFile ../apps/home-manager-build.sh}
     '';
   };
@@ -22,9 +24,9 @@ let
   switchScript = pkgs.writeShellApplication {
     name = "home-manager-switch";
     text = ''
-      export HM_USERNAME=${username}
-      export HM_ARCH=${arch}
-      export HM_BIN=${hmBin}
+      export HM_USERNAME=${escapeShellArg username}
+      export HM_ARCH=${escapeShellArg arch}
+      export HM_BIN=${escapeShellArg hmBin}
       ${builtins.readFile ../apps/home-manager-switch.sh}
     '';
   };
@@ -32,8 +34,8 @@ let
   applyWingetScript = pkgs.writeShellApplication {
     name = "apply-winget";
     text = ''
-      export APPLY_WINGET_WINDOWS_HOMEDIR=${windowsHomedir}
-      export APPLY_WINGET_WINDOWS_USERNAME=${windowsUsername}
+      export APPLY_WINGET_WINDOWS_HOMEDIR=${escapeShellArg windowsHomedir}
+      export APPLY_WINGET_WINDOWS_USERNAME=${escapeShellArg windowsUsername}
       ${builtins.readFile ../apps/apply-winget.sh}
     '';
   };
