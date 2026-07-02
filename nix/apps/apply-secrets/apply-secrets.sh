@@ -110,7 +110,7 @@ while IFS= read -r entry; do
     continue
   fi
 
-  mkdir -p "$(dirname "$dst")"
+  (umask 077 && mkdir -p "$(dirname "$dst")")
   chmod "$dir_mode" "$(dirname "$dst")"
 
   tmp=$(mktemp "$dst.XXXXXX")
