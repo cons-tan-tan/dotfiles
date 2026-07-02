@@ -211,6 +211,23 @@ rec {
         install -Dm644 "$home/.pi/agent/extensions/herdr-agent-state.ts" "$out/extensions/herdr-agent-state.ts"
       '';
 
+  herdr-opencode-integration =
+    runCommand "herdr-opencode-integration-${version}"
+      {
+        meta = {
+          description = "Herdr OpenCode native agent state plugin";
+          homepage = "https://herdr.dev";
+          license = lib.licenses.agpl3Plus;
+          platforms = builtins.attrNames binaryAssets;
+        };
+      }
+      ''
+        home="$NIX_BUILD_TOP/home"
+        mkdir -p "$home/.config/opencode" "$out/plugins"
+        HOME="$home" XDG_CONFIG_HOME="$home/.config" ${herdr}/bin/herdr integration install opencode >/dev/null
+        install -Dm644 "$home/.config/opencode/plugins/herdr-agent-state.js" "$out/plugins/herdr-agent-state.js"
+      '';
+
   herdr-codex-marketplace =
     runCommand "herdr-codex-marketplace-${version}"
       {

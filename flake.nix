@@ -317,6 +317,7 @@
             herdr-claude-integration
             herdr-codex-integration
             herdr-pi-integration
+            herdr-opencode-integration
             herdr-codex-marketplace
             ;
         }
