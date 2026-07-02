@@ -41,6 +41,7 @@
     ccusage
     agent-browser
     agent-slack
+    difit
     hcom
 
     # Node.js

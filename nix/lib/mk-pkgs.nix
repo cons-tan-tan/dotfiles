@@ -14,6 +14,7 @@ import inputs.nixpkgs {
     (import ../overlays/llm-agents.nix inputs.llm-agents)
     (import ../overlays/git-wt.nix)
     (import ../overlays/agent-slack.nix)
+    (import ../overlays/difit.nix)
     (import ../overlays/hcom.nix)
   ]
   ++ lib.optionals (!isDarwin) [

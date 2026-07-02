@@ -7,6 +7,7 @@ let
     agent-browser-skill
     agent-slack-skill
     anthropic-skills
+    difit-src
     drawio-skill
     hcom-src
     humanizer-jp-skill
@@ -79,6 +80,14 @@ let
         > call `/mnt/c/.../draw.io.exe` for the export step; the "Opening the
         > result" instructions below still apply.
       '';
+    };
+
+    difit = {
+      root = "${difit-src}/skills/difit";
+    };
+
+    difit-review = {
+      root = "${difit-src}/skills/difit-review";
     };
 
     # バイナリ本体は overlays/hcom.nix (hcom-src input とは update-pins が同期)

@@ -96,6 +96,12 @@
       flake = false;
     };
 
+    # difit official agent skills (the CLI itself is packaged in nix/overlays/difit.nix).
+    difit-src = {
+      url = "github:yoshiko-pg/difit/v5.0.4";
+      flake = false;
+    };
+
     # hcom skill source (the binary itself is packaged in nix/overlays/hcom.nix).
     # バイナリ側の pin (nix/pins/hcom.json) とは `nix run .#update-pins` が
     # この input ごと同期する。
@@ -310,6 +316,7 @@
             hcom-claude-hooks
             hcom-codex-hooks
             agent-slack
+            difit
             git-wt
             herdr
             herdr-agent-skill

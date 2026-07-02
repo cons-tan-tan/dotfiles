@@ -214,6 +214,23 @@
         "type": "github"
       }
     },
+    "difit-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1782742298,
+        "narHash": "sha256-klHLeoLqgQJrYtm4ytS2jCOAoPkhqog2k6p9vSfdHBM=",
+        "owner": "yoshiko-pg",
+        "repo": "difit",
+        "rev": "59df3692ff4aa8f96df84b98e17171fa452a0b04",
+        "type": "github"
+      },
+      "original": {
+        "owner": "yoshiko-pg",
+        "ref": "v5.0.4",
+        "repo": "difit",
+        "type": "github"
+      }
+    },
     "drawio-skill": {
       "flake": false,
       "locked": {
@@ -508,6 +525,7 @@
         "brew-api": "brew-api",
         "brew-nix": "brew-nix",
         "codex-plugin-cc": "codex-plugin-cc",
+        "difit-src": "difit-src",
         "drawio-skill": "drawio-skill",
         "hcom-src": "hcom-src",
         "home-manager": "home-manager",
