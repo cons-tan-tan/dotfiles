@@ -115,6 +115,22 @@ SSH_MANIFEST='[{"src":"secrets/ssh.yaml","dst":".ssh/config.d/50-private.conf","
   [ "$(mode_of "$FAKE_HOME/.ssh/config.d")" = "700" ]
 }
 
+@test "intermediate dirs created by apply-secrets are not world-accessible" {
+  umask 022
+  run_apply "$MANIFEST"
+  [ "$status" -eq 0 ]
+  [ "$(mode_of "$FAKE_HOME/.ssh")" = "700" ]
+}
+
+@test "pre-existing parent dir permissions are left untouched" {
+  mkdir -p "$FAKE_HOME/.ssh"
+  chmod 755 "$FAKE_HOME/.ssh"
+  run_apply "$MANIFEST"
+  [ "$status" -eq 0 ]
+  [ "$(mode_of "$FAKE_HOME/.ssh")" = "755" ]
+  [ "$(mode_of "$FAKE_HOME/.ssh/config.d")" = "700" ]
+}
+
 @test "dry-run lists target without writing" {
   run_apply "$MANIFEST" --dry-run
   [ "$status" -eq 0 ]
