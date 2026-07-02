@@ -42,9 +42,9 @@ let
 in
 {
   home.activation.deployWindowsGit = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    run mkdir -p ${windowsHomedir}/.gitconfig.d ${windowsHomedir}/.config/git
-    run install -m644 ${windowsGitIni} ${windowsHomedir}/.gitconfig
-    run install -m644 ${gitLib.commitTemplate} ${windowsHomedir}/.gitconfig.d/commit-template
-    run install -m644 ${windowsGitIgnore} ${windowsHomedir}/.config/git/ignore
+    run mkdir -p "${windowsHomedir}/.gitconfig.d" "${windowsHomedir}/.config/git"
+    run install -m644 "${windowsGitIni}" "${windowsHomedir}/.gitconfig"
+    run install -m644 "${gitLib.commitTemplate}" "${windowsHomedir}/.gitconfig.d/commit-template"
+    run install -m644 "${windowsGitIgnore}" "${windowsHomedir}/.config/git/ignore"
   '';
 }

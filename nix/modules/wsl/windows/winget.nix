@@ -170,7 +170,7 @@ let
 in
 {
   home.activation.deployWingetConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    run mkdir -p ${windowsHomedir}/.config
-    run install -m644 ${wingetConfigFile} ${windowsHomedir}/.config/dev.winget
+    run mkdir -p "${windowsHomedir}/.config"
+    run install -m644 "${wingetConfigFile}" "${windowsHomedir}/.config/dev.winget"
   '';
 }
