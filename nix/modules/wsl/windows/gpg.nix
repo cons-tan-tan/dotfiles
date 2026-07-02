@@ -28,10 +28,10 @@ let
 in
 {
   home.activation.deployWindowsGpg = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    WIN_GNUPGHOME=${windowsHomedir}/AppData/Roaming/gnupg
+    WIN_GNUPGHOME="${windowsHomedir}/AppData/Roaming/gnupg"
     run mkdir -p "$WIN_GNUPGHOME"
-    run install -m644 ${windowsGpgAgentConf} "$WIN_GNUPGHOME/gpg-agent.conf"
-    run install -m644 ${windowsGpgConf} "$WIN_GNUPGHOME/gpg.conf"
-    run install -m644 ${windowsSshcontrol} "$WIN_GNUPGHOME/sshcontrol"
+    run install -m644 "${windowsGpgAgentConf}" "$WIN_GNUPGHOME/gpg-agent.conf"
+    run install -m644 "${windowsGpgConf}" "$WIN_GNUPGHOME/gpg.conf"
+    run install -m644 "${windowsSshcontrol}" "$WIN_GNUPGHOME/sshcontrol"
   '';
 }

@@ -26,22 +26,22 @@ in
   # なので、writeBoundary 基準だと初回 switch でまだ存在せず skills が
   # Windows 側へ配られない。
   home.activation.deployWindowsClaudeStatic = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
-    WIN_CLAUDE=${windowsHomedir}/.claude
-    WIN_AGENTS=${windowsHomedir}/.agents
+    WIN_CLAUDE="${windowsHomedir}/.claude"
+    WIN_AGENTS="${windowsHomedir}/.agents"
 
     run mkdir -p "$WIN_CLAUDE" "$WIN_AGENTS/skills"
 
     run ${pkgs.rsync}/bin/rsync -aL --delete \
-      ${dotfilesDir}/claude/CLAUDE.md \
+      "${dotfilesDir}/claude/CLAUDE.md" \
       "$WIN_CLAUDE/CLAUDE.md"
 
     run ${pkgs.rsync}/bin/rsync -aL --delete ${rsyncExcludeArgs} \
-      ${dotfilesDir}/claude/rules/ \
+      "${dotfilesDir}/claude/rules/" \
       "$WIN_CLAUDE/rules/"
 
     for dir in commands output-styles hooks; do
       run ${pkgs.rsync}/bin/rsync -aL --delete \
-        ${dotfilesDir}/claude/$dir/ \
+        "${dotfilesDir}/claude/$dir/" \
         "$WIN_CLAUDE/$dir/"
     done
 

@@ -24,7 +24,7 @@ let
 in
 {
   home.activation.deployWindowsClaudeSettings = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    run mkdir -p ${windowsHomedir}/.claude
-    run install -m644 ${windowsSettingsFile} ${windowsHomedir}/.claude/settings.json
+    run mkdir -p "${windowsHomedir}/.claude"
+    run install -m644 "${windowsSettingsFile}" "${windowsHomedir}/.claude/settings.json"
   '';
 }
