@@ -27,15 +27,17 @@
         # 1M context は維持しつつ、Codex と近い 270k tokens 付近で自動圧縮する。
         CLAUDE_CODE_AUTO_COMPACT_WINDOW = "300000";
         CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = "90";
+        # `sonnet` エイリアスを Sonnet 5.0 の固定 ID に向ける。
+        # ANTHROPIC_DEFAULT_*_MODEL は完全なモデル名のみ許容するため、
+        # Sonnet 更新時はここを書き換える必要がある。
+        ANTHROPIC_DEFAULT_SONNET_MODEL = "claude-sonnet-5";
         # CLAUDE_CODE_EFFORT_LEVEL はハードピンされ、起動後のモデル/effort
         # 切り替えより優先されるため使わない。起動時の xhigh 既定値は
         # claude-code wrapper の --effort xhigh で指定する。
         # macOS のトラックパッドだと速すぎるのでデフォルトの 3 のまま
         CLAUDE_CODE_SCROLL_SPEED = if isDarwin then "3" else "6";
-        # サブエージェントを最新 Sonnet に固定する。
-        # この変数はエイリアス (sonnet) を受け付けず完全なモデル名のみ許容するため、
-        # Sonnet 更新時はここを書き換える必要がある。
-        CLAUDE_CODE_SUBAGENT_MODEL = "claude-sonnet-4-6";
+        # サブエージェントも同じ Sonnet に固定する。
+        CLAUDE_CODE_SUBAGENT_MODEL = "claude-sonnet-5";
       }
       // lib.optionalAttrs (!forWindows) {
         # フックが参照する hcom を store path に固定し PATH 非依存にする。
