@@ -1,7 +1,11 @@
 {
   config,
+  pkgs,
   ...
 }:
+let
+  herdrOpenCodeIntegration = pkgs.herdr-opencode-integration;
+in
 {
   programs.opencode = {
     enable = true;
@@ -42,4 +46,7 @@
 
   home.file.".config/opencode/command".source =
     config.lib.file.mkOutOfStoreSymlink "${config.my.dotfilesDir}/claude/commands";
+
+  home.file.".config/opencode/plugins/herdr-agent-state.js".source =
+    "${herdrOpenCodeIntegration}/plugins/herdr-agent-state.js";
 }
