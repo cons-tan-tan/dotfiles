@@ -1,0 +1,22 @@
+{
+  "version": "0.7.1",
+  "srcHash": "sha256-/WnsUO1DuSmBfVo8LCFaDJEZvSrYnJZPyRNqASbPzV8=",
+  "assets": {
+    "x86_64-linux": {
+      "name": "herdr-linux-x86_64",
+      "hash": "sha256-uWWsr/wsIvVLbmxkr3z46Yo/SsJiJjCgWZxnpLnYplQ="
+    },
+    "aarch64-linux": {
+      "name": "herdr-linux-aarch64",
+      "hash": "sha256-PXV6wwxjHnncRQOMPsxkI/4TqJ+c/6D0Fa7dLCfxV2w="
+    },
+    "x86_64-darwin": {
+      "name": "herdr-macos-x86_64",
+      "hash": "sha256-V4D6B9u5p4155S0guGphAT9sugJmfyC2z4lmMBUJCEY="
+    },
+    "aarch64-darwin": {
+      "name": "herdr-macos-aarch64",
+      "hash": "sha256-FvRlPwSR6h59K0a1sCVC8Y4bguiNqvnikAVy5btjTfg="
+    }
+  }
+}
