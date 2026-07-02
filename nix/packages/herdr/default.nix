@@ -9,25 +9,21 @@
 }:
 let
   system = stdenvNoCC.hostPlatform.system;
+  pin = builtins.fromJSON (builtins.readFile ../../pins/herdr.json);
   upstreamVersionData = builtins.fromJSON (
     builtins.readFile "${llm-agents}/packages/herdr/hashes.json"
   );
-  # Track the latest Herdr release even when llm-agents is temporarily behind.
-  # Herdr 0.7.1 also includes the 0.6.10 lifecycle-authority hotfix that avoids
-  # Pi/OpenCode integration detection loops and UI/input stalls.
-  latestVersionData = upstreamVersionData // {
-    version = "0.7.1";
-    hash = "sha256-/WnsUO1DuSmBfVo8LCFaDJEZvSrYnJZPyRNqASbPzV8=";
-    binaryHashes = {
-      x86_64-linux = "sha256-uWWsr/wsIvVLbmxkr3z46Yo/SsJiJjCgWZxnpLnYplQ=";
-      aarch64-linux = "sha256-PXV6wwxjHnncRQOMPsxkI/4TqJ+c/6D0Fa7dLCfxV2w=";
-      x86_64-darwin = "sha256-V4D6B9u5p4155S0guGphAT9sugJmfyC2z4lmMBUJCEY=";
-      aarch64-darwin = "sha256-FvRlPwSR6h59K0a1sCVC8Y4bguiNqvnikAVy5btjTfg=";
-    };
+  # version / hash values are pinned in nix/pins/herdr.json and updated by
+  # `nix run .#update-pins`. If llm-agents catches up, its upstream data wins.
+  pinnedVersionData = upstreamVersionData // {
+    version = pin.version;
+    hash = pin.srcHash;
+    binaryAssets = lib.mapAttrs (_: asset: asset.name) pin.assets;
+    binaryHashes = lib.mapAttrs (_: asset: asset.hash) pin.assets;
   };
   versionData =
-    if lib.versionOlder upstreamVersionData.version "0.7.1" then
-      latestVersionData
+    if lib.versionOlder upstreamVersionData.version pin.version then
+      pinnedVersionData
     else
       upstreamVersionData;
   version = versionData.version;
@@ -37,12 +33,7 @@ let
     rev = "v${version}";
     hash = versionData.hash;
   };
-  binaryAssets = {
-    x86_64-linux = "herdr-linux-x86_64";
-    aarch64-linux = "herdr-linux-aarch64";
-    x86_64-darwin = "herdr-macos-x86_64";
-    aarch64-darwin = "herdr-macos-aarch64";
-  };
+  binaryAssets = versionData.binaryAssets or (lib.mapAttrs (_: asset: asset.name) pin.assets);
   binaryHashes = versionData.binaryHashes;
   pluginBase = {
     name = "herdr";

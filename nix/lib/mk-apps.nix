@@ -100,7 +100,7 @@ in
       program = pkgs.lib.getExe fmtScript;
     };
 
-    # nix/pins/*.json (hcom / agent-slack / git-wt / schema) を upstream の
+    # nix/pins/*.json (hcom / agent-slack / git-wt / herdr / schema) を upstream の
     # 最新状態へ同期する。git-wt の vendorHash 計算で `nix build .#git-wt` を
     # 使うため、packages 出力 (flake.nix) に git-wt が必要。
     update-pins = {

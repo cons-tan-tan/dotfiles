@@ -206,6 +206,20 @@ else
   fi
 fi
 
+echo "== herdr"
+herdr_pin=nix/pins/herdr.json
+herdr_before=$(jq -r .version "$herdr_pin")
+update_release_pin "herdr" "ogulcancelik/herdr" "$herdr_pin"
+herdr_after=$(jq -r .version "$herdr_pin")
+if [ "$herdr_after" != "$herdr_before" ]; then
+  echo "herdr: updating srcHash"
+  src_hash=$(prefetch_unpack "https://github.com/ogulcancelik/herdr/archive/refs/tags/v$herdr_after.tar.gz")
+  tmp=$(mktemp)
+  TMPFILES+=("$tmp")
+  jq --arg h "$src_hash" '.srcHash = $h' "$herdr_pin" >"$tmp"
+  mv "$tmp" "$herdr_pin"
+fi
+
 echo "== claude-code-settings-schema"
 update_url_pin "claude-code-settings-schema" "nix/pins/claude-code-settings-schema.json"
 

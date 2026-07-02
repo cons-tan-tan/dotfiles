@@ -38,6 +38,9 @@ case "$*" in
 "api repos/k1LoW/git-wt/releases/latest --jq .tag_name")
   printf '%s\n' "${UPDATE_PINS_GIT_WT_TAG:-v999.0.0}"
   ;;
+"api repos/ogulcancelik/herdr/releases/latest --jq .tag_name")
+  printf '%s\n' "${UPDATE_PINS_HERDR_TAG:-v$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/herdr.json")}"
+  ;;
 *)
   echo "unexpected gh invocation: $*" >&2
   exit 1
@@ -50,6 +53,10 @@ EOS
 set -euo pipefail
 
 if [ "$1" = "store" ] && [ "${2:-}" = "prefetch-file" ]; then
+  if [[ " $* " == *"github.com/ogulcancelik/herdr/archive/refs/tags/"* ]] && [ "${UPDATE_PINS_FAIL_HERDR_PREFETCH:-}" = "source" ]; then
+    echo "herdr source prefetch failed" >&2
+    exit 1
+  fi
   if [ "${3:-}" = "--json" ] && [ "${4:-}" = "https://json.schemastore.org/claude-code-settings.json" ]; then
     printf '{"hash":"sha256-schema-for-test"}\n'
     exit 0
@@ -227,11 +234,28 @@ assert_managed_matches() {
   assert_managed_matches "$original"
 }
 
+@test "herdr source prefetch failure restores all managed files" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_HCOM_TAG=v1.2.3
+  export UPDATE_PINS_AGENT_SLACK_TAG=v4.5.6
+  export UPDATE_PINS_BUILD_MODE=success
+  export UPDATE_PINS_HERDR_TAG=v9.9.9
+  export UPDATE_PINS_FAIL_HERDR_PREFETCH=source
+
+  run_update_pins
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"herdr source prefetch failed"* ]]
+  assert_managed_matches "$original"
+}
+
 @test "successful update leaves expected managed file changes" {
   original="$WORK/original"
   save_managed "$original"
   export UPDATE_PINS_HCOM_TAG=v1.2.3
   export UPDATE_PINS_AGENT_SLACK_TAG=v4.5.6
+  export UPDATE_PINS_HERDR_TAG=v9.9.9
   export UPDATE_PINS_BUILD_MODE=success
 
   run_update_pins
@@ -243,6 +267,9 @@ assert_managed_matches() {
   [ "$(jq -r .version "$WORK/nix/pins/git-wt.json")" = "999.0.0" ]
   [ "$(jq -r .srcHash "$WORK/nix/pins/git-wt.json")" = "sha256-src-for-test" ]
   [ "$(jq -r .vendorHash "$WORK/nix/pins/git-wt.json")" = "sha256-vendor-for-test" ]
+  [ "$(jq -r .version "$WORK/nix/pins/herdr.json")" = "9.9.9" ]
+  [ "$(jq -r .srcHash "$WORK/nix/pins/herdr.json")" = "sha256-src-for-test" ]
+  [ "$(jq -r '.assets["x86_64-linux"].hash' "$WORK/nix/pins/herdr.json")" = "sha256-asset-for-test" ]
   [ "$(jq -r .hash "$WORK/nix/pins/claude-code-settings-schema.json")" = "sha256-schema-for-test" ]
   [ "$(jq -r .updated "$WORK/flake.lock")" = "agent-slack-skill" ]
   ! assert_managed_matches "$original"
