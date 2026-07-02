@@ -4,6 +4,8 @@
   ...
 }:
 let
+  models = import ../../../lib/settings/models.nix;
+
   # Keep Pi's package-manager pnpm isolated from the user's normal Node/npm setup.
   # Pi-managed packages still install into ~/.pi/agent/npm or project .pi/npm;
   # this wrapper only controls the package-manager binary, cache, and configs.
@@ -48,8 +50,8 @@ let
   herdrPiIntegration = pkgs.herdr-pi-integration;
 
   managedSettings = {
-    defaultProvider = "openai-codex";
-    defaultModel = "gpt-5.5";
+    defaultProvider = models.pi.provider;
+    defaultModel = models.pi.model;
     defaultThinkingLevel = "xhigh";
 
     # Force Pi's package manager to use the isolated wrapper above even when

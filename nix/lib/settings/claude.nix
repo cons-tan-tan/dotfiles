@@ -2,6 +2,9 @@
 # (modules/home/programs/claude.nix) と Windows companion 用
 # (modules/wsl/windows/claude.nix) で共有する。
 { lib }:
+let
+  models = import ./models.nix;
+in
 {
   # forWindows = true なら Windows companion 向け (hcom なし、Windows パス)。
   # hcomPath は POSIX ホストでフックが参照する hcom バイナリの絶対パス。
@@ -16,7 +19,7 @@
       includeCoAuthoredBy = false;
       autoMemoryEnabled = false;
       language = "japanese";
-      model = "claude-opus-4-7[1m]";
+      model = models.claude.main;
       effortLevel = "xhigh";
       # Fable 5 の安全分類でフラグされた時に Opus へ自動継続せず、確認で止める。
       switchModelsOnFlag = false;
@@ -29,15 +32,15 @@
         CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = "90";
         # `sonnet` エイリアスを Sonnet 5.0 の固定 ID に向ける。
         # ANTHROPIC_DEFAULT_*_MODEL は完全なモデル名のみ許容するため、
-        # Sonnet 更新時はここを書き換える必要がある。
-        ANTHROPIC_DEFAULT_SONNET_MODEL = "claude-sonnet-5";
+        # Sonnet 更新時は models.nix の値だけを変更する。
+        ANTHROPIC_DEFAULT_SONNET_MODEL = models.claude.sonnet;
         # CLAUDE_CODE_EFFORT_LEVEL はハードピンされ、起動後のモデル/effort
         # 切り替えより優先されるため使わない。起動時の xhigh 既定値は
         # claude-code wrapper の --effort xhigh で指定する。
         # macOS のトラックパッドだと速すぎるのでデフォルトの 3 のまま
         CLAUDE_CODE_SCROLL_SPEED = if isDarwin then "3" else "6";
         # サブエージェントも同じ Sonnet に固定する。
-        CLAUDE_CODE_SUBAGENT_MODEL = "claude-sonnet-5";
+        CLAUDE_CODE_SUBAGENT_MODEL = models.claude.sonnet;
       }
       // lib.optionalAttrs (!forWindows) {
         # フックが参照する hcom を store path に固定し PATH 非依存にする。

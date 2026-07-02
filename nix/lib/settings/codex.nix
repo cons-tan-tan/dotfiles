@@ -2,6 +2,9 @@
 # などは既存 config から保持し、ここでは dotfiles 側で固定したい設定だけを
 # merge payload として返す。
 { }:
+let
+  models = import ./models.nix;
+in
 {
   mkMergePayload =
     {
@@ -20,7 +23,7 @@
       ];
 
       personality = "pragmatic";
-      model = "gpt-5.5";
+      model = models.codex.model;
       model_reasoning_effort = "xhigh";
 
       approval_policy = "on-request";
