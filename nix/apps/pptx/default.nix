@@ -109,18 +109,21 @@ let
       ];
   };
 
-  runner = pkgs.writeShellScript "pptx-run" ''
-    if [ "$#" -eq 0 ]; then
-      echo "usage: nix run dotfiles#pptx -- <command> [args...]" >&2
-      exit 64
-    fi
+  runner = pkgs.writeShellApplication {
+    name = "pptx-run";
+    text = ''
+      if [ "$#" -eq 0 ]; then
+        echo "usage: nix run dotfiles#pptx -- <command> [args...]" >&2
+        exit 64
+      fi
 
-    export PATH="${pptxTools}/bin:$PATH"
-    exec "$@"
-  '';
+      export PATH="${pptxTools}/bin:$PATH"
+      exec "$@"
+    '';
+  };
 in
 {
   type = "app";
   meta.description = "Run commands in the repository-managed PPTX conversion toolchain";
-  program = toString runner;
+  program = pkgs.lib.getExe runner;
 }
