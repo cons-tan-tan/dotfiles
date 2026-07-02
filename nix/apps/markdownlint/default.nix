@@ -8,34 +8,35 @@ let
 
   techDocConfig = ./configs/tech-doc.markdownlint.yaml;
 
-  runner = pkgs.writeShellScript "markdownlint-run" ''
-    set -euo pipefail
+  runner = pkgs.writeShellApplication {
+    name = "markdownlint-run";
+    text = ''
+      usage() {
+        cat >&2 <<'EOF'
+      usage: nix run dotfiles#markdownlint -- <files...>
+      EOF
+      }
 
-    usage() {
-      cat >&2 <<'EOF'
-    usage: nix run dotfiles#markdownlint -- <files...>
-    EOF
-    }
-
-    if [ "$#" -eq 0 ]; then
-      usage
-      exit 64
-    fi
-
-    case "$1" in
-      -h|--help|help)
+      if [ "$#" -eq 0 ]; then
         usage
-        exit 0
-        ;;
-    esac
+        exit 64
+      fi
 
-    ${nodeLint.mkExec "markdownlint-cli/markdownlint.js"} \
-      --config "${techDocConfig}" \
-      "$@"
-  '';
+      case "$1" in
+        -h|--help|help)
+          usage
+          exit 0
+          ;;
+      esac
+
+      ${nodeLint.mkExec "markdownlint-cli/markdownlint.js"} \
+        --config "${techDocConfig}" \
+        "$@"
+    '';
+  };
 in
 {
   type = "app";
   meta.description = "Run markdownlint with repository-managed technical documentation modes";
-  program = toString runner;
+  program = pkgs.lib.getExe runner;
 }

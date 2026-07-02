@@ -10,31 +10,32 @@ let
   # The executable name must stay "pnpm"; Pi detects it to use pnpm-specific
   # install flags. home.packages には入れず npmCommand から絶対パスで参照する
   # だけなので、packages.nix の素の pnpm と PATH 上で衝突することはない。
-  piPnpm = pkgs.writeShellScriptBin "pnpm" ''
-    set -euo pipefail
+  piPnpm = pkgs.writeShellApplication {
+    name = "pnpm";
+    text = ''
+      pi_npm_home="''${PI_NPM_HOME:-$HOME/.pi/npm-env}"
+      export PNPM_HOME="$pi_npm_home/pnpm-home"
+      export XDG_CACHE_HOME="$pi_npm_home/cache"
+      export XDG_DATA_HOME="$pi_npm_home/data"
+      export XDG_STATE_HOME="$pi_npm_home/state"
+      export NPM_CONFIG_USERCONFIG="$pi_npm_home/npmrc"
+      export NPM_CONFIG_GLOBALCONFIG="$pi_npm_home/global-npmrc"
+      export NPM_CONFIG_FUND=false
+      export NPM_CONFIG_AUDIT=false
 
-    pi_npm_home="''${PI_NPM_HOME:-$HOME/.pi/npm-env}"
-    export PNPM_HOME="$pi_npm_home/pnpm-home"
-    export XDG_CACHE_HOME="$pi_npm_home/cache"
-    export XDG_DATA_HOME="$pi_npm_home/data"
-    export XDG_STATE_HOME="$pi_npm_home/state"
-    export NPM_CONFIG_USERCONFIG="$pi_npm_home/npmrc"
-    export NPM_CONFIG_GLOBALCONFIG="$pi_npm_home/global-npmrc"
-    export NPM_CONFIG_FUND=false
-    export NPM_CONFIG_AUDIT=false
+      mkdir -p \
+        "$PNPM_HOME" \
+        "$XDG_CACHE_HOME" \
+        "$XDG_DATA_HOME" \
+        "$XDG_STATE_HOME" \
+        "$(dirname "$NPM_CONFIG_USERCONFIG")" \
+        "$(dirname "$NPM_CONFIG_GLOBALCONFIG")"
+      touch "$NPM_CONFIG_USERCONFIG" "$NPM_CONFIG_GLOBALCONFIG"
 
-    mkdir -p \
-      "$PNPM_HOME" \
-      "$XDG_CACHE_HOME" \
-      "$XDG_DATA_HOME" \
-      "$XDG_STATE_HOME" \
-      "$(dirname "$NPM_CONFIG_USERCONFIG")" \
-      "$(dirname "$NPM_CONFIG_GLOBALCONFIG")"
-    touch "$NPM_CONFIG_USERCONFIG" "$NPM_CONFIG_GLOBALCONFIG"
-
-    export PATH="${pkgs.nodejs}/bin:$PNPM_HOME:$PATH"
-    exec ${pkgs.pnpm}/bin/pnpm "$@"
-  '';
+      export PATH="${pkgs.nodejs}/bin:$PNPM_HOME:$PATH"
+      exec ${pkgs.pnpm}/bin/pnpm "$@"
+    '';
+  };
 
   piPackages = [
     "npm:pi-skillrefs@0.1.3"
@@ -64,13 +65,16 @@ let
   managedSettingsJson = (pkgs.formats.json { }).generate "pi-managed-settings.json" managedSettings;
 
   packageDir = "${config.home.homeDirectory}/.pi/agent/package";
-  pi = pkgs.writeShellScriptBin "pi" ''
-    export PI_PACKAGE_DIR="${packageDir}"
-    export PI_SKIP_VERSION_CHECK=1
-    export PI_TELEMETRY=0
+  pi = pkgs.writeShellApplication {
+    name = "pi";
+    text = ''
+      export PI_PACKAGE_DIR="${packageDir}"
+      export PI_SKIP_VERSION_CHECK=1
+      export PI_TELEMETRY=0
 
-    exec ${pkgs.pi}/bin/pi "$@"
-  '';
+      exec ${pkgs.pi}/bin/pi "$@"
+    '';
+  };
 in
 {
   home.packages = [ pi ];
