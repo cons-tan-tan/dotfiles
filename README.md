@@ -37,23 +37,25 @@ nix run .#apply-secrets
 | `nix run .#fmt` | treefmt で整形 |
 | `nix run .#apply-nix-settings` | `/etc/nix/nix.custom.conf` に Nix daemon 設定を同期 |
 | `nix run .#apply-secrets` | sops secrets の復号・配置(鍵が無ければスキップ) |
-| `nix run .#apply-winget` | Windows 側パッケージの適用(WSL のみ) |
+| `nix run .#apply-winget` | Windows側パッケージの適用(WSLのみ。事前に`nix run .#switch`で`dev.winget`の配置が必要) |
 | `nix run .#pptx -- <cmd>` | PPTX 変換ツールチェーン(markitdown / python-pptx / LibreOffice)入り環境でコマンド実行 |
 | `nix run .#markdownlint` | リポジトリ管理の技術文書モードで markdownlint 実行 |
 | `nix run .#textlint` | リポジトリ管理の日本語技術文書モードで textlint 実行 |
 
 ## 構成
 
-```
+```text
 flake.nix          # inputs / ホスト定義 / 出力の組み立て
 nix/
 ├── lib/           # 構成ビルダーと共有設定生成器
 ├── modules/       # home (共通) / darwin / linux / wsl (+ windows companion)
 ├── hosts/         # ホストごとのモジュール束ね
-├── overlays/      # 自前パッケージ (hcom / agent-slack / git-wt / ...)
+├── packages/      # 自前パッケージ (git-wt / agent-slack / herdr)
+├── overlays/      # packages/ の取り込みと inline 定義の橋渡し (hcom / drawio-headless / llm-agents)
 ├── pins/          # バイナリの version / hash (update-pins が更新)
 └── apps/          # pptx / markdownlint / textlint / update-pins
 agents/skills/     # ローカル agent skills
+pi/                # Pi 拡張 (extensions/)
 claude/            # Claude Code 設定
 secrets/           # sops + GPG 暗号化 secrets (運用は secrets/README.md)
 ```
