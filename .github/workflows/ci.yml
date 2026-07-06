@@ -71,3 +71,29 @@ jobs:
           purge-created: 0
           purge-primary-key: never
       - run: nix flake check --print-build-logs
+
+  # darwin 構成の実ビルド。eval だけでは hash 切れや darwin 専用パッケージの
+  # ビルド破損が素通りするため (build-linux と同じ理由の macOS 版)。
+  # brew-nix の cask 取得で upstream 都合の失敗があり得る — 慢性化したら
+  # ビルド対象の分割を検討する。
+  build-darwin:
+    runs-on: macos-14
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: DeterminateSystems/determinate-nix-action@9adf02b41cfdac2632e1c16f0480ff5bf3b05dd6 # v3.21.1
+        with:
+          extra-conf: |
+            accept-flake-config = true
+      - uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7
+        with:
+          primary-key: nix-store-${{ runner.os }}-${{ hashFiles('flake.lock') }}
+          restore-prefixes-first-match: nix-store-${{ runner.os }}-
+          gc-max-store-size-macos: 2G
+          purge: true
+          purge-prefixes: nix-store-${{ runner.os }}-
+          purge-created: 0
+          purge-primary-key: never
+      - run: nix flake check --print-build-logs
