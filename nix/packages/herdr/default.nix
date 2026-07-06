@@ -35,6 +35,35 @@ let
   };
   binaryAssets = versionData.binaryAssets or (lib.mapAttrs (_: asset: asset.name) pin.assets);
   binaryHashes = versionData.binaryHashes;
+  # llm-agents.nix builds Herdr from source on Linux and imports a generated Zig
+  # file from that source path during package evaluation. This binary form keeps
+  # our --no-build flake checks pure while tracking llm-agents' version.
+  herdrPackage = stdenvNoCC.mkDerivation {
+    pname = "herdr";
+    inherit version;
+
+    src = fetchurl {
+      url = "https://github.com/ogulcancelik/herdr/releases/download/v${version}/${binaryAssets.${system}}";
+      hash = binaryHashes.${system};
+    };
+
+    dontUnpack = true;
+
+    installPhase = ''
+      runHook preInstall
+      install -Dm755 "$src" "$out/bin/herdr"
+      runHook postInstall
+    '';
+
+    meta = {
+      description = "Terminal workspace manager for AI coding agents";
+      homepage = "https://herdr.dev";
+      changelog = "https://github.com/ogulcancelik/herdr/releases/tag/v${version}";
+      license = lib.licenses.agpl3Plus;
+      platforms = builtins.attrNames binaryAssets;
+      mainProgram = "herdr";
+    };
+  };
   pluginBase = {
     name = "herdr";
     inherit version;
@@ -95,37 +124,38 @@ let
       ];
     }
   );
+  # Run Herdr's native installer in the sandbox and copy out the generated
+  # artifact. extraInstall handles targets with an additional file.
+  mkIntegration =
+    {
+      target,
+      description,
+      homeDir,
+      outDir ? null,
+      srcPath,
+      destPath,
+      mode,
+      extraInstall ? "",
+    }:
+    runCommand "herdr-${target}-integration-${version}"
+      {
+        meta = {
+          inherit description;
+          homepage = "https://herdr.dev";
+          license = lib.licenses.agpl3Plus;
+          platforms = builtins.attrNames binaryAssets;
+        };
+      }
+      ''
+        home="$NIX_BUILD_TOP/home"
+        mkdir -p "$home/${homeDir}" ${lib.optionalString (outDir != null) ''"$out/${outDir}"''}
+        HOME="$home" XDG_CONFIG_HOME="$home/.config" ${herdrPackage}/bin/herdr integration install ${target} >/dev/null
+        install -Dm${mode} "$home/${srcPath}" "$out/${destPath}"
+        ${extraInstall}
+      '';
 in
 rec {
-  # llm-agents.nix builds Herdr from source on Linux and imports a generated Zig
-  # file from that source path during package evaluation. This binary form keeps
-  # our --no-build flake checks pure while tracking llm-agents' version.
-  herdr = stdenvNoCC.mkDerivation {
-    pname = "herdr";
-    inherit version;
-
-    src = fetchurl {
-      url = "https://github.com/ogulcancelik/herdr/releases/download/v${version}/${binaryAssets.${system}}";
-      hash = binaryHashes.${system};
-    };
-
-    dontUnpack = true;
-
-    installPhase = ''
-      runHook preInstall
-      install -Dm755 "$src" "$out/bin/herdr"
-      runHook postInstall
-    '';
-
-    meta = {
-      description = "Terminal workspace manager for AI coding agents";
-      homepage = "https://herdr.dev";
-      changelog = "https://github.com/ogulcancelik/herdr/releases/tag/v${version}";
-      license = lib.licenses.agpl3Plus;
-      platforms = builtins.attrNames binaryAssets;
-      mainProgram = "herdr";
-    };
-  };
+  herdr = herdrPackage;
 
   herdr-agent-plugin =
     runCommand "herdr-agent-plugin-${version}"
@@ -159,74 +189,45 @@ rec {
         cp ${src}/SKILL.md "$out/SKILL.md"
       '';
 
-  herdr-claude-integration =
-    runCommand "herdr-claude-integration-${version}"
-      {
-        meta = {
-          description = "Herdr Claude Code native session restore integration hook";
-          homepage = "https://herdr.dev";
-          license = lib.licenses.agpl3Plus;
-          platforms = builtins.attrNames binaryAssets;
-        };
-      }
-      ''
-        home="$NIX_BUILD_TOP/home"
-        mkdir -p "$home/.claude" "$out/hooks"
-        HOME="$home" XDG_CONFIG_HOME="$home/.config" ${herdr}/bin/herdr integration install claude >/dev/null
-        install -Dm755 "$home/.claude/hooks/herdr-agent-state.sh" "$out/hooks/herdr-agent-state.sh"
-        cp "$home/.claude/settings.json" "$out/settings.json"
-      '';
+  herdr-claude-integration = mkIntegration {
+    target = "claude";
+    description = "Herdr Claude Code native session restore integration hook";
+    homeDir = ".claude";
+    outDir = "hooks";
+    srcPath = ".claude/hooks/herdr-agent-state.sh";
+    destPath = "hooks/herdr-agent-state.sh";
+    mode = "755";
+    extraInstall = ''cp "$home/.claude/settings.json" "$out/settings.json"'';
+  };
 
-  herdr-codex-integration =
-    runCommand "herdr-codex-integration-${version}"
-      {
-        meta = {
-          description = "Herdr Codex native session restore integration hook";
-          homepage = "https://herdr.dev";
-          license = lib.licenses.agpl3Plus;
-          platforms = builtins.attrNames binaryAssets;
-        };
-      }
-      ''
-        home="$NIX_BUILD_TOP/home"
-        mkdir -p "$home/.codex" "$out"
-        HOME="$home" XDG_CONFIG_HOME="$home/.config" ${herdr}/bin/herdr integration install codex >/dev/null
-        install -Dm755 "$home/.codex/herdr-agent-state.sh" "$out/herdr-agent-state.sh"
-      '';
+  herdr-codex-integration = mkIntegration {
+    target = "codex";
+    description = "Herdr Codex native session restore integration hook";
+    homeDir = ".codex";
+    srcPath = ".codex/herdr-agent-state.sh";
+    destPath = "herdr-agent-state.sh";
+    mode = "755";
+  };
 
-  herdr-pi-integration =
-    runCommand "herdr-pi-integration-${version}"
-      {
-        meta = {
-          description = "Herdr Pi native agent state extension";
-          homepage = "https://herdr.dev";
-          license = lib.licenses.agpl3Plus;
-          platforms = builtins.attrNames binaryAssets;
-        };
-      }
-      ''
-        home="$NIX_BUILD_TOP/home"
-        mkdir -p "$home/.pi/agent/extensions" "$out/extensions"
-        HOME="$home" XDG_CONFIG_HOME="$home/.config" ${herdr}/bin/herdr integration install pi >/dev/null
-        install -Dm644 "$home/.pi/agent/extensions/herdr-agent-state.ts" "$out/extensions/herdr-agent-state.ts"
-      '';
+  herdr-pi-integration = mkIntegration {
+    target = "pi";
+    description = "Herdr Pi native agent state extension";
+    homeDir = ".pi/agent/extensions";
+    outDir = "extensions";
+    srcPath = ".pi/agent/extensions/herdr-agent-state.ts";
+    destPath = "extensions/herdr-agent-state.ts";
+    mode = "644";
+  };
 
-  herdr-opencode-integration =
-    runCommand "herdr-opencode-integration-${version}"
-      {
-        meta = {
-          description = "Herdr OpenCode native agent state plugin";
-          homepage = "https://herdr.dev";
-          license = lib.licenses.agpl3Plus;
-          platforms = builtins.attrNames binaryAssets;
-        };
-      }
-      ''
-        home="$NIX_BUILD_TOP/home"
-        mkdir -p "$home/.config/opencode" "$out/plugins"
-        HOME="$home" XDG_CONFIG_HOME="$home/.config" ${herdr}/bin/herdr integration install opencode >/dev/null
-        install -Dm644 "$home/.config/opencode/plugins/herdr-agent-state.js" "$out/plugins/herdr-agent-state.js"
-      '';
+  herdr-opencode-integration = mkIntegration {
+    target = "opencode";
+    description = "Herdr OpenCode native agent state plugin";
+    homeDir = ".config/opencode";
+    outDir = "plugins";
+    srcPath = ".config/opencode/plugins/herdr-agent-state.js";
+    destPath = "plugins/herdr-agent-state.js";
+    mode = "644";
+  };
 
   herdr-codex-marketplace =
     runCommand "herdr-codex-marketplace-${version}"
