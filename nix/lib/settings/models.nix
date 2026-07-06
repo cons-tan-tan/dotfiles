@@ -14,4 +14,8 @@
     provider = "openai-codex";
     model = "gpt-5.5";
   };
+
+  opencode = {
+    model = "openai/gpt-5.5";
+  };
 }

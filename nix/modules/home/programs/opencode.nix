@@ -5,11 +5,13 @@
 }:
 let
   herdrOpenCodeIntegration = pkgs.herdr-opencode-integration;
+  models = import ../../../lib/settings/models.nix;
 in
 {
   programs.opencode = {
     enable = true;
     settings = {
+      model = models.opencode.model;
       # instructions は opencode 側で glob 展開される (claude.nix が配置する
       # ~/.claude 配下の symlink に依存)。
       instructions = [
