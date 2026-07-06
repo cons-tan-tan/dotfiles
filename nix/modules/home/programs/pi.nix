@@ -64,6 +64,10 @@ let
 
     enableInstallTelemetry = false;
   };
+  # Unlike Claude/Codex, Pi currently does not provide a settings JSON Schema
+  # we can validate against. Investigated on 2026-07-06: Pi 0.79.1 package
+  # tree, dist/core/settings-manager.d.ts, docs/settings.md, and the upstream
+  # earendil-works/pi file tree expose settings types/docs but no schema.
   managedSettingsJson = (pkgs.formats.json { }).generate "pi-managed-settings.json" managedSettings;
 
   packageDir = "${config.home.homeDirectory}/.pi/agent/package";
