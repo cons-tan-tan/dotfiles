@@ -220,6 +220,42 @@ else
   fi
 fi
 
+echo "== shellfirm"
+pin=nix/pins/shellfirm.json
+tag=$(latest_tag kaplanelad/shellfirm)
+ver=${tag#v}
+cur=$(jq -r .version "$pin")
+if [ "$ver" = "$cur" ]; then
+  echo "shellfirm: $cur (up to date)"
+else
+  echo "shellfirm: $cur -> $ver (prefetching source...)"
+  src_hash=$(prefetch_unpack "https://github.com/kaplanelad/shellfirm/archive/refs/tags/$tag.tar.gz")
+  tmp=$(mktemp)
+  TMPFILES+=("$tmp")
+  # cargoHash は Cargo.lock ベースの vendor tree から決まるため、fake hash
+  # で一度ビルドして hash mismatch から実値を取り出す。
+  jq --arg v "$ver" --arg s "$src_hash" \
+    '.version = $v | .srcHash = $s | .cargoHash = ""' "$pin" >"$tmp"
+  mv "$tmp" "$pin"
+  echo "shellfirm: computing cargoHash (expect one failing build)..."
+  build_log=$(nix build .#shellfirm --no-link 2>&1 || true)
+  cargo_hash=$(echo "$build_log" | grep -Eo 'got: *sha256-[A-Za-z0-9+/=_-]+' | head -1 | grep -Eo 'sha256-[A-Za-z0-9+/=_-]+' || true)
+  if [ -z "$cargo_hash" ]; then
+    echo "shellfirm: failed to extract cargoHash from build output:" >&2
+    echo "$build_log" | tail -10 >&2
+    exit 1
+  fi
+  tmp=$(mktemp)
+  TMPFILES+=("$tmp")
+  jq --arg h "$cargo_hash" '.cargoHash = $h' "$pin" >"$tmp"
+  mv "$tmp" "$pin"
+  echo "shellfirm: verifying build..."
+  if ! nix build .#shellfirm --no-link; then
+    echo "shellfirm: verification build failed" >&2
+    exit 1
+  fi
+fi
+
 echo "== herdr"
 herdr_pin=nix/pins/herdr.json
 herdr_before=$(jq -r .version "$herdr_pin")

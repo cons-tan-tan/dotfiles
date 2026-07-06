@@ -24,6 +24,7 @@ setup() {
   mkdir -p "$STUB_DIR"
   export UPDATE_PINS_FAKE_ROOT="$WORK"
   export UPDATE_PINS_NIX_BUILD_COUNT="$WORK/nix-build-count"
+  export UPDATE_PINS_SHELLFIRM_BUILD_COUNT="$WORK/shellfirm-build-count"
   export UPDATE_PINS_DIFIT_BUILD_COUNT="$WORK/difit-build-count"
 
   mkdir -p "$WORK/difit-tar/package"
@@ -46,6 +47,9 @@ case "$*" in
   ;;
 "api repos/k1LoW/git-wt/releases/latest --jq .tag_name")
   printf '%s\n' "${UPDATE_PINS_GIT_WT_TAG:-v999.0.0}"
+  ;;
+"api repos/kaplanelad/shellfirm/releases/latest --jq .tag_name")
+  printf '%s\n' "${UPDATE_PINS_SHELLFIRM_TAG:-v$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/shellfirm.json")}"
   ;;
 "api repos/ogulcancelik/herdr/releases/latest --jq .tag_name")
   printf '%s\n' "${UPDATE_PINS_HERDR_TAG:-v$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/herdr.json")}"
@@ -167,6 +171,43 @@ if [ "$1" = "build" ] && [ "${2:-}" = ".#git-wt" ] && [ "${3:-}" = "--no-link" ]
   esac
 fi
 
+if [ "$1" = "build" ] && [ "${2:-}" = ".#shellfirm" ] && [ "${3:-}" = "--no-link" ]; then
+  count=0
+  if [ -f "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT" ]; then
+    count=$(cat "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT")
+  fi
+  count=$((count + 1))
+  printf '%s\n' "$count" >"$UPDATE_PINS_SHELLFIRM_BUILD_COUNT"
+
+  case "${UPDATE_PINS_SHELLFIRM_BUILD_MODE:-}" in
+  no-hash)
+    echo "builder failed before printing a hash" >&2
+    exit 1
+    ;;
+  success)
+    if [ "$count" -eq 1 ]; then
+      echo "error: hash mismatch"
+      echo "got: sha256-cargo-for-test"
+      exit 1
+    fi
+    exit 0
+    ;;
+  verify-fails)
+    if [ "$count" -eq 1 ]; then
+      echo "error: hash mismatch"
+      echo "got: sha256-cargo-for-test"
+      exit 1
+    fi
+    echo "verification build failed" >&2
+    exit 1
+    ;;
+  *)
+    echo "UPDATE_PINS_SHELLFIRM_BUILD_MODE is not set" >&2
+    exit 1
+    ;;
+  esac
+fi
+
 if [ "$1" = "build" ] && [ "${2:-}" = ".#difit" ] && [ "${3:-}" = "--no-link" ]; then
   count=0
   if [ -f "$UPDATE_PINS_DIFIT_BUILD_COUNT" ]; then
@@ -250,6 +291,7 @@ assert_managed_matches() {
 
 make_unrelated_updates_noop() {
   export UPDATE_PINS_GIT_WT_TAG="v$(jq -r .version "$WORK/nix/pins/git-wt.json")"
+  export UPDATE_PINS_SHELLFIRM_TAG="v$(jq -r .version "$WORK/nix/pins/shellfirm.json")"
   export UPDATE_PINS_SCHEMA_HASH="$(jq -r .hash "$WORK/nix/pins/claude-code-settings-schema.json")"
 }
 
@@ -412,6 +454,22 @@ make_unrelated_updates_noop() {
   assert_managed_matches "$original"
 }
 
+@test "shellfirm cargoHash extraction failure restores all managed files" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_HCOM_TAG=v1.2.3
+  export UPDATE_PINS_AGENT_SLACK_TAG=v4.5.6
+  export UPDATE_PINS_BUILD_MODE=success
+  export UPDATE_PINS_SHELLFIRM_TAG=v8.8.8
+  export UPDATE_PINS_SHELLFIRM_BUILD_MODE=no-hash
+
+  run_update_pins
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"shellfirm: failed to extract cargoHash"* ]]
+  assert_managed_matches "$original"
+}
+
 @test "herdr source prefetch failure restores all managed files" {
   original="$WORK/original"
   save_managed "$original"
@@ -433,8 +491,10 @@ make_unrelated_updates_noop() {
   save_managed "$original"
   export UPDATE_PINS_HCOM_TAG=v1.2.3
   export UPDATE_PINS_AGENT_SLACK_TAG=v4.5.6
+  export UPDATE_PINS_SHELLFIRM_TAG=v8.8.8
   export UPDATE_PINS_HERDR_TAG=v9.9.9
   export UPDATE_PINS_BUILD_MODE=success
+  export UPDATE_PINS_SHELLFIRM_BUILD_MODE=success
 
   run_update_pins
 
@@ -445,6 +505,9 @@ make_unrelated_updates_noop() {
   [ "$(jq -r .version "$WORK/nix/pins/git-wt.json")" = "999.0.0" ]
   [ "$(jq -r .srcHash "$WORK/nix/pins/git-wt.json")" = "sha256-src-for-test" ]
   [ "$(jq -r .vendorHash "$WORK/nix/pins/git-wt.json")" = "sha256-vendor-for-test" ]
+  [ "$(jq -r .version "$WORK/nix/pins/shellfirm.json")" = "8.8.8" ]
+  [ "$(jq -r .srcHash "$WORK/nix/pins/shellfirm.json")" = "sha256-src-for-test" ]
+  [ "$(jq -r .cargoHash "$WORK/nix/pins/shellfirm.json")" = "sha256-cargo-for-test" ]
   [ "$(jq -r .version "$WORK/nix/pins/herdr.json")" = "9.9.9" ]
   [ "$(jq -r .srcHash "$WORK/nix/pins/herdr.json")" = "sha256-src-for-test" ]
   [ "$(jq -r '.assets["x86_64-linux"].hash' "$WORK/nix/pins/herdr.json")" = "sha256-asset-for-test" ]

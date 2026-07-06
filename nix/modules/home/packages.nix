@@ -43,6 +43,7 @@
     agent-slack
     difit
     hcom
+    shellfirm
 
     # Node.js
     ni

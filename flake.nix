@@ -321,6 +321,7 @@
             difit
             git-wt
             herdr
+            shellfirm
             herdr-agent-skill
             herdr-agent-plugin
             herdr-claude-integration

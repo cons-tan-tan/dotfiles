@@ -16,6 +16,7 @@ import inputs.nixpkgs {
     (import ../overlays/agent-slack.nix)
     (import ../overlays/difit.nix)
     (import ../overlays/hcom.nix)
+    (import ../overlays/shellfirm.nix)
   ]
   ++ lib.optionals (!isDarwin) [
     # xvfb-run / dbus 依存のため Linux 系のみ
