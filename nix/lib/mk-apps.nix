@@ -33,6 +33,9 @@ let
       pkgs.curl
       pkgs.jq
       pkgs.gitMinimal
+      pkgs.nodejs
+      pkgs.gnutar
+      pkgs.gzip
     ];
     text = builtins.readFile ../apps/update-pins.sh;
   };

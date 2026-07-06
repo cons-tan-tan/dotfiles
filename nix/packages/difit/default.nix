@@ -3,19 +3,25 @@
   buildNpmPackage,
   fetchurl,
   nodejs_24,
+  difitPin ? builtins.fromJSON (builtins.readFile ../../pins/difit.json),
 }:
-
-buildNpmPackage rec {
+let
+  # version / hash は nix/pins/difit.json に固定し、`nix run .#update-pins` で
+  # 自動更新する (flake input difit-src も同時に更新される)。
+  pin = difitPin;
+  inherit (pin) version;
+in
+buildNpmPackage {
   pname = "difit";
-  version = "5.0.4";
+  inherit version;
 
   src = fetchurl {
     url = "https://registry.npmjs.org/difit/-/difit-${version}.tgz";
-    hash = "sha256-7bp/jajRzI2cUlHYWlrAz9KyK/ena0O3PAWS0bZ0Iqw=";
+    hash = pin.srcHash;
   };
 
   nodejs = nodejs_24;
-  npmDepsHash = "sha256-irIWtQ6DoR20ZrvtgrnH3sHAvVH4Pxe2HlxrVVuseww=";
+  npmDepsHash = pin.npmDepsHash;
   npmInstallFlags = [ "--omit=dev" ];
   npmPackFlags = [ "--ignore-scripts" ];
   dontNpmBuild = true;

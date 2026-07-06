@@ -4,9 +4,10 @@
 setup() {
   REPO_ROOT="$(git rev-parse --show-toplevel)"
   WORK="$(mktemp -d)"
-  mkdir -p "$WORK/nix/apps" "$WORK/nix/pins"
+  mkdir -p "$WORK/nix/apps" "$WORK/nix/pins" "$WORK/nix/packages/difit"
   cp "$REPO_ROOT/nix/apps/update-pins.sh" "$WORK/nix/apps/update-pins.sh"
   cp "$REPO_ROOT"/nix/pins/*.json "$WORK/nix/pins/"
+  cp "$REPO_ROOT/nix/packages/difit/package-lock.json" "$WORK/nix/packages/difit/package-lock.json"
   cp "$REPO_ROOT/flake.lock" "$WORK/flake.lock"
 
   (
@@ -15,7 +16,7 @@ setup() {
     git config user.email update-pins-test@example.invalid
     git config user.name "update-pins test"
     git config commit.gpgsign false
-    git add flake.lock nix/apps/update-pins.sh nix/pins/*.json
+    git add flake.lock nix/apps/update-pins.sh nix/packages/difit/package-lock.json nix/pins/*.json
     git commit -q -m "initial managed files"
   )
 
@@ -23,6 +24,14 @@ setup() {
   mkdir -p "$STUB_DIR"
   export UPDATE_PINS_FAKE_ROOT="$WORK"
   export UPDATE_PINS_NIX_BUILD_COUNT="$WORK/nix-build-count"
+  export UPDATE_PINS_DIFIT_BUILD_COUNT="$WORK/difit-build-count"
+
+  mkdir -p "$WORK/difit-tar/package"
+  cat >"$WORK/difit-tar/package/package.json" <<'EOS'
+{"name":"difit","version":"0.0.0"}
+EOS
+  tar -czf "$WORK/difit.tgz" -C "$WORK/difit-tar" package
+  export UPDATE_PINS_DIFIT_TARBALL="$WORK/difit.tgz"
 
   cat >"$STUB_DIR/gh" <<'EOS'
 #!/usr/bin/env bash
@@ -48,6 +57,54 @@ case "$*" in
 esac
 EOS
 
+  cat >"$STUB_DIR/curl" <<'EOS'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "$1" != "-fsSL" ]; then
+  echo "unexpected curl invocation: $*" >&2
+  exit 1
+fi
+
+case "${2:-}" in
+https://registry.npmjs.org/difit/latest)
+  printf '{"version":"%s"}\n' "${UPDATE_PINS_DIFIT_VERSION:-$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/difit.json")}"
+  ;;
+https://registry.npmjs.org/difit/-/difit-*.tgz)
+  cat "$UPDATE_PINS_DIFIT_TARBALL"
+  ;;
+*)
+  echo "unexpected curl invocation: $*" >&2
+  exit 1
+  ;;
+esac
+EOS
+
+  cat >"$STUB_DIR/npm" <<'EOS'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "$1" = "install" ] && [[ " $* " == *" --package-lock-only "* ]]; then
+  cat >package-lock.json <<JSON
+{
+  "name": "difit",
+  "version": "${UPDATE_PINS_DIFIT_VERSION:-0.0.0}",
+  "lockfileVersion": 3,
+  "packages": {
+    "": {
+      "name": "difit",
+      "version": "${UPDATE_PINS_DIFIT_VERSION:-0.0.0}"
+    }
+  }
+}
+JSON
+  exit 0
+fi
+
+echo "unexpected npm invocation: $*" >&2
+exit 1
+EOS
+
   cat >"$STUB_DIR/nix" <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -58,7 +115,11 @@ if [ "$1" = "store" ] && [ "${2:-}" = "prefetch-file" ]; then
     exit 1
   fi
   if [ "${3:-}" = "--json" ] && [ "${4:-}" = "https://json.schemastore.org/claude-code-settings.json" ]; then
-    printf '{"hash":"sha256-schema-for-test"}\n'
+    printf '{"hash":"%s"}\n' "${UPDATE_PINS_SCHEMA_HASH:-sha256-schema-for-test}"
+    exit 0
+  fi
+  if [[ " $* " == *"registry.npmjs.org/difit/-/difit-"* ]]; then
+    printf '{"hash":"sha256-difit-src-for-test"}\n'
     exit 0
   fi
   if [[ " $* " == *" --unpack "* ]]; then
@@ -106,6 +167,43 @@ if [ "$1" = "build" ] && [ "${2:-}" = ".#git-wt" ] && [ "${3:-}" = "--no-link" ]
   esac
 fi
 
+if [ "$1" = "build" ] && [ "${2:-}" = ".#difit" ] && [ "${3:-}" = "--no-link" ]; then
+  count=0
+  if [ -f "$UPDATE_PINS_DIFIT_BUILD_COUNT" ]; then
+    count=$(cat "$UPDATE_PINS_DIFIT_BUILD_COUNT")
+  fi
+  count=$((count + 1))
+  printf '%s\n' "$count" >"$UPDATE_PINS_DIFIT_BUILD_COUNT"
+
+  case "${UPDATE_PINS_DIFIT_BUILD_MODE:-}" in
+  no-hash)
+    echo "builder failed before printing a hash" >&2
+    exit 1
+    ;;
+  success)
+    if [ "$count" -eq 1 ]; then
+      echo "error: hash mismatch"
+      echo "got: sha256-npmdeps-for-test"
+      exit 1
+    fi
+    exit 0
+    ;;
+  verify-fails)
+    if [ "$count" -eq 1 ]; then
+      echo "error: hash mismatch"
+      echo "got: sha256-npmdeps-for-test"
+      exit 1
+    fi
+    echo "verification build failed" >&2
+    exit 1
+    ;;
+  *)
+    echo "UPDATE_PINS_DIFIT_BUILD_MODE is not set" >&2
+    exit 1
+    ;;
+  esac
+fi
+
 if [ "$1" = "flake" ] && [ "${2:-}" = "update" ]; then
   input=${3:-}
   printf '{"updated":"%s"}\n' "$input" >"$UPDATE_PINS_FAKE_ROOT/flake.lock"
@@ -120,7 +218,7 @@ echo "unexpected nix invocation: $*" >&2
 exit 1
 EOS
 
-  chmod +x "$STUB_DIR/gh" "$STUB_DIR/nix"
+  chmod +x "$STUB_DIR/gh" "$STUB_DIR/curl" "$STUB_DIR/npm" "$STUB_DIR/nix"
   export PATH="$STUB_DIR:$PATH"
 }
 
@@ -134,18 +232,25 @@ run_update_pins() {
 
 save_managed() {
   local dst=$1
-  mkdir -p "$dst/nix/pins"
+  mkdir -p "$dst/nix/pins" "$dst/nix/packages/difit"
   cp "$WORK/flake.lock" "$dst/flake.lock"
   cp "$WORK"/nix/pins/*.json "$dst/nix/pins/"
+  cp "$WORK/nix/packages/difit/package-lock.json" "$dst/nix/packages/difit/package-lock.json"
 }
 
 assert_managed_matches() {
   local expected=$1 pin name
   cmp -s "$WORK/flake.lock" "$expected/flake.lock" || return 1
+  cmp -s "$WORK/nix/packages/difit/package-lock.json" "$expected/nix/packages/difit/package-lock.json" || return 1
   for pin in "$expected"/nix/pins/*.json; do
     name=$(basename "$pin")
     cmp -s "$WORK/nix/pins/$name" "$pin" || return 1
   done
+}
+
+make_unrelated_updates_noop() {
+  export UPDATE_PINS_GIT_WT_TAG="v$(jq -r .version "$WORK/nix/pins/git-wt.json")"
+  export UPDATE_PINS_SCHEMA_HASH="$(jq -r .hash "$WORK/nix/pins/claude-code-settings-schema.json")"
 }
 
 @test "managed dirty files are rejected without changing contents" {
@@ -192,6 +297,79 @@ assert_managed_matches() {
   run_update_pins
 
   [ "$status" -ne 0 ]
+  assert_managed_matches "$original"
+}
+
+@test "untracked pin file survives a failed run intact" {
+  printf '{"version":"0.0.1"}\n' >"$WORK/nix/pins/newtool.json"
+  original_newtool="$WORK/newtool.json.original"
+  cp "$WORK/nix/pins/newtool.json" "$original_newtool"
+  export UPDATE_PINS_HCOM_TAG=v1.2.3
+  export UPDATE_PINS_FAIL_FLAKE_UPDATE=hcom-src
+
+  run_update_pins
+
+  [ "$status" -ne 0 ]
+  [ -f "$WORK/nix/pins/newtool.json" ]
+  cmp -s "$WORK/nix/pins/newtool.json" "$original_newtool"
+}
+
+@test "untracked pin file does not trip the dirty check" {
+  printf '{"version":"0.0.1"}\n' >"$WORK/nix/pins/newtool.json"
+  original_newtool="$WORK/newtool.json.original"
+  cp "$WORK/nix/pins/newtool.json" "$original_newtool"
+  export UPDATE_PINS_BUILD_MODE=success
+
+  run_update_pins
+
+  [ "$status" -eq 0 ]
+  [ -f "$WORK/nix/pins/newtool.json" ]
+  cmp -s "$WORK/nix/pins/newtool.json" "$original_newtool"
+}
+
+@test "difit up to date leaves pin and lockfile unchanged" {
+  original="$WORK/original"
+  save_managed "$original"
+  make_unrelated_updates_noop
+
+  run_update_pins
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"difit: $(jq -r .version "$original/nix/pins/difit.json") (up to date)"* ]]
+  cmp -s "$WORK/nix/pins/difit.json" "$original/nix/pins/difit.json"
+  cmp -s "$WORK/nix/packages/difit/package-lock.json" "$original/nix/packages/difit/package-lock.json"
+}
+
+@test "difit version bump updates pin, lockfile, and flake input" {
+  original="$WORK/original"
+  save_managed "$original"
+  make_unrelated_updates_noop
+  export UPDATE_PINS_DIFIT_VERSION=9.9.9
+  export UPDATE_PINS_DIFIT_BUILD_MODE=success
+
+  run_update_pins
+
+  [ "$status" -eq 0 ]
+  [ "$(jq -r .version "$WORK/nix/pins/difit.json")" = "9.9.9" ]
+  [ "$(jq -r .srcHash "$WORK/nix/pins/difit.json")" = "sha256-difit-src-for-test" ]
+  [ "$(jq -r .npmDepsHash "$WORK/nix/pins/difit.json")" = "sha256-npmdeps-for-test" ]
+  [ "$(jq -r .version "$WORK/nix/packages/difit/package-lock.json")" = "9.9.9" ]
+  [ "$(jq -r '.packages[""].version' "$WORK/nix/packages/difit/package-lock.json")" = "9.9.9" ]
+  [ "$(jq -r .updated "$WORK/flake.lock")" = "difit-src" ]
+  ! assert_managed_matches "$original"
+}
+
+@test "difit npmDepsHash extraction failure restores everything" {
+  original="$WORK/original"
+  save_managed "$original"
+  make_unrelated_updates_noop
+  export UPDATE_PINS_DIFIT_VERSION=9.9.9
+  export UPDATE_PINS_DIFIT_BUILD_MODE=no-hash
+
+  run_update_pins
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"difit: failed to extract npmDepsHash"* ]]
   assert_managed_matches "$original"
 }
 

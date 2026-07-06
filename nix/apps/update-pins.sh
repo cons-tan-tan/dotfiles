@@ -6,7 +6,7 @@
 TMPFILES=()
 TMPDIRS=()
 managed_files=()
-managed_pathspecs=(':(glob)nix/pins/*.json' flake.lock)
+managed_pathspecs=(':(glob)nix/pins/*.json' flake.lock nix/packages/difit/package-lock.json)
 managed_backup_dir=""
 restore_managed_files=false
 
@@ -62,6 +62,10 @@ load_managed_files() {
   while IFS= read -r -d '' file; do
     managed_files+=("$file")
   done < <(git ls-files -z -- "${managed_pathspecs[@]}")
+  # 新規追加でまだ git add されていない pin もトランザクションで守る
+  while IFS= read -r -d '' file; do
+    managed_files+=("$file")
+  done < <(git ls-files -z --others --exclude-standard -- "${managed_pathspecs[@]}")
 }
 
 backup_managed_files() {
@@ -95,6 +99,16 @@ latest_tag() {
     return 1
   fi
   printf '%s\n' "$tag"
+}
+
+latest_npm_version() {
+  local package=$1 version
+  version=$(curl -fsSL "https://registry.npmjs.org/$package/latest" | jq -r .version)
+  if [[ -z $version || $version == "null" ]]; then
+    echo "latest_npm_version: $package の latest version を取得できなかった" >&2
+    return 1
+  fi
+  printf '%s\n' "$version"
 }
 
 prefetch() {
@@ -218,6 +232,59 @@ if [ "$herdr_after" != "$herdr_before" ]; then
   TMPFILES+=("$tmp")
   jq --arg h "$src_hash" '.srcHash = $h' "$herdr_pin" >"$tmp"
   mv "$tmp" "$herdr_pin"
+fi
+
+echo "== difit"
+difit_pin=nix/pins/difit.json
+difit_lock=nix/packages/difit/package-lock.json
+difit_cur=$(jq -r .version "$difit_pin")
+difit_ver=$(latest_npm_version difit)
+if [ "$difit_ver" = "$difit_cur" ]; then
+  echo "difit: $difit_cur (up to date)"
+else
+  echo "difit: $difit_cur -> $difit_ver (prefetching source...)"
+  difit_url="https://registry.npmjs.org/difit/-/difit-$difit_ver.tgz"
+  difit_src_hash=$(prefetch "$difit_url")
+
+  difit_tmpdir=$(mktemp -d)
+  TMPDIRS+=("$difit_tmpdir")
+  curl -fsSL "$difit_url" | tar -xz -C "$difit_tmpdir"
+  if [ ! -f "$difit_tmpdir/package/package.json" ]; then
+    echo "difit: npm tarball did not contain package/package.json" >&2
+    exit 1
+  fi
+  (
+    cd "$difit_tmpdir/package"
+    npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+  )
+  cp "$difit_tmpdir/package/package-lock.json" "$difit_lock"
+
+  tmp=$(mktemp)
+  TMPFILES+=("$tmp")
+  # npmDepsHash は npm 依存のダウンロード結果から決まるため事前計算できない。
+  # 空にして lib.fakeHash でビルドし、hash mismatch エラーから実値を取り出す。
+  jq --arg v "$difit_ver" --arg s "$difit_src_hash" \
+    '.version = $v | .srcHash = $s | .npmDepsHash = ""' "$difit_pin" >"$tmp"
+  mv "$tmp" "$difit_pin"
+  echo "difit: computing npmDepsHash (expect one failing build)..."
+  build_log=$(nix build .#difit --no-link 2>&1 || true)
+  npm_deps_hash=$(echo "$build_log" | grep -Eo 'got: *sha256-[A-Za-z0-9+/=_-]+' | head -1 | grep -Eo 'sha256-[A-Za-z0-9+/=_-]+' || true)
+  if [ -z "$npm_deps_hash" ]; then
+    echo "difit: failed to extract npmDepsHash from build output:" >&2
+    echo "$build_log" | tail -10 >&2
+    exit 1
+  fi
+  tmp=$(mktemp)
+  TMPFILES+=("$tmp")
+  jq --arg h "$npm_deps_hash" '.npmDepsHash = $h' "$difit_pin" >"$tmp"
+  mv "$tmp" "$difit_pin"
+  echo "difit: verifying build..."
+  if ! nix build .#difit --no-link; then
+    echo "difit: verification build failed" >&2
+    exit 1
+  fi
+  echo "difit: updating flake input difit-src to match"
+  nix flake update difit-src
 fi
 
 echo "== claude-code-settings-schema"
