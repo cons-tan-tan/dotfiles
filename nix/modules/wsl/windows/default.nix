@@ -4,7 +4,6 @@
 {
   imports = [
     ./claude.nix
-    ./gh.nix
     ./git.nix
     ./gpg.nix
     ./powershell.nix
