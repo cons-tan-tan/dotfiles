@@ -47,6 +47,7 @@ in
         HCOM = hcomPath;
       };
       permissions = {
+        defaultMode = "auto";
         allow = [
           "WebSearch"
           "WebFetch(*)"
