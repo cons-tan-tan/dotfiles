@@ -111,6 +111,65 @@ latest_npm_version() {
   printf '%s\n' "$version"
 }
 
+latest_codex_app_json() {
+  local appcast=$1 xml
+  xml=$(mktemp)
+  TMPFILES+=("$xml")
+  curl -fsSL "$appcast" >"$xml"
+  python3 - "$xml" <<'PY'
+import json
+import sys
+import xml.etree.ElementTree as ET
+
+ns = {"sparkle": "http://www.andymatuschak.org/xml-namespaces/sparkle"}
+root = ET.parse(sys.argv[1]).getroot()
+
+for item in root.findall("./channel/item"):
+    version = item.findtext("sparkle:shortVersionString", namespaces=ns) or item.findtext("title")
+    hardware = item.findtext("sparkle:hardwareRequirements", namespaces=ns) or ""
+    enclosure = item.find("enclosure")
+    url = enclosure.get("url") if enclosure is not None else ""
+    if version and url and "darwin-arm64" in url and (not hardware or "arm64" in hardware):
+        print(json.dumps({"version": version, "url": url}))
+        break
+else:
+    raise SystemExit("codex-app: appcast did not contain a darwin arm64 enclosure")
+PY
+}
+
+inspect_codex_app_zip_json() {
+  local zip_path=$1
+  python3 - "$zip_path" <<'PY'
+import json
+import plistlib
+import sys
+import zipfile
+
+with zipfile.ZipFile(sys.argv[1]) as archive:
+    plist_name = None
+    for name in archive.namelist():
+        parts = name.split("/")
+        if len(parts) == 3 and parts[0].endswith(".app") and parts[1:] == ["Contents", "Info.plist"]:
+            plist_name = name
+            break
+    if plist_name is None:
+        raise SystemExit("codex-app: zip did not contain a top-level .app/Contents/Info.plist")
+    with archive.open(plist_name) as plist_file:
+        plist = plistlib.load(plist_file)
+
+print(
+    json.dumps(
+        {
+            "appName": plist_name.split("/", 1)[0],
+            "bundleIdentifier": plist.get("CFBundleIdentifier", ""),
+            "displayName": plist.get("CFBundleDisplayName") or plist.get("CFBundleName", ""),
+            "version": plist.get("CFBundleShortVersionString", ""),
+        }
+    )
+)
+PY
+}
+
 prefetch() {
   nix store prefetch-file --json "$1" | jq -r .hash
 }
@@ -165,6 +224,70 @@ update_release_pin() {
   done < <(jq -r '.assets | keys[]' "$pin")
   mv "$tmp" "$pin"
 }
+
+update_codex_app_pin() {
+  local pin=nix/pins/codex-app.json
+  local appcast latest latest_version latest_url cur_version cur_url prefetch_json hash store_path zip_info app_name bundle_identifier display_name bundle_version tmp
+
+  appcast=$(jq -r .appcast "$pin")
+  latest=$(latest_codex_app_json "$appcast")
+  latest_version=$(jq -r .version <<<"$latest")
+  latest_url=$(jq -r .url <<<"$latest")
+  cur_version=$(jq -r .version "$pin")
+  cur_url=$(jq -r .url "$pin")
+
+  if [ "$latest_version" = "$cur_version" ] && [ "$latest_url" = "$cur_url" ]; then
+    echo "codex-app: $cur_version (up to date)"
+    return 0
+  fi
+
+  echo "codex-app: $cur_version -> $latest_version (prefetching app...)"
+  prefetch_json=$(nix store prefetch-file --json "$latest_url")
+  hash=$(jq -r .hash <<<"$prefetch_json")
+  store_path=$(jq -r .storePath <<<"$prefetch_json")
+  zip_info=$(inspect_codex_app_zip_json "$store_path")
+  app_name=$(jq -r .appName <<<"$zip_info")
+  bundle_identifier=$(jq -r .bundleIdentifier <<<"$zip_info")
+  display_name=$(jq -r .displayName <<<"$zip_info")
+  bundle_version=$(jq -r .version <<<"$zip_info")
+
+  if [ "$bundle_version" != "$latest_version" ]; then
+    echo "codex-app: appcast version $latest_version did not match bundle version $bundle_version" >&2
+    exit 1
+  fi
+
+  tmp=$(mktemp)
+  TMPFILES+=("$tmp")
+  jq \
+    --arg version "$latest_version" \
+    --arg url "$latest_url" \
+    --arg hash "$hash" \
+    --arg appName "$app_name" \
+    --arg bundleIdentifier "$bundle_identifier" \
+    --arg displayName "$display_name" \
+    '
+      .version = $version
+      | .url = $url
+      | .hash = $hash
+      | .appName = $appName
+      | .bundleIdentifier = $bundleIdentifier
+      | .displayName = $displayName
+    ' "$pin" >"$tmp"
+  mv "$tmp" "$pin"
+}
+
+if [ "${UPDATE_PINS_ONLY:-}" = "codex-app" ]; then
+  echo "== codex-app"
+  update_codex_app_pin
+  echo
+  if git diff --quiet -- "${managed_pathspecs[@]}"; then
+    echo "All pins up to date."
+  else
+    echo "Pins updated. Review with 'git diff', verify with 'nix run .#build', then commit."
+  fi
+  restore_managed_files=false
+  exit 0
+fi
 
 echo "== hcom"
 hcom_before=$(jq -r .version nix/pins/hcom.json)
@@ -339,6 +462,9 @@ fi
 
 echo "== claude-code-settings-schema"
 update_url_pin "claude-code-settings-schema" "nix/pins/claude-code-settings-schema.json"
+
+echo "== codex-app"
+update_codex_app_pin
 
 echo
 if git diff --quiet -- "${managed_pathspecs[@]}"; then

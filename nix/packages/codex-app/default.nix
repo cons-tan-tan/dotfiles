@@ -5,13 +5,15 @@
   unzip,
 }:
 
-stdenvNoCC.mkDerivation (finalAttrs: {
+let
+  pin = lib.importJSON ../../pins/codex-app.json;
+in
+stdenvNoCC.mkDerivation {
   pname = "codex-app";
-  version = "26.707.31428";
+  version = pin.version;
 
   src = fetchurl {
-    url = "https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-arm64-${finalAttrs.version}.zip";
-    hash = "sha256-/9w1GlBxBdVddGTjNAMCx1i4pUuSZxHEsVvzc8y0fWQ=";
+    inherit (pin) url hash;
   };
 
   nativeBuildInputs = [ unzip ];
@@ -27,7 +29,7 @@ stdenvNoCC.mkDerivation (finalAttrs: {
   installPhase = ''
     runHook preInstall
     mkdir -p "$out/Applications"
-    cp -R ChatGPT.app "$out/Applications/"
+    cp -R ${lib.escapeShellArg pin.appName} "$out/Applications/"
     runHook postInstall
   '';
 
@@ -41,4 +43,4 @@ stdenvNoCC.mkDerivation (finalAttrs: {
     platforms = [ "aarch64-darwin" ];
     sourceProvenance = [ lib.sourceTypes.binaryNativeCode ];
   };
-})
+}
