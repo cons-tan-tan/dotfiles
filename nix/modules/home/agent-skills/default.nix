@@ -15,19 +15,42 @@
 let
   skills = import ./sources.nix { inherit lib inputs; };
 
-  # transform がある skill は SKILL.md を差し替えたコピーを作る。無ければ
-  # ソースをそのまま symlink する。
+  inherit (import ./frontmatter.nix { inherit lib; })
+    disableCodexImplicitInvocation
+    disableModelInvocation
+    ;
+
+  # transform や追加ファイルが必要な skill はコピーを作る。無ければソースを
+  # そのまま symlink する。
   mkSkillSource =
     name: skill:
-    if skill ? transform then
+    let
+      disableAutomaticInvocation = skill.disableAutomaticInvocation or false;
+      transform = skill.transform or lib.id;
+      skillMd = (if disableAutomaticInvocation then disableModelInvocation else lib.id) (
+        transform (builtins.readFile (skill.root + "/SKILL.md"))
+      );
+      sourceOpenaiYamlPath = skill.root + "/agents/openai.yaml";
+      openaiYaml = disableCodexImplicitInvocation (
+        if builtins.pathExists sourceOpenaiYamlPath then builtins.readFile sourceOpenaiYamlPath else ""
+      );
+    in
+    if (skill ? transform) || disableAutomaticInvocation then
       pkgs.runCommandLocal "skill-${name}"
-        {
-          skillMd = skill.transform (builtins.readFile (skill.root + "/SKILL.md"));
-          passAsFile = [ "skillMd" ];
-        }
+        (
+          {
+            inherit skillMd;
+            passAsFile = [ "skillMd" ] ++ lib.optionals disableAutomaticInvocation [ "openaiYaml" ];
+          }
+          // lib.optionalAttrs disableAutomaticInvocation { inherit openaiYaml; }
+        )
         ''
           cp -rL --no-preserve=mode ${skill.root} $out
           cp "$skillMdPath" "$out/SKILL.md"
+          ${lib.optionalString disableAutomaticInvocation ''
+            mkdir -p "$out/agents"
+            cp "$openaiYamlPath" "$out/agents/openai.yaml"
+          ''}
         ''
     else
       skill.root;

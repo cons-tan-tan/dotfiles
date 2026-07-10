@@ -37,6 +37,86 @@ lib.runTests {
     expected = "---\nnew: true\n---\nbody line\n";
   };
 
+  testSetFrontmatterFieldWithFrontmatter = {
+    expr = fm.setFrontmatterField "disable-model-invocation" "true" withFm;
+    expected = "---\ndisable-model-invocation: true\nname: demo\n---\nbody line\n";
+  };
+
+  testSetFrontmatterFieldWithoutFrontmatter = {
+    expr = fm.setFrontmatterField "disable-model-invocation" "true" noFm;
+    expected = "---\ndisable-model-invocation: true\n---\n${noFm}";
+  };
+
+  testSetFrontmatterFieldReplacesExisting = {
+    expr = fm.setFrontmatterField "disable-model-invocation" "true" ''
+      ---
+      name: demo
+      disable-model-invocation: false
+      ---
+      body
+    '';
+    expected = ''
+      ---
+      name: demo
+      disable-model-invocation: true
+      ---
+      body
+    '';
+  };
+
+  testCodexPolicyCreatedWhenMissingFile = {
+    expr = fm.disableCodexImplicitInvocation "";
+    expected = ''
+      policy:
+        allow_implicit_invocation: false
+    '';
+  };
+
+  testCodexPolicyAppendedWithoutDroppingInterface = {
+    expr = fm.disableCodexImplicitInvocation ''
+      interface:
+        display_name: 'Difit'
+        default_prompt: 'Use $difit.'
+    '';
+    expected = ''
+      interface:
+        display_name: 'Difit'
+        default_prompt: 'Use $difit.'
+
+      policy:
+        allow_implicit_invocation: false
+    '';
+  };
+
+  testCodexPolicyInsertedIntoExistingPolicy = {
+    expr = fm.disableCodexImplicitInvocation ''
+      interface:
+        display_name: 'Demo'
+      policy:
+        other: true
+    '';
+    expected = ''
+      interface:
+        display_name: 'Demo'
+      policy:
+        allow_implicit_invocation: false
+        other: true
+    '';
+  };
+
+  testCodexPolicyReplacesExistingValue = {
+    expr = fm.disableCodexImplicitInvocation ''
+      policy:
+        allow_implicit_invocation: true
+        other: true
+    '';
+    expected = ''
+      policy:
+        allow_implicit_invocation: false
+        other: true
+    '';
+  };
+
   testInjectAfterFrontmatter = {
     expr = fm.injectAfterFrontmatter "NOTE\n" withFm;
     expected = "---\nname: demo\n---\nNOTE\nbody line\n";

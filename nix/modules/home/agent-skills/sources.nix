@@ -19,6 +19,13 @@ let
     injectAfterFrontmatter
     ;
 
+  # モデルの判断による自動呼び出しを止め、ユーザーの明示呼び出しだけ許す
+  # skill。Codex/Pi/Claude Code 向けの具体的な配置は default.nix で行う。
+  automaticInvocationDisabledSkills = [
+    "difit"
+    "difit-review"
+  ];
+
   externalSkills = {
     ast-grep = {
       root = "${ast-grep-skill}/ast-grep/skills/ast-grep";
@@ -142,5 +149,20 @@ let
   localSkills = lib.mapAttrs (name: _: { root = localSkillsDir + "/${name}"; }) (
     lib.filterAttrs (_: type: type == "directory") (builtins.readDir localSkillsDir)
   );
+
+  allSkills = externalSkills // localSkills;
+  unknownAutomaticInvocationDisabledSkills = lib.filter (
+    name: !(builtins.hasAttr name allSkills)
+  ) automaticInvocationDisabledSkills;
+
+  applyInvocationPolicy = lib.mapAttrs (
+    name: skill:
+    skill
+    // lib.optionalAttrs (builtins.elem name automaticInvocationDisabledSkills) {
+      disableAutomaticInvocation = true;
+    }
+  );
 in
-externalSkills // localSkills
+assert lib.assertMsg (unknownAutomaticInvocationDisabledSkills == [ ])
+  "unknown automaticInvocationDisabledSkills entries: ${lib.concatStringsSep ", " unknownAutomaticInvocationDisabledSkills}";
+applyInvocationPolicy allSkills
