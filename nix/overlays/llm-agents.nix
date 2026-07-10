@@ -3,6 +3,7 @@ llm-agents: final: prev:
 let
   system = prev.stdenv.hostPlatform.system;
   llm = llm-agents.packages.${system};
+  agent-browser = prev.callPackage ../packages/agent-browser { };
   herdrPackages = prev.callPackage ../packages/herdr {
     inherit llm-agents;
   };
@@ -14,8 +15,9 @@ in
     opencode
     pi
     ccusage
-    agent-browser
     ;
+
+  inherit agent-browser;
 
   inherit (herdrPackages)
     herdr

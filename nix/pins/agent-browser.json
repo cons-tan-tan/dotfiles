@@ -1,0 +1,22 @@
+{
+  "version": "0.31.1",
+  "srcHash": "sha256-uCLzNQ0NAeg1TtA6tcBhTu5VTyjkumsyiEpAhYLPQD0=",
+  "assets": {
+    "aarch64-darwin": {
+      "name": "agent-browser-darwin-arm64",
+      "hash": "sha256-/XrNF7MHH/f3WgPB7NMFAZWdnC0GO9qgWttvd6vyp78="
+    },
+    "x86_64-darwin": {
+      "name": "agent-browser-darwin-x64",
+      "hash": "sha256-Bao+LtNVDgb7PrdCOhzvDZ1gMcTWqINbnb4DO6+D720="
+    },
+    "aarch64-linux": {
+      "name": "agent-browser-linux-musl-arm64",
+      "hash": "sha256-HKOX9xSCDKlUxrV16BbAisyTf/rOorkB9c9lJPxKaFM="
+    },
+    "x86_64-linux": {
+      "name": "agent-browser-linux-musl-x64",
+      "hash": "sha256-t0kqPgDlJ5C/+9KQDDmSZeaoBZgnb4n7iy+/oxTMjSI="
+    }
+  }
+}

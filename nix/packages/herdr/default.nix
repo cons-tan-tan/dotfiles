@@ -13,13 +13,16 @@ let
   upstreamVersionData = builtins.fromJSON (
     builtins.readFile "${llm-agents}/packages/herdr/hashes.json"
   );
+  pinnedBinaryAssets = lib.mapAttrs (_: asset: asset.name) pin.assets;
+  pinnedBinaryHashes = lib.mapAttrs (_: asset: asset.hash) pin.assets;
   # version / hash values are pinned in nix/pins/herdr.json and updated by
-  # `nix run .#update-pins`. If llm-agents catches up, its upstream data wins.
+  # `nix run .#update-pins`. If llm-agents catches up, its upstream data wins,
+  # while the same-version pin fills platforms upstream builds from source.
   pinnedVersionData = upstreamVersionData // {
     version = pin.version;
     hash = pin.srcHash;
-    binaryAssets = lib.mapAttrs (_: asset: asset.name) pin.assets;
-    binaryHashes = lib.mapAttrs (_: asset: asset.hash) pin.assets;
+    binaryAssets = pinnedBinaryAssets;
+    binaryHashes = pinnedBinaryHashes;
   };
   versionData =
     if lib.versionOlder upstreamVersionData.version pin.version then
@@ -27,14 +30,17 @@ let
     else
       upstreamVersionData;
   version = versionData.version;
+  pinMatchesVersion = pin.version == version;
   src = fetchFromGitHub {
     owner = "ogulcancelik";
     repo = "herdr";
     rev = "v${version}";
     hash = versionData.hash;
   };
-  binaryAssets = versionData.binaryAssets or (lib.mapAttrs (_: asset: asset.name) pin.assets);
-  binaryHashes = versionData.binaryHashes;
+  binaryAssets =
+    (lib.optionalAttrs pinMatchesVersion pinnedBinaryAssets) // (versionData.binaryAssets or { });
+  binaryHashes =
+    (lib.optionalAttrs pinMatchesVersion pinnedBinaryHashes) // (versionData.binaryHashes or { });
   # llm-agents.nix builds Herdr from source on Linux and imports a generated Zig
   # file from that source path during package evaluation. This binary form keeps
   # our --no-build flake checks pure while tracking llm-agents' version.

@@ -317,6 +317,7 @@
             hcom
             hcom-claude-hooks
             hcom-codex-hooks
+            agent-browser
             agent-slack
             difit
             git-wt

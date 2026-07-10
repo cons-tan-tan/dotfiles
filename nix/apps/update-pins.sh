@@ -184,6 +184,20 @@ if [ "$(jq -r .version nix/pins/agent-slack.json)" != "$agent_slack_before" ]; t
   nix flake update agent-slack-skill
 fi
 
+echo "== agent-browser"
+agent_browser_pin=nix/pins/agent-browser.json
+agent_browser_before=$(jq -r .version "$agent_browser_pin")
+update_release_pin "agent-browser" "vercel-labs/agent-browser" "$agent_browser_pin"
+agent_browser_after=$(jq -r .version "$agent_browser_pin")
+if [ "$agent_browser_after" != "$agent_browser_before" ]; then
+  echo "agent-browser: updating srcHash"
+  src_hash=$(prefetch_unpack "https://github.com/vercel-labs/agent-browser/archive/refs/tags/v$agent_browser_after.tar.gz")
+  tmp=$(mktemp)
+  TMPFILES+=("$tmp")
+  jq --arg h "$src_hash" '.srcHash = $h' "$agent_browser_pin" >"$tmp"
+  mv "$tmp" "$agent_browser_pin"
+fi
+
 echo "== git-wt"
 pin=nix/pins/git-wt.json
 tag=$(latest_tag k1LoW/git-wt)
