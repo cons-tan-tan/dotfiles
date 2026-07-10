@@ -29,7 +29,12 @@
   #     → ここの homebrew.casks (実 Homebrew に任せる)
   homebrew = {
     enable = true;
-    onActivation.cleanup = "uninstall";
+    onActivation = {
+      # nix-darwin d5bd9cd maps cleanup = "uninstall" to --force-cleanup,
+      # but Homebrew Bundle now accepts --cleanup for install-time cleanup.
+      cleanup = "none";
+      extraFlags = [ "--cleanup" ];
+    };
     brews = [ ];
     casks = [
       "azookey"

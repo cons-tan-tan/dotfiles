@@ -78,7 +78,7 @@ let
     };
 
     drawio = {
-      root = "${drawio-skill}/skill-cli/drawio";
+      root = "${drawio-skill}/plugins/claude-code/skills/drawio";
       transform = injectAfterFrontmatter ''
 
         > **Local override (WSL2)**: use `drawio` from `$PATH` for exports —
