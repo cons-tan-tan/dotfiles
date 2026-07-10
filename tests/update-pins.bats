@@ -45,6 +45,9 @@ case "$*" in
 "api repos/stablyai/agent-slack/releases/latest --jq .tag_name")
   printf '%s\n' "${UPDATE_PINS_AGENT_SLACK_TAG:-v$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/agent-slack.json")}"
   ;;
+"api repos/vercel-labs/agent-browser/releases/latest --jq .tag_name")
+  printf '%s\n' "${UPDATE_PINS_AGENT_BROWSER_TAG:-v$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/agent-browser.json")}"
+  ;;
 "api repos/k1LoW/git-wt/releases/latest --jq .tag_name")
   printf '%s\n' "${UPDATE_PINS_GIT_WT_TAG:-v999.0.0}"
   ;;
@@ -76,6 +79,23 @@ https://registry.npmjs.org/difit/latest)
   ;;
 https://registry.npmjs.org/difit/-/difit-*.tgz)
   cat "$UPDATE_PINS_DIFIT_TARBALL"
+  ;;
+https://persistent.oaistatic.com/codex-app-prod/appcast.xml)
+  version=${UPDATE_PINS_CODEX_APP_VERSION:-$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/codex-app.json")}
+  url=${UPDATE_PINS_CODEX_APP_URL:-$(jq -r .url "$UPDATE_PINS_FAKE_ROOT/nix/pins/codex-app.json")}
+  cat <<XML
+<?xml version="1.0" encoding="utf-8"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+  <channel>
+    <item>
+      <title>$version</title>
+      <sparkle:shortVersionString>$version</sparkle:shortVersionString>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <enclosure url="$url" length="123" type="application/octet-stream" />
+    </item>
+  </channel>
+</rss>
+XML
   ;;
 *)
   echo "unexpected curl invocation: $*" >&2
@@ -117,6 +137,29 @@ if [ "$1" = "store" ] && [ "${2:-}" = "prefetch-file" ]; then
   if [[ " $* " == *"github.com/ogulcancelik/herdr/archive/refs/tags/"* ]] && [ "${UPDATE_PINS_FAIL_HERDR_PREFETCH:-}" = "source" ]; then
     echo "herdr source prefetch failed" >&2
     exit 1
+  fi
+  if [[ " $* " == *"persistent.oaistatic.com/codex-app-prod/"*".zip"* ]]; then
+    zip_path="$UPDATE_PINS_FAKE_ROOT/codex-app.zip"
+    app_name=${UPDATE_PINS_CODEX_APP_NAME:-ChatGPT.app}
+    version=${UPDATE_PINS_CODEX_APP_BUNDLE_VERSION:-${UPDATE_PINS_CODEX_APP_VERSION:-$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/codex-app.json")}}
+    python3 - "$zip_path" "$app_name" "$version" <<'PY'
+import plistlib
+import sys
+import zipfile
+
+zip_path, app_name, version = sys.argv[1:]
+plist = {
+    "CFBundleDisplayName": "ChatGPT",
+    "CFBundleIdentifier": "com.openai.codex",
+    "CFBundleName": "ChatGPT",
+    "CFBundleShortVersionString": version,
+}
+
+with zipfile.ZipFile(zip_path, "w") as archive:
+    archive.writestr(f"{app_name}/Contents/Info.plist", plistlib.dumps(plist))
+PY
+    printf '{"hash":"sha256-codex-app-for-test","storePath":"%s"}\n' "$zip_path"
+    exit 0
   fi
   if [ "${3:-}" = "--json" ] && [ "${4:-}" = "https://json.schemastore.org/claude-code-settings.json" ]; then
     printf '{"hash":"%s"}\n' "${UPDATE_PINS_SCHEMA_HASH:-sha256-schema-for-test}"
@@ -290,6 +333,7 @@ assert_managed_matches() {
 }
 
 make_unrelated_updates_noop() {
+  export UPDATE_PINS_AGENT_BROWSER_TAG="v$(jq -r .version "$WORK/nix/pins/agent-browser.json")"
   export UPDATE_PINS_GIT_WT_TAG="v$(jq -r .version "$WORK/nix/pins/git-wt.json")"
   export UPDATE_PINS_SHELLFIRM_TAG="v$(jq -r .version "$WORK/nix/pins/shellfirm.json")"
   export UPDATE_PINS_SCHEMA_HASH="$(jq -r .hash "$WORK/nix/pins/claude-code-settings-schema.json")"
@@ -413,6 +457,25 @@ make_unrelated_updates_noop() {
   [ "$status" -ne 0 ]
   [[ "$output" == *"difit: failed to extract npmDepsHash"* ]]
   assert_managed_matches "$original"
+}
+
+@test "codex app version bump updates pin from appcast" {
+  original="$WORK/original"
+  save_managed "$original"
+  make_unrelated_updates_noop
+  export UPDATE_PINS_CODEX_APP_VERSION=26.999.10101
+  export UPDATE_PINS_CODEX_APP_URL=https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-arm64-26.999.10101.zip
+
+  run_update_pins
+
+  [ "$status" -eq 0 ]
+  [ "$(jq -r .version "$WORK/nix/pins/codex-app.json")" = "26.999.10101" ]
+  [ "$(jq -r .url "$WORK/nix/pins/codex-app.json")" = "$UPDATE_PINS_CODEX_APP_URL" ]
+  [ "$(jq -r .hash "$WORK/nix/pins/codex-app.json")" = "sha256-codex-app-for-test" ]
+  [ "$(jq -r .appName "$WORK/nix/pins/codex-app.json")" = "ChatGPT.app" ]
+  [ "$(jq -r .bundleIdentifier "$WORK/nix/pins/codex-app.json")" = "com.openai.codex" ]
+  [ "$(jq -r .displayName "$WORK/nix/pins/codex-app.json")" = "ChatGPT" ]
+  ! assert_managed_matches "$original"
 }
 
 @test "agent-slack flake update failure restores earlier pin changes" {
