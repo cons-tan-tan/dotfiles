@@ -23,6 +23,7 @@ import inputs.nixpkgs {
     (import ../overlays/drawio-headless.nix)
   ]
   ++ lib.optionals isDarwin [
+    (import ../overlays/codex-app.nix)
     inputs.brew-nix.overlays.default
   ];
 }
