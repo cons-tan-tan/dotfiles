@@ -7,15 +7,18 @@
   };
 
   codex = {
-    model = "gpt-5.5";
+    model = "gpt-5.6-sol";
+    reasoningEffort = "high";
   };
 
   pi = {
     provider = "openai-codex";
-    model = "gpt-5.5";
+    model = "gpt-5.6-sol";
+    thinkingLevel = "high";
   };
 
   opencode = {
-    model = "openai/gpt-5.5";
+    model = "openai/gpt-5.6-sol";
+    reasoningEffort = "high";
   };
 }

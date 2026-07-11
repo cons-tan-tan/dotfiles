@@ -12,6 +12,17 @@ in
     enable = true;
     settings = {
       model = models.opencode.model;
+      provider = {
+        openai = {
+          models = {
+            "gpt-5.6-sol" = {
+              options = {
+                reasoningEffort = models.opencode.reasoningEffort;
+              };
+            };
+          };
+        };
+      };
       # instructions は opencode 側で glob 展開される (claude.nix が配置する
       # ~/.claude 配下の symlink に依存)。
       instructions = [

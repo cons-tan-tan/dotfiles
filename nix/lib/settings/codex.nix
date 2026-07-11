@@ -24,7 +24,7 @@ in
 
       personality = "pragmatic";
       model = models.codex.model;
-      model_reasoning_effort = "xhigh";
+      model_reasoning_effort = models.codex.reasoningEffort;
 
       approval_policy = "on-request";
       approvals_reviewer = "auto_review";

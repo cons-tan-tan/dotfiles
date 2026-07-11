@@ -52,7 +52,7 @@ let
   managedSettings = {
     defaultProvider = models.pi.provider;
     defaultModel = models.pi.model;
-    defaultThinkingLevel = "xhigh";
+    defaultThinkingLevel = models.pi.thinkingLevel;
 
     # Force Pi's package manager to use the isolated wrapper above even when
     # node/npm/pnpm are available in the user's interactive PATH.
