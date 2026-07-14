@@ -36,5 +36,6 @@ in
     enable = true;
     enableGitIntegration = true;
     package = if config.my.hostKind == "wsl" then hunkRuntimePackage else hunkPackage;
+    settings.wrap_lines = true;
   };
 }
