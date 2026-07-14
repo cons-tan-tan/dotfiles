@@ -20,6 +20,10 @@ let
       prompt_new_tab_name = false;
     };
 
+    experimental = {
+      kitty_graphics = true;
+    };
+
     # Codex の native session restore はこの gate が開いている時だけ走る。
     session = {
       resume_agents_on_restore = true;
