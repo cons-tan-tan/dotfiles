@@ -11,6 +11,7 @@
     ./git.nix
     ./gpg.nix
     ./herdr.nix
+    ./hunk.nix
     ./opencode.nix
     ./pi.nix
     ./ssh.nix

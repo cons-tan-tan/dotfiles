@@ -10,6 +10,7 @@ let
     difit-src
     drawio-skill
     hcom-src
+    hunk
     humanizer-jp-skill
     improve-skill
     ;
@@ -100,6 +101,10 @@ let
     # バイナリ本体は overlays/hcom.nix (hcom-src input とは update-pins が同期)
     hcom-agent-messaging = {
       root = "${hcom-src}/skills/hcom-agent-messaging";
+    };
+
+    hunk-review = {
+      root = "${hunk}/skills/hunk-review";
     };
 
     humanize-jp = {
