@@ -45,6 +45,23 @@ trap cleanup EXIT
 root=$(git rev-parse --show-toplevel)
 cd "$root"
 
+# 内部 package のビルドだけを目的に root flake output を公開しない。
+# UPDATE_PINS_PACKAGE は Nix の属性選択にだけ使い、shell 展開を式へ埋め込まない。
+build_local_package() {
+  local package=$1
+  # `${...}` は Nix の動的属性選択であり、shell には展開させない。
+  # shellcheck disable=SC2016
+  UPDATE_PINS_PACKAGE="$package" nix build --impure --expr '
+    let
+      flake = builtins.getFlake (toString ./.);
+      pkgs = import ./nix/lib/mk-pkgs.nix {
+        inputs = flake.inputs;
+      } builtins.currentSystem;
+    in
+    pkgs.${builtins.getEnv "UPDATE_PINS_PACKAGE"}
+  ' --no-link
+}
+
 check_managed_files_clean() {
   if ! git diff --quiet -- "${managed_pathspecs[@]}"; then
     echo "update-pins: managed files already have unstaged changes; refusing to overwrite them" >&2
@@ -339,7 +356,7 @@ else
     '.version = $v | .srcHash = $s | .vendorHash = ""' "$pin" >"$tmp"
   mv "$tmp" "$pin"
   echo "git-wt: computing vendorHash (expect one failing build)..."
-  build_log=$(nix build .#git-wt --no-link 2>&1 || true)
+  build_log=$(build_local_package git-wt 2>&1 || true)
   vendor_hash=$(echo "$build_log" | grep -Eo 'got: *sha256-[A-Za-z0-9+/=_-]+' | head -1 | grep -Eo 'sha256-[A-Za-z0-9+/=_-]+' || true)
   if [ -z "$vendor_hash" ]; then
     echo "git-wt: failed to extract vendorHash from build output:" >&2
@@ -351,7 +368,7 @@ else
   jq --arg h "$vendor_hash" '.vendorHash = $h' "$pin" >"$tmp"
   mv "$tmp" "$pin"
   echo "git-wt: verifying build..."
-  if ! nix build .#git-wt --no-link; then
+  if ! build_local_package git-wt; then
     echo "git-wt: verification build failed" >&2
     exit 1
   fi
@@ -375,7 +392,7 @@ else
     '.version = $v | .srcHash = $s | .cargoHash = ""' "$pin" >"$tmp"
   mv "$tmp" "$pin"
   echo "shellfirm: computing cargoHash (expect one failing build)..."
-  build_log=$(nix build .#shellfirm --no-link 2>&1 || true)
+  build_log=$(build_local_package shellfirm 2>&1 || true)
   cargo_hash=$(echo "$build_log" | grep -Eo 'got: *sha256-[A-Za-z0-9+/=_-]+' | head -1 | grep -Eo 'sha256-[A-Za-z0-9+/=_-]+' || true)
   if [ -z "$cargo_hash" ]; then
     echo "shellfirm: failed to extract cargoHash from build output:" >&2
@@ -387,7 +404,7 @@ else
   jq --arg h "$cargo_hash" '.cargoHash = $h' "$pin" >"$tmp"
   mv "$tmp" "$pin"
   echo "shellfirm: verifying build..."
-  if ! nix build .#shellfirm --no-link; then
+  if ! build_local_package shellfirm; then
     echo "shellfirm: verification build failed" >&2
     exit 1
   fi
@@ -440,7 +457,7 @@ else
     '.version = $v | .srcHash = $s | .npmDepsHash = ""' "$difit_pin" >"$tmp"
   mv "$tmp" "$difit_pin"
   echo "difit: computing npmDepsHash (expect one failing build)..."
-  build_log=$(nix build .#difit --no-link 2>&1 || true)
+  build_log=$(build_local_package difit 2>&1 || true)
   npm_deps_hash=$(echo "$build_log" | grep -Eo 'got: *sha256-[A-Za-z0-9+/=_-]+' | head -1 | grep -Eo 'sha256-[A-Za-z0-9+/=_-]+' || true)
   if [ -z "$npm_deps_hash" ]; then
     echo "difit: failed to extract npmDepsHash from build output:" >&2
@@ -452,7 +469,7 @@ else
   jq --arg h "$npm_deps_hash" '.npmDepsHash = $h' "$difit_pin" >"$tmp"
   mv "$tmp" "$difit_pin"
   echo "difit: verifying build..."
-  if ! nix build .#difit --no-link; then
+  if ! build_local_package difit; then
     echo "difit: verification build failed" >&2
     exit 1
   fi

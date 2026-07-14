@@ -312,33 +312,6 @@
 
       formatter = lib.genAttrs systems (system: treefmtEvalFor.${system}.config.build.wrapper);
 
-      packages = lib.genAttrs systems (
-        system:
-        let
-          pkgs = pkgsFor.${system};
-        in
-        {
-          inherit (pkgs)
-            hcom
-            hcom-claude-hooks
-            hcom-codex-hooks
-            agent-browser
-            agent-slack
-            difit
-            git-wt
-            herdr
-            shellfirm
-            herdr-agent-skill
-            herdr-agent-plugin
-            herdr-claude-integration
-            herdr-codex-integration
-            herdr-pi-integration
-            herdr-opencode-integration
-            herdr-codex-marketplace
-            ;
-        }
-      );
-
       checks = lib.genAttrs systems (
         system:
         let

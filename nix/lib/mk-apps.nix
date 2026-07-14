@@ -106,8 +106,8 @@ in
     };
 
     # nix/pins/*.json (hcom / agent-slack / git-wt / herdr / schema) を upstream の
-    # 最新状態へ同期する。git-wt の vendorHash 計算で `nix build .#git-wt` を
-    # 使うため、packages 出力 (flake.nix) に git-wt が必要。
+    # 最新状態へ同期する。hash 計算用の内部 package は root の packages 出力へ
+    # 公開せず、update-pins.sh が mk-pkgs.nix から直接評価する。
     update-pins = {
       type = "app";
       meta.description = "Sync nix/pins/*.json to the latest upstream state";

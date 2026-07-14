@@ -177,7 +177,7 @@ PY
   exit 0
 fi
 
-if [ "$1" = "build" ] && [ "${2:-}" = ".#git-wt" ] && [ "${3:-}" = "--no-link" ]; then
+if [ "$1" = "build" ] && [ "${2:-}" = "--impure" ] && [ "${3:-}" = "--expr" ] && [ "${5:-}" = "--no-link" ] && [ "${UPDATE_PINS_PACKAGE:-}" = "git-wt" ]; then
   count=0
   if [ -f "$UPDATE_PINS_NIX_BUILD_COUNT" ]; then
     count=$(cat "$UPDATE_PINS_NIX_BUILD_COUNT")
@@ -214,7 +214,7 @@ if [ "$1" = "build" ] && [ "${2:-}" = ".#git-wt" ] && [ "${3:-}" = "--no-link" ]
   esac
 fi
 
-if [ "$1" = "build" ] && [ "${2:-}" = ".#shellfirm" ] && [ "${3:-}" = "--no-link" ]; then
+if [ "$1" = "build" ] && [ "${2:-}" = "--impure" ] && [ "${3:-}" = "--expr" ] && [ "${5:-}" = "--no-link" ] && [ "${UPDATE_PINS_PACKAGE:-}" = "shellfirm" ]; then
   count=0
   if [ -f "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT" ]; then
     count=$(cat "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT")
@@ -251,7 +251,7 @@ if [ "$1" = "build" ] && [ "${2:-}" = ".#shellfirm" ] && [ "${3:-}" = "--no-link
   esac
 fi
 
-if [ "$1" = "build" ] && [ "${2:-}" = ".#difit" ] && [ "${3:-}" = "--no-link" ]; then
+if [ "$1" = "build" ] && [ "${2:-}" = "--impure" ] && [ "${3:-}" = "--expr" ] && [ "${5:-}" = "--no-link" ] && [ "${UPDATE_PINS_PACKAGE:-}" = "difit" ]; then
   count=0
   if [ -f "$UPDATE_PINS_DIFIT_BUILD_COUNT" ]; then
     count=$(cat "$UPDATE_PINS_DIFIT_BUILD_COUNT")
