@@ -6,7 +6,7 @@
   ...
 }:
 let
-  hunkPackage = inputs.hunk.packages.${pkgs.stdenv.hostPlatform.system}.default;
+  hunkPackage = pkgs.hunk;
 
   # Bun の compile 済み単一バイナリは WSL2 で起動直後に segfault するため、
   # WSL だけ同じ固定ソースと依存を Bun ランタイムで直接起動する。
@@ -30,7 +30,9 @@ let
   });
 in
 {
-  imports = [ inputs.hunk.homeManagerModules.default ];
+  # Import the option module without upstream's default package, because the
+  # local overlay supplies the bun2nix context fix.
+  imports = [ inputs.hunk.homeManagerModules.hunk ];
 
   programs.hunk = {
     enable = true;

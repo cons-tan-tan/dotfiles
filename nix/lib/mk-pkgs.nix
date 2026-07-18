@@ -16,6 +16,7 @@ import inputs.nixpkgs {
     (import ../overlays/agent-slack.nix)
     (import ../overlays/difit.nix)
     (import ../overlays/hcom.nix)
+    (import ../overlays/hunk.nix inputs.hunk)
     (import ../overlays/shellfirm.nix)
   ]
   ++ lib.optionals (!isDarwin) [
