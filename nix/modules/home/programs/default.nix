@@ -12,6 +12,7 @@
     ./gpg.nix
     ./herdr.nix
     ./hunk.nix
+    ./nh.nix
     ./opencode.nix
     ./pi.nix
     ./ssh.nix
