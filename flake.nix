@@ -27,6 +27,7 @@
 
     hunk = {
       url = "github:modem-dev/hunk";
+      inputs.bun2nix.inputs.systems.follows = "supported-systems";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -36,7 +37,13 @@
       # root の pin に一本化する。なお lock 上の "nixpkgs" ノードは mozuku
       # 専用の古い pin (root の nixpkgs とは別物 — mozuku のコメント参照)。
       inputs.nixpkgs.follows = "nixpkgs";
+      inputs.systems.follows = "supported-systems";
       inputs.treefmt-nix.follows = "treefmt-nix";
+    };
+
+    supported-systems = {
+      url = "path:./nix/systems";
+      flake = false;
     };
 
     treefmt-nix = {
@@ -165,11 +172,7 @@
       windowsUsername = "zhouc";
       windowsHomedir = "/mnt/c/Users/${windowsUsername}";
 
-      systems = [
-        "x86_64-linux"
-        "aarch64-linux"
-        "aarch64-darwin"
-      ];
+      systems = import inputs.supported-systems;
 
       mkPkgs = import ./nix/lib/mk-pkgs.nix { inherit inputs; };
 

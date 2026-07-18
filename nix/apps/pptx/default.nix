@@ -15,7 +15,8 @@ let
 
   pythonSet =
     (pkgs.callPackage pyproject-nix.build.packages {
-      python = pkgs.python3;
+      # onnxruntime 1.20.1 in uv.lock only provides wheels through CPython 3.13.
+      python = pkgs.python313;
     }).overrideScope
       (
         pkgs.lib.composeManyExtensions [
