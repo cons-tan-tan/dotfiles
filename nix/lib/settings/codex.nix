@@ -20,6 +20,15 @@ in
           "marketplaces"
           "herdr"
         ]
+        [
+          "features"
+          "network_proxy"
+        ]
+        [
+          "permissions"
+          "local-dev"
+          "network"
+        ]
       ];
 
       personality = "pragmatic";
@@ -28,6 +37,19 @@ in
 
       approval_policy = "on-request";
       approvals_reviewer = "auto_review";
+
+      # 開発ツールは ~/.cache 配下へ書き込むものが多いため、workspace の
+      # baseline protections を維持したまま共通キャッシュだけ追加で許可する。
+      default_permissions = "local-dev";
+      permissions = {
+        local-dev = {
+          description = "Workspace access with a writable user cache.";
+          extends = ":workspace";
+          filesystem = {
+            "~/.cache" = "write";
+          };
+        };
+      };
 
       # hcom hooks はこの module が導入するため feature gate も固定する。
       # Apps は GitHub connector の個別 disable が v0.139.0 では tool 注入へ
