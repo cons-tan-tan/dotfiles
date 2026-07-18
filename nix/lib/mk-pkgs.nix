@@ -25,6 +25,7 @@ import inputs.nixpkgs {
   ]
   ++ lib.optionals isDarwin [
     (import ../overlays/codex-app.nix)
+    (import ../overlays/watchexec.nix)
     inputs.brew-nix.overlays.default
   ];
 }
