@@ -1,6 +1,6 @@
 ---
 name: japanese-tech-writing
-description: Guidelines for writing and revising specific, natural Japanese technical prose that reads as human-authored. Covers artifact-appropriate structure, Markdown, accuracy and evidence, reader cognitive load, terminology, empty LLM-like phrasing, and redundancy. Use for GitHub Issues, pull requests, repository documentation, technical manuscripts, articles, explanations, proofreading, and rewriting in Japanese.
+description: Guides natural, precise Japanese technical writing and revision. Applies only when the target artifact is Japanese-language technical prose; excludes non-Japanese artifacts even when the surrounding discussion is Japanese.
 ---
 
 # 日本語の技術文書向け文章規範
