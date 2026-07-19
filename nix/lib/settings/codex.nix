@@ -60,7 +60,12 @@ in
       };
 
       plugins = {
+        # GitHub 操作の権限境界は gh に一本化し、connector/MCP とそれらを
+        # 優先する bundled skills は local/remote marketplace とも読み込まない。
         "github@openai-curated" = {
+          enabled = false;
+        };
+        "github@openai-curated-remote" = {
           enabled = false;
         };
         "browser-use@openai-bundled" = {
