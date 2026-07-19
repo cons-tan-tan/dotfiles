@@ -44,8 +44,6 @@ let
           tasks require scripted navigation, form filling, clicks,
           authentication, screenshots, data extraction, or web application
           testing.
-        allowed-tools: Bash(agent-browser:*), Bash(npx agent-browser:*)
-        hidden: true
         ---
       '';
     };
