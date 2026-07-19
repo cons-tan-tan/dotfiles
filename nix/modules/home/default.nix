@@ -1,6 +1,7 @@
-{ ... }:
+{ inputs, ... }:
 {
   imports = [
+    inputs.nix-index-database.homeModules.default
     ./agent-skills
     ./packages.nix
     ./programs
@@ -16,4 +17,5 @@
   };
 
   programs.home-manager.enable = true;
+  programs.nix-index-database.comma.enable = true;
 }
