@@ -34,6 +34,20 @@ let
 
     agent-browser = {
       root = "${agent-browser-skill}/skills/agent-browser";
+      # Keep discovery metadata concise and free of tool-selection policy;
+      # precedence belongs to each agent's configuration.
+      transform = replaceFrontmatter ''
+        ---
+        name: agent-browser
+        description: |
+          Controls headless browser sessions through the agent-browser CLI when
+          tasks require scripted navigation, form filling, clicks,
+          authentication, screenshots, data extraction, or web application
+          testing.
+        allowed-tools: Bash(agent-browser:*), Bash(npx agent-browser:*)
+        hidden: true
+        ---
+      '';
     };
 
     # バイナリ本体は packages/agent-slack (skill doc とは別 input)
