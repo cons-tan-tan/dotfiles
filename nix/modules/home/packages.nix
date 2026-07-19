@@ -1,10 +1,5 @@
-{ config, pkgs, ... }:
+{ pkgs, ... }:
 {
-  # agent-browser の既定値 ($XDG_RUNTIME_DIR/agent-browser) は Codex の
-  # filesystem sandbox から書けないため、許可済みの ~/.cache 配下へ置く。
-  home.sessionVariables.AGENT_BROWSER_SOCKET_DIR =
-    "${config.home.homeDirectory}/.cache/agent-browser/sockets";
-
   home.packages = with pkgs; [
     # CLI tools
     # NOTE: fzf / zoxide / starship のシェル統合 (eval "$(... init zsh)") は
