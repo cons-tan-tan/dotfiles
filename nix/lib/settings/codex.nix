@@ -54,9 +54,12 @@ in
       # hcom hooks はこの module が導入するため feature gate も固定する。
       # Apps は GitHub connector の個別 disable が v0.139.0 では tool 注入へ
       # 効かないため、機能全体を落として GitHub app の露出を止める。
+      # Remote plugin も個別 disable が v0.144.5 では skill 注入へ効かないため、
+      # GitHub bundled skills を model context へ露出させないよう機能全体を落とす。
       features = {
         apps = false;
         hooks = true;
+        remote_plugin = false;
       };
 
       plugins = {
