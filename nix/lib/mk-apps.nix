@@ -105,9 +105,8 @@ in
       program = pkgs.lib.getExe fmtScript;
     };
 
-    # nix/pins/*.json (hcom / agent-slack / git-wt / herdr / schema) を upstream の
-    # 最新状態へ同期する。hash 計算用の内部 package は root の packages 出力へ
-    # 公開せず、update-pins.sh が mk-pkgs.nix から直接評価する。
+    # pin を upstream と同期する。hash 計算用の内部 package は root の
+    # packages 出力へ公開せず、update-pins.sh が mk-pkgs.nix から直接評価する。
     update-pins = {
       type = "app";
       meta.description = "Sync nix/pins/*.json to the latest upstream state";

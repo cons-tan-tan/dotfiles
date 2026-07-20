@@ -338,42 +338,6 @@ if [ "$agent_browser_after" != "$agent_browser_before" ]; then
   mv "$tmp" "$agent_browser_pin"
 fi
 
-echo "== git-wt"
-pin=nix/pins/git-wt.json
-tag=$(latest_tag k1LoW/git-wt)
-ver=${tag#v}
-cur=$(jq -r .version "$pin")
-if [ "$ver" = "$cur" ]; then
-  echo "git-wt: $cur (up to date)"
-else
-  echo "git-wt: $cur -> $ver (prefetching source...)"
-  src_hash=$(prefetch_unpack "https://github.com/k1LoW/git-wt/archive/refs/tags/$tag.tar.gz")
-  tmp=$(mktemp)
-  TMPFILES+=("$tmp")
-  # vendorHash は go modules のダウンロード結果から決まるため事前計算できない。
-  # 空にして lib.fakeHash でビルドし、hash mismatch エラーから実値を取り出す。
-  jq --arg v "$ver" --arg s "$src_hash" \
-    '.version = $v | .srcHash = $s | .vendorHash = ""' "$pin" >"$tmp"
-  mv "$tmp" "$pin"
-  echo "git-wt: computing vendorHash (expect one failing build)..."
-  build_log=$(build_local_package git-wt 2>&1 || true)
-  vendor_hash=$(echo "$build_log" | grep -Eo 'got: *sha256-[A-Za-z0-9+/=_-]+' | head -1 | grep -Eo 'sha256-[A-Za-z0-9+/=_-]+' || true)
-  if [ -z "$vendor_hash" ]; then
-    echo "git-wt: failed to extract vendorHash from build output:" >&2
-    echo "$build_log" | tail -10 >&2
-    exit 1
-  fi
-  tmp=$(mktemp)
-  TMPFILES+=("$tmp")
-  jq --arg h "$vendor_hash" '.vendorHash = $h' "$pin" >"$tmp"
-  mv "$tmp" "$pin"
-  echo "git-wt: verifying build..."
-  if ! build_local_package git-wt; then
-    echo "git-wt: verification build failed" >&2
-    exit 1
-  fi
-fi
-
 echo "== shellfirm"
 pin=nix/pins/shellfirm.json
 tag=$(latest_tag kaplanelad/shellfirm)

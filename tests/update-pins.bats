@@ -24,7 +24,6 @@ setup() {
   STUB_DIR="$WORK/stub"
   mkdir -p "$STUB_DIR"
   export UPDATE_PINS_FAKE_ROOT="$WORK"
-  export UPDATE_PINS_NIX_BUILD_COUNT="$WORK/nix-build-count"
   export UPDATE_PINS_SHELLFIRM_BUILD_COUNT="$WORK/shellfirm-build-count"
   export UPDATE_PINS_DIFIT_BUILD_COUNT="$WORK/difit-build-count"
 
@@ -48,9 +47,6 @@ case "$*" in
   ;;
 "api repos/vercel-labs/agent-browser/releases/latest --jq .tag_name")
   printf '%s\n' "${UPDATE_PINS_AGENT_BROWSER_TAG:-v$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/agent-browser.json")}"
-  ;;
-"api repos/k1LoW/git-wt/releases/latest --jq .tag_name")
-  printf '%s\n' "${UPDATE_PINS_GIT_WT_TAG:-v999.0.0}"
   ;;
 "api repos/kaplanelad/shellfirm/releases/latest --jq .tag_name")
   printf '%s\n' "${UPDATE_PINS_SHELLFIRM_TAG:-v$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/shellfirm.json")}"
@@ -178,43 +174,6 @@ PY
   exit 0
 fi
 
-if [ "$1" = "build" ] && [ "${2:-}" = "--impure" ] && [ "${3:-}" = "--expr" ] && [ "${5:-}" = "--no-link" ] && [ "${UPDATE_PINS_PACKAGE:-}" = "git-wt" ]; then
-  count=0
-  if [ -f "$UPDATE_PINS_NIX_BUILD_COUNT" ]; then
-    count=$(cat "$UPDATE_PINS_NIX_BUILD_COUNT")
-  fi
-  count=$((count + 1))
-  printf '%s\n' "$count" >"$UPDATE_PINS_NIX_BUILD_COUNT"
-
-  case "${UPDATE_PINS_BUILD_MODE:-}" in
-  no-hash)
-    echo "builder failed before printing a hash" >&2
-    exit 1
-    ;;
-  success)
-    if [ "$count" -eq 1 ]; then
-      echo "error: hash mismatch"
-      echo "got: sha256-vendor-for-test"
-      exit 1
-    fi
-    exit 0
-    ;;
-  verify-fails)
-    if [ "$count" -eq 1 ]; then
-      echo "error: hash mismatch"
-      echo "got: sha256-vendor-for-test"
-      exit 1
-    fi
-    echo "verification build failed" >&2
-    exit 1
-    ;;
-  *)
-    echo "UPDATE_PINS_BUILD_MODE is not set" >&2
-    exit 1
-    ;;
-  esac
-fi
-
 if [ "$1" = "build" ] && [ "${2:-}" = "--impure" ] && [ "${3:-}" = "--expr" ] && [ "${5:-}" = "--no-link" ] && [ "${UPDATE_PINS_PACKAGE:-}" = "shellfirm" ]; then
   count=0
   if [ -f "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT" ]; then
@@ -335,7 +294,6 @@ assert_managed_matches() {
 
 make_unrelated_updates_noop() {
   export UPDATE_PINS_AGENT_BROWSER_TAG="v$(jq -r .version "$WORK/nix/pins/agent-browser.json")"
-  export UPDATE_PINS_GIT_WT_TAG="v$(jq -r .version "$WORK/nix/pins/git-wt.json")"
   export UPDATE_PINS_SHELLFIRM_TAG="v$(jq -r .version "$WORK/nix/pins/shellfirm.json")"
   export UPDATE_PINS_SCHEMA_HASH="$(jq -r .hash "$WORK/nix/pins/claude-code-settings-schema.json")"
 }
@@ -405,8 +363,6 @@ make_unrelated_updates_noop() {
   printf '{"version":"0.0.1"}\n' >"$WORK/nix/pins/newtool.json"
   original_newtool="$WORK/newtool.json.original"
   cp "$WORK/nix/pins/newtool.json" "$original_newtool"
-  export UPDATE_PINS_BUILD_MODE=success
-
   run_update_pins
 
   [ "$status" -eq 0 ]
@@ -492,38 +448,11 @@ make_unrelated_updates_noop() {
   assert_managed_matches "$original"
 }
 
-@test "git-wt vendorHash extraction failure restores all managed files" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_HCOM_TAG=v1.2.3
-  export UPDATE_PINS_AGENT_SLACK_TAG=v4.5.6
-  export UPDATE_PINS_BUILD_MODE=no-hash
-
-  run_update_pins
-
-  [ "$status" -ne 0 ]
-  assert_managed_matches "$original"
-}
-
-@test "git-wt verification build failure restores all managed files" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_HCOM_TAG=v1.2.3
-  export UPDATE_PINS_AGENT_SLACK_TAG=v4.5.6
-  export UPDATE_PINS_BUILD_MODE=verify-fails
-
-  run_update_pins
-
-  [ "$status" -ne 0 ]
-  assert_managed_matches "$original"
-}
-
 @test "shellfirm cargoHash extraction failure restores all managed files" {
   original="$WORK/original"
   save_managed "$original"
   export UPDATE_PINS_HCOM_TAG=v1.2.3
   export UPDATE_PINS_AGENT_SLACK_TAG=v4.5.6
-  export UPDATE_PINS_BUILD_MODE=success
   export UPDATE_PINS_SHELLFIRM_TAG=v8.8.8
   export UPDATE_PINS_SHELLFIRM_BUILD_MODE=no-hash
 
@@ -539,7 +468,6 @@ make_unrelated_updates_noop() {
   save_managed "$original"
   export UPDATE_PINS_HCOM_TAG=v1.2.3
   export UPDATE_PINS_AGENT_SLACK_TAG=v4.5.6
-  export UPDATE_PINS_BUILD_MODE=success
   export UPDATE_PINS_HERDR_TAG=v9.9.9
   export UPDATE_PINS_FAIL_HERDR_PREFETCH=source
 
@@ -557,7 +485,6 @@ make_unrelated_updates_noop() {
   export UPDATE_PINS_AGENT_SLACK_TAG=v4.5.6
   export UPDATE_PINS_SHELLFIRM_TAG=v8.8.8
   export UPDATE_PINS_HERDR_TAG=v9.9.9
-  export UPDATE_PINS_BUILD_MODE=success
   export UPDATE_PINS_SHELLFIRM_BUILD_MODE=success
 
   run_update_pins
@@ -566,9 +493,6 @@ make_unrelated_updates_noop() {
   [ "$(jq -r .version "$WORK/nix/pins/hcom.json")" = "1.2.3" ]
   [ "$(jq -r '.assets["aarch64-darwin"].hash' "$WORK/nix/pins/hcom.json")" = "sha256-asset-for-test" ]
   [ "$(jq -r .version "$WORK/nix/pins/agent-slack.json")" = "4.5.6" ]
-  [ "$(jq -r .version "$WORK/nix/pins/git-wt.json")" = "999.0.0" ]
-  [ "$(jq -r .srcHash "$WORK/nix/pins/git-wt.json")" = "sha256-src-for-test" ]
-  [ "$(jq -r .vendorHash "$WORK/nix/pins/git-wt.json")" = "sha256-vendor-for-test" ]
   [ "$(jq -r .version "$WORK/nix/pins/shellfirm.json")" = "8.8.8" ]
   [ "$(jq -r .srcHash "$WORK/nix/pins/shellfirm.json")" = "sha256-src-for-test" ]
   [ "$(jq -r .cargoHash "$WORK/nix/pins/shellfirm.json")" = "sha256-cargo-for-test" ]

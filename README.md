@@ -50,7 +50,7 @@ nix/
 ├── lib/           # 構成ビルダーと共有設定生成器
 ├── modules/       # home (共通) / darwin / linux / wsl (+ windows companion)
 ├── hosts/         # ホストごとのモジュール束ね
-├── packages/      # 自前パッケージ (git-wt / agent-slack / herdr / hcom / difit / drawio-headless)
+├── packages/      # nixpkgs にないパッケージの定義
 ├── overlays/      # packages/ の公開と input 由来パッケージの橋渡し (llm-agents)
 ├── pins/          # バイナリの version / hash (update-pins が更新)
 └── apps/          # pptx / markdownlint / textlint / update-pins
