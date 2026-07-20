@@ -7,30 +7,29 @@
 # 「skill ディレクトリを集め、SKILL.md を変換して配置する」だけなので自前で
 # 実装する。eval 時に読むのは flake input / リポジトリ内の純パスのみ。
 {
+  config,
   lib,
   pkgs,
   inputs,
   ...
 }:
 let
-  skills = import ./sources.nix { inherit lib inputs; };
+  externalSkills = config.dotfiles.agentSkills.externalSkills;
+  localSkillsDir = ../../../../agents/skills;
+  localSkills = lib.mapAttrs (name: _: { root = localSkillsDir + "/${name}"; }) (
+    lib.filterAttrs (_: type: type == "directory") (builtins.readDir localSkillsDir)
+  );
+  inherit (import ./policy.nix { inherit lib; })
+    defaultInheritedFrontmatterFields
+    mergeSkillDefinitions
+    ;
+  skills = mergeSkillDefinitions externalSkills localSkills;
 
   inherit (import ./frontmatter.nix { inherit lib; })
     disableCodexImplicitInvocation
     prepareSkill
     validateSkillDefinition
     ;
-
-  # Upstream frontmatter is deny-by-default. Descriptive metadata is safe to
-  # inherit globally; fields that alter tools, hooks, models, or invocation
-  # require an explicit per-skill opt-in in sources.nix.
-  defaultInheritedFrontmatterFields = [
-    "name"
-    "description"
-    "license"
-    "compatibility"
-    "metadata"
-  ];
 
   # customization や frontmatter filtering が必要な skill はコピーを作る。
   # 変更が無ければソースをそのまま symlink する。
@@ -79,5 +78,10 @@ let
     ) skillSources;
 in
 {
+  imports = [
+    ./options.nix
+    ./sources.nix
+  ];
+
   home.file = deployTo ".claude/skills" // deployTo ".agents/skills";
 }

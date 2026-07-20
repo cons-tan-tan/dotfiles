@@ -1,6 +1,6 @@
 # デプロイ対象 skill の宣言。root は SKILL.md を含むディレクトリ。
 # customization (任意) で frontmatter / body / invocation policy を変更する。
-{ lib, inputs }:
+{ lib, inputs, ... }:
 let
   inherit (inputs)
     ast-grep-skill
@@ -15,7 +15,9 @@ let
     improve-skill
     ;
 
-  externalSkills = {
+in
+{
+  dotfiles.agentSkills.externalSkills = {
     ast-grep = {
       root = "${ast-grep-skill}/ast-grep/skills/ast-grep";
     };
@@ -129,11 +131,4 @@ let
       root = "${improve-skill}/skills/improve";
     };
   };
-
-  # このリポジトリの agents/skills/ 配下は全て自動デプロイする
-  localSkillsDir = ../../../../agents/skills;
-  localSkills = lib.mapAttrs (name: _: { root = localSkillsDir + "/${name}"; }) (
-    lib.filterAttrs (_: type: type == "directory") (builtins.readDir localSkillsDir)
-  );
-in
-externalSkills // localSkills
+}

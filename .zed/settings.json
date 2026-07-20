@@ -1,0 +1,18 @@
+{
+  "languages": {
+    "Nix": {
+      "language_servers": ["nixd", "!nil"]
+    }
+  },
+  "lsp": {
+    "nixd": {
+      "settings": {
+        "options": {
+          "home-manager": {
+            "expr": "(builtins.getFlake (builtins.toString ./.)).homeConfigurations.\"constantan@wsl-x86_64\".options"
+          }
+        }
+      }
+    }
+  }
+}

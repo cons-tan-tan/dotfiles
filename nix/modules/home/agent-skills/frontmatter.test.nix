@@ -3,16 +3,11 @@
 { lib }:
 let
   fm = import ./frontmatter.nix { inherit lib; };
+  policy = import ./policy.nix { inherit lib; };
 
   withFm = "---\nname: demo\n---\nbody line\n";
   noFm = "body only\n---\nnot frontmatter\n";
-  defaultInheritedFields = [
-    "name"
-    "description"
-    "license"
-    "compatibility"
-    "metadata"
-  ];
+  defaultInheritedFields = policy.defaultInheritedFrontmatterFields;
   prepare =
     customization: original:
     fm.prepareSkill {
@@ -898,6 +893,61 @@ in
         disableAutomaticInvocation = true;
       }
     );
+    expected = true;
+  };
+
+  testValidateSkillDefinitionIgnoresNormalizedEmptyCustomization = {
+    expr =
+      (fm.validateSkillDefinition "demo" {
+        root = ./.;
+        customization = {
+          frontmatter = {
+            set = { };
+            additionalInheritedFields = [ ];
+            remove = [ ];
+          };
+          body = {
+            prepend = "";
+            replacements = [ ];
+          };
+          disableAutomaticInvocation = false;
+        };
+      }).hasCustomization;
+    expected = false;
+  };
+
+  testValidateSkillDefinitionDetectsNormalizedCustomization = {
+    expr =
+      (fm.validateSkillDefinition "demo" {
+        root = ./.;
+        customization = {
+          frontmatter = {
+            set = { };
+            additionalInheritedFields = [ "hidden" ];
+            remove = [ ];
+          };
+          body = {
+            prepend = "";
+            replacements = [ ];
+          };
+          disableAutomaticInvocation = false;
+        };
+      }).hasCustomization;
+    expected = true;
+  };
+
+  testMergeSkillDefinitionsKeepsDistinctSkills = {
+    expr = builtins.attrNames (
+      policy.mergeSkillDefinitions { external.root = ./.; } { local.root = ./.; }
+    );
+    expected = [
+      "external"
+      "local"
+    ];
+  };
+
+  testMergeSkillDefinitionsRejectsCollision = {
+    expr = failsToEvaluate (policy.mergeSkillDefinitions { demo.root = ./.; } { demo.root = ./.; });
     expected = true;
   };
 

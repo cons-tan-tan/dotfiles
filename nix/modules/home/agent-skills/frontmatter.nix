@@ -404,6 +404,7 @@ rec {
         "root"
         "customization"
       ] value;
+      customization = validateCustomization "skill ${name} customization" (skill.customization or { });
     in
     assert lib.assertMsg (skill ? root) "skill ${name} definition requires root";
     assert lib.assertMsg (
@@ -411,8 +412,14 @@ rec {
     ) "skill ${name} definition root must be a path or string";
     {
       inherit (skill) root;
-      customization = validateCustomization "skill ${name} customization" (skill.customization or { });
-      hasCustomization = skill ? customization;
+      inherit customization;
+      hasCustomization =
+        builtins.attrNames customization.frontmatter.set != [ ]
+        || customization.frontmatter.additionalInheritedFields != [ ]
+        || customization.frontmatter.remove != [ ]
+        || customization.body.prepend != ""
+        || customization.body.replacements != [ ]
+        || customization.disableAutomaticInvocation;
     };
 
   setFrontmatterValues =
