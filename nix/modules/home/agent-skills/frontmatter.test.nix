@@ -12,7 +12,6 @@ let
     "license"
     "compatibility"
     "metadata"
-    "hidden"
   ];
   prepare =
     customization: original:
@@ -302,7 +301,10 @@ in
       (prepare
         {
           frontmatter = {
-            additionalInheritedFields = [ "allowed-tools" ];
+            additionalInheritedFields = [
+              "allowed-tools"
+              "hidden"
+            ];
             remove = [ "license" ];
             set.description = "New description.";
           };
@@ -340,6 +342,45 @@ in
       ---
       NOTE
       new body
+    '';
+  };
+
+  testPrepareSkillDropsHiddenByDefault = {
+    expr =
+      (prepare { } ''
+        ---
+        name: demo
+        description: Demo.
+        hidden: true
+        ---
+        body
+      '').skillMd;
+    expected = ''
+      ---
+      name: demo
+      description: Demo.
+      ---
+      body
+    '';
+  };
+
+  testPrepareSkillInheritsHiddenWhenExplicitlyAllowed = {
+    expr =
+      (prepare { frontmatter.additionalInheritedFields = [ "hidden" ]; } ''
+        ---
+        name: demo
+        description: Demo.
+        hidden: true
+        ---
+        body
+      '').skillMd;
+    expected = ''
+      ---
+      name: demo
+      description: Demo.
+      hidden: true
+      ---
+      body
     '';
   };
 

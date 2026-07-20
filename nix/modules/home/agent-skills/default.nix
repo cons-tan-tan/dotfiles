@@ -30,7 +30,6 @@ let
     "license"
     "compatibility"
     "metadata"
-    "hidden"
   ];
 
   # customization や frontmatter filtering が必要な skill はコピーを作る。

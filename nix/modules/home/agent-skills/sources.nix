@@ -22,6 +22,7 @@ let
 
     agent-browser = {
       root = "${agent-browser-skill}/skills/agent-browser";
+      customization.frontmatter.additionalInheritedFields = [ "hidden" ];
       customization.frontmatter.set.description = "Controls headless browser sessions through the agent-browser CLI when tasks require scripted navigation, form filling, clicks, authentication, screenshots, data extraction, or web application testing.";
     };
 
