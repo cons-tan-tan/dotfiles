@@ -15,6 +15,7 @@ Other relevant gates:
 - `reuse lint` for licensing or provenance changes.
 - `bats tests/` for shell scripts and wrappers.
 - `nix run .#markdownlint` / `nix run .#textlint` for Markdown or prose changes.
+- Pure Nix evaluation tests use `*.test.nix` under `nix/`. Git flakes only discover tracked files, so add new tests to the index before the standard flake check; use `nix flake check path:.` while developing untracked tests.
 
 ## Rules
 
