@@ -7,8 +7,8 @@
 let
   # 生成は package (hcom+codex を実行) に任せ参照のみ — Codex の内部仕様 (hash
   # アルゴリズム等) をこちらで再実装しないため。
-  hcomCodex = pkgs.dotfilesPackages.hcom-codex-hooks;
-  herdrCodexIntegration = pkgs.dotfilesPackages.herdr-codex-integration;
+  hcomCodex = pkgs.dotfilesPackages.hcom.integrations.codexHooks;
+  herdrCodexIntegration = pkgs.dotfilesPackages.herdr.integrations.codex;
 
   codexHome = "${config.home.homeDirectory}/.codex";
   configPath = "${codexHome}/config.toml";
@@ -134,7 +134,7 @@ in
   # Codex では通常 skill として配置し、skills.config だけを wrapper から反転する。
   # Codex の skill scanner は symlink ファイルを SKILL.md として読まないが、
   # symlink ディレクトリは辿るため、recursive 展開せず directory symlink にする。
-  home.file.".codex/skills/herdr".source = pkgs.dotfilesPackages.herdr-agent-skill;
+  home.file.".codex/skills/herdr".source = pkgs.dotfilesPackages.herdr.agent.skill;
 
   # programs.codex は config.toml を read-only symlink で置き Codex の動的書き込み
   # ([projects]/[notice]/[tui]) を壊すため使わない。候補で検証してから mv するのは

@@ -5,10 +5,12 @@ let
     "agent-browser"
     "agent-slack"
     "difit"
-    "hcom"
-    "herdr"
     "hunk"
     "shellfirm"
+  ];
+  packageValues = (map (name: builtins.getAttr name local) commonNames) ++ [
+    local.hcom.package
+    local.herdr.package
   ];
 in
 {
@@ -23,7 +25,7 @@ in
   };
 
   testRepresentativePackagesAreDerivations = {
-    expr = builtins.all (name: pkgs.lib.isDerivation (builtins.getAttr name local)) commonNames;
+    expr = builtins.all pkgs.lib.isDerivation packageValues;
     expected = true;
   };
 

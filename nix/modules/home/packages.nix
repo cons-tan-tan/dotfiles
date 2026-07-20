@@ -66,7 +66,7 @@
       agent-browser
       agent-slack
       difit
-      hcom
+      hcom.package
       shellfirm
     ]);
 }

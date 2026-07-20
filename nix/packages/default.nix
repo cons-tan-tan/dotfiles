@@ -5,10 +5,13 @@
   pkgs,
 }:
 let
-  hcomPackages = pkgs.callPackage ./hcom {
+  hcom = import ./hcom {
+    inherit (pkgs) callPackage;
     hcomSource = inputs.hcom-src;
   };
-  herdrPackages = pkgs.callPackage ./herdr { };
+  herdr = import ./herdr {
+    inherit (pkgs) callPackage;
+  };
 in
 {
   agent-browser = pkgs.callPackage ./agent-browser {
@@ -25,22 +28,7 @@ in
   };
   shellfirm = pkgs.callPackage ./shellfirm { };
 
-  inherit (hcomPackages)
-    hcom
-    hcom-claude-hooks
-    hcom-codex-hooks
-    ;
-
-  inherit (herdrPackages)
-    herdr
-    herdr-agent-plugin
-    herdr-agent-skill
-    herdr-claude-integration
-    herdr-codex-integration
-    herdr-codex-marketplace
-    herdr-opencode-integration
-    herdr-pi-integration
-    ;
+  inherit hcom herdr;
 }
 // lib.optionalAttrs hostPlatform.isLinux {
   drawio-headless = pkgs.callPackage ./drawio-headless { };

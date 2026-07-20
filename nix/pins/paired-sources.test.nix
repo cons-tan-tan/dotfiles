@@ -21,6 +21,6 @@ in
 
   testHcomSkillMatchesPackageVersion = {
     expr = lockedRef "hcom-src";
-    expected = "v${pkgs.dotfilesPackages.hcom.version}";
+    expected = "v${pkgs.dotfilesPackages.hcom.package.version}";
   };
 }

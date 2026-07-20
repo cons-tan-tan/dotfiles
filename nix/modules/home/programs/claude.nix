@@ -9,7 +9,7 @@ let
   inherit (config.my) dotfilesDir;
 
   claudeHome = "${config.home.homeDirectory}/.claude";
-  herdrClaudeIntegration = pkgs.dotfilesPackages.herdr-claude-integration;
+  herdrClaudeIntegration = pkgs.dotfilesPackages.herdr.integrations.claude;
   herdrHookPath = "${claudeHome}/hooks/herdr-agent-state.sh";
   herdrHookPathEnv = lib.makeBinPath [
     pkgs.coreutils
@@ -28,7 +28,7 @@ let
       #! ${pkgs.bash}/bin/bash -e
       export PATH=${pkgs.nodejs}/bin:\$PATH
       if [ "\''${HERDR_ENV:-}" = "1" ]; then
-        exec -a "\$0" "$out/bin/.claude-wrapped-base" --effort xhigh --plugin-dir ${pkgs.dotfilesPackages.herdr-agent-plugin} "\$@"
+        exec -a "\$0" "$out/bin/.claude-wrapped-base" --effort xhigh --plugin-dir ${pkgs.dotfilesPackages.herdr.agent.plugin} "\$@"
       fi
 
       exec -a "\$0" "$out/bin/.claude-wrapped-base" --effort xhigh "\$@"
@@ -46,7 +46,7 @@ let
   baseSettingsFile = jsonFormat.generate "claude-settings-base.json" (
     settingsLib.mkSettings {
       isDarwin = config.my.isDarwin;
-      hcomPath = "${pkgs.dotfilesPackages.hcom}/bin/hcom";
+      hcomPath = "${pkgs.dotfilesPackages.hcom.package}/bin/hcom";
     }
   );
 
@@ -78,7 +78,7 @@ let
           $base
           | .permissions.allow += $hcom.permissions.allow
           | .hooks = merge_hooks(($hcom.hooks // {}); ($base.hooks // {}); ($herdr.hooks // {}))
-        ' ${baseSettingsFile} ${pkgs.dotfilesPackages.hcom-claude-hooks} ${herdrSettingsFile} > $out
+        ' ${baseSettingsFile} ${pkgs.dotfilesPackages.hcom.integrations.claudeHooks} ${herdrSettingsFile} > $out
       '';
 
   mergedSettingsFile = settingsValidator.validate "claude-settings.json" mergedSettingsRaw;
