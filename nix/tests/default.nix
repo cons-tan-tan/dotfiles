@@ -81,6 +81,24 @@ let
   evalChecks = lib.listToAttrs (map mkEvalCheck testFiles);
 
   fixedChecks = {
+    package-smoke-tests =
+      pkgs.runCommand "package-smoke-tests"
+        {
+          nativeBuildInputs = [
+            pkgs.agent-browser
+            pkgs.agent-slack
+          ];
+        }
+        ''
+          agent_browser_version="$(agent-browser --version 2>&1)"
+          test -n "$agent_browser_version"
+
+          agent_slack_version="$(agent-slack --version 2>&1)"
+          test -n "$agent_slack_version"
+
+          touch "$out"
+        '';
+
     merge-py-tests =
       pkgs.runCommand "merge-py-tests"
         {
