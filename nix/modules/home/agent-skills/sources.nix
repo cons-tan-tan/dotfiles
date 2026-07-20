@@ -1,5 +1,7 @@
 # デプロイ対象 skill の定義。root は SKILL.md を含むディレクトリ、transform
 # (任意) は SKILL.md 全文を受け取り書き換える関数。
+# additionalInheritedFrontmatterFields (任意) で default policy にない
+# upstream field をskill単位で明示的に許可する。
 { lib, inputs }:
 let
   inherit (inputs)
@@ -17,6 +19,7 @@ let
 
   inherit (import ./frontmatter.nix { inherit lib; })
     replaceFrontmatter
+    setFrontmatterField
     injectAfterFrontmatter
     ;
 
@@ -34,18 +37,9 @@ let
 
     agent-browser = {
       root = "${agent-browser-skill}/skills/agent-browser";
-      # Keep discovery metadata concise and free of tool-selection policy;
-      # precedence belongs to each agent's configuration.
-      transform = replaceFrontmatter ''
-        ---
-        name: agent-browser
-        description: |
-          Controls headless browser sessions through the agent-browser CLI when
-          tasks require scripted navigation, form filling, clicks,
-          authentication, screenshots, data extraction, or web application
-          testing.
-        ---
-      '';
+      # Override only discovery wording. The central frontmatter policy keeps
+      # safe upstream metadata such as hidden while dropping allowed-tools.
+      transform = setFrontmatterField "description" "Controls headless browser sessions through the agent-browser CLI when tasks require scripted navigation, form filling, clicks, authentication, screenshots, data extraction, or web application testing.";
     };
 
     # バイナリ本体は packages/agent-slack (skill doc とは別 input)

@@ -64,6 +64,121 @@ lib.runTests {
     '';
   };
 
+  testSetFrontmatterFieldReplacesBlockValue = {
+    expr = fm.setFrontmatterField "description" "New description." ''
+      ---
+      name: demo
+      description: |
+        Old description.
+        More old text.
+      license: MIT
+      ---
+      body
+    '';
+    expected = ''
+      ---
+      name: demo
+      description: New description.
+      license: MIT
+      ---
+      body
+    '';
+  };
+
+  testFilterFrontmatterFields = {
+    expr =
+      fm.filterFrontmatterFields
+        [
+          "name"
+          "description"
+          "license"
+          "compatibility"
+          "metadata"
+          "hidden"
+        ]
+        ''
+          ---
+          name: demo
+          description: |
+            Multi-line description.
+          license: MIT
+          compatibility: Requires git and network access
+          metadata:
+            author: Example
+          allowed-tools: Bash(example:*)
+          hooks:
+            PreToolUse: echo unsafe
+          hidden: true
+          ---
+          body
+        '';
+    expected = ''
+      ---
+      name: demo
+      description: |
+        Multi-line description.
+      license: MIT
+      compatibility: Requires git and network access
+      metadata:
+        author: Example
+      hidden: true
+      ---
+      body
+    '';
+  };
+
+  testFilterFrontmatterFieldsAllowsExplicitField = {
+    expr =
+      fm.filterFrontmatterFields
+        [
+          "name"
+          "description"
+          "allowed-tools"
+        ]
+        ''
+          ---
+          name: demo
+          description: Demo.
+          allowed-tools: Bash(example:*)
+          hidden: true
+          ---
+          body
+        '';
+    expected = ''
+      ---
+      name: demo
+      description: Demo.
+      allowed-tools: Bash(example:*)
+      ---
+      body
+    '';
+  };
+
+  # YAML merge key など、許可fieldの継続行ではない構文は保持しない。
+  testFilterFrontmatterFieldsDropsUnknownTopLevelSyntax = {
+    expr = fm.filterFrontmatterFields [ "name" "description" ] ''
+      ---
+      name: demo
+      description: Demo.
+      <<: *defaults
+        allowed-tools: Bash(example:*)
+      ---
+      body
+    '';
+    expected = ''
+      ---
+      name: demo
+      description: Demo.
+      ---
+      body
+    '';
+  };
+
+  testFilterFrontmatterFieldsWithoutFrontmatter = {
+    expr = fm.filterFrontmatterFields [ "name" "description" ] noFm;
+    expected = noFm;
+  };
+
   testCodexPolicyCreatedWhenMissingFile = {
     expr = fm.disableCodexImplicitInvocation "";
     expected = ''

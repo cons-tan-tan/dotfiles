@@ -18,7 +18,20 @@ let
   inherit (import ./frontmatter.nix { inherit lib; })
     disableCodexImplicitInvocation
     disableModelInvocation
+    filterFrontmatterFields
     ;
+
+  # Upstream frontmatter is deny-by-default. Descriptive metadata is safe to
+  # inherit globally; fields that alter tools, hooks, models, or invocation
+  # require an explicit per-skill opt-in in sources.nix.
+  defaultInheritedFrontmatterFields = [
+    "name"
+    "description"
+    "license"
+    "compatibility"
+    "metadata"
+    "hidden"
+  ];
 
   # transform や追加ファイルが必要な skill はコピーを作る。無ければソースを
   # そのまま symlink する。
@@ -27,15 +40,19 @@ let
     let
       disableAutomaticInvocation = skill.disableAutomaticInvocation or false;
       transform = skill.transform or lib.id;
-      skillMd = (if disableAutomaticInvocation then disableModelInvocation else lib.id) (
-        transform (builtins.readFile (skill.root + "/SKILL.md"))
-      );
+      originalSkillMd = builtins.readFile (skill.root + "/SKILL.md");
+      transformedSkillMd = transform originalSkillMd;
+      inheritedFrontmatterFields =
+        defaultInheritedFrontmatterFields ++ (skill.additionalInheritedFrontmatterFields or [ ]);
+      filteredSkillMd = filterFrontmatterFields inheritedFrontmatterFields transformedSkillMd;
+      skillMd = (if disableAutomaticInvocation then disableModelInvocation else lib.id) (filteredSkillMd);
       sourceOpenaiYamlPath = skill.root + "/agents/openai.yaml";
       openaiYaml = disableCodexImplicitInvocation (
         if builtins.pathExists sourceOpenaiYamlPath then builtins.readFile sourceOpenaiYamlPath else ""
       );
+      frontmatterWasFiltered = filteredSkillMd != transformedSkillMd;
     in
-    if (skill ? transform) || disableAutomaticInvocation then
+    if (skill ? transform) || disableAutomaticInvocation || frontmatterWasFiltered then
       pkgs.runCommandLocal "skill-${name}"
         (
           {

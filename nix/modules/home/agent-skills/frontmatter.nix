@@ -22,24 +22,85 @@ rec {
       s = splitFrontmatter original;
       fieldLine = "${key}: ${value}";
       hasField = line: lib.hasPrefix "${key}:" line;
-      updateLine = line: if hasField line then fieldLine else line;
     in
     if s.frontmatter == "" then
       "---\n${fieldLine}\n---\n${s.body}"
     else
       let
         lines = lib.splitString "\n" s.frontmatter;
-        updatedLines =
-          if lib.any hasField lines then
-            map updateLine lines
+        hasExistingField = lib.any hasField lines;
+        updateState =
+          state: line:
+          let
+            isContinuation = line == "" || lib.hasPrefix " " line || lib.hasPrefix "\t" line;
+          in
+          if state.skipContinuation && isContinuation then
+            state
+          else if hasField line then
+            {
+              skipContinuation = true;
+              lines = state.lines ++ [ fieldLine ];
+            }
           else
-            [
-              (builtins.head lines)
-              fieldLine
-            ]
-            ++ builtins.tail lines;
+            {
+              skipContinuation = false;
+              lines = state.lines ++ [ line ];
+            };
+        updatedLinesWithState =
+          if hasExistingField then
+            lib.foldl' updateState {
+              skipContinuation = false;
+              lines = [ ];
+            } lines
+          else
+            {
+              skipContinuation = false;
+              lines = [
+                (builtins.head lines)
+                fieldLine
+              ]
+              ++ builtins.tail lines;
+            };
+        updatedLines = updatedLinesWithState.lines;
       in
       lib.concatStringsSep "\n" updatedLines + s.body;
+
+  # top-level frontmatter のうち許可した field とその継続行だけを残す。
+  # 未知の YAML 構文を field の継続として扱わないことで fail closed にする。
+  filterFrontmatterFields =
+    allowedFields: original:
+    let
+      s = splitFrontmatter original;
+      frontmatterContent = lib.removeSuffix "\n---\n" (lib.removePrefix "---\n" s.frontmatter);
+      lines = lib.splitString "\n" frontmatterContent;
+      filterState =
+        state: line:
+        let
+          fieldMatch = builtins.match "^([A-Za-z0-9_-]+):.*$" line;
+          isField = fieldMatch != null;
+          isIndented = lib.hasPrefix " " line || lib.hasPrefix "\t" line;
+          isIgnorableTopLevel = line == "" || lib.hasPrefix "#" line;
+          keep =
+            if isField then
+              builtins.elem (builtins.head fieldMatch) allowedFields
+            else if !isIndented && !isIgnorableTopLevel then
+              false
+            else
+              state.keep;
+        in
+        {
+          inherit keep;
+          lines = state.lines ++ lib.optional keep line;
+        };
+      filtered = lib.foldl' filterState {
+        keep = false;
+        lines = [ ];
+      } lines;
+    in
+    if s.frontmatter == "" then
+      original
+    else
+      "---\n${lib.concatStringsSep "\n" filtered.lines}\n---\n${s.body}";
 
   disableModelInvocation = setFrontmatterField "disable-model-invocation" "true";
 
