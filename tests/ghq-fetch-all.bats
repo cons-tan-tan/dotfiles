@@ -1,5 +1,7 @@
 #!/usr/bin/env bats
 
+source "$BATS_TEST_DIRNAME/test-helper.bash"
+
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
   SCRIPT="$REPO_ROOT/nix/packages/ghq-fetch-all/ghq-fetch-all.sh"
@@ -8,24 +10,20 @@ setup() {
   export PATH="$TEST_TMPDIR/bin:$PATH"
   mkdir -p "$TEST_TMPDIR/bin"
 
-  cat >"$TEST_TMPDIR/bin/ghq" <<'SH'
-#!/usr/bin/env bash
+  write_bash_stub "$TEST_TMPDIR/bin/ghq" <<'SH'
 printf '%s\n' '/tmp/repo one' '/tmp/repo-two'
 SH
-  cat >"$TEST_TMPDIR/bin/timeout" <<'SH'
-#!/usr/bin/env bash
+  write_bash_stub "$TEST_TMPDIR/bin/timeout" <<'SH'
 printf 'timeout:%s\n' "$*" >>"$TEST_TMPDIR/log"
 shift
 exec "$@"
 SH
-  cat >"$TEST_TMPDIR/bin/git" <<'SH'
-#!/usr/bin/env bash
+  write_bash_stub "$TEST_TMPDIR/bin/git" <<'SH'
 printf 'git:%s\n' "$*" >>"$TEST_TMPDIR/log"
 if [ "$2" = "/tmp/repo one" ]; then
   exit 1
 fi
 SH
-  chmod +x "$TEST_TMPDIR/bin/ghq" "$TEST_TMPDIR/bin/timeout" "$TEST_TMPDIR/bin/git"
 }
 
 teardown() {

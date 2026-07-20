@@ -1,17 +1,17 @@
 #!/usr/bin/env bats
 
+source "$BATS_TEST_DIRNAME/test-helper.bash"
+
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
   SCRIPT="$REPO_ROOT/nix/packages/claude-code/claude-wrapper.sh"
   TEST_TMPDIR="$(mktemp -d)"
   export TEST_TMPDIR
 
-  cat >"$TEST_TMPDIR/claude" <<'SH'
-#!/usr/bin/env bash
+  write_bash_stub "$TEST_TMPDIR/claude" <<'SH'
 printf 'path:%s\n' "$PATH" >"$TEST_TMPDIR/result"
 printf 'arg:%s\n' "$@" >>"$TEST_TMPDIR/result"
 SH
-  chmod +x "$TEST_TMPDIR/claude"
 }
 
 teardown() {

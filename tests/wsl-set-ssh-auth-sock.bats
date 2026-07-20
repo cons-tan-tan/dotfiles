@@ -1,21 +1,20 @@
 #!/usr/bin/env bats
 
+source "$BATS_TEST_DIRNAME/test-helper.bash"
+
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
   SCRIPT="$REPO_ROOT/nix/packages/wsl-set-ssh-auth-sock/set-ssh-auth-sock.sh"
   TEST_TMPDIR="$(mktemp -d)"
   export TEST_TMPDIR
 
-  cat >"$TEST_TMPDIR/gpgconf" <<'SH'
-#!/usr/bin/env bash
+  write_bash_stub "$TEST_TMPDIR/gpgconf" <<'SH'
 echo called >>"$TEST_TMPDIR/gpgconf.log"
 printf '%s\n' /run/user/1000/gnupg/S.gpg-agent.ssh
 SH
-  cat >"$TEST_TMPDIR/systemctl" <<'SH'
-#!/usr/bin/env bash
+  write_bash_stub "$TEST_TMPDIR/systemctl" <<'SH'
 printf 'args:%s\nsocket:%s\nagent:%s\n' "$*" "${SSH_AUTH_SOCK:-}" "${SSH_AGENT_PID:-}" >"$TEST_TMPDIR/systemctl.log"
 SH
-  chmod +x "$TEST_TMPDIR/gpgconf" "$TEST_TMPDIR/systemctl"
 }
 
 teardown() {

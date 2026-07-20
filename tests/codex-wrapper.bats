@@ -1,16 +1,16 @@
 #!/usr/bin/env bats
 
+source "$BATS_TEST_DIRNAME/test-helper.bash"
+
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
   SCRIPT="$REPO_ROOT/nix/packages/codex/codex-wrapper.sh"
   TEST_TMPDIR="$(mktemp -d)"
   export TEST_TMPDIR
 
-  cat >"$TEST_TMPDIR/codex" <<'SH'
-#!/usr/bin/env bash
+  write_bash_stub "$TEST_TMPDIR/codex" <<'SH'
 printf 'arg:%s\n' "$@" >"$TEST_TMPDIR/result"
 SH
-  chmod +x "$TEST_TMPDIR/codex"
 }
 
 teardown() {
