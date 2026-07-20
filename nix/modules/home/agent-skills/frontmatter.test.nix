@@ -14,6 +14,13 @@ let
       name = "demo";
       inherit defaultInheritedFields customization;
     } original;
+  prepareStrict =
+    customization: original:
+    fm.prepareSkill {
+      name = "demo";
+      inherit defaultInheritedFields customization;
+      requireExplicitFieldDecisions = true;
+    } original;
   failsToEvaluate = value: !(builtins.tryEval (builtins.deepSeq value true)).success;
 in
 {
@@ -216,6 +223,51 @@ in
     '';
   };
 
+  testFrontmatterFieldNamesListsTopLevelFields = {
+    expr = fm.frontmatterFieldNames ''
+      ---
+      name: demo
+      description: |
+        Demo skill.
+      metadata:
+        author: Example
+      allowed-tools: Bash(example:*)
+      # comment
+      hidden: true
+      ---
+      body
+    '';
+    expected = [
+      "name"
+      "description"
+      "metadata"
+      "allowed-tools"
+      "hidden"
+    ];
+  };
+
+  testFrontmatterFieldNamesAllowsLeadingWhitespaceAndComments = {
+    expr = fm.frontmatterFieldNames "---\n  \n  # comment\nname: demo\ndescription: Demo.\n---\nbody\n";
+    expected = [
+      "name"
+      "description"
+    ];
+  };
+
+  testFrontmatterFieldNamesRejectsUnsupportedTopLevelSyntax = {
+    expr = failsToEvaluate (
+      fm.frontmatterFieldNames ''
+        ---
+        name: demo
+        description: Demo.
+        <<: *defaults
+        ---
+        body
+      ''
+    );
+    expected = true;
+  };
+
   # YAML merge key など、許可fieldの継続行ではない構文は保持しない。
   testFilterFrontmatterFieldsDropsUnknownTopLevelSyntax = {
     expr = fm.filterFrontmatterFields [ "name" "description" ] ''
@@ -296,11 +348,11 @@ in
       (prepare
         {
           frontmatter = {
-            additionalInheritedFields = [
+            inheritFields = [
               "allowed-tools"
               "hidden"
             ];
-            remove = [ "license" ];
+            excludeFields = [ "license" ];
             set.description = "New description.";
           };
           body = {
@@ -361,7 +413,7 @@ in
 
   testPrepareSkillInheritsHiddenWhenExplicitlyAllowed = {
     expr =
-      (prepare { frontmatter.additionalInheritedFields = [ "hidden" ]; } ''
+      (prepare { frontmatter.inheritFields = [ "hidden" ]; } ''
         ---
         name: demo
         description: Demo.
@@ -377,6 +429,135 @@ in
       ---
       body
     '';
+  };
+
+  testPrepareSkillStrictModeAcceptsDefaultFields = {
+    expr =
+      (prepareStrict { } ''
+        ---
+        name: demo
+        description: Demo.
+        ---
+        body
+      '').skillMd;
+    expected = ''
+      ---
+      name: demo
+      description: Demo.
+      ---
+      body
+    '';
+  };
+
+  testPrepareSkillStrictModeRejectsUnclassifiedField = {
+    expr = failsToEvaluate (
+      prepareStrict { } ''
+        ---
+        name: demo
+        description: Demo.
+        allowed-tools: Bash(example:*)
+        ---
+        body
+      ''
+    );
+    expected = true;
+  };
+
+  testPrepareSkillStrictModeRejectsNewUpstreamField = {
+    expr = failsToEvaluate (
+      prepareStrict
+        {
+          frontmatter = {
+            inheritFields = [ "hidden" ];
+            excludeFields = [ "allowed-tools" ];
+          };
+        }
+        ''
+          ---
+          name: demo
+          description: Demo.
+          allowed-tools: Bash(example:*)
+          hidden: true
+          hooks:
+            PreToolUse: echo unsafe
+          ---
+          body
+        ''
+    );
+    expected = true;
+  };
+
+  testPrepareSkillStrictModeAcceptsExplicitExclusion = {
+    expr =
+      (prepareStrict { frontmatter.excludeFields = [ "allowed-tools" ]; } ''
+        ---
+        name: demo
+        description: Demo.
+        allowed-tools: Bash(example:*)
+        ---
+        body
+      '').skillMd;
+    expected = ''
+      ---
+      name: demo
+      description: Demo.
+      ---
+      body
+    '';
+  };
+
+  testPrepareSkillStrictModeAcceptsExplicitInheritance = {
+    expr =
+      (prepareStrict { frontmatter.inheritFields = [ "hidden" ]; } ''
+        ---
+        name: demo
+        description: Demo.
+        hidden: true
+        ---
+        body
+      '').skillMd;
+    expected = ''
+      ---
+      name: demo
+      description: Demo.
+      hidden: true
+      ---
+      body
+    '';
+  };
+
+  testPrepareSkillRejectsConflictingFieldDecisions = {
+    expr = failsToEvaluate (
+      prepareStrict
+        {
+          frontmatter = {
+            inheritFields = [ "hidden" ];
+            excludeFields = [ "hidden" ];
+          };
+        }
+        ''
+          ---
+          name: demo
+          description: Demo.
+          hidden: true
+          ---
+          body
+        ''
+    );
+    expected = true;
+  };
+
+  testPrepareSkillRejectsStaleInheritedFieldDecision = {
+    expr = failsToEvaluate (
+      prepareStrict { frontmatter.inheritFields = [ "hidden" ]; } ''
+        ---
+        name: demo
+        description: Demo.
+        ---
+        body
+      ''
+    );
+    expected = true;
   };
 
   testPrepareSkillRejectsMissingFrontmatter = {
@@ -850,9 +1031,9 @@ in
     expected = true;
   };
 
-  testPrepareSkillRejectsRequiredFieldRemoval = {
+  testPrepareSkillRejectsRequiredFieldExclusion = {
     expr = failsToEvaluate (
-      prepare { frontmatter.remove = [ "description" ]; } ''
+      prepare { frontmatter.excludeFields = [ "description" ]; } ''
         ---
         name: demo
         description: Demo.
@@ -863,15 +1044,37 @@ in
     expected = true;
   };
 
-  testPrepareSkillRejectsUnknownRemovedField = {
+  testPrepareSkillRejectsUnknownExcludedField = {
     expr = failsToEvaluate (
-      prepare { frontmatter.remove = [ "allowed-tools" ]; } ''
+      prepare { frontmatter.excludeFields = [ "allowed-tools" ]; } ''
         ---
         name: demo
         description: Demo.
         ---
         body
       ''
+    );
+    expected = true;
+  };
+
+  testPrepareSkillRejectsLegacyFieldDecisionKeys = {
+    expr = failsToEvaluate (
+      prepare
+        {
+          frontmatter = {
+            additionalInheritedFields = [ "hidden" ];
+            remove = [ "allowed-tools" ];
+          };
+        }
+        ''
+          ---
+          name: demo
+          description: Demo.
+          allowed-tools: Bash(example:*)
+          hidden: true
+          ---
+          body
+        ''
     );
     expected = true;
   };
@@ -903,8 +1106,8 @@ in
         customization = {
           frontmatter = {
             set = { };
-            additionalInheritedFields = [ ];
-            remove = [ ];
+            inheritFields = [ ];
+            excludeFields = [ ];
           };
           body = {
             prepend = "";
@@ -923,8 +1126,8 @@ in
         customization = {
           frontmatter = {
             set = { };
-            additionalInheritedFields = [ "hidden" ];
-            remove = [ ];
+            inheritFields = [ "hidden" ];
+            excludeFields = [ ];
           };
           body = {
             prepend = "";

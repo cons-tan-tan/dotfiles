@@ -13,7 +13,7 @@ let
     {
       dotfiles.agentSkills.externalSkills.demo = {
         root = ./.;
-        customization.frontmatter.additionalInheritedFields = [ "hidden" ];
+        customization.frontmatter.inheritFields = [ "hidden" ];
         customization.body.replacements = [
           {
             from = "first";
@@ -24,7 +24,7 @@ let
     }
     {
       dotfiles.agentSkills.externalSkills.demo.customization = {
-        frontmatter.additionalInheritedFields = [ "allowed-tools" ];
+        frontmatter.inheritFields = [ "allowed-tools" ];
         frontmatter.set.description = "Demo skill.";
         body.replacements = [
           {
@@ -51,11 +51,11 @@ in
       customization = {
         frontmatter = {
           set.description = "Demo skill.";
-          additionalInheritedFields = [
+          inheritFields = [
             "hidden"
             "allowed-tools"
           ];
-          remove = [ ];
+          excludeFields = [ ];
         };
         body = {
           prepend = "";
@@ -88,8 +88,8 @@ in
       ];
       frontmatter = lib.all (name: builtins.hasAttr name frontmatterOptions) [
         "set"
-        "additionalInheritedFields"
-        "remove"
+        "inheritFields"
+        "excludeFields"
       ];
       body = lib.all (name: builtins.hasAttr name bodyOptions) [
         "prepend"
@@ -151,7 +151,7 @@ in
       {
         dotfiles.agentSkills.externalSkills.demo = {
           root = ./.;
-          customization.frontmatter.additionalInheritedFields = [ "allowed tools" ];
+          customization.frontmatter.inheritFields = [ "allowed tools" ];
         };
       }
     ];
@@ -170,12 +170,12 @@ in
     expected = true;
   };
 
-  testExternalSkillOptionRejectsRequiredFieldRemoval = {
+  testExternalSkillOptionRejectsRequiredFieldExclusion = {
     expr = failsToEvaluate [
       {
         dotfiles.agentSkills.externalSkills.demo = {
           root = ./.;
-          customization.frontmatter.remove = [ "description" ];
+          customization.frontmatter.excludeFields = [ "description" ];
         };
       }
     ];
@@ -235,6 +235,21 @@ in
         dotfiles.agentSkills.externalSkills.demo = {
           root = ./.;
           customization.frontmatter."inherit" = [ "allowed-tools" ];
+        };
+      }
+    ];
+    expected = true;
+  };
+
+  testExternalSkillOptionRejectsLegacyFrontmatterFields = {
+    expr = failsToEvaluate [
+      {
+        dotfiles.agentSkills.externalSkills.demo = {
+          root = ./.;
+          customization.frontmatter = {
+            additionalInheritedFields = [ "hidden" ];
+            remove = [ "allowed-tools" ];
+          };
         };
       }
     ];

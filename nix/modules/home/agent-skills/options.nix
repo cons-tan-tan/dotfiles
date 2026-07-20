@@ -10,7 +10,7 @@ let
       builtins.attrNames values
     )) "frontmatter.set contains an invalid field name";
     values;
-  validateRemovableFields =
+  validateExcludedFields =
     fields:
     assert lib.assertMsg (lib.all (
       field:
@@ -18,7 +18,7 @@ let
         "name"
         "description"
       ]
-    ) fields) "frontmatter.remove cannot remove required name or description fields";
+    ) fields) "frontmatter.excludeFields cannot exclude required name or description fields";
     fields;
   validateSkillNames =
     skills:
@@ -52,16 +52,16 @@ let
               apply = validateSetFieldNames;
               description = "Frontmatter fields to set using JSON-encoded Nix values.";
             };
-            additionalInheritedFields = mkOption {
+            inheritFields = mkOption {
               default = [ ];
               type = types.listOf frontmatterFieldType;
-              description = "Upstream frontmatter fields explicitly allowed for this skill.";
+              description = "Upstream frontmatter fields explicitly inherited for this skill.";
             };
-            remove = mkOption {
+            excludeFields = mkOption {
               default = [ ];
               type = types.listOf frontmatterFieldType;
-              apply = validateRemovableFields;
-              description = "Otherwise inherited frontmatter fields to remove.";
+              apply = validateExcludedFields;
+              description = "Upstream frontmatter fields explicitly excluded for this skill.";
             };
           };
         };

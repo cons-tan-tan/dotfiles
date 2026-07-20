@@ -42,6 +42,7 @@ let
       prepared = prepareSkill {
         inherit name customization;
         defaultInheritedFields = defaultInheritedFrontmatterFields;
+        requireExplicitFieldDecisions = builtins.hasAttr name externalSkills;
       } originalSkillMd;
       inherit (prepared) skillMd disableAutomaticInvocation;
       sourceOpenaiYamlPath = root + "/agents/openai.yaml";

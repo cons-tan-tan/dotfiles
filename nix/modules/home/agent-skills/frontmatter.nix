@@ -282,6 +282,46 @@ rec {
     else
       "---\n${lib.concatStringsSep "\n" filtered.lines}\n---\n${s.body}";
 
+  frontmatterFieldNames =
+    original:
+    let
+      s = splitFrontmatter original;
+      frontmatterContent = lib.removeSuffix "\n---\n" (lib.removePrefix "---\n" s.frontmatter);
+      lines = lib.splitString "\n" frontmatterContent;
+      parsed =
+        lib.foldl'
+          (
+            state: line:
+            let
+              fieldMatch = builtins.match "^([A-Za-z0-9_-]+):.*$" line;
+              isIndented = lib.hasPrefix " " line || lib.hasPrefix "\t" line;
+              isIgnorable = trimWhitespace line == "" || lib.hasPrefix "#" (trimLeft line);
+            in
+            if fieldMatch != null then
+              {
+                hasField = true;
+                fields = state.fields ++ [ (builtins.head fieldMatch) ];
+                invalidLines = state.invalidLines;
+              }
+            else if isIgnorable || (isIndented && state.hasField) then
+              state
+            else
+              state
+              // {
+                invalidLines = state.invalidLines ++ [ line ];
+              }
+          )
+          {
+            hasField = false;
+            fields = [ ];
+            invalidLines = [ ];
+          }
+          lines;
+    in
+    assert lib.assertMsg (parsed.invalidLines == [ ])
+      "skill frontmatter contains unsupported top-level syntax: ${lib.concatStringsSep ", " parsed.invalidLines}";
+    lib.unique parsed.fields;
+
   unknownAttrs =
     allowed: attrs: lib.filter (name: !builtins.elem name allowed) (builtins.attrNames attrs);
 
@@ -347,18 +387,20 @@ rec {
     let
       frontmatter = validateKnownAttrs "${context}.frontmatter" [
         "set"
-        "additionalInheritedFields"
-        "remove"
+        "inheritFields"
+        "excludeFields"
       ] rawFrontmatter;
       body = validateKnownAttrs "${context}.body" [
         "prepend"
         "replacements"
       ] rawBody;
       set = frontmatter.set or { };
-      additionalInheritedFields = validateFrontmatterFieldNames (
-        "${context}.frontmatter.additionalInheritedFields"
-      ) (frontmatter.additionalInheritedFields or [ ]);
-      remove = validateFrontmatterFieldNames "${context}.frontmatter.remove" (frontmatter.remove or [ ]);
+      inheritFields = validateFrontmatterFieldNames ("${context}.frontmatter.inheritFields") (
+        frontmatter.inheritFields or [ ]
+      );
+      excludeFields = validateFrontmatterFieldNames ("${context}.frontmatter.excludeFields") (
+        frontmatter.excludeFields or [ ]
+      );
       prepend = body.prepend or "";
       rawReplacements = body.replacements or [ ];
       disableAutomaticInvocation = customization.disableAutomaticInvocation or false;
@@ -373,13 +415,16 @@ rec {
         "description"
       ]
     ) "${context}.frontmatter.set name and description values must be strings";
-    assert lib.assertMsg (lib.all (
-      name:
-      !builtins.elem name [
-        "name"
-        "description"
-      ]
-    ) remove) "${context}.frontmatter.remove cannot remove required name or description fields";
+    assert lib.assertMsg (lib.all
+      (
+        name:
+        !builtins.elem name [
+          "name"
+          "description"
+        ]
+      )
+      excludeFields
+    ) "${context}.frontmatter.excludeFields cannot exclude required name or description fields";
     assert lib.assertMsg (builtins.isString prepend) "${context}.body.prepend must be a string";
     assert lib.assertMsg (builtins.isList rawReplacements)
       "${context}.body.replacements must be a list";
@@ -387,7 +432,7 @@ rec {
       "${context}.disableAutomaticInvocation must be a boolean";
     {
       frontmatter = {
-        inherit set additionalInheritedFields remove;
+        inherit set inheritFields excludeFields;
       };
       body = {
         inherit prepend;
@@ -415,8 +460,8 @@ rec {
       inherit customization;
       hasCustomization =
         builtins.attrNames customization.frontmatter.set != [ ]
-        || customization.frontmatter.additionalInheritedFields != [ ]
-        || customization.frontmatter.remove != [ ]
+        || customization.frontmatter.inheritFields != [ ]
+        || customization.frontmatter.excludeFields != [ ]
         || customization.body.prepend != ""
         || customization.body.replacements != [ ]
         || customization.disableAutomaticInvocation;
@@ -648,16 +693,29 @@ rec {
       name,
       defaultInheritedFields,
       customization ? { },
+      requireExplicitFieldDecisions ? false,
     }:
     original:
     let
       context = "skill ${name} customization";
       checkedCustomization = validateCustomization context customization;
       frontmatter = checkedCustomization.frontmatter;
-      inheritedFields = lib.unique (defaultInheritedFields ++ frontmatter.additionalInheritedFields);
-      unknownRemovedFields = lib.filter (field: !builtins.elem field inheritedFields) frontmatter.remove;
-      effectiveInheritedFields = lib.subtractLists frontmatter.remove inheritedFields;
       source = splitFrontmatter original;
+      sourceFields = frontmatterFieldNames original;
+      explicitInheritedFields = frontmatter.inheritFields;
+      explicitExcludedFields = frontmatter.excludeFields;
+      explicitlyClassifiedFields = lib.unique (
+        defaultInheritedFields ++ explicitInheritedFields ++ explicitExcludedFields
+      );
+      unclassifiedFields = lib.filter (
+        field: !builtins.elem field explicitlyClassifiedFields
+      ) sourceFields;
+      declaredFieldsNotInSource = lib.filter (field: !builtins.elem field sourceFields) (
+        lib.unique (explicitInheritedFields ++ explicitExcludedFields)
+      );
+      conflictingFieldDecisions = lib.intersectLists explicitInheritedFields explicitExcludedFields;
+      inheritedFields = lib.unique (defaultInheritedFields ++ frontmatter.inheritFields);
+      effectiveInheritedFields = lib.subtractLists frontmatter.excludeFields inheritedFields;
       filtered = filterFrontmatterFields effectiveInheritedFields original;
       customized = applyCustomization checkedCustomization filtered;
       transformedSkillMd =
@@ -672,8 +730,12 @@ rec {
     assert lib.assertMsg (
       source.frontmatter != ""
     ) "skill ${name}: upstream SKILL.md requires YAML frontmatter";
-    assert lib.assertMsg (unknownRemovedFields == [ ])
-      "${context}.frontmatter.remove contains fields that are not inherited: ${lib.concatStringsSep ", " unknownRemovedFields}";
+    assert lib.assertMsg (conflictingFieldDecisions == [ ])
+      "${context}.frontmatter fields cannot be both inherited and excluded: ${lib.concatStringsSep ", " conflictingFieldDecisions}";
+    assert lib.assertMsg (declaredFieldsNotInSource == [ ])
+      "${context}.frontmatter decisions reference fields missing from upstream: ${lib.concatStringsSep ", " declaredFieldsNotInSource}";
+    assert lib.assertMsg (!requireExplicitFieldDecisions || unclassifiedFields == [ ])
+      "${context}.frontmatter has unclassified upstream fields: ${lib.concatStringsSep ", " unclassifiedFields}";
     builtins.seq skillMd {
       inherit skillMd;
       frontmatterWasFiltered = filtered != original;
