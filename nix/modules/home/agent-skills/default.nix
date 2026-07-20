@@ -40,7 +40,7 @@ let
       inherit (definition) root customization;
       originalSkillMd = builtins.readFile (root + "/SKILL.md");
       prepared = prepareSkill {
-        inherit name customization;
+        inherit name root customization;
         defaultInheritedFields = defaultInheritedFrontmatterFields;
         requireExplicitFieldDecisions = builtins.hasAttr name externalSkills;
       } originalSkillMd;

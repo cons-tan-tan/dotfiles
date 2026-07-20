@@ -34,6 +34,16 @@ rec {
 
   trimWhitespace = text: trimRight (trimLeft text);
 
+  normalizeDescription =
+    text:
+    lib.concatStringsSep " " (
+      lib.filter (line: line != "") (
+        map trimWhitespace (
+          lib.splitString "\n" (builtins.replaceStrings [ "\r\n" "\r" ] [ "\n" "\n" ] text)
+        )
+      )
+    );
+
   isYamlBlockEmptyLine = line: builtins.match "^ *$" line != null;
 
   leadingSpaceCount =
@@ -351,21 +361,6 @@ rec {
       "${context} contains an invalid frontmatter field name";
     names;
 
-  validateReplacement =
-    context: replacement:
-    assert lib.assertMsg (builtins.isAttrs replacement) "${context} must be an attribute set";
-    let
-      checked = validateKnownAttrs context [ "from" "to" ] replacement;
-    in
-    assert lib.assertMsg (checked ? from) "${context}.from is required";
-    assert lib.assertMsg (checked ? to) "${context}.to is required";
-    assert lib.assertMsg (builtins.isString checked.from) "${context}.from must be a string";
-    assert lib.assertMsg (checked.from != "") "${context}.from must not be empty";
-    assert lib.assertMsg (builtins.isString checked.to) "${context}.to must be a string";
-    {
-      inherit (checked) from to;
-    };
-
   # sources.nix の customization DSL を正規化し、未知の key や誤った型を
   # eval 時に拒否する。設定 typo を黙って無視すると policy が fail open に
   # なるため、各階層を closed schema として扱う。
@@ -379,21 +374,20 @@ rec {
         "disableAutomaticInvocation"
       ] value;
       rawFrontmatter = customization.frontmatter or { };
-      rawBody = customization.body or { };
+      body = customization.body or null;
     in
     assert lib.assertMsg (builtins.isAttrs rawFrontmatter)
       "${context}.frontmatter must be an attribute set";
-    assert lib.assertMsg (builtins.isAttrs rawBody) "${context}.body must be an attribute set";
+    assert lib.assertMsg (body == null || lib.isFunction body) "${context}.body must be a function";
     let
       frontmatter = validateKnownAttrs "${context}.frontmatter" [
+        "description"
         "set"
         "inheritFields"
         "excludeFields"
       ] rawFrontmatter;
-      body = validateKnownAttrs "${context}.body" [
-        "prepend"
-        "replacements"
-      ] rawBody;
+      rawDescription = frontmatter.description or null;
+      description = if rawDescription == null then null else normalizeDescription rawDescription;
       set = frontmatter.set or { };
       inheritFields = validateFrontmatterFieldNames ("${context}.frontmatter.inheritFields") (
         frontmatter.inheritFields or [ ]
@@ -401,20 +395,24 @@ rec {
       excludeFields = validateFrontmatterFieldNames ("${context}.frontmatter.excludeFields") (
         frontmatter.excludeFields or [ ]
       );
-      prepend = body.prepend or "";
-      rawReplacements = body.replacements or [ ];
       disableAutomaticInvocation = customization.disableAutomaticInvocation or false;
     in
+    assert lib.assertMsg (
+      rawDescription == null || builtins.isString rawDescription
+    ) "${context}.frontmatter.description must be a string";
+    assert lib.assertMsg (
+      description == null || description != ""
+    ) "${context}.frontmatter.description must not be empty";
     assert lib.assertMsg (builtins.isAttrs set) "${context}.frontmatter.set must be an attribute set";
     assert lib.assertMsg (lib.all isFrontmatterFieldName (
       builtins.attrNames set
     )) "${context}.frontmatter.set contains an invalid frontmatter field name";
-    assert lib.assertMsg (lib.all (field: !builtins.hasAttr field set || builtins.isString set.${field})
-      [
-        "name"
-        "description"
-      ]
-    ) "${context}.frontmatter.set name and description values must be strings";
+    assert lib.assertMsg (
+      !set ? description
+    ) "${context}.frontmatter.set.description is unsupported; use ${context}.frontmatter.description";
+    assert lib.assertMsg (
+      !set ? name || builtins.isString set.name
+    ) "${context}.frontmatter.set.name must be a string";
     assert lib.assertMsg (lib.all
       (
         name:
@@ -425,20 +423,18 @@ rec {
       )
       excludeFields
     ) "${context}.frontmatter.excludeFields cannot exclude required name or description fields";
-    assert lib.assertMsg (builtins.isString prepend) "${context}.body.prepend must be a string";
-    assert lib.assertMsg (builtins.isList rawReplacements)
-      "${context}.body.replacements must be a list";
     assert lib.assertMsg (builtins.isBool disableAutomaticInvocation)
       "${context}.disableAutomaticInvocation must be a boolean";
     {
       frontmatter = {
-        inherit set inheritFields excludeFields;
+        inherit
+          description
+          set
+          inheritFields
+          excludeFields
+          ;
       };
-      body = {
-        inherit prepend;
-        replacements = map (validateReplacement "${context}.body.replacements[]") rawReplacements;
-      };
-      inherit disableAutomaticInvocation;
+      inherit body disableAutomaticInvocation;
     };
 
   validateSkillDefinition =
@@ -459,11 +455,11 @@ rec {
       inherit (skill) root;
       inherit customization;
       hasCustomization =
-        builtins.attrNames customization.frontmatter.set != [ ]
+        customization.frontmatter.description != null
+        || builtins.attrNames customization.frontmatter.set != [ ]
         || customization.frontmatter.inheritFields != [ ]
         || customization.frontmatter.excludeFields != [ ]
-        || customization.body.prepend != ""
-        || customization.body.replacements != [ ]
+        || customization.body != null
         || customization.disableAutomaticInvocation;
     };
 
@@ -473,28 +469,37 @@ rec {
       builtins.attrNames values
     );
 
-  transformBody =
-    transform: original:
-    let
-      s = splitFrontmatter original;
-    in
-    s.frontmatter + transform s.body;
-
   applyCustomization =
-    customization: original:
+    {
+      name,
+      root,
+      customization,
+    }:
+    original:
     let
       frontmatter = customization.frontmatter or { };
-      body = customization.body or { };
-      replacements = body.replacements or [ ];
-      withFrontmatter = setFrontmatterValues (frontmatter.set or { }) original;
-      withReplacements = transformBody (
-        text:
-        builtins.replaceStrings (map (replacement: replacement.from) replacements) (map (
-          replacement: replacement.to
-        ) replacements) text
-      ) withFrontmatter;
+      bodyTransform = customization.body or null;
+      description = frontmatter.description or null;
+      frontmatterValues =
+        (frontmatter.set or { })
+        // lib.optionalAttrs (description != null) {
+          inherit description;
+        };
+      withFrontmatter = setFrontmatterValues frontmatterValues original;
+      split = splitFrontmatter withFrontmatter;
+      transformedBody =
+        if bodyTransform == null then
+          split.body
+        else
+          bodyTransform {
+            original = split.body;
+            skillName = name;
+            inherit root;
+          };
     in
-    transformBody (text: (body.prepend or "") + text) withReplacements;
+    assert lib.assertMsg (builtins.isString transformedBody)
+      "skill ${name} customization.body must return a string";
+    split.frontmatter + transformedBody;
 
   disableModelInvocation = setFrontmatterField "disable-model-invocation" "true";
 
@@ -691,6 +696,7 @@ rec {
   prepareSkill =
     {
       name,
+      root,
       defaultInheritedFields,
       customization ? { },
       requireExplicitFieldDecisions ? false,
@@ -717,7 +723,10 @@ rec {
       inheritedFields = lib.unique (defaultInheritedFields ++ frontmatter.inheritFields);
       effectiveInheritedFields = lib.subtractLists frontmatter.excludeFields inheritedFields;
       filtered = filterFrontmatterFields effectiveInheritedFields original;
-      customized = applyCustomization checkedCustomization filtered;
+      customized = applyCustomization {
+        inherit name root;
+        customization = checkedCustomization;
+      } filtered;
       transformedSkillMd =
         if checkedCustomization.disableAutomaticInvocation then
           disableModelInvocation customized

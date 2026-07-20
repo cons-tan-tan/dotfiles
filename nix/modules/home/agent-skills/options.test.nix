@@ -8,30 +8,22 @@ let
 
   failsToEvaluate =
     modules: !(builtins.tryEval (builtins.deepSeq (eval modules).config true)).success;
+  failsToEvaluateValue = value: !(builtins.tryEval (builtins.deepSeq value true)).success;
 
   evaluated = eval [
     {
       dotfiles.agentSkills.externalSkills.demo = {
         root = ./.;
         customization.frontmatter.inheritFields = [ "hidden" ];
-        customization.body.replacements = [
-          {
-            from = "first";
-            to = "first replacement";
-          }
-        ];
+        customization.body =
+          { original, ... }:
+          builtins.replaceStrings [ "first" ] [ "first replacement" ] original;
       };
     }
     {
       dotfiles.agentSkills.externalSkills.demo.customization = {
         frontmatter.inheritFields = [ "allowed-tools" ];
-        frontmatter.set.description = "Demo skill.";
-        body.replacements = [
-          {
-            from = "before";
-            to = "after";
-          }
-        ];
+        frontmatter.description = "Demo skill.";
         disableAutomaticInvocation = true;
       };
     }
@@ -41,37 +33,32 @@ let
   skillOptions = externalSkillsOption.type.getSubOptions [ ];
   customizationOptions = skillOptions.customization.type.getSubOptions [ ];
   frontmatterOptions = customizationOptions.frontmatter.type.getSubOptions [ ];
-  bodyOptions = customizationOptions.body.type.getSubOptions [ ];
+  evaluatedSkill = evaluated.config.dotfiles.agentSkills.externalSkills.demo;
 in
 {
   testExternalSkillDefinitionsMergeAndNormalize = {
-    expr = evaluated.config.dotfiles.agentSkills.externalSkills.demo;
+    expr = {
+      inherit (evaluatedSkill) root;
+      inherit (evaluatedSkill.customization) frontmatter disableAutomaticInvocation;
+      body = evaluatedSkill.customization.body {
+        original = "first body";
+        skillName = "demo";
+        root = ./.;
+      };
+    };
     expected = {
       root = ./.;
-      customization = {
-        frontmatter = {
-          set.description = "Demo skill.";
-          inheritFields = [
-            "hidden"
-            "allowed-tools"
-          ];
-          excludeFields = [ ];
-        };
-        body = {
-          prepend = "";
-          replacements = [
-            {
-              from = "first";
-              to = "first replacement";
-            }
-            {
-              from = "before";
-              to = "after";
-            }
-          ];
-        };
-        disableAutomaticInvocation = true;
+      frontmatter = {
+        description = "Demo skill.";
+        set = { };
+        inheritFields = [
+          "hidden"
+          "allowed-tools"
+        ];
+        excludeFields = [ ];
       };
+      body = "first replacement body";
+      disableAutomaticInvocation = true;
     };
   };
 
@@ -87,20 +74,16 @@ in
         "disableAutomaticInvocation"
       ];
       frontmatter = lib.all (name: builtins.hasAttr name frontmatterOptions) [
+        "description"
         "set"
         "inheritFields"
         "excludeFields"
-      ];
-      body = lib.all (name: builtins.hasAttr name bodyOptions) [
-        "prepend"
-        "replacements"
       ];
     };
     expected = {
       skill = true;
       customization = true;
       frontmatter = true;
-      body = true;
     };
   };
 
@@ -170,6 +153,18 @@ in
     expected = true;
   };
 
+  testExternalSkillOptionRejectsDescriptionInSet = {
+    expr = failsToEvaluate [
+      {
+        dotfiles.agentSkills.externalSkills.demo = {
+          root = ./.;
+          customization.frontmatter.set.description = "Demo skill.";
+        };
+      }
+    ];
+    expected = true;
+  };
+
   testExternalSkillOptionRejectsRequiredFieldExclusion = {
     expr = failsToEvaluate [
       {
@@ -194,38 +189,40 @@ in
     expected = true;
   };
 
-  testExternalSkillOptionRejectsEmptyReplacementSource = {
+  testExternalSkillOptionRejectsLegacyBodyCustomization = {
     expr = failsToEvaluate [
       {
         dotfiles.agentSkills.externalSkills.demo = {
           root = ./.;
-          customization.body.replacements = [
-            {
-              from = "";
-              to = "replacement";
-            }
-          ];
+          customization.body.prepend = "NOTE\n";
         };
       }
     ];
     expected = true;
   };
 
-  testExternalSkillOptionRejectsUnknownReplacementField = {
-    expr = failsToEvaluate [
-      {
-        dotfiles.agentSkills.externalSkills.demo = {
+  testExternalSkillOptionRejectsDuplicateBodyTransformers = {
+    expr =
+      let
+        conflicting = eval [
+          {
+            dotfiles.agentSkills.externalSkills.demo = {
+              root = ./.;
+              customization.body = _: "same";
+            };
+          }
+          {
+            dotfiles.agentSkills.externalSkills.demo.customization.body = _: "same";
+          }
+        ];
+      in
+      failsToEvaluateValue (
+        conflicting.config.dotfiles.agentSkills.externalSkills.demo.customization.body {
+          original = "body";
+          skillName = "demo";
           root = ./.;
-          customization.body.replacements = [
-            {
-              from = "before";
-              to = "after";
-              count = 1;
-            }
-          ];
-        };
-      }
-    ];
+        }
+      );
     expected = true;
   };
 

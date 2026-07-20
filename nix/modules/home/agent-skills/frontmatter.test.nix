@@ -12,12 +12,14 @@ let
     customization: original:
     fm.prepareSkill {
       name = "demo";
+      root = ./.;
       inherit defaultInheritedFields customization;
     } original;
   prepareStrict =
     customization: original:
     fm.prepareSkill {
       name = "demo";
+      root = ./.;
       inherit defaultInheritedFields customization;
       requireExplicitFieldDecisions = true;
     } original;
@@ -104,6 +106,15 @@ in
       "last"
     ];
     expected = "first\n\t\nlast";
+  };
+
+  testNormalizeDescriptionFoldsMultilineText = {
+    expr = fm.normalizeDescription ''
+      Slack automation CLI for AI agents.
+
+        Use when Slack interaction is required.
+    '';
+    expected = "Slack automation CLI for AI agents. Use when Slack interaction is required.";
   };
 
   testSetFrontmatterFieldWithFrontmatter = {
@@ -311,18 +322,22 @@ in
     expr =
       fm.applyCustomization
         {
-          frontmatter.set = {
-            allowed-tools = "Bash(example:*)";
-            description = "New description.";
-          };
-          body = {
-            prepend = "NOTE\n";
-            replacements = [
+          name = "demo";
+          root = ./.;
+          customization = {
+            frontmatter = {
+              description = "New description.";
+              set.allowed-tools = "Bash(example:*)";
+            };
+            body =
               {
-                from = "old";
-                to = "new";
-              }
-            ];
+                original,
+                skillName,
+                root,
+              }:
+              assert skillName == "demo";
+              assert root == ./.;
+              "NOTE\n" + builtins.replaceStrings [ "old" ] [ "new" ] original;
           };
         }
         ''
@@ -353,17 +368,11 @@ in
               "hidden"
             ];
             excludeFields = [ "license" ];
-            set.description = "New description.";
+            description = "New description.";
           };
-          body = {
-            prepend = "NOTE\n";
-            replacements = [
-              {
-                from = "old";
-                to = "new";
-              }
-            ];
-          };
+          body =
+            { original, ... }:
+            "NOTE\n" + builtins.replaceStrings [ "old" ] [ "new" ] original;
           disableAutomaticInvocation = true;
         }
         ''
@@ -631,7 +640,7 @@ in
 
   testPrepareSkillRejectsNonStringDescriptionOverride = {
     expr = failsToEvaluate (
-      prepare { frontmatter.set.description = true; } ''
+      prepare { frontmatter.description = true; } ''
         ---
         name: demo
         description: Demo.
@@ -642,6 +651,45 @@ in
     expected = true;
   };
 
+  testPrepareSkillRejectsDescriptionInGenericSet = {
+    expr = failsToEvaluate (
+      prepare { frontmatter.set.description = "Demo skill."; } ''
+        ---
+        name: demo
+        description: Original description.
+        ---
+        body
+      ''
+    );
+    expected = true;
+  };
+
+  testPrepareSkillFoldsMultilineDescriptionOverride = {
+    expr =
+      (prepare
+        {
+          frontmatter.description = ''
+            Demo skill controls a CLI.
+            Use it when automation is required.
+          '';
+        }
+        ''
+          ---
+          name: demo
+          description: Original description.
+          ---
+          body
+        ''
+      ).skillMd;
+    expected = ''
+      ---
+      name: demo
+      description: "Demo skill controls a CLI. Use it when automation is required."
+      ---
+      body
+    '';
+  };
+
   testUtf8CodePointLength = {
     expr = fm.utf8CodePointLength "aあ🙂";
     expected = 3;
@@ -649,7 +697,7 @@ in
 
   testPrepareSkillAccepts1024AsciiDescription = {
     expr = failsToEvaluate (
-      prepare { frontmatter.set.description = lib.concatStrings (lib.replicate 1024 "a"); } ''
+      prepare { frontmatter.description = lib.concatStrings (lib.replicate 1024 "a"); } ''
         ---
         name: demo
         description: Demo.
@@ -662,7 +710,7 @@ in
 
   testPrepareSkillRejects1025AsciiDescription = {
     expr = failsToEvaluate (
-      prepare { frontmatter.set.description = lib.concatStrings (lib.replicate 1025 "a"); } ''
+      prepare { frontmatter.description = lib.concatStrings (lib.replicate 1025 "a"); } ''
         ---
         name: demo
         description: Demo.
@@ -675,7 +723,7 @@ in
 
   testPrepareSkillAccepts1024MultibyteDescription = {
     expr = failsToEvaluate (
-      prepare { frontmatter.set.description = lib.concatStrings (lib.replicate 1024 "あ"); } ''
+      prepare { frontmatter.description = lib.concatStrings (lib.replicate 1024 "あ"); } ''
         ---
         name: demo
         description: Demo.
@@ -688,7 +736,7 @@ in
 
   testPrepareSkillRejects1025MultibyteDescription = {
     expr = failsToEvaluate (
-      prepare { frontmatter.set.description = lib.concatStrings (lib.replicate 1025 "あ"); } ''
+      prepare { frontmatter.description = lib.concatStrings (lib.replicate 1025 "あ"); } ''
         ---
         name: demo
         description: Demo.
@@ -840,7 +888,7 @@ in
 
   testPrepareSkillRejectsXmlInDescription = {
     expr = failsToEvaluate (
-      prepare { frontmatter.set.description = "Use <example> when needed."; } ''
+      prepare { frontmatter.description = "Use <example> when needed."; } ''
         ---
         name: demo
         description: Demo.
@@ -856,6 +904,7 @@ in
       fm.prepareSkill
         {
           name = "Invalid_Name";
+          root = ./.;
           inherit defaultInheritedFields;
         }
         ''
@@ -995,17 +1044,11 @@ in
     expected = true;
   };
 
-  testPrepareSkillRejectsUnknownReplacementKey = {
+  testPrepareSkillRejectsLegacyBodyCustomization = {
     expr = failsToEvaluate (
       prepare
         {
-          body.replacements = [
-            {
-              from = "old";
-              into = "new";
-              to = "new";
-            }
-          ];
+          body.prepend = "NOTE\n";
         }
         ''
           ---
@@ -1014,6 +1057,19 @@ in
           ---
           body
         ''
+    );
+    expected = true;
+  };
+
+  testPrepareSkillRejectsNonStringBodyResult = {
+    expr = failsToEvaluate (
+      prepare { body = _: true; } ''
+        ---
+        name: demo
+        description: Demo.
+        ---
+        body
+      ''
     );
     expected = true;
   };
@@ -1105,14 +1161,12 @@ in
         root = ./.;
         customization = {
           frontmatter = {
+            description = null;
             set = { };
             inheritFields = [ ];
             excludeFields = [ ];
           };
-          body = {
-            prepend = "";
-            replacements = [ ];
-          };
+          body = null;
           disableAutomaticInvocation = false;
         };
       }).hasCustomization;
@@ -1125,15 +1179,24 @@ in
         root = ./.;
         customization = {
           frontmatter = {
+            description = null;
             set = { };
             inheritFields = [ "hidden" ];
             excludeFields = [ ];
           };
-          body = {
-            prepend = "";
-            replacements = [ ];
-          };
+          body = null;
           disableAutomaticInvocation = false;
+        };
+      }).hasCustomization;
+    expected = true;
+  };
+
+  testValidateSkillDefinitionAcceptsCallableBodyTransformer = {
+    expr =
+      (fm.validateSkillDefinition "demo" {
+        root = ./.;
+        customization.body = {
+          __functor = _: { original, ... }: original;
         };
       }).hasCustomization;
     expected = true;

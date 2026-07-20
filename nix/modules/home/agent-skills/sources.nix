@@ -1,6 +1,6 @@
 # デプロイ対象 skill の宣言。root は SKILL.md を含むディレクトリ。
 # customization (任意) で frontmatter / body / invocation policy を変更する。
-{ lib, inputs, ... }:
+{ inputs, ... }:
 let
   inherit (inputs)
     ast-grep-skill
@@ -26,7 +26,7 @@ in
       root = "${agent-browser-skill}/skills/agent-browser";
       customization.frontmatter.inheritFields = [ "hidden" ];
       customization.frontmatter.excludeFields = [ "allowed-tools" ];
-      customization.frontmatter.set.description = "Controls headless browser sessions through the agent-browser CLI when tasks require scripted navigation, form filling, clicks, authentication, screenshots, data extraction, or web application testing.";
+      customization.frontmatter.description = "Controls headless browser sessions through the agent-browser CLI when tasks require scripted navigation, form filling, clicks, authentication, screenshots, data extraction, or web application testing.";
     };
 
     # バイナリ本体は packages/agent-slack (skill doc とは別 input)
@@ -34,33 +34,36 @@ in
       root = "${agent-slack-skill}/skills/agent-slack";
       # Keep skill descriptions compact because some metadata consumers impose
       # length limits; avoid a separate trigger-word list unless it adds signal.
-      customization.frontmatter.set.description = lib.concatStringsSep " " [
-        "Slack automation CLI for AI agents. Use when the user asks to read,"
-        "search, send, reply to, edit, delete, or react to Slack messages;"
-        "inspect threads, channels, DMs, unread messages, saved-for-later items,"
-        "files, canvases, users, or workflows; upload local files to Slack; or"
-        "manage channels and conversations."
-      ];
+      customization.frontmatter.description = ''
+        Slack automation CLI for AI agents. Use when the user asks to read,
+        search, send, reply to, edit, delete, or react to Slack messages;
+        inspect threads, channels, DMs, unread messages, saved-for-later items,
+        files, canvases, users, or workflows; upload local files to Slack; or
+        manage channels and conversations.
+      '';
     };
 
     pptx = {
       root = "${anthropic-skills}/skills/pptx";
-      customization.body.prepend = ''
+      customization.body =
+        { original, ... }:
+        ''
 
-        > **Local override**: run shell commands in this skill through the
-        > declarative PPTX tool environment:
-        >
-        > `nix run dotfiles#pptx -- <command>`
-        >
-        > Examples:
-        >
-        > `nix run dotfiles#pptx -- python -m markitdown input.pptx`
-        > `nix run dotfiles#pptx -- pdftoppm -jpeg -r 150 output.pdf slide`
-        >
-        > Helper scripts such as `python scripts/thumbnail.py ...` are also
-        > resolved from the installed `/pptx` skill when the current project
-        > does not have its own `scripts/` directory.
-      '';
+          > **Local override**: run shell commands in this skill through the
+          > declarative PPTX tool environment:
+          >
+          > `nix run dotfiles#pptx -- <command>`
+          >
+          > Examples:
+          >
+          > `nix run dotfiles#pptx -- python -m markitdown input.pptx`
+          > `nix run dotfiles#pptx -- pdftoppm -jpeg -r 150 output.pdf slide`
+          >
+          > Helper scripts such as `python scripts/thumbnail.py ...` are also
+          > resolved from the installed `/pptx` skill when the current project
+          > does not have its own `scripts/` directory.
+        ''
+        + original;
     };
 
     frontend-design = {
@@ -69,14 +72,17 @@ in
 
     drawio = {
       root = "${drawio-skill}/plugins/claude-code/skills/drawio";
-      customization.body.prepend = ''
+      customization.body =
+        { original, ... }:
+        ''
 
-        > **Local override (WSL2)**: use `drawio` from `$PATH` for exports —
-        > it is a Linux headless wrapper that already injects `--no-sandbox`,
-        > `--disable-gpu`, and starts Xvfb / D-Bus. Do not add these flags or
-        > call `/mnt/c/.../draw.io.exe` for the export step; the "Opening the
-        > result" instructions below still apply.
-      '';
+          > **Local override (WSL2)**: use `drawio` from `$PATH` for exports —
+          > it is a Linux headless wrapper that already injects `--no-sandbox`,
+          > `--disable-gpu`, and starts Xvfb / D-Bus. Do not add these flags or
+          > call `/mnt/c/.../draw.io.exe` for the export step; the "Opening the
+          > result" instructions below still apply.
+        ''
+        + original;
     };
 
     difit = {
@@ -109,22 +115,24 @@ in
       #     absolute (stable from any cwd / both ~/.agents and ~/.claude
       #     targets) and the reference keeps the source in the closure.
       customization = {
-        frontmatter.set.description = lib.concatStringsSep " " [
-          "Suppress the telltale \"AI-ness\" of Japanese writing so it reads as"
-          "human-written. Use when asked to proofread or rewrite AI-generated"
-          "Japanese, make text sound more natural, or polish note and blog"
-          "articles. Japanese only; not for English or other languages."
-        ];
-        body.replacements = [
-          {
-            from = "python3 .claude/skills/humanize-jp/reference/humanize_check.py";
-            to = "uv run --no-project ${humanizer-jp-skill}/.claude/skills/humanize-jp/reference/humanize_check.py";
-          }
-          {
-            from = "`docs/";
-            to = "`${humanizer-jp-skill}/docs/";
-          }
-        ];
+        frontmatter.description = ''
+          Suppress the telltale "AI-ness" of Japanese writing so it reads as
+          human-written. Use when asked to proofread or rewrite AI-generated
+          Japanese, make text sound more natural, or polish note and blog
+          articles. Japanese only; not for English or other languages.
+        '';
+        body =
+          { original, ... }:
+          builtins.replaceStrings
+            [
+              "python3 .claude/skills/humanize-jp/reference/humanize_check.py"
+              "`docs/"
+            ]
+            [
+              "uv run --no-project ${humanizer-jp-skill}/.claude/skills/humanize-jp/reference/humanize_check.py"
+              "`${humanizer-jp-skill}/docs/"
+            ]
+            original;
       };
     };
 

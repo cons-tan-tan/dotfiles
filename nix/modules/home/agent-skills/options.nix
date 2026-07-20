@@ -9,6 +9,9 @@ let
     assert lib.assertMsg (lib.all isFrontmatterFieldName (
       builtins.attrNames values
     )) "frontmatter.set contains an invalid field name";
+    assert lib.assertMsg (
+      !values ? description
+    ) "frontmatter.set.description is unsupported; use frontmatter.description";
     values;
   validateExcludedFields =
     fields:
@@ -27,25 +30,17 @@ let
     )) "external skill names must use 1-64 lowercase letters, digits, and hyphens";
     skills;
 
-  replacementType = types.submodule {
-    options = {
-      from = mkOption {
-        type = types.nonEmptyStr;
-        description = "Exact body text to replace.";
-      };
-      to = mkOption {
-        type = types.str;
-        description = "Replacement body text.";
-      };
-    };
-  };
-
   customizationType = types.submodule {
     options = {
       frontmatter = mkOption {
         default = { };
         type = types.submodule {
           options = {
+            description = mkOption {
+              default = null;
+              type = types.nullOr types.str;
+              description = "Replacement skill description; multiline text is folded into one line.";
+            };
             set = mkOption {
               default = { };
               type = types.attrsOf types.json;
@@ -69,22 +64,17 @@ let
       };
 
       body = mkOption {
-        default = { };
-        type = types.submodule {
-          options = {
-            prepend = mkOption {
-              default = "";
-              type = types.str;
-              description = "Text prepended to the skill body.";
-            };
-            replacements = mkOption {
-              default = [ ];
-              type = types.listOf replacementType;
-              description = "Ordered exact-text replacements applied to the skill body.";
-            };
-          };
-        };
-        description = "Declarative body transformations.";
+        default = null;
+        type = types.nullOr (
+          types.unique {
+            message = "Only one body transformer may be defined for each skill.";
+          } (types.functionTo types.str)
+        );
+        description = "Pure `{ original, skillName, root } -> string` body transformer.";
+        example = lib.literalExpression ''
+          { original, skillName, root }:
+          "# " + skillName + " (" + toString root + ")\n" + original
+        '';
       };
 
       disableAutomaticInvocation = mkOption {
