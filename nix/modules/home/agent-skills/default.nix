@@ -17,8 +17,8 @@ let
 
   inherit (import ./frontmatter.nix { inherit lib; })
     disableCodexImplicitInvocation
-    disableModelInvocation
-    filterFrontmatterFields
+    prepareSkill
+    validateSkillDefinition
     ;
 
   # Upstream frontmatter is deny-by-default. Descriptive metadata is safe to
@@ -33,26 +33,25 @@ let
     "hidden"
   ];
 
-  # transform や追加ファイルが必要な skill はコピーを作る。無ければソースを
-  # そのまま symlink する。
+  # customization や frontmatter filtering が必要な skill はコピーを作る。
+  # 変更が無ければソースをそのまま symlink する。
   mkSkillSource =
     name: skill:
     let
-      disableAutomaticInvocation = skill.disableAutomaticInvocation or false;
-      transform = skill.transform or lib.id;
-      originalSkillMd = builtins.readFile (skill.root + "/SKILL.md");
-      transformedSkillMd = transform originalSkillMd;
-      inheritedFrontmatterFields =
-        defaultInheritedFrontmatterFields ++ (skill.additionalInheritedFrontmatterFields or [ ]);
-      filteredSkillMd = filterFrontmatterFields inheritedFrontmatterFields transformedSkillMd;
-      skillMd = (if disableAutomaticInvocation then disableModelInvocation else lib.id) (filteredSkillMd);
-      sourceOpenaiYamlPath = skill.root + "/agents/openai.yaml";
+      definition = validateSkillDefinition name skill;
+      inherit (definition) root customization;
+      originalSkillMd = builtins.readFile (root + "/SKILL.md");
+      prepared = prepareSkill {
+        inherit name customization;
+        defaultInheritedFields = defaultInheritedFrontmatterFields;
+      } originalSkillMd;
+      inherit (prepared) skillMd disableAutomaticInvocation;
+      sourceOpenaiYamlPath = root + "/agents/openai.yaml";
       openaiYaml = disableCodexImplicitInvocation (
         if builtins.pathExists sourceOpenaiYamlPath then builtins.readFile sourceOpenaiYamlPath else ""
       );
-      frontmatterWasFiltered = filteredSkillMd != transformedSkillMd;
     in
-    if (skill ? transform) || disableAutomaticInvocation || frontmatterWasFiltered then
+    if definition.hasCustomization || prepared.frontmatterWasFiltered then
       pkgs.runCommandLocal "skill-${name}"
         (
           {
@@ -62,7 +61,7 @@ let
           // lib.optionalAttrs disableAutomaticInvocation { inherit openaiYaml; }
         )
         ''
-          cp -rL --no-preserve=mode ${skill.root} $out
+          cp -rL --no-preserve=mode ${root} $out
           cp "$skillMdPath" "$out/SKILL.md"
           ${lib.optionalString disableAutomaticInvocation ''
             mkdir -p "$out/agents"
@@ -70,7 +69,7 @@ let
           ''}
         ''
     else
-      skill.root;
+      root;
 
   skillSources = lib.mapAttrs mkSkillSource skills;
 

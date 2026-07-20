@@ -7,6 +7,21 @@ let
 
   withFm = "---\nname: demo\n---\nbody line\n";
   noFm = "body only\n---\nnot frontmatter\n";
+  defaultInheritedFields = [
+    "name"
+    "description"
+    "license"
+    "compatibility"
+    "metadata"
+    "hidden"
+  ];
+  prepare =
+    customization: original:
+    fm.prepareSkill {
+      name = "demo";
+      inherit defaultInheritedFields customization;
+    } original;
+  failsToEvaluate = value: !(builtins.tryEval (builtins.deepSeq value true)).success;
 in
 lib.runTests {
   testSplitWithFrontmatter = {
@@ -32,9 +47,63 @@ lib.runTests {
     expected = "part1\n---\npart2\n";
   };
 
-  testReplaceFrontmatter = {
-    expr = fm.replaceFrontmatter "---\nnew: true\n---\n" withFm;
-    expected = "---\nnew: true\n---\nbody line\n";
+  testSplitNormalizesBomAndCrLf = {
+    expr = fm.splitFrontmatter "${fm.utf8Bom}---\r\nname: demo\r\n---\r\nbody\r\n";
+    expected = {
+      frontmatter = "---\nname: demo\n---\n";
+      body = "body\n";
+    };
+  };
+
+  testSplitClosingDelimiterAtEof = {
+    expr = fm.splitFrontmatter "---\nname: demo\n---";
+    expected = {
+      frontmatter = "---\nname: demo\n---\n";
+      body = "";
+    };
+  };
+
+  testSplitRejectsUnterminatedFrontmatter = {
+    expr = failsToEvaluate (fm.splitFrontmatter "---\nname: demo\nbody\n");
+    expected = true;
+  };
+
+  testFoldYamlBlockLines = {
+    expr = fm.foldYamlBlockLines [
+      "first"
+      "second"
+      ""
+      "third"
+    ];
+    expected = "first second\nthird";
+  };
+
+  testFoldYamlBlockLinesPreservesMoreIndentedBreaks = {
+    expr = fm.foldYamlBlockLines [
+      "first"
+      "  indented"
+      ""
+      "last"
+    ];
+    expected = "first\n  indented\n\nlast";
+  };
+
+  testFoldYamlBlockLinesPreservesBreakBeforeMoreIndentedLine = {
+    expr = fm.foldYamlBlockLines [
+      "first"
+      ""
+      "  indented"
+    ];
+    expected = "first\n\n  indented";
+  };
+
+  testFoldYamlBlockLinesTreatsTabAsContent = {
+    expr = fm.foldYamlBlockLines [
+      "first"
+      "\t"
+      "last"
+    ];
+    expected = "first\n\t\nlast";
   };
 
   testSetFrontmatterFieldWithFrontmatter = {
@@ -179,6 +248,619 @@ lib.runTests {
     expected = noFm;
   };
 
+  testFilterFrontmatterFieldsBlocksAllowedToolsWithCrLf = {
+    expr = fm.filterFrontmatterFields [ "name" "description" ] (
+      "---\r\nname: demo\r\ndescription: Demo.\r\nallowed-tools: Bash(example:*)\r\n---\r\nbody\r\n"
+    );
+    expected = "---\nname: demo\ndescription: Demo.\n---\nbody\n";
+  };
+
+  testFilterFrontmatterFieldsBlocksAllowedToolsWithBom = {
+    expr = fm.filterFrontmatterFields [ "name" "description" ] (
+      "${fm.utf8Bom}---\nname: demo\ndescription: Demo.\nallowed-tools: Bash(example:*)\n---\nbody\n"
+    );
+    expected = "---\nname: demo\ndescription: Demo.\n---\nbody\n";
+  };
+
+  testApplyCustomization = {
+    expr =
+      fm.applyCustomization
+        {
+          frontmatter.set = {
+            allowed-tools = "Bash(example:*)";
+            description = "New description.";
+          };
+          body = {
+            prepend = "NOTE\n";
+            replacements = [
+              {
+                from = "old";
+                to = "new";
+              }
+            ];
+          };
+        }
+        ''
+          ---
+          name: demo
+          description: Old description.
+          ---
+          old body
+        '';
+    expected = ''
+      ---
+      allowed-tools: "Bash(example:*)"
+      name: demo
+      description: "New description."
+      ---
+      NOTE
+      new body
+    '';
+  };
+
+  testPrepareSkillAppliesDeclarativePipeline = {
+    expr =
+      (prepare
+        {
+          frontmatter = {
+            additionalInheritedFields = [ "allowed-tools" ];
+            remove = [ "license" ];
+            set.description = "New description.";
+          };
+          body = {
+            prepend = "NOTE\n";
+            replacements = [
+              {
+                from = "old";
+                to = "new";
+              }
+            ];
+          };
+          disableAutomaticInvocation = true;
+        }
+        ''
+          ---
+          name: demo
+          description: Old description.
+          license: MIT
+          allowed-tools: Bash(example:*)
+          hidden: true
+          hooks:
+            PreToolUse: echo unsafe
+          ---
+          old body
+        ''
+      ).skillMd;
+    expected = ''
+      ---
+      disable-model-invocation: true
+      name: demo
+      description: "New description."
+      allowed-tools: Bash(example:*)
+      hidden: true
+      ---
+      NOTE
+      new body
+    '';
+  };
+
+  testPrepareSkillRejectsMissingFrontmatter = {
+    expr = failsToEvaluate (prepare { } "plain body\n");
+    expected = true;
+  };
+
+  testPrepareSkillRejectsMissingRequiredField = {
+    expr = failsToEvaluate (
+      prepare { } ''
+        ---
+        name: demo
+        ---
+        body
+      ''
+    );
+    expected = true;
+  };
+
+  testPrepareSkillForcesValidationOnUnmodifiedResult = {
+    expr = failsToEvaluate (
+      (prepare { } ''
+        ---
+        name: demo
+        ---
+        body
+      '').frontmatterWasFiltered
+    );
+    expected = true;
+  };
+
+  testPrepareSkillRejectsDuplicateRequiredField = {
+    expr = failsToEvaluate (
+      prepare { } ''
+        ---
+        name: demo
+        name:
+        description: Demo.
+        ---
+        body
+      ''
+    );
+    expected = true;
+  };
+
+  testPrepareSkillRejectsDistributionNameMismatch = {
+    expr = failsToEvaluate (
+      prepare { } ''
+        ---
+        name: other
+        description: Demo.
+        ---
+        body
+      ''
+    );
+    expected = true;
+  };
+
+  testPrepareSkillRejectsNonStringDescription = {
+    expr = failsToEvaluate (
+      prepare { } ''
+        ---
+        name: demo
+        description: []
+        ---
+        body
+      ''
+    );
+    expected = true;
+  };
+
+  testPrepareSkillRejectsNonStringDescriptionOverride = {
+    expr = failsToEvaluate (
+      prepare { frontmatter.set.description = true; } ''
+        ---
+        name: demo
+        description: Demo.
+        ---
+        body
+      ''
+    );
+    expected = true;
+  };
+
+  testUtf8CodePointLength = {
+    expr = fm.utf8CodePointLength "aあ🙂";
+    expected = 3;
+  };
+
+  testPrepareSkillAccepts1024AsciiDescription = {
+    expr = failsToEvaluate (
+      prepare { frontmatter.set.description = lib.concatStrings (lib.replicate 1024 "a"); } ''
+        ---
+        name: demo
+        description: Demo.
+        ---
+        body
+      ''
+    );
+    expected = false;
+  };
+
+  testPrepareSkillRejects1025AsciiDescription = {
+    expr = failsToEvaluate (
+      prepare { frontmatter.set.description = lib.concatStrings (lib.replicate 1025 "a"); } ''
+        ---
+        name: demo
+        description: Demo.
+        ---
+        body
+      ''
+    );
+    expected = true;
+  };
+
+  testPrepareSkillAccepts1024MultibyteDescription = {
+    expr = failsToEvaluate (
+      prepare { frontmatter.set.description = lib.concatStrings (lib.replicate 1024 "あ"); } ''
+        ---
+        name: demo
+        description: Demo.
+        ---
+        body
+      ''
+    );
+    expected = false;
+  };
+
+  testPrepareSkillRejects1025MultibyteDescription = {
+    expr = failsToEvaluate (
+      prepare { frontmatter.set.description = lib.concatStrings (lib.replicate 1025 "あ"); } ''
+        ---
+        name: demo
+        description: Demo.
+        ---
+        body
+      ''
+    );
+    expected = true;
+  };
+
+  testPrepareSkillAccepts1024CharacterBlockDescription = {
+    expr = failsToEvaluate (
+      prepare { } (
+        "---\nname: demo\ndescription: |\n  " + lib.concatStrings (lib.replicate 1023 "a") + "\n---\nbody\n"
+      )
+    );
+    expected = false;
+  };
+
+  testPrepareSkillRejects1025CharacterBlockDescription = {
+    expr = failsToEvaluate (
+      prepare { } (
+        "---\nname: demo\ndescription: |\n  " + lib.concatStrings (lib.replicate 1024 "a") + "\n---\nbody\n"
+      )
+    );
+    expected = true;
+  };
+
+  testPrepareSkillAccepts1024CharacterStrippedBlockDescription = {
+    expr = failsToEvaluate (
+      prepare { } (
+        "---\nname: demo\ndescription: |-\n  "
+        + lib.concatStrings (lib.replicate 1024 "a")
+        + "\n---\nbody\n"
+      )
+    );
+    expected = false;
+  };
+
+  testPrepareSkillAccepts1024CharacterFoldedDescription = {
+    expr = failsToEvaluate (
+      prepare { } (
+        "---\nname: demo\ndescription: >-\n  "
+        + lib.concatStrings (lib.replicate 1022 "a")
+        + "\n\n  b\n---\nbody\n"
+      )
+    );
+    expected = false;
+  };
+
+  testPrepareSkillRejects1025CharacterFoldedDescription = {
+    expr = failsToEvaluate (
+      prepare { } (
+        "---\nname: demo\ndescription: >-\n  "
+        + lib.concatStrings (lib.replicate 1023 "a")
+        + "\n\n  b\n---\nbody\n"
+      )
+    );
+    expected = true;
+  };
+
+  testPrepareSkillAccepts1024CharacterKeptFoldedDescription = {
+    expr = failsToEvaluate (
+      prepare { } (
+        "---\nname: demo\ndescription: >+\n  "
+        + lib.concatStrings (lib.replicate 1022 "a")
+        + "\n\n---\nbody\n"
+      )
+    );
+    expected = false;
+  };
+
+  testPrepareSkillAccepts1024CharacterMoreIndentedFoldedDescription = {
+    expr = failsToEvaluate (
+      prepare { } (
+        "---\nname: demo\ndescription: >-\n  x\n    "
+        + lib.concatStrings (lib.replicate 1015 "a")
+        + "\n\n    b\n---\nbody\n"
+      )
+    );
+    expected = false;
+  };
+
+  testPrepareSkillRejects1025CharacterMoreIndentedFoldedDescription = {
+    expr = failsToEvaluate (
+      prepare { } (
+        "---\nname: demo\ndescription: >-\n  x\n    "
+        + lib.concatStrings (lib.replicate 1016 "a")
+        + "\n\n    b\n---\nbody\n"
+      )
+    );
+    expected = true;
+  };
+
+  testPrepareSkillAccepts1024CharacterFoldBeforeMoreIndentedDescription = {
+    expr = failsToEvaluate (
+      prepare { } (
+        "---\nname: demo\ndescription: >-\n  "
+        + lib.concatStrings (lib.replicate 1019 "a")
+        + "\n\n    b\n---\nbody\n"
+      )
+    );
+    expected = false;
+  };
+
+  testPrepareSkillRejects1025CharacterFoldBeforeMoreIndentedDescription = {
+    expr = failsToEvaluate (
+      prepare { } (
+        "---\nname: demo\ndescription: >-\n  "
+        + lib.concatStrings (lib.replicate 1020 "a")
+        + "\n\n    b\n---\nbody\n"
+      )
+    );
+    expected = true;
+  };
+
+  testPrepareSkillAccepts1024CharacterTabContentFoldedDescription = {
+    expr = failsToEvaluate (
+      prepare { } (
+        "---\nname: demo\ndescription: >-\n  "
+        + lib.concatStrings (lib.replicate 1020 "a")
+        + "\n  \t\n  b\n---\nbody\n"
+      )
+    );
+    expected = false;
+  };
+
+  testPrepareSkillRejects1025CharacterTabContentFoldedDescription = {
+    expr = failsToEvaluate (
+      prepare { } (
+        "---\nname: demo\ndescription: >-\n  "
+        + lib.concatStrings (lib.replicate 1021 "a")
+        + "\n  \t\n  b\n---\nbody\n"
+      )
+    );
+    expected = true;
+  };
+
+  testPrepareSkillAcceptsExplicitBlockIndent = {
+    expr = failsToEvaluate (
+      prepare { } (
+        "---\nname: demo\ndescription: |2-\n  "
+        + lib.concatStrings (lib.replicate 1024 "a")
+        + "\n---\nbody\n"
+      )
+    );
+    expected = false;
+  };
+
+  testPrepareSkillRejectsXmlInDescription = {
+    expr = failsToEvaluate (
+      prepare { frontmatter.set.description = "Use <example> when needed."; } ''
+        ---
+        name: demo
+        description: Demo.
+        ---
+        body
+      ''
+    );
+    expected = true;
+  };
+
+  testPrepareSkillRejectsInvalidDistributionName = {
+    expr = failsToEvaluate (
+      fm.prepareSkill
+        {
+          name = "Invalid_Name";
+          inherit defaultInheritedFields;
+        }
+        ''
+          ---
+          name: Invalid_Name
+          description: Demo.
+          ---
+          body
+        ''
+    );
+    expected = true;
+  };
+
+  testPrepareSkillRejectsEmptyBlockDescription = {
+    expr = failsToEvaluate (
+      prepare { } ''
+        ---
+        name: demo
+        description: |
+        ---
+        body
+      ''
+    );
+    expected = true;
+  };
+
+  testPrepareSkillRejectsEmptyQuotedDescriptionWithComment = {
+    expr = failsToEvaluate (
+      prepare { } ''
+        ---
+        name: demo
+        description: "" # empty
+        ---
+        body
+      ''
+    );
+    expected = true;
+  };
+
+  testPrepareSkillAcceptsNameWithInlineComment = {
+    expr =
+      (prepare { } ''
+        ---
+        name: demo # distribution name
+        description: Demo.
+        ---
+        body
+      '').skillMd;
+    expected = ''
+      ---
+      name: demo # distribution name
+      description: Demo.
+      ---
+      body
+    '';
+  };
+
+  testPrepareSkillAcceptsApostropheInPlainDescription = {
+    expr =
+      (prepare { } ''
+        ---
+        name: demo
+        description: It's useful # <ignored>
+        ---
+        body
+      '').skillMd;
+    expected = ''
+      ---
+      name: demo
+      description: It's useful # <ignored>
+      ---
+      body
+    '';
+  };
+
+  testPrepareSkillRejectsInvalidSingleQuotedDescription = {
+    expr = failsToEvaluate (
+      prepare { } ''
+        ---
+        name: demo
+        description: 'foo'bar'
+        ---
+        body
+      ''
+    );
+    expected = true;
+  };
+
+  testPrepareSkillAcceptsEscapedSingleQuote = {
+    expr = (prepare { } "---\nname: demo\ndescription: 'It''s useful'\n---\nbody\n").skillMd;
+    expected = "---\nname: demo\ndescription: 'It''s useful'\n---\nbody\n";
+  };
+
+  testPrepareSkillTreatsIndentedHashAsBlockContent = {
+    expr =
+      (prepare { } ''
+        ---
+        name: demo
+        description: |
+          # literal description
+        ---
+        body
+      '').skillMd;
+    expected = ''
+      ---
+      name: demo
+      description: |
+        # literal description
+      ---
+      body
+    '';
+  };
+
+  testPrepareSkillRejectsUnknownCustomizationKey = {
+    expr = failsToEvaluate (
+      prepare { disableAutomaticInvocaton = true; } ''
+        ---
+        name: demo
+        description: Demo.
+        ---
+        body
+      ''
+    );
+    expected = true;
+  };
+
+  testPrepareSkillRejectsUnknownNestedKey = {
+    expr = failsToEvaluate (
+      prepare { frontmatter.additionalInheritedField = [ "allowed-tools" ]; } ''
+        ---
+        name: demo
+        description: Demo.
+        ---
+        body
+      ''
+    );
+    expected = true;
+  };
+
+  testPrepareSkillRejectsUnknownReplacementKey = {
+    expr = failsToEvaluate (
+      prepare
+        {
+          body.replacements = [
+            {
+              from = "old";
+              into = "new";
+              to = "new";
+            }
+          ];
+        }
+        ''
+          ---
+          name: demo
+          description: Demo.
+          ---
+          body
+        ''
+    );
+    expected = true;
+  };
+
+  testPrepareSkillRejectsWrongType = {
+    expr = failsToEvaluate (
+      prepare { disableAutomaticInvocation = "true"; } ''
+        ---
+        name: demo
+        description: Demo.
+        ---
+        body
+      ''
+    );
+    expected = true;
+  };
+
+  testPrepareSkillRejectsRequiredFieldRemoval = {
+    expr = failsToEvaluate (
+      prepare { frontmatter.remove = [ "description" ]; } ''
+        ---
+        name: demo
+        description: Demo.
+        ---
+        body
+      ''
+    );
+    expected = true;
+  };
+
+  testPrepareSkillRejectsUnknownRemovedField = {
+    expr = failsToEvaluate (
+      prepare { frontmatter.remove = [ "allowed-tools" ]; } ''
+        ---
+        name: demo
+        description: Demo.
+        ---
+        body
+      ''
+    );
+    expected = true;
+  };
+
+  testValidateSkillDefinitionRejectsUnknownTopLevelKey = {
+    expr = failsToEvaluate (
+      fm.validateSkillDefinition "demo" {
+        root = ./.;
+        customisation.disableAutomaticInvocation = true;
+      }
+    );
+    expected = true;
+  };
+
+  testValidateSkillDefinitionRejectsLegacyInvocationKey = {
+    expr = failsToEvaluate (
+      fm.validateSkillDefinition "demo" {
+        root = ./.;
+        disableAutomaticInvocation = true;
+      }
+    );
+    expected = true;
+  };
+
   testCodexPolicyCreatedWhenMissingFile = {
     expr = fm.disableCodexImplicitInvocation "";
     expected = ''
@@ -232,14 +914,4 @@ lib.runTests {
     '';
   };
 
-  testInjectAfterFrontmatter = {
-    expr = fm.injectAfterFrontmatter "NOTE\n" withFm;
-    expected = "---\nname: demo\n---\nNOTE\nbody line\n";
-  };
-
-  # frontmatter が無い場合は先頭に挿入される
-  testInjectWithoutFrontmatter = {
-    expr = fm.injectAfterFrontmatter "NOTE\n" "plain body\n";
-    expected = "NOTE\nplain body\n";
-  };
 }
