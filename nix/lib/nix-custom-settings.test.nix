@@ -12,10 +12,9 @@ let
   ];
   actualLines = lib.filter (line: line != "") (lib.splitString "\n" nixCustomSettings.text);
 in
-lib.optionals (actualLines != expectedLines) [
-  {
-    test = "nix-custom-settings rendered lines";
+{
+  testRenderedLines = {
+    expr = actualLines;
     expected = expectedLines;
-    actual = actualLines;
-  }
-]
+  };
+}

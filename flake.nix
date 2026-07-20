@@ -313,6 +313,10 @@
               jq
               sops
               reuse
+              (python3.withPackages (ps: [
+                ps.pytest
+                ps.tomlkit
+              ]))
             ];
           };
         }
@@ -329,62 +333,30 @@
             treefmtWrapper = treefmtEvalFor.${system}.config.build.wrapper;
           };
           host = if system == darwinSystem then mkDarwinHostApps pkgs else mkLinuxHostApps system pkgs;
-        in
-        {
-          treefmt = treefmtEvalFor.${system}.config.build.check self;
-          # 全 app スクリプトをビルドし、wrapper のビルド時 shellcheck を
-          # CI (build-linux ジョブ) で強制する
-          app-scripts = pkgs.symlinkJoin {
-            name = "app-scripts";
-            paths = common.scripts ++ host.scripts;
+          baseChecks = {
+            treefmt = treefmtEvalFor.${system}.config.build.check self;
+            # 全 app スクリプトをビルドし、wrapper のビルド時 shellcheck を
+            # CI (build-linux ジョブ) で強制する
+            app-scripts = pkgs.symlinkJoin {
+              name = "app-scripts";
+              paths = common.scripts ++ host.scripts;
+            };
+          }
+          // lib.optionalAttrs (system == darwinSystem) {
+            darwin-system = darwinConfigurations.${darwinHostname}.system;
+          }
+          // lib.listToAttrs (
+            map (entry: {
+              name = "home-${entry.hostKind}";
+              value = homeConfigurations.${linuxConfigName entry}.activationPackage;
+            }) (builtins.filter (entry: entry.system == system) linuxHostMatrix)
+          );
+          testChecks = import ./nix/tests {
+            inherit lib pkgs username;
+            reservedCheckNames = builtins.attrNames baseChecks;
           };
-          # frontmatter.nix の純関数テスト。eval 時に assert するので
-          # --no-build の CI でも検知される
-          frontmatter-tests =
-            let
-              failures = import ./nix/modules/home/agent-skills/frontmatter-tests.nix { inherit lib; };
-            in
-            if failures == [ ] then
-              pkgs.runCommand "frontmatter-tests" { } "touch $out"
-            else
-              throw "frontmatter tests failed: ${builtins.toJSON failures}";
-          nix-custom-settings-tests =
-            let
-              failures = import ./nix/lib/nix-custom-settings-tests.nix { inherit lib username; };
-            in
-            if failures == [ ] then
-              pkgs.runCommand "nix-custom-settings-tests" { } "touch $out"
-            else
-              throw "nix custom settings tests failed: ${builtins.toJSON failures}";
-          # Codex Python helpers のテスト。ビルド時実行なので build-linux ジョブが強制する
-          merge-py-tests =
-            pkgs.runCommand "merge-py-tests"
-              {
-                nativeBuildInputs = [
-                  (pkgs.python3.withPackages (ps: [
-                    ps.tomlkit
-                    ps.pytest
-                  ]))
-                ];
-              }
-              ''
-                cp ${./nix/modules/home/programs/codex/merge.py} merge.py
-                cp ${./nix/modules/home/programs/codex/test_merge.py} test_merge.py
-                cp ${./nix/modules/home/programs/codex/generate_herdr_hook_state.py} generate_herdr_hook_state.py
-                cp ${./nix/modules/home/programs/codex/test_generate_herdr_hook_state.py} test_generate_herdr_hook_state.py
-                pytest -q test_merge.py test_generate_herdr_hook_state.py
-                touch $out
-              '';
-        }
-        // lib.optionalAttrs (system == darwinSystem) {
-          darwin-system = darwinConfigurations.${darwinHostname}.system;
-        }
-        // lib.listToAttrs (
-          map (entry: {
-            name = "home-${entry.hostKind}";
-            value = homeConfigurations.${linuxConfigName entry}.activationPackage;
-          }) (builtins.filter (entry: entry.system == system) linuxHostMatrix)
-        )
+        in
+        baseChecks // testChecks
       );
     };
 }

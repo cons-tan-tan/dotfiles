@@ -3,6 +3,7 @@
 
 setup() {
   REPO_ROOT="$(git rev-parse --show-toplevel)"
+  BASH_BIN="$(command -v bash)"
   SCRIPT="$REPO_ROOT/nix/apps/apply-nix-settings.sh"
   WORK="$(mktemp -d)"
   STUB_DIR="$WORK/stub"
@@ -166,8 +167,8 @@ EOF
   chmod 666 "$sudo_log"
 
   mkdir -p "$STUB_DIR"
-  cat >"$STUB_DIR/sudo" <<'EOF'
-#!/usr/bin/env bash
+  printf '#!%s\n' "$BASH_BIN" >"$STUB_DIR/sudo"
+  cat >>"$STUB_DIR/sudo" <<'EOF'
 printf '%s\n' "$@" > "$SUDO_STUB_LOG"
 exit 0
 EOF

@@ -5,8 +5,9 @@
 setup() {
   REPO_ROOT="$(git rev-parse --show-toplevel)"
   SCRIPT="$REPO_ROOT/nix/modules/home/programs/curl-fetch.sh"
+  BASH_BIN="$(command -v bash)"
   STUB_DIR="$(mktemp -d)"
-  printf '#!/usr/bin/env bash\necho curl-stub-called\n' > "$STUB_DIR/curl"
+  printf '#!%s\necho curl-stub-called\n' "$BASH_BIN" > "$STUB_DIR/curl"
   chmod +x "$STUB_DIR/curl"
   export PATH="$STUB_DIR:$PATH"
 }

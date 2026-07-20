@@ -3,6 +3,7 @@
 setup() {
   REPO_ROOT="$(git rev-parse --show-toplevel)"
   SCRIPT="$REPO_ROOT/nix/modules/home/programs/herdr-wrapper.sh"
+  BASH_BIN="$(command -v bash)"
   WORK="$(mktemp -d)"
   TRACE_FILE="$WORK/trace"
   ARGS_FILE="$WORK/args"
@@ -10,8 +11,8 @@ setup() {
   HERDR_STUB="$STUB_DIR/herdr"
 
   mkdir -p "$STUB_DIR"
-  cat > "$HERDR_STUB" <<'EOS'
-#!/usr/bin/env bash
+  printf '#!%s\n' "$BASH_BIN" > "$HERDR_STUB"
+  cat >> "$HERDR_STUB" <<'EOS'
 {
   printf 'argc=%s\n' "$#"
   for arg in "$@"; do

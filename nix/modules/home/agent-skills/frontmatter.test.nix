@@ -1,6 +1,5 @@
-# frontmatter.nix の純関数テスト。lib.runTests は失敗ケースのリストを返す
-# (空リスト = 全 pass)。flake.nix の checks が eval 時に空であることを
-# assert するため、退行は nix flake check --no-build の段階で検知される。
+# frontmatter.nix の純関数テスト。nix/tests/default.nix が *.test.nix を
+# 収集して lib.runTests を適用する。
 { lib }:
 let
   fm = import ./frontmatter.nix { inherit lib; };
@@ -23,7 +22,7 @@ let
     } original;
   failsToEvaluate = value: !(builtins.tryEval (builtins.deepSeq value true)).success;
 in
-lib.runTests {
+{
   testSplitWithFrontmatter = {
     expr = fm.splitFrontmatter withFm;
     expected = {

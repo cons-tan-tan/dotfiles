@@ -3,6 +3,7 @@
 
 setup() {
   REPO_ROOT="$(git rev-parse --show-toplevel)"
+  BASH_BIN="$(command -v bash)"
   WORK="$(mktemp -d)"
   mkdir -p "$WORK/nix/apps" "$WORK/nix/pins" "$WORK/nix/packages/difit"
   cp "$REPO_ROOT/nix/apps/update-pins.sh" "$WORK/nix/apps/update-pins.sh"
@@ -34,8 +35,8 @@ EOS
   tar -czf "$WORK/difit.tgz" -C "$WORK/difit-tar" package
   export UPDATE_PINS_DIFIT_TARBALL="$WORK/difit.tgz"
 
-  cat >"$STUB_DIR/gh" <<'EOS'
-#!/usr/bin/env bash
+  printf '#!%s\n' "$BASH_BIN" >"$STUB_DIR/gh"
+  cat >>"$STUB_DIR/gh" <<'EOS'
 set -euo pipefail
 
 case "$*" in
@@ -64,8 +65,8 @@ case "$*" in
 esac
 EOS
 
-  cat >"$STUB_DIR/curl" <<'EOS'
-#!/usr/bin/env bash
+  printf '#!%s\n' "$BASH_BIN" >"$STUB_DIR/curl"
+  cat >>"$STUB_DIR/curl" <<'EOS'
 set -euo pipefail
 
 if [ "$1" != "-fsSL" ]; then
@@ -104,8 +105,8 @@ XML
 esac
 EOS
 
-  cat >"$STUB_DIR/npm" <<'EOS'
-#!/usr/bin/env bash
+  printf '#!%s\n' "$BASH_BIN" >"$STUB_DIR/npm"
+  cat >>"$STUB_DIR/npm" <<'EOS'
 set -euo pipefail
 
 if [ "$1" = "install" ] && [[ " $* " == *" --package-lock-only "* ]]; then
@@ -129,8 +130,8 @@ echo "unexpected npm invocation: $*" >&2
 exit 1
 EOS
 
-  cat >"$STUB_DIR/nix" <<'EOS'
-#!/usr/bin/env bash
+  printf '#!%s\n' "$BASH_BIN" >"$STUB_DIR/nix"
+  cat >>"$STUB_DIR/nix" <<'EOS'
 set -euo pipefail
 
 if [ "$1" = "store" ] && [ "${2:-}" = "prefetch-file" ]; then

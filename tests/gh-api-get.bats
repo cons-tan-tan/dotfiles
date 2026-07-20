@@ -4,9 +4,10 @@
 setup() {
   REPO_ROOT="$(git rev-parse --show-toplevel)"
   SCRIPT="$REPO_ROOT/nix/modules/home/programs/gh-api-get.sh"
+  BASH_BIN="$(command -v bash)"
   STUB_DIR="$(mktemp -d)"
-  cat >"$STUB_DIR/gh" <<'EOF'
-#!/usr/bin/env bash
+  printf '#!%s\n' "$BASH_BIN" >"$STUB_DIR/gh"
+  cat >>"$STUB_DIR/gh" <<'EOF'
 printf '<%s>\n' "$@"
 EOF
   chmod +x "$STUB_DIR/gh"

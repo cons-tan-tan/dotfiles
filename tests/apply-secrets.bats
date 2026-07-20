@@ -4,6 +4,7 @@
 
 setup() {
   REPO_ROOT="$(git rev-parse --show-toplevel)"
+  BASH_BIN="$(command -v bash)"
   SCRIPT="$REPO_ROOT/nix/apps/apply-secrets/apply-secrets.sh"
   RENDERERS_DIR="$REPO_ROOT/nix/apps/apply-secrets/renderers"
   WORK="$(mktemp -d)"
@@ -16,8 +17,8 @@ setup() {
   STUB_DIR="$WORK/stub"
   mkdir -p "$STUB_DIR"
   # sops スタブ: SOPS_STUB_FAIL=1 なら復号失敗を再現する
-  cat > "$STUB_DIR/sops" <<'EOS'
-#!/usr/bin/env bash
+  printf '#!%s\n' "$BASH_BIN" > "$STUB_DIR/sops"
+  cat >> "$STUB_DIR/sops" <<'EOS'
 if [ "${SOPS_STUB_FAIL:-}" = "1" ]; then
   echo "stub: decryption failed" >&2
   exit 1
