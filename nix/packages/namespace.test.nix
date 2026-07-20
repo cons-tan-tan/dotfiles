@@ -4,6 +4,7 @@ let
   commonNames = [
     "agent-browser"
     "agent-slack"
+    "claude-code"
     "curl-fetch"
     "difit"
     "gh-api-get"

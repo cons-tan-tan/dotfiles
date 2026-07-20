@@ -17,7 +17,6 @@ let
   settingsLib = import ../../../../lib/settings/codex.nix { };
   jsonFormat = pkgs.formats.json { };
   herdrSkillPath = "${codexHome}/skills/herdr/SKILL.md";
-  enableHerdrSkillOverride = "skills.config=[{path=${builtins.toJSON herdrSkillPath},enabled=true}]";
   herdrHookPath = "${codexHome}/herdr-agent-state.sh";
   herdrHookPathEnv = lib.makeBinPath [
     pkgs.coreutils
@@ -25,15 +24,8 @@ let
   ];
   herdrHookCommand = "${pkgs.coreutils}/bin/env PATH=${herdrHookPathEnv} ${pkgs.bash}/bin/bash ${lib.escapeShellArg herdrHookPath} session";
 
-  codex = pkgs.writeShellApplication {
-    name = "codex";
-    text = ''
-      if [ "''${HERDR_ENV:-}" = "1" ]; then
-        exec ${pkgs.codex}/bin/codex -c ${lib.escapeShellArg enableHerdrSkillOverride} "$@"
-      fi
-
-      exec ${pkgs.codex}/bin/codex "$@"
-    '';
+  codex = pkgs.dotfilesPackages.codex.mkWrappedPackage {
+    inherit herdrSkillPath;
   };
 
   baseMergePayloadJson = jsonFormat.generate "codex-config-merge-base.json" (

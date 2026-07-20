@@ -17,27 +17,6 @@ let
   ];
   herdrHookCommand = "${pkgs.coreutils}/bin/env PATH=${herdrHookPathEnv} ${pkgs.bash}/bin/bash ${lib.escapeShellArg herdrHookPath} session";
 
-  # HM 側 (programs.claude-code) も plugins 用に symlinkJoin で包むため、
-  # wrapper は絶対パスで実体を参照して多段合成できるようにする。
-  claudeCodePackage = pkgs.symlinkJoin {
-    name = "claude-code-wrapped";
-    paths = [ pkgs.claude-code ];
-    postBuild = ''
-      mv $out/bin/claude $out/bin/.claude-wrapped-base
-      cat > $out/bin/claude <<EOF
-      #! ${pkgs.bash}/bin/bash -e
-      export PATH=${pkgs.nodejs}/bin:\$PATH
-      if [ "\''${HERDR_ENV:-}" = "1" ]; then
-        exec -a "\$0" "$out/bin/.claude-wrapped-base" --effort xhigh --plugin-dir ${pkgs.dotfilesPackages.herdr.agent.plugin} "\$@"
-      fi
-
-      exec -a "\$0" "$out/bin/.claude-wrapped-base" --effort xhigh "\$@"
-      EOF
-      chmod +x $out/bin/claude
-    '';
-    inherit (pkgs.claude-code) meta;
-  };
-
   settingsLib = import ../../../lib/settings/claude.nix { inherit lib; };
   settingsValidator = import ../../../lib/mk-claude-settings-validator.nix { inherit pkgs; };
 
@@ -86,7 +65,7 @@ in
 {
   programs.claude-code = {
     enable = true;
-    package = claudeCodePackage;
+    package = pkgs.dotfilesPackages.claude-code;
     plugins = [
       "${inputs.codex-plugin-cc}/plugins/codex"
     ];

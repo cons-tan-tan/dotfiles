@@ -9,6 +9,10 @@ let
     inherit (pkgs) callPackage;
     hcomSource = inputs.hcom-src;
   };
+  codex = import ./codex {
+    inherit (pkgs) callPackage;
+    inherit (pkgs) codex;
+  };
   herdr = import ./herdr {
     inherit (pkgs) callPackage;
   };
@@ -19,6 +23,10 @@ in
   };
   agent-slack = pkgs.callPackage ./agent-slack {
     agentSlackSource = inputs.agent-slack-skill;
+  };
+  claude-code = pkgs.callPackage ./claude-code {
+    claudeCode = pkgs.claude-code;
+    herdrPlugin = herdr.agent.plugin;
   };
   difit = pkgs.callPackage ./difit {
     difitSource = inputs.difit-src;
@@ -32,7 +40,7 @@ in
   };
   shellfirm = pkgs.callPackage ./shellfirm { };
 
-  inherit hcom herdr;
+  inherit codex hcom herdr;
 }
 // lib.optionalAttrs hostPlatform.isLinux {
   drawio-headless = pkgs.callPackage ./drawio-headless { };

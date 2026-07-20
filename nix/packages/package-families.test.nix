@@ -1,8 +1,32 @@
 { pkgs }:
 let
-  inherit (pkgs.dotfilesPackages) hcom herdr hunk;
+  inherit (pkgs.dotfilesPackages)
+    codex
+    hcom
+    herdr
+    hunk
+    ;
 in
 {
+  testCodexFamilyShape = {
+    expr = builtins.attrNames codex;
+    expected = [ "mkWrappedPackage" ];
+  };
+
+  testCodexWrapperIsBuilder = {
+    expr = builtins.isFunction codex.mkWrappedPackage;
+    expected = true;
+  };
+
+  testCodexWrapperBuildsDerivation = {
+    expr = pkgs.lib.isDerivation (
+      codex.mkWrappedPackage {
+        herdrSkillPath = "/home/test/.codex/skills/herdr/SKILL.md";
+      }
+    );
+    expected = true;
+  };
+
   testHcomFamilyShape = {
     expr = builtins.attrNames hcom;
     expected = [
