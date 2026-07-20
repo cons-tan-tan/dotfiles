@@ -23,7 +23,13 @@ teardown() {
 }
 
 @test "documented fallback command passes through" {
-  run bash "$SCRIPT" -sL -A "claude-code/1.0" https://example.com
+  run bash "$SCRIPT" -fsSL -A "claude-code/1.0" https://example.com
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"curl-stub-called"* ]]
+}
+
+@test "documented FxEmbed command passes through" {
+  run bash "$SCRIPT" -sSL --fail-with-body https://example.com
   [ "$status" -eq 0 ]
   [[ "$output" == *"curl-stub-called"* ]]
 }

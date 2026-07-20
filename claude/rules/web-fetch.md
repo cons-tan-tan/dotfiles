@@ -1,25 +1,22 @@
 # Web Fetch Strategy
 
-When fetching web content, try methods in this order. Move to the next if the current one fails (e.g. 403, timeout, aborted):
+Unless a source-specific rule applies, fetch general web content in this order. Continue when a method fails or returns incomplete content:
 
-1. WebFetch tool - Default. Try this first.
-2. curl fallback - If WebFetch returns 403, retry with `curl-fetch -sL -A "claude-code/1.0" <url>`. Many 403s are caused by Cloudflare blocking the default `Claude-User` User-Agent. `curl-fetch` is a read-only HTTP(S) fetcher, not a general curl replacement. It allows GET/HEAD-style fetches, explicit `-o/--output` paths, literal `--write-out` formats, and basic retry/timeout/header controls. It blocks request mutation (`-X`, `-d`, `-F`), local file reads (`@file`, config/cookie/cert files), remote-derived filenames (`-O`, `-J`), curl state/trace files, proxy/destination overrides, and non-HTTP(S) protocols. Use raw `curl` with explicit approval for those cases.
-3. `agent-browser` skill - Use the `agent-browser` skill for browser-based fetching.
+1. WebFetch tool - Use this by default.
+2. curl fallback - Retry with `curl-fetch -fsSL -A "claude-code/1.0" <url>`. This is a GET/HEAD-only HTTP(S) wrapper with a small option allowlist. If a required read-only fetch is unsupported, use `agent-browser` or request approval for an explicitly scoped raw `curl` command.
+3. `agent-browser` skill - Use this when fetching requires browser rendering or interaction.
 
 ## Social Media Posts (FxEmbed)
 
-X/Twitter and Bluesky block direct fetching. Use [FxEmbed](https://github.com/FxEmbed/FxEmbed) proxy domains to read posts:
+For public X/Twitter and Bluesky posts, skip the general sequence and use the [FxEmbed v2 JSON API](https://docs.fxembed.com/api/introduction/). Do not use the embed hosts (`fixupx.com`, `fxtwitter.com`, `fxbsky.app`), which may redirect to the origin site; use the API hosts below.
 
-| Original domain | Replace with                       |
-| --------------- | ---------------------------------- |
-| `x.com`         | `fixupx.com` (or `xfixup.com`)     |
-| `twitter.com`   | `fxtwitter.com` (or `twittpr.com`) |
-| `bsky.app`      | `fxbsky.app`                       |
+| Original URL                                     | Fetch via                                         |
+| ------------------------------------------------ | ------------------------------------------------- |
+| `x.com` or `twitter.com` `/<handle>/status/<id>` | `https://api.fxtwitter.com/2/status/<id>`         |
+| `bsky.app/profile/<handle>/post/<rkey>`          | `https://api.fxbsky.app/2/status/<handle>/<rkey>` |
 
-```
-https://x.com/user/status/123           -> https://fixupx.com/user/status/123
-https://twitter.com/user/status/123     -> https://fxtwitter.com/user/status/123
-https://bsky.app/profile/user/post/abc  -> https://fxbsky.app/profile/user/post/abc
-```
+Pipe `curl-fetch -sSL --fail-with-body` into a `jq -e` filter that requires `.code == 200` and `.status != null` and emits only the needed fields. For API errors, report only `.code` and `(.message // .status.message)`; never expose the full response.
 
-Important: FxEmbed responses contain embedded images and metadata that pollute the main context. Always fetch via a subagent using `curl-fetch -sL` to keep the main conversation clean.
+Both APIs place the requested post under `.status`. Useful fields are `.status.text`, `.status.article.title`, and `.status.article.content.blocks[]?.text` (X Article text blocks, when present).
+
+X Article URLs do not map directly to the API. Identify a containing post with WebSearch or `agent-browser`, or report that it cannot be identified reliably.
