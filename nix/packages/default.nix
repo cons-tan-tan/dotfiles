@@ -5,6 +5,9 @@
   pkgs,
 }:
 let
+  aws = import ./aws {
+    inherit (pkgs) callPackage;
+  };
   hcom = import ./hcom {
     inherit (pkgs) callPackage;
     hcomSource = inputs.hcom-src;
@@ -15,6 +18,9 @@ let
   };
   herdr = import ./herdr {
     inherit (pkgs) callPackage;
+  };
+  pi = import ./pi {
+    inherit (pkgs) callPackage pi;
   };
 in
 {
@@ -40,7 +46,13 @@ in
   };
   shellfirm = pkgs.callPackage ./shellfirm { };
 
-  inherit codex hcom herdr;
+  inherit
+    aws
+    codex
+    hcom
+    herdr
+    pi
+    ;
 }
 // lib.optionalAttrs hostPlatform.isLinux {
   drawio-headless = pkgs.callPackage ./drawio-headless { };

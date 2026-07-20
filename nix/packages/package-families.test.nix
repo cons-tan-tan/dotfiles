@@ -1,13 +1,34 @@
 { pkgs }:
 let
   inherit (pkgs.dotfilesPackages)
+    aws
     codex
     hcom
     herdr
     hunk
+    pi
     ;
 in
 {
+  testAwsFamilyShape = {
+    expr = builtins.attrNames aws;
+    expected = [ "mkLoginPackage" ];
+  };
+
+  testAwsLoginPackageIsBuilder = {
+    expr = builtins.isFunction aws.mkLoginPackage;
+    expected = true;
+  };
+
+  testAwsLoginBuilderCreatesDerivation = {
+    expr = pkgs.lib.isDerivation (
+      aws.mkLoginPackage {
+        loginConfigFile = pkgs.writeText "aws-login-test-config" "";
+      }
+    );
+    expected = true;
+  };
+
   testCodexFamilyShape = {
     expr = builtins.attrNames codex;
     expected = [ "mkWrappedPackage" ];
@@ -98,6 +119,28 @@ in
       hunk.package
       hunk.wslRuntime
     ];
+    expected = true;
+  };
+
+  testPiFamilyShape = {
+    expr = builtins.attrNames pi;
+    expected = [
+      "mkWrappedPackage"
+      "packageManager"
+    ];
+  };
+
+  testPiPackageContracts = {
+    expr = builtins.isFunction pi.mkWrappedPackage && pkgs.lib.isDerivation pi.packageManager;
+    expected = true;
+  };
+
+  testPiWrapperBuilderCreatesDerivation = {
+    expr = pkgs.lib.isDerivation (
+      pi.mkWrappedPackage {
+        packageDir = "/home/test/.pi/agent/package";
+      }
+    );
     expected = true;
   };
 }

@@ -1,0 +1,5 @@
+export PI_PACKAGE_DIR="$PI_MANAGED_PACKAGE_DIR"
+export PI_SKIP_VERSION_CHECK=1
+export PI_TELEMETRY=0
+
+exec "$PI_BIN" "$@"
