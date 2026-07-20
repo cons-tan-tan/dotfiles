@@ -26,21 +26,6 @@ let
       };
     }
     .${config.my.hostKind};
-
-  wslSetSshAuthSock = pkgs.writeShellApplication {
-    name = "set-SSH_AUTH_SOCK-wsl";
-    text = ''
-      if [ -z "''${SSH_AUTH_SOCK:-}" ] || [ -z "''${SSH_CONNECTION:-}" ]; then
-        unset SSH_AGENT_PID
-        if [ "''${gnupg_SSH_AUTH_SOCK_by:-0}" -ne $$ ]; then
-          sock="$(${pkgs.gnupg}/bin/gpgconf --list-dirs agent-ssh-socket)"
-          export SSH_AUTH_SOCK="$sock"
-        fi
-      fi
-
-      ${pkgs.systemd}/bin/systemctl --user import-environment SSH_AUTH_SOCK
-    '';
-  };
 in
 {
   programs.gpg = {
@@ -63,6 +48,6 @@ in
   };
 
   systemd.user.services.set-SSH_AUTH_SOCK.Service.ExecStart = lib.mkIf config.my.isWsl (
-    lib.mkForce (lib.getExe wslSetSshAuthSock)
+    lib.mkForce (lib.getExe pkgs.dotfilesPackages.wsl-set-ssh-auth-sock)
   );
 }

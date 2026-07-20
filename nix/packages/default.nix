@@ -23,6 +23,9 @@ in
   difit = pkgs.callPackage ./difit {
     difitSource = inputs.difit-src;
   };
+  curl-fetch = pkgs.callPackage ./curl-fetch { };
+  gh-api-get = pkgs.callPackage ./gh-api-get { };
+  ghq-fetch-all = pkgs.callPackage ./ghq-fetch-all { };
   hunk = pkgs.callPackage ./hunk {
     hunkInput = inputs.hunk;
   };
@@ -32,6 +35,7 @@ in
 }
 // lib.optionalAttrs hostPlatform.isLinux {
   drawio-headless = pkgs.callPackage ./drawio-headless { };
+  wsl-set-ssh-auth-sock = pkgs.callPackage ./wsl-set-ssh-auth-sock { };
 }
 // lib.optionalAttrs hostPlatform.isDarwin {
   codex-app = pkgs.callPackage ./codex-app { };

@@ -3,7 +3,7 @@
 
 setup() {
   REPO_ROOT="$(git rev-parse --show-toplevel)"
-  SCRIPT="$REPO_ROOT/nix/modules/home/programs/gh-api-get.sh"
+  SCRIPT="$REPO_ROOT/nix/packages/gh-api-get/gh-api-get.sh"
   BASH_BIN="$(command -v bash)"
   STUB_DIR="$(mktemp -d)"
   printf '#!%s\n' "$BASH_BIN" >"$STUB_DIR/gh"

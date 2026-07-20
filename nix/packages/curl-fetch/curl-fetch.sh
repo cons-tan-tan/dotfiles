@@ -1,6 +1,5 @@
 # curl の read-only HTTP(S) ラッパー。エージェントの自動許可前提なので、
 # 用途を取得系の小さなフラグ集合に閉じ込めて監査可能にする。
-# nix/modules/home/programs/curl.nix が writeShellApplication で包む。
 set -euo pipefail
 
 LONG_NO_VALUE_FLAGS=(

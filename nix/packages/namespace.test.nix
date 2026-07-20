@@ -4,7 +4,10 @@ let
   commonNames = [
     "agent-browser"
     "agent-slack"
+    "curl-fetch"
     "difit"
+    "gh-api-get"
+    "ghq-fetch-all"
     "hunk"
     "shellfirm"
   ];
@@ -32,9 +35,9 @@ in
   testPlatformPackagesAreScoped = {
     expr =
       if pkgs.stdenv.hostPlatform.isLinux then
-        local ? drawio-headless && !(local ? codex-app)
+        local ? drawio-headless && local ? wsl-set-ssh-auth-sock && !(local ? codex-app)
       else
-        local ? codex-app && !(local ? drawio-headless);
+        local ? codex-app && !(local ? drawio-headless) && !(local ? wsl-set-ssh-auth-sock);
     expected = true;
   };
 }
