@@ -94,12 +94,12 @@
     };
 
     agent-browser-skill = {
-      url = "github:vercel-labs/agent-browser";
+      url = "github:vercel-labs/agent-browser/v0.31.1";
       flake = false;
     };
 
     agent-slack-skill = {
-      url = "github:stablyai/agent-slack";
+      url = "github:stablyai/agent-slack/v0.9.3";
       flake = false;
     };
 
@@ -117,7 +117,7 @@
     # バイナリ側の pin (nix/pins/difit.json) とは `nix run .#update-pins` が
     # この input ごと同期する。
     difit-src = {
-      url = "github:yoshiko-pg/difit";
+      url = "github:yoshiko-pg/difit/v5.0.4";
       flake = false;
     };
 
@@ -125,7 +125,7 @@
     # バイナリ側の pin (nix/pins/hcom.json) とは `nix run .#update-pins` が
     # この input ごと同期する。
     hcom-src = {
-      url = "github:aannoo/hcom";
+      url = "github:aannoo/hcom/v0.7.21";
       flake = false;
     };
 

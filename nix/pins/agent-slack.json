@@ -1,5 +1,4 @@
 {
-  "version": "0.9.3",
   "assets": {
     "aarch64-darwin": {
       "name": "agent-slack-darwin-arm64",

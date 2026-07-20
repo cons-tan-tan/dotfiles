@@ -3,15 +3,16 @@
     "agent-browser-skill": {
       "flake": false,
       "locked": {
-        "lastModified": 1783520190,
-        "narHash": "sha256-2x5/Nc5KCrgk9dYXur7y9Y9z4JzcJVW4WSYWarcL61k=",
+        "lastModified": 1782493159,
+        "narHash": "sha256-uCLzNQ0NAeg1TtA6tcBhTu5VTyjkumsyiEpAhYLPQD0=",
         "owner": "vercel-labs",
         "repo": "agent-browser",
-        "rev": "afae698a51242166170b6fe4809dd57fe9f75798",
+        "rev": "d851d3490cc4faa4a3ffedf020d69c23bf51f8ed",
         "type": "github"
       },
       "original": {
         "owner": "vercel-labs",
+        "ref": "v0.31.1",
         "repo": "agent-browser",
         "type": "github"
       }
@@ -19,15 +20,16 @@
     "agent-slack-skill": {
       "flake": false,
       "locked": {
-        "lastModified": 1780617934,
-        "narHash": "sha256-nxpBZisxvnXD0xEoC9Vr2T6sthLIDW6NoTp5tEbM+I4=",
+        "lastModified": 1777963306,
+        "narHash": "sha256-kv4VNACqDhwI/FSZhESsdbJ1veRbPx6+4Vf1odKC3KI=",
         "owner": "stablyai",
         "repo": "agent-slack",
-        "rev": "6775fa878dfe7d38ca15899c765a2e19c9718a39",
+        "rev": "4a9bd21fad0c402940d725d828321ceac32e4fca",
         "type": "github"
       },
       "original": {
         "owner": "stablyai",
+        "ref": "v0.9.3",
         "repo": "agent-slack",
         "type": "github"
       }
@@ -219,15 +221,16 @@
     "difit-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1783397328,
-        "narHash": "sha256-LwqfnZTo4m+B2rpMWY0SEomsVtSuCxqnM24D9bq9j40=",
+        "lastModified": 1782742298,
+        "narHash": "sha256-klHLeoLqgQJrYtm4ytS2jCOAoPkhqog2k6p9vSfdHBM=",
         "owner": "yoshiko-pg",
         "repo": "difit",
-        "rev": "9ca858d538926f1ec1692ae34a75e7c27df042a2",
+        "rev": "59df3692ff4aa8f96df84b98e17171fa452a0b04",
         "type": "github"
       },
       "original": {
         "owner": "yoshiko-pg",
+        "ref": "v5.0.4",
         "repo": "difit",
         "type": "github"
       }
@@ -308,15 +311,16 @@
     "hcom-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1783385497,
-        "narHash": "sha256-G4FuoubtgYo2nB2bUx9lBM6ajtck4DPtToWlFQAyoAo=",
+        "lastModified": 1780741215,
+        "narHash": "sha256-7p8kmktTQ3MBlUecWO9HkArZn1tJtkWoyowOfmKpw04=",
         "owner": "aannoo",
         "repo": "hcom",
-        "rev": "865732893556bcaf265f7cc82b6e628b8a341deb",
+        "rev": "516db08c882aecfd65db383b7eed6b4f5600c232",
         "type": "github"
       },
       "original": {
         "owner": "aannoo",
+        "ref": "v0.7.21",
         "repo": "hcom",
         "type": "github"
       }

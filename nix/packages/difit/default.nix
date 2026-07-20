@@ -3,13 +3,14 @@
   buildNpmPackage,
   fetchurl,
   nodejs_24,
+  difitSource,
   difitPin ? builtins.fromJSON (builtins.readFile ../../pins/difit.json),
 }:
 let
-  # version / hash は nix/pins/difit.json に固定し、`nix run .#update-pins` で
-  # 自動更新する (flake input difit-src も同時に更新される)。
+  # version は skill と共有する difit-src、配布物の hash は JSON pin が所有する。
+  # `nix run .#update-pins` は両方を同じ transaction で更新する。
   pin = difitPin;
-  inherit (pin) version;
+  version = (builtins.fromJSON (builtins.readFile "${difitSource}/package.json")).version;
 in
 buildNpmPackage {
   pname = "difit";

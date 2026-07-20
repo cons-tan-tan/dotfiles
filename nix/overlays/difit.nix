@@ -1,3 +1,5 @@
-_final: prev: {
-  difit = prev.callPackage ../packages/difit { };
+difitSource: _final: prev: {
+  difit = prev.callPackage ../packages/difit {
+    inherit difitSource;
+  };
 }

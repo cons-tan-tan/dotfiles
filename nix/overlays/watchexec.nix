@@ -1,19 +1,10 @@
 _final: prev:
 let
   inherit (prev.stdenv.hostPlatform) system;
-  version = prev.watchexec.version;
-  target =
-    {
-      aarch64-darwin = "aarch64-apple-darwin";
-      x86_64-darwin = "x86_64-apple-darwin";
-    }
-    .${system};
-  hash =
-    {
-      aarch64-darwin = "sha256-xeQF3REJlAslEDmNIYKZDBvlkGO5ThHXrOnHtDXLHfE=";
-      x86_64-darwin = "sha256-u3S/Myhv9/Md2Odj4Bf7wEGDYNiLrv01vFfWYtKDlOI=";
-    }
-    .${system};
+  pin = builtins.fromJSON (builtins.readFile ../pins/watchexec.json);
+  inherit (pin) version;
+  asset = pin.assets.${system} or (throw "watchexec: unsupported system '${system}'");
+  assetName = "watchexec-${version}-${asset.target}.tar.xz";
 in
 prev.lib.optionalAttrs prev.stdenv.hostPlatform.isDarwin {
   # cctools ld crashes while linking watchexec on GitHub's Darwin runner.
@@ -23,8 +14,8 @@ prev.lib.optionalAttrs prev.stdenv.hostPlatform.isDarwin {
     inherit version;
 
     src = prev.fetchurl {
-      url = "https://github.com/watchexec/watchexec/releases/download/v${version}/watchexec-${version}-${target}.tar.xz";
-      inherit hash;
+      url = "https://github.com/watchexec/watchexec/releases/download/v${version}/${assetName}";
+      inherit (asset) hash;
     };
 
     installPhase = ''

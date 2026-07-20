@@ -9,6 +9,7 @@ setup() {
   cp "$REPO_ROOT/nix/apps/update-pins.sh" "$WORK/nix/apps/update-pins.sh"
   cp "$REPO_ROOT"/nix/pins/*.json "$WORK/nix/pins/"
   cp "$REPO_ROOT/nix/packages/difit/package-lock.json" "$WORK/nix/packages/difit/package-lock.json"
+  cp "$REPO_ROOT/flake.nix" "$WORK/flake.nix"
   cp "$REPO_ROOT/flake.lock" "$WORK/flake.lock"
 
   (
@@ -17,7 +18,7 @@ setup() {
     git config user.email update-pins-test@example.invalid
     git config user.name "update-pins test"
     git config commit.gpgsign false
-    git add flake.lock nix/apps/update-pins.sh nix/packages/difit/package-lock.json nix/pins/*.json
+    git add flake.nix flake.lock nix/apps/update-pins.sh nix/packages/difit/package-lock.json nix/pins/*.json
     git commit -q -m "initial managed files"
   )
 
@@ -26,6 +27,7 @@ setup() {
   export UPDATE_PINS_FAKE_ROOT="$WORK"
   export UPDATE_PINS_SHELLFIRM_BUILD_COUNT="$WORK/shellfirm-build-count"
   export UPDATE_PINS_DIFIT_BUILD_COUNT="$WORK/difit-build-count"
+  export UPDATE_PINS_FLAKE_UPDATE_LOG="$WORK/flake-update.log"
 
   mkdir -p "$WORK/difit-tar/package"
   cat >"$WORK/difit-tar/package/package.json" <<'EOS'
@@ -38,15 +40,23 @@ EOS
   cat >>"$STUB_DIR/gh" <<'EOS'
 set -euo pipefail
 
+flake_version() {
+  local repo=$1
+  sed -n "s|.*github:$repo/v\\([^\"]*\\)\";|\\1|p" "$UPDATE_PINS_FAKE_ROOT/flake.nix"
+}
+
 case "$*" in
 "api repos/aannoo/hcom/releases/latest --jq .tag_name")
-  printf '%s\n' "${UPDATE_PINS_HCOM_TAG:-v$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/hcom.json")}"
+  printf '%s\n' "${UPDATE_PINS_HCOM_TAG:-v$(flake_version aannoo/hcom)}"
   ;;
 "api repos/stablyai/agent-slack/releases/latest --jq .tag_name")
-  printf '%s\n' "${UPDATE_PINS_AGENT_SLACK_TAG:-v$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/agent-slack.json")}"
+  printf '%s\n' "${UPDATE_PINS_AGENT_SLACK_TAG:-v$(flake_version stablyai/agent-slack)}"
   ;;
 "api repos/vercel-labs/agent-browser/releases/latest --jq .tag_name")
-  printf '%s\n' "${UPDATE_PINS_AGENT_BROWSER_TAG:-v$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/agent-browser.json")}"
+  printf '%s\n' "${UPDATE_PINS_AGENT_BROWSER_TAG:-v$(flake_version vercel-labs/agent-browser)}"
+  ;;
+"api repos/watchexec/watchexec/releases/latest --jq .tag_name")
+  printf '%s\n' "${UPDATE_PINS_WATCHEXEC_TAG:-v$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/watchexec.json")}"
   ;;
 "api repos/kaplanelad/shellfirm/releases/latest --jq .tag_name")
   printf '%s\n' "${UPDATE_PINS_SHELLFIRM_TAG:-v$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/shellfirm.json")}"
@@ -65,6 +75,11 @@ EOS
   cat >>"$STUB_DIR/curl" <<'EOS'
 set -euo pipefail
 
+flake_version() {
+  local repo=$1
+  sed -n "s|.*github:$repo/v\\([^\"]*\\)\";|\\1|p" "$UPDATE_PINS_FAKE_ROOT/flake.nix"
+}
+
 if [ "$1" != "-fsSL" ]; then
   echo "unexpected curl invocation: $*" >&2
   exit 1
@@ -72,7 +87,7 @@ fi
 
 case "${2:-}" in
 https://registry.npmjs.org/difit/latest)
-  printf '{"version":"%s"}\n' "${UPDATE_PINS_DIFIT_VERSION:-$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/difit.json")}"
+  printf '{"version":"%s"}\n' "${UPDATE_PINS_DIFIT_VERSION:-$(flake_version yoshiko-pg/difit)}"
   ;;
 https://registry.npmjs.org/difit/-/difit-*.tgz)
   cat "$UPDATE_PINS_DIFIT_TARBALL"
@@ -135,20 +150,26 @@ if [ "$1" = "store" ] && [ "${2:-}" = "prefetch-file" ]; then
     echo "herdr source prefetch failed" >&2
     exit 1
   fi
+  if [[ " $* " == *"github.com/watchexec/watchexec/releases/download/"* ]] && [ -n "${UPDATE_PINS_FAIL_WATCHEXEC_TARGET:-}" ] && [[ " $* " == *"$UPDATE_PINS_FAIL_WATCHEXEC_TARGET"* ]]; then
+    echo "watchexec asset prefetch failed for $UPDATE_PINS_FAIL_WATCHEXEC_TARGET" >&2
+    exit 1
+  fi
   if [[ " $* " == *"persistent.oaistatic.com/codex-app-prod/"*".zip"* ]]; then
     zip_path="$UPDATE_PINS_FAKE_ROOT/codex-app.zip"
-    app_name=${UPDATE_PINS_CODEX_APP_NAME:-ChatGPT.app}
+    app_name=${UPDATE_PINS_CODEX_APP_NAME:-$(jq -r .appName "$UPDATE_PINS_FAKE_ROOT/nix/pins/codex-app.json")}
+    bundle_identifier=${UPDATE_PINS_CODEX_APP_BUNDLE_IDENTIFIER:-$(jq -r .bundleIdentifier "$UPDATE_PINS_FAKE_ROOT/nix/pins/codex-app.json")}
+    display_name=${UPDATE_PINS_CODEX_APP_DISPLAY_NAME:-$(jq -r .displayName "$UPDATE_PINS_FAKE_ROOT/nix/pins/codex-app.json")}
     version=${UPDATE_PINS_CODEX_APP_BUNDLE_VERSION:-${UPDATE_PINS_CODEX_APP_VERSION:-$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/codex-app.json")}}
-    python3 - "$zip_path" "$app_name" "$version" <<'PY'
+    python3 - "$zip_path" "$app_name" "$bundle_identifier" "$display_name" "$version" <<'PY'
 import plistlib
 import sys
 import zipfile
 
-zip_path, app_name, version = sys.argv[1:]
+zip_path, app_name, bundle_identifier, display_name, version = sys.argv[1:]
 plist = {
-    "CFBundleDisplayName": "ChatGPT",
-    "CFBundleIdentifier": "com.openai.codex",
-    "CFBundleName": "ChatGPT",
+    "CFBundleDisplayName": display_name,
+    "CFBundleIdentifier": bundle_identifier,
+    "CFBundleName": display_name,
     "CFBundleShortVersionString": version,
 }
 
@@ -250,6 +271,7 @@ fi
 
 if [ "$1" = "flake" ] && [ "${2:-}" = "update" ]; then
   input=${3:-}
+  printf '%s\n' "$input" >>"$UPDATE_PINS_FLAKE_UPDATE_LOG"
   printf '{"updated":"%s"}\n' "$input" >"$UPDATE_PINS_FAKE_ROOT/flake.lock"
   if [ "${UPDATE_PINS_FAIL_FLAKE_UPDATE:-}" = "$input" ]; then
     echo "flake update failed for $input" >&2
@@ -277,6 +299,7 @@ run_update_pins() {
 save_managed() {
   local dst=$1
   mkdir -p "$dst/nix/pins" "$dst/nix/packages/difit"
+  cp "$WORK/flake.nix" "$dst/flake.nix"
   cp "$WORK/flake.lock" "$dst/flake.lock"
   cp "$WORK"/nix/pins/*.json "$dst/nix/pins/"
   cp "$WORK/nix/packages/difit/package-lock.json" "$dst/nix/packages/difit/package-lock.json"
@@ -284,6 +307,7 @@ save_managed() {
 
 assert_managed_matches() {
   local expected=$1 pin name
+  cmp -s "$WORK/flake.nix" "$expected/flake.nix" || return 1
   cmp -s "$WORK/flake.lock" "$expected/flake.lock" || return 1
   cmp -s "$WORK/nix/packages/difit/package-lock.json" "$expected/nix/packages/difit/package-lock.json" || return 1
   for pin in "$expected"/nix/pins/*.json; do
@@ -292,8 +316,13 @@ assert_managed_matches() {
   done
 }
 
+paired_version() {
+  local repo=$1 file=${2:-"$WORK/flake.nix"}
+  sed -n "s|.*github:$repo/v\\([^\"]*\\)\";|\\1|p" "$file"
+}
+
 make_unrelated_updates_noop() {
-  export UPDATE_PINS_AGENT_BROWSER_TAG="v$(jq -r .version "$WORK/nix/pins/agent-browser.json")"
+  export UPDATE_PINS_AGENT_BROWSER_TAG="v$(paired_version vercel-labs/agent-browser)"
   export UPDATE_PINS_SHELLFIRM_TAG="v$(jq -r .version "$WORK/nix/pins/shellfirm.json")"
   export UPDATE_PINS_SCHEMA_HASH="$(jq -r .hash "$WORK/nix/pins/claude-code-settings-schema.json")"
 }
@@ -378,9 +407,9 @@ make_unrelated_updates_noop() {
   run_update_pins
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"difit: $(jq -r .version "$original/nix/pins/difit.json") (up to date)"* ]]
-  cmp -s "$WORK/nix/pins/difit.json" "$original/nix/pins/difit.json"
-  cmp -s "$WORK/nix/packages/difit/package-lock.json" "$original/nix/packages/difit/package-lock.json"
+  [[ "$output" == *"difit: $(paired_version yoshiko-pg/difit "$original/flake.nix") (up to date)"* ]]
+  assert_managed_matches "$original"
+  [ ! -e "$UPDATE_PINS_FLAKE_UPDATE_LOG" ]
 }
 
 @test "difit version bump updates pin, lockfile, and flake input" {
@@ -393,11 +422,11 @@ make_unrelated_updates_noop() {
   run_update_pins
 
   [ "$status" -eq 0 ]
-  [ "$(jq -r .version "$WORK/nix/pins/difit.json")" = "9.9.9" ]
   [ "$(jq -r .srcHash "$WORK/nix/pins/difit.json")" = "sha256-difit-src-for-test" ]
   [ "$(jq -r .npmDepsHash "$WORK/nix/pins/difit.json")" = "sha256-npmdeps-for-test" ]
   [ "$(jq -r .version "$WORK/nix/packages/difit/package-lock.json")" = "9.9.9" ]
   [ "$(jq -r '.packages[""].version' "$WORK/nix/packages/difit/package-lock.json")" = "9.9.9" ]
+  grep -Fq 'url = "github:yoshiko-pg/difit/v9.9.9";' "$WORK/flake.nix"
   [ "$(jq -r .updated "$WORK/flake.lock")" = "difit-src" ]
   ! assert_managed_matches "$original"
 }
@@ -413,6 +442,66 @@ make_unrelated_updates_noop() {
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"difit: failed to extract npmDepsHash"* ]]
+  assert_managed_matches "$original"
+}
+
+@test "agent-browser version bump updates its assets and paired skill input" {
+  original="$WORK/original"
+  save_managed "$original"
+  make_unrelated_updates_noop
+  export UPDATE_PINS_AGENT_BROWSER_TAG=v9.9.9
+
+  run_update_pins
+
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.assets["x86_64-linux"].hash' "$WORK/nix/pins/agent-browser.json")" = "sha256-asset-for-test" ]
+  grep -Fq 'url = "github:vercel-labs/agent-browser/v9.9.9";' "$WORK/flake.nix"
+  [ "$(jq -r .updated "$WORK/flake.lock")" = "agent-browser-skill" ]
+  [ "$(cat "$UPDATE_PINS_FLAKE_UPDATE_LOG")" = "agent-browser-skill" ]
+  ! assert_managed_matches "$original"
+}
+
+@test "agent-browser flake update failure restores its pin and flake.lock" {
+  original="$WORK/original"
+  save_managed "$original"
+  make_unrelated_updates_noop
+  export UPDATE_PINS_AGENT_BROWSER_TAG=v9.9.9
+  export UPDATE_PINS_FAIL_FLAKE_UPDATE=agent-browser-skill
+
+  run_update_pins
+
+  [ "$status" -ne 0 ]
+  assert_managed_matches "$original"
+}
+
+@test "watchexec version bump updates both Darwin assets atomically" {
+  original="$WORK/original"
+  save_managed "$original"
+  make_unrelated_updates_noop
+  export UPDATE_PINS_WATCHEXEC_TAG=v9.9.9
+
+  run_update_pins
+
+  [ "$status" -eq 0 ]
+  [ "$(jq -r .version "$WORK/nix/pins/watchexec.json")" = "9.9.9" ]
+  [ "$(jq -r '.assets["aarch64-darwin"].target' "$WORK/nix/pins/watchexec.json")" = "aarch64-apple-darwin" ]
+  [ "$(jq -r '.assets["x86_64-darwin"].target' "$WORK/nix/pins/watchexec.json")" = "x86_64-apple-darwin" ]
+  [ "$(jq -r '.assets["aarch64-darwin"].hash' "$WORK/nix/pins/watchexec.json")" = "sha256-asset-for-test" ]
+  [ "$(jq -r '.assets["x86_64-darwin"].hash' "$WORK/nix/pins/watchexec.json")" = "sha256-asset-for-test" ]
+  ! assert_managed_matches "$original"
+}
+
+@test "watchexec asset failure restores both Darwin assets" {
+  original="$WORK/original"
+  save_managed "$original"
+  make_unrelated_updates_noop
+  export UPDATE_PINS_WATCHEXEC_TAG=v9.9.9
+  export UPDATE_PINS_FAIL_WATCHEXEC_TARGET=x86_64-apple-darwin
+
+  run_update_pins
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"watchexec asset prefetch failed for x86_64-apple-darwin"* ]]
   assert_managed_matches "$original"
 }
 
@@ -433,6 +522,63 @@ make_unrelated_updates_noop() {
   [ "$(jq -r .bundleIdentifier "$WORK/nix/pins/codex-app.json")" = "com.openai.codex" ]
   [ "$(jq -r .displayName "$WORK/nix/pins/codex-app.json")" = "ChatGPT" ]
   ! assert_managed_matches "$original"
+}
+
+@test "paired update rejects unsafe release versions before rewriting flake source" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_HCOM_TAG='v1.2.3${builtins.readFile ./flake.nix}'
+
+  run_update_pins
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"hcom: unsupported release version"* ]]
+  assert_managed_matches "$original"
+}
+
+@test "codex app update rejects a different app name and restores managed files" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_ONLY=codex-app
+  export UPDATE_PINS_CODEX_APP_VERSION=26.999.10101
+  export UPDATE_PINS_CODEX_APP_URL=https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-arm64-26.999.10101.zip
+  export UPDATE_PINS_CODEX_APP_NAME=NotCodex.app
+
+  run_update_pins
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"expected app name ChatGPT.app but downloaded NotCodex.app"* ]]
+  assert_managed_matches "$original"
+}
+
+@test "codex app update rejects a different bundle identifier and restores managed files" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_ONLY=codex-app
+  export UPDATE_PINS_CODEX_APP_VERSION=26.999.10101
+  export UPDATE_PINS_CODEX_APP_URL=https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-arm64-26.999.10101.zip
+  export UPDATE_PINS_CODEX_APP_BUNDLE_IDENTIFIER=com.example.not-codex
+
+  run_update_pins
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"expected bundle identifier com.openai.codex but downloaded com.example.not-codex"* ]]
+  assert_managed_matches "$original"
+}
+
+@test "codex app update rejects a different display name and restores managed files" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_ONLY=codex-app
+  export UPDATE_PINS_CODEX_APP_VERSION=26.999.10101
+  export UPDATE_PINS_CODEX_APP_URL=https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-arm64-26.999.10101.zip
+  export UPDATE_PINS_CODEX_APP_DISPLAY_NAME="Not ChatGPT"
+
+  run_update_pins
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"expected display name ChatGPT but downloaded Not ChatGPT"* ]]
+  assert_managed_matches "$original"
 }
 
 @test "agent-slack flake update failure restores earlier pin changes" {
@@ -490,9 +636,9 @@ make_unrelated_updates_noop() {
   run_update_pins
 
   [ "$status" -eq 0 ]
-  [ "$(jq -r .version "$WORK/nix/pins/hcom.json")" = "1.2.3" ]
+  grep -Fq 'url = "github:aannoo/hcom/v1.2.3";' "$WORK/flake.nix"
   [ "$(jq -r '.assets["aarch64-darwin"].hash' "$WORK/nix/pins/hcom.json")" = "sha256-asset-for-test" ]
-  [ "$(jq -r .version "$WORK/nix/pins/agent-slack.json")" = "4.5.6" ]
+  grep -Fq 'url = "github:stablyai/agent-slack/v4.5.6";' "$WORK/flake.nix"
   [ "$(jq -r .version "$WORK/nix/pins/shellfirm.json")" = "8.8.8" ]
   [ "$(jq -r .srcHash "$WORK/nix/pins/shellfirm.json")" = "sha256-src-for-test" ]
   [ "$(jq -r .cargoHash "$WORK/nix/pins/shellfirm.json")" = "sha256-cargo-for-test" ]
@@ -501,5 +647,6 @@ make_unrelated_updates_noop() {
   [ "$(jq -r '.assets["x86_64-linux"].hash' "$WORK/nix/pins/herdr.json")" = "sha256-asset-for-test" ]
   [ "$(jq -r .hash "$WORK/nix/pins/claude-code-settings-schema.json")" = "sha256-schema-for-test" ]
   [ "$(jq -r .updated "$WORK/flake.lock")" = "agent-slack-skill" ]
+  [ "$(cat "$UPDATE_PINS_FLAKE_UPDATE_LOG")" = $'hcom-src\nagent-slack-skill' ]
   ! assert_managed_matches "$original"
 }

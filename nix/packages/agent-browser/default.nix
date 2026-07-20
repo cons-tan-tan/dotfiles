@@ -2,22 +2,15 @@
   lib,
   stdenvNoCC,
   fetchurl,
-  fetchFromGitHub,
   makeBinaryWrapper,
   chromium,
+  agentBrowserSource,
   pin ? builtins.fromJSON (builtins.readFile ../../pins/agent-browser.json),
 }:
 let
-  inherit (pin) version;
+  version = (builtins.fromJSON (builtins.readFile "${agentBrowserSource}/package.json")).version;
   system = stdenvNoCC.hostPlatform.system;
   asset = pin.assets.${system} or (throw "agent-browser: unsupported system '${system}'");
-  source = fetchFromGitHub {
-    owner = "vercel-labs";
-    repo = "agent-browser";
-    # Upstream has a branch and a tag both named v<version>; pin the tag ref.
-    tag = "v${version}";
-    hash = pin.srcHash;
-  };
 in
 stdenvNoCC.mkDerivation {
   pname = "agent-browser";
@@ -37,7 +30,7 @@ stdenvNoCC.mkDerivation {
   installPhase = ''
     runHook preInstall
     install -Dm755 "$src" "$out/bin/agent-browser"
-    cp -r ${source}/skills ${source}/skill-data "$out/"
+    cp -r ${agentBrowserSource}/skills ${agentBrowserSource}/skill-data "$out/"
     runHook postInstall
   '';
 

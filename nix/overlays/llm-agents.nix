@@ -1,12 +1,16 @@
 # LLM agents from llm-agents.nix (https://github.com/numtide/llm-agents.nix)
-llm-agents: final: prev:
+{
+  llm-agents,
+  agent-browser-skill,
+}:
+final: prev:
 let
   system = prev.stdenv.hostPlatform.system;
   llm = llm-agents.packages.${system};
-  agent-browser = prev.callPackage ../packages/agent-browser { };
-  herdrPackages = prev.callPackage ../packages/herdr {
-    inherit llm-agents;
+  agent-browser = prev.callPackage ../packages/agent-browser {
+    agentBrowserSource = agent-browser-skill;
   };
+  herdrPackages = prev.callPackage ../packages/herdr { };
 in
 {
   inherit (llm)

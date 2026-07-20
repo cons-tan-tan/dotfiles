@@ -6,7 +6,7 @@
 TMPFILES=()
 TMPDIRS=()
 managed_files=()
-managed_pathspecs=(':(glob)nix/pins/*.json' flake.lock nix/packages/difit/package-lock.json)
+managed_pathspecs=(':(glob)nix/pins/*.json' flake.nix flake.lock nix/packages/difit/package-lock.json)
 managed_backup_dir=""
 restore_managed_files=false
 
@@ -242,9 +242,121 @@ update_release_pin() {
   mv "$tmp" "$pin"
 }
 
+validate_release_version() {
+  local label=$1 version=$2
+  if [[ ! $version =~ ^[0-9]+(\.[0-9]+)+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+    echo "$label: unsupported release version '$version'" >&2
+    return 1
+  fi
+}
+
+current_paired_version() {
+  local repo=$1
+  python3 - flake.nix "$repo" <<'PY'
+import re
+import sys
+
+path, repo = sys.argv[1:]
+with open(path, encoding="utf-8") as source:
+    text = source.read()
+matches = re.findall(rf'url = "github:{re.escape(repo)}/v([^"]+)";', text)
+if len(matches) != 1:
+    raise SystemExit(
+        f"update-pins: expected one tagged flake input URL for {repo}, found {len(matches)}"
+    )
+print(matches[0])
+PY
+}
+
+update_paired_flake_input() {
+  local input=$1 repo=$2 version=$3 tmp
+  validate_release_version "$input" "$version"
+  tmp=$(mktemp)
+  TMPFILES+=("$tmp")
+  python3 - flake.nix "$repo" "$version" >"$tmp" <<'PY'
+import re
+import sys
+
+path, repo, version = sys.argv[1:]
+with open(path, encoding="utf-8") as source:
+    text = source.read()
+pattern = rf'url = "github:{re.escape(repo)}/v[^"]+";'
+replacement = f'url = "github:{repo}/v{version}";'
+updated, count = re.subn(pattern, replacement, text)
+if count != 1:
+    raise SystemExit(
+        f"update-pins: expected one tagged flake input URL for {repo}, found {count}"
+    )
+sys.stdout.write(updated)
+PY
+  mv "$tmp" flake.nix
+  echo "$input: updating flake input to v$version"
+  nix flake update "$input"
+}
+
+update_paired_release_pin() {
+  local label=$1 repo=$2 pin=$3 input=$4
+  local tag version current tmp system name hash next
+  tag=$(latest_tag "$repo")
+  if [[ $tag != v* ]]; then
+    echo "$label: unsupported release tag '$tag'" >&2
+    return 1
+  fi
+  version=${tag#v}
+  validate_release_version "$label" "$version"
+  current=$(current_paired_version "$repo")
+  if [ "$version" = "$current" ]; then
+    echo "$label: $current (up to date)"
+    return 0
+  fi
+
+  echo "$label: $current -> $version (prefetching assets...)"
+  tmp=$(mktemp)
+  TMPFILES+=("$tmp")
+  cp "$pin" "$tmp"
+  while IFS= read -r system; do
+    name=$(jq -r --arg system "$system" '.assets[$system].name' "$pin")
+    hash=$(prefetch "https://github.com/$repo/releases/download/$tag/$name")
+    next=$(mktemp)
+    TMPFILES+=("$next")
+    jq --arg system "$system" --arg hash "$hash" '.assets[$system].hash = $hash' "$tmp" >"$next"
+    mv "$next" "$tmp"
+  done < <(jq -r '.assets | keys[]' "$pin")
+  mv "$tmp" "$pin"
+  update_paired_flake_input "$input" "$repo" "$version"
+}
+
+update_watchexec_pin() {
+  local pin=nix/pins/watchexec.json
+  local tag version current tmp system target name hash next
+  tag=$(latest_tag watchexec/watchexec)
+  version=${tag#v}
+  current=$(jq -r .version "$pin")
+  if [ "$version" = "$current" ]; then
+    echo "watchexec: $current (up to date)"
+    return 0
+  fi
+
+  echo "watchexec: $current -> $version (prefetching assets...)"
+  tmp=$(mktemp)
+  TMPFILES+=("$tmp")
+  jq --arg version "$version" '.version = $version' "$pin" >"$tmp"
+  while IFS= read -r system; do
+    target=$(jq -r --arg system "$system" '.assets[$system].target' "$pin")
+    name="watchexec-$version-$target.tar.xz"
+    hash=$(prefetch "https://github.com/watchexec/watchexec/releases/download/$tag/$name")
+    next=$(mktemp)
+    TMPFILES+=("$next")
+    jq --arg system "$system" --arg hash "$hash" '.assets[$system].hash = $hash' "$tmp" >"$next"
+    mv "$next" "$tmp"
+  done < <(jq -r '.assets | keys[]' "$pin")
+  mv "$tmp" "$pin"
+}
+
 update_codex_app_pin() {
   local pin=nix/pins/codex-app.json
-  local appcast latest latest_version latest_url cur_version cur_url prefetch_json hash store_path zip_info app_name bundle_identifier display_name bundle_version tmp
+  local appcast latest latest_version latest_url cur_version cur_url expected_app_name expected_bundle_identifier expected_display_name
+  local prefetch_json hash store_path zip_info app_name bundle_identifier display_name bundle_version tmp
 
   appcast=$(jq -r .appcast "$pin")
   latest=$(latest_codex_app_json "$appcast")
@@ -252,6 +364,9 @@ update_codex_app_pin() {
   latest_url=$(jq -r .url <<<"$latest")
   cur_version=$(jq -r .version "$pin")
   cur_url=$(jq -r .url "$pin")
+  expected_app_name=$(jq -r .appName "$pin")
+  expected_bundle_identifier=$(jq -r .bundleIdentifier "$pin")
+  expected_display_name=$(jq -r .displayName "$pin")
 
   if [ "$latest_version" = "$cur_version" ] && [ "$latest_url" = "$cur_url" ]; then
     echo "codex-app: $cur_version (up to date)"
@@ -272,6 +387,18 @@ update_codex_app_pin() {
     echo "codex-app: appcast version $latest_version did not match bundle version $bundle_version" >&2
     exit 1
   fi
+  if [ "$app_name" != "$expected_app_name" ]; then
+    echo "codex-app: expected app name $expected_app_name but downloaded $app_name" >&2
+    exit 1
+  fi
+  if [ "$bundle_identifier" != "$expected_bundle_identifier" ]; then
+    echo "codex-app: expected bundle identifier $expected_bundle_identifier but downloaded $bundle_identifier" >&2
+    exit 1
+  fi
+  if [ "$display_name" != "$expected_display_name" ]; then
+    echo "codex-app: expected display name $expected_display_name but downloaded $display_name" >&2
+    exit 1
+  fi
 
   tmp=$(mktemp)
   TMPFILES+=("$tmp")
@@ -279,16 +406,10 @@ update_codex_app_pin() {
     --arg version "$latest_version" \
     --arg url "$latest_url" \
     --arg hash "$hash" \
-    --arg appName "$app_name" \
-    --arg bundleIdentifier "$bundle_identifier" \
-    --arg displayName "$display_name" \
     '
       .version = $version
       | .url = $url
       | .hash = $hash
-      | .appName = $appName
-      | .bundleIdentifier = $bundleIdentifier
-      | .displayName = $displayName
     ' "$pin" >"$tmp"
   mv "$tmp" "$pin"
 }
@@ -307,36 +428,16 @@ if [ "${UPDATE_PINS_ONLY:-}" = "codex-app" ]; then
 fi
 
 echo "== hcom"
-hcom_before=$(jq -r .version nix/pins/hcom.json)
-update_release_pin "hcom" "aannoo/hcom" "nix/pins/hcom.json"
-if [ "$(jq -r .version nix/pins/hcom.json)" != "$hcom_before" ]; then
-  # バイナリと skill ドキュメント (flake input hcom-src) の版ズレを防ぐ
-  echo "hcom: updating flake input hcom-src to match"
-  nix flake update hcom-src
-fi
+update_paired_release_pin hcom aannoo/hcom nix/pins/hcom.json hcom-src
 
 echo "== agent-slack"
-agent_slack_before=$(jq -r .version nix/pins/agent-slack.json)
-update_release_pin "agent-slack" "stablyai/agent-slack" "nix/pins/agent-slack.json"
-if [ "$(jq -r .version nix/pins/agent-slack.json)" != "$agent_slack_before" ]; then
-  # バイナリと skill ドキュメント (flake input agent-slack-skill) の版ズレを防ぐ
-  echo "agent-slack: updating flake input agent-slack-skill to match"
-  nix flake update agent-slack-skill
-fi
+update_paired_release_pin agent-slack stablyai/agent-slack nix/pins/agent-slack.json agent-slack-skill
 
 echo "== agent-browser"
-agent_browser_pin=nix/pins/agent-browser.json
-agent_browser_before=$(jq -r .version "$agent_browser_pin")
-update_release_pin "agent-browser" "vercel-labs/agent-browser" "$agent_browser_pin"
-agent_browser_after=$(jq -r .version "$agent_browser_pin")
-if [ "$agent_browser_after" != "$agent_browser_before" ]; then
-  echo "agent-browser: updating srcHash"
-  src_hash=$(prefetch_unpack "https://github.com/vercel-labs/agent-browser/archive/refs/tags/v$agent_browser_after.tar.gz")
-  tmp=$(mktemp)
-  TMPFILES+=("$tmp")
-  jq --arg h "$src_hash" '.srcHash = $h' "$agent_browser_pin" >"$tmp"
-  mv "$tmp" "$agent_browser_pin"
-fi
+update_paired_release_pin agent-browser vercel-labs/agent-browser nix/pins/agent-browser.json agent-browser-skill
+
+echo "== watchexec"
+update_watchexec_pin
 
 echo "== shellfirm"
 pin=nix/pins/shellfirm.json
@@ -391,8 +492,9 @@ fi
 echo "== difit"
 difit_pin=nix/pins/difit.json
 difit_lock=nix/packages/difit/package-lock.json
-difit_cur=$(jq -r .version "$difit_pin")
+difit_cur=$(current_paired_version yoshiko-pg/difit)
 difit_ver=$(latest_npm_version difit)
+validate_release_version difit "$difit_ver"
 if [ "$difit_ver" = "$difit_cur" ]; then
   echo "difit: $difit_cur (up to date)"
 else
@@ -417,9 +519,10 @@ else
   TMPFILES+=("$tmp")
   # npmDepsHash は npm 依存のダウンロード結果から決まるため事前計算できない。
   # 空にして lib.fakeHash でビルドし、hash mismatch エラーから実値を取り出す。
-  jq --arg v "$difit_ver" --arg s "$difit_src_hash" \
-    '.version = $v | .srcHash = $s | .npmDepsHash = ""' "$difit_pin" >"$tmp"
+  jq --arg s "$difit_src_hash" \
+    '.srcHash = $s | .npmDepsHash = ""' "$difit_pin" >"$tmp"
   mv "$tmp" "$difit_pin"
+  update_paired_flake_input difit-src yoshiko-pg/difit "$difit_ver"
   echo "difit: computing npmDepsHash (expect one failing build)..."
   build_log=$(build_local_package difit 2>&1 || true)
   npm_deps_hash=$(echo "$build_log" | grep -Eo 'got: *sha256-[A-Za-z0-9+/=_-]+' | head -1 | grep -Eo 'sha256-[A-Za-z0-9+/=_-]+' || true)
@@ -437,8 +540,6 @@ else
     echo "difit: verification build failed" >&2
     exit 1
   fi
-  echo "difit: updating flake input difit-src to match"
-  nix flake update difit-src
 fi
 
 echo "== claude-code-settings-schema"

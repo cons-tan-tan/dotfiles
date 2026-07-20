@@ -6,15 +6,16 @@
   jq,
   yj,
   codex,
+  hcomSource,
   hcomPin ? builtins.fromJSON (builtins.readFile ../../pins/hcom.json),
 }:
 let
-  # version / hash は nix/pins/hcom.json に固定し、`nix run .#update-pins` で
-  # 自動更新する (flake input hcom-src も同時に更新される)。
+  # version は skill と共有する hcom-src、配布物の hash は JSON pin が所有する。
+  # `nix run .#update-pins` は両方を同じ transaction で更新する。
   # Linux uses the static musl build: no glibc dependency, so autoPatchelfHook
   # is unnecessary. macOS has no musl variant, so use the native darwin build.
   pin = hcomPin;
-  inherit (pin) version;
+  version = (builtins.fromTOML (builtins.readFile "${hcomSource}/Cargo.toml")).package.version;
 
   system = stdenvNoCC.hostPlatform.system;
   asset = pin.assets.${system} or (throw "hcom: unsupported system '${system}'");

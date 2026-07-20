@@ -1,5 +1,4 @@
 {
-  "version": "0.7.21",
   "assets": {
     "aarch64-darwin": {
       "name": "hcom-aarch64-apple-darwin.tar.gz",

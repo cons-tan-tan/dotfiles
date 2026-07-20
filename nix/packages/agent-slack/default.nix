@@ -4,10 +4,11 @@
   stdenvNoCC,
   fetchurl,
   autoPatchelfHook,
+  agentSlackSource,
   pin ? builtins.fromJSON (builtins.readFile ../../pins/agent-slack.json),
 }:
 let
-  inherit (pin) version;
+  version = (builtins.fromJSON (builtins.readFile "${agentSlackSource}/package.json")).version;
   system = stdenv.hostPlatform.system;
   asset = pin.assets.${system} or (throw "agent-slack: unsupported system '${system}'");
 in

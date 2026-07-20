@@ -5,52 +5,28 @@
   fetchFromGitHub,
   writeText,
   runCommand,
-  llm-agents,
+  herdrPin ? builtins.fromJSON (builtins.readFile ../../pins/herdr.json),
 }:
 let
   system = stdenvNoCC.hostPlatform.system;
-  pin = builtins.fromJSON (builtins.readFile ../../pins/herdr.json);
-  upstreamVersionData = builtins.fromJSON (
-    builtins.readFile "${llm-agents}/packages/herdr/hashes.json"
-  );
-  pinnedBinaryAssets = lib.mapAttrs (_: asset: asset.name) pin.assets;
-  pinnedBinaryHashes = lib.mapAttrs (_: asset: asset.hash) pin.assets;
-  # version / hash values are pinned in nix/pins/herdr.json and updated by
-  # `nix run .#update-pins`. If llm-agents catches up, its upstream data wins,
-  # while the same-version pin fills platforms upstream builds from source.
-  pinnedVersionData = upstreamVersionData // {
-    version = pin.version;
-    hash = pin.srcHash;
-    binaryAssets = pinnedBinaryAssets;
-    binaryHashes = pinnedBinaryHashes;
-  };
-  versionData =
-    if lib.versionOlder upstreamVersionData.version pin.version then
-      pinnedVersionData
-    else
-      upstreamVersionData;
-  version = versionData.version;
-  pinMatchesVersion = pin.version == version;
+  inherit (herdrPin) version;
+  asset = herdrPin.assets.${system} or (throw "herdr: unsupported system '${system}'");
+  platforms = builtins.attrNames herdrPin.assets;
   src = fetchFromGitHub {
     owner = "ogulcancelik";
     repo = "herdr";
     rev = "v${version}";
-    hash = versionData.hash;
+    hash = herdrPin.srcHash;
   };
-  binaryAssets =
-    (lib.optionalAttrs pinMatchesVersion pinnedBinaryAssets) // (versionData.binaryAssets or { });
-  binaryHashes =
-    (lib.optionalAttrs pinMatchesVersion pinnedBinaryHashes) // (versionData.binaryHashes or { });
-  # llm-agents.nix builds Herdr from source on Linux and imports a generated Zig
-  # file from that source path during package evaluation. This binary form keeps
-  # our --no-build flake checks pure while tracking llm-agents' version.
+  # Use upstream release binaries on every supported platform so evaluation does
+  # not need to import generated files from a fetched source derivation.
   herdrPackage = stdenvNoCC.mkDerivation {
     pname = "herdr";
     inherit version;
 
     src = fetchurl {
-      url = "https://github.com/ogulcancelik/herdr/releases/download/v${version}/${binaryAssets.${system}}";
-      hash = binaryHashes.${system};
+      url = "https://github.com/ogulcancelik/herdr/releases/download/v${version}/${asset.name}";
+      inherit (asset) hash;
     };
 
     dontUnpack = true;
@@ -66,7 +42,7 @@ let
       homepage = "https://herdr.dev";
       changelog = "https://github.com/ogulcancelik/herdr/releases/tag/v${version}";
       license = lib.licenses.agpl3Plus;
-      platforms = builtins.attrNames binaryAssets;
+      inherit platforms;
       mainProgram = "herdr";
     };
   };
@@ -149,7 +125,7 @@ let
           inherit description;
           homepage = "https://herdr.dev";
           license = lib.licenses.agpl3Plus;
-          platforms = builtins.attrNames binaryAssets;
+          inherit platforms;
         };
       }
       ''
@@ -170,7 +146,7 @@ rec {
           description = "Herdr skill packaged as a Claude Code and Codex local plugin";
           homepage = "https://herdr.dev";
           license = lib.licenses.agpl3Plus;
-          platforms = builtins.attrNames binaryAssets;
+          inherit platforms;
         };
       }
       ''
@@ -187,7 +163,7 @@ rec {
           description = "Herdr agent skill without plugin metadata";
           homepage = "https://herdr.dev";
           license = lib.licenses.agpl3Plus;
-          platforms = builtins.attrNames binaryAssets;
+          inherit platforms;
         };
       }
       ''
@@ -242,7 +218,7 @@ rec {
           description = "Codex local marketplace exposing the Herdr plugin";
           homepage = "https://herdr.dev";
           license = lib.licenses.agpl3Plus;
-          platforms = builtins.attrNames binaryAssets;
+          inherit platforms;
         };
       }
       ''

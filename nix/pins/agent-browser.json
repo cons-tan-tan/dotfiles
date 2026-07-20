@@ -1,6 +1,4 @@
 {
-  "version": "0.31.1",
-  "srcHash": "sha256-uCLzNQ0NAeg1TtA6tcBhTu5VTyjkumsyiEpAhYLPQD0=",
   "assets": {
     "aarch64-darwin": {
       "name": "agent-browser-darwin-arm64",
