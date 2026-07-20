@@ -8,12 +8,12 @@ let
     "difit"
     "gh-api-get"
     "ghq-fetch-all"
-    "hunk"
     "shellfirm"
   ];
   packageValues = (map (name: builtins.getAttr name local) commonNames) ++ [
     local.hcom.package
     local.herdr.package
+    local.hunk.package
   ];
 in
 {

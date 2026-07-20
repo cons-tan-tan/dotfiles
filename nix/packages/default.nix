@@ -26,7 +26,8 @@ in
   curl-fetch = pkgs.callPackage ./curl-fetch { };
   gh-api-get = pkgs.callPackage ./gh-api-get { };
   ghq-fetch-all = pkgs.callPackage ./ghq-fetch-all { };
-  hunk = pkgs.callPackage ./hunk {
+  hunk = import ./hunk {
+    inherit (pkgs) callPackage;
     hunkInput = inputs.hunk;
   };
   shellfirm = pkgs.callPackage ./shellfirm { };

@@ -1,13 +1,5 @@
 { pkgs, ... }:
 let
-  herdrWrapped = pkgs.writeShellApplication {
-    name = "herdr";
-    text = ''
-      export HERDR_BIN=${pkgs.dotfilesPackages.herdr.package}/bin/herdr
-      ${builtins.readFile ./herdr-wrapper.sh}
-    '';
-  };
-
   tomlFormat = pkgs.formats.toml { };
   configFile = tomlFormat.generate "herdr-config.toml" {
     onboarding = false;
@@ -31,7 +23,7 @@ let
   };
 in
 {
-  home.packages = [ herdrWrapped ];
+  home.packages = [ pkgs.dotfilesPackages.herdr.wrappedPackage ];
 
   home.file.".config/herdr/config.toml".source = configFile;
 }

@@ -1,6 +1,6 @@
 { pkgs }:
 let
-  inherit (pkgs.dotfilesPackages) hcom herdr;
+  inherit (pkgs.dotfilesPackages) hcom herdr hunk;
 in
 {
   testHcomFamilyShape = {
@@ -30,6 +30,7 @@ in
       "agent"
       "integrations"
       "package"
+      "wrappedPackage"
     ];
   };
 
@@ -52,8 +53,27 @@ in
     ];
   };
 
-  testHerdrPackageIsDerivation = {
-    expr = pkgs.lib.isDerivation herdr.package;
+  testHerdrPackagesAreDerivations = {
+    expr = builtins.all pkgs.lib.isDerivation [
+      herdr.package
+      herdr.wrappedPackage
+    ];
+    expected = true;
+  };
+
+  testHunkFamilyShape = {
+    expr = builtins.attrNames hunk;
+    expected = [
+      "package"
+      "wslRuntime"
+    ];
+  };
+
+  testHunkPackagesAreDerivations = {
+    expr = builtins.all pkgs.lib.isDerivation [
+      hunk.package
+      hunk.wslRuntime
+    ];
     expected = true;
   };
 }

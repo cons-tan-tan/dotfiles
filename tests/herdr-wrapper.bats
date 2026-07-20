@@ -2,7 +2,7 @@
 
 setup() {
   REPO_ROOT="$(git rev-parse --show-toplevel)"
-  SCRIPT="$REPO_ROOT/nix/modules/home/programs/herdr-wrapper.sh"
+  SCRIPT="$REPO_ROOT/nix/packages/herdr/herdr-wrapper.sh"
   BASH_BIN="$(command -v bash)"
   WORK="$(mktemp -d)"
   TRACE_FILE="$WORK/trace"

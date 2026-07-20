@@ -24,4 +24,8 @@ in
     herdr = build.package;
     inherit (build) platforms version;
   };
+
+  wrappedPackage = callPackage ./wrapped-package.nix {
+    herdr = build.package;
+  };
 }
