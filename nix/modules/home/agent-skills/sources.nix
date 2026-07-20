@@ -11,7 +11,6 @@ let
     drawio-skill
     hcom-src
     hunk
-    humanizer-jp-skill
     improve-skill
     ;
 
@@ -102,38 +101,6 @@ in
 
     hunk-review = {
       root = "${hunk}/skills/hunk-review";
-    };
-
-    humanize-jp = {
-      root = "${humanizer-jp-skill}/.claude/skills/humanize-jp";
-      # Upstream's command assumes a system python3 and $HOME as the cwd, and
-      # references docs/ at the repo root (outside the skill dir, so the
-      # deployed copy would have dangling links).
-      #   - uv run drops the python3 dependency; --no-project keeps uv from
-      #     syncing whatever caller project we land in (script is stdlib-only).
-      #   - Script and docs are pointed at the flake input's store path: it is
-      #     absolute (stable from any cwd / both ~/.agents and ~/.claude
-      #     targets) and the reference keeps the source in the closure.
-      customization = {
-        frontmatter.description = ''
-          Suppress the telltale "AI-ness" of Japanese writing so it reads as
-          human-written. Use when asked to proofread or rewrite AI-generated
-          Japanese, make text sound more natural, or polish note and blog
-          articles. Japanese only; not for English or other languages.
-        '';
-        body =
-          { original, ... }:
-          builtins.replaceStrings
-            [
-              "python3 .claude/skills/humanize-jp/reference/humanize_check.py"
-              "`docs/"
-            ]
-            [
-              "uv run --no-project ${humanizer-jp-skill}/.claude/skills/humanize-jp/reference/humanize_check.py"
-              "`${humanizer-jp-skill}/docs/"
-            ]
-            original;
-      };
     };
 
     improve = {

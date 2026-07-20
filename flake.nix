@@ -129,12 +129,6 @@
       flake = false;
     };
 
-    # humanize-jp skill: suppress "AI-ness" in Japanese writing
-    humanizer-jp-skill = {
-      url = "github:yourbright-jp/humanizer-jp";
-      flake = false;
-    };
-
     improve-skill = {
       url = "github:shadcn/improve";
       flake = false;

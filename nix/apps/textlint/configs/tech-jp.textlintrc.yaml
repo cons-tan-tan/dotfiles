@@ -2,8 +2,7 @@ rules:
   # Japanese technical writing fundamentals:
   # sentence length, punctuation count, mixed styles, redundant expressions, etc.
   preset-ja-technical-writing:
-    # Keep enough room for occasional longer sentences so humanize-jp can vary
-    # sentence rhythm without fighting the technical-writing preset.
+    # Keep enough room for occasional longer sentences and varied rhythm.
     sentence-length:
       max: 140
     max-ten:
