@@ -58,7 +58,7 @@ build_local_package() {
         inputs = flake.inputs;
       } builtins.currentSystem;
     in
-    pkgs.${builtins.getEnv "UPDATE_PINS_PACKAGE"}
+    pkgs.dotfilesPackages.${builtins.getEnv "UPDATE_PINS_PACKAGE"}
   ' --no-link
 }
 

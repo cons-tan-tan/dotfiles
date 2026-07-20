@@ -1,6 +1,6 @@
 { pkgs, ... }:
 {
-  home.packages = with pkgs; [
-    drawio-headless
+  home.packages = [
+    pkgs.dotfilesPackages.drawio-headless
   ];
 }

@@ -85,8 +85,8 @@ let
       pkgs.runCommand "package-smoke-tests"
         {
           nativeBuildInputs = [
-            pkgs.agent-browser
-            pkgs.agent-slack
+            pkgs.dotfilesPackages.agent-browser
+            pkgs.dotfilesPackages.agent-slack
           ];
         }
         ''

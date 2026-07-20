@@ -45,9 +45,9 @@ let
   ];
 
   herdrSkillLoader = pkgs.replaceVars ../../../../pi/extensions/herdr-skill-loader.ts {
-    herdrSkillPath = "${pkgs.herdr-agent-plugin}/skills/herdr";
+    herdrSkillPath = "${pkgs.dotfilesPackages.herdr-agent-plugin}/skills/herdr";
   };
-  herdrPiIntegration = pkgs.herdr-pi-integration;
+  herdrPiIntegration = pkgs.dotfilesPackages.herdr-pi-integration;
 
   managedSettings = {
     defaultProvider = models.pi.provider;

@@ -6,21 +6,21 @@ in
 {
   testAgentBrowserSkillMatchesPackageVersion = {
     expr = lockedRef "agent-browser-skill";
-    expected = "v${pkgs.agent-browser.version}";
+    expected = "v${pkgs.dotfilesPackages.agent-browser.version}";
   };
 
   testAgentSlackSkillMatchesPackageVersion = {
     expr = lockedRef "agent-slack-skill";
-    expected = "v${pkgs.agent-slack.version}";
+    expected = "v${pkgs.dotfilesPackages.agent-slack.version}";
   };
 
   testDifitSkillMatchesPackageVersion = {
     expr = lockedRef "difit-src";
-    expected = "v${pkgs.difit.version}";
+    expected = "v${pkgs.dotfilesPackages.difit.version}";
   };
 
   testHcomSkillMatchesPackageVersion = {
     expr = lockedRef "hcom-src";
-    expected = "v${pkgs.hcom.version}";
+    expected = "v${pkgs.dotfilesPackages.hcom.version}";
   };
 }

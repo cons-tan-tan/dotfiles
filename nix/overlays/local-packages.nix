@@ -3,9 +3,14 @@
   registry ? import ../packages,
 }:
 final: prev:
-registry {
-  inherit inputs;
-  inherit (prev) lib;
-  hostPlatform = prev.stdenv.hostPlatform;
-  pkgs = final;
+let
+  localPackages = registry {
+    inherit inputs;
+    inherit (prev) lib;
+    hostPlatform = prev.stdenv.hostPlatform;
+    pkgs = final;
+  };
+in
+{
+  dotfilesPackages = localPackages;
 }

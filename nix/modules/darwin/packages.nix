@@ -5,7 +5,7 @@
     with pkgs;
     [
       # nixpkgs packages (macOS only)
-      codex-app
+      dotfilesPackages.codex-app
       raycast
       hackgen-nf-font # ghostty 用フォント (nix/modules/darwin/programs/ghostty.nix)
     ]

@@ -50,7 +50,7 @@ nix/
 ├── lib/           # 構成ビルダーと共有設定生成器
 ├── modules/       # home (共通) / darwin / linux / wsl (+ windows companion)
 ├── hosts/         # ホストごとのモジュール束ね
-├── packages/      # ローカルパッケージの実装と明示的な登録
+├── packages/      # pkgs.dotfilesPackages に置く実装と明示的な登録
 ├── overlays/      # 登録の適用、外部 input の橋渡し、意図的な上書き
 ├── pins/          # 配布物の version や hash (update-pins が更新)
 └── apps/          # pptx / markdownlint / textlint / update-pins

@@ -3,7 +3,7 @@ let
   herdrWrapped = pkgs.writeShellApplication {
     name = "herdr";
     text = ''
-      export HERDR_BIN=${pkgs.herdr}/bin/herdr
+      export HERDR_BIN=${pkgs.dotfilesPackages.herdr}/bin/herdr
       ${builtins.readFile ./herdr-wrapper.sh}
     '';
   };

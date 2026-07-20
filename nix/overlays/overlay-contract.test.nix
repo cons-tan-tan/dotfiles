@@ -37,8 +37,13 @@ let
   };
 in
 {
+  testLocalPackagesOnlyExposeNamespace = {
+    expr = builtins.attrNames localPackagesResult;
+    expected = [ "dotfilesPackages" ];
+  };
+
   testLocalPackagesUseFinalPackageSet = {
-    expr = localPackagesResult.selectedPackageSet;
+    expr = localPackagesResult.dotfilesPackages.selectedPackageSet;
     expected = "final";
   };
 

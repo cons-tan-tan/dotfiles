@@ -4,7 +4,7 @@
   ...
 }:
 let
-  herdrOpenCodeIntegration = pkgs.herdr-opencode-integration;
+  herdrOpenCodeIntegration = pkgs.dotfilesPackages.herdr-opencode-integration;
   models = import ../../../lib/settings/models.nix;
 in
 {

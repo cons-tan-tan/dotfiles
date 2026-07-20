@@ -195,6 +195,11 @@ PY
   exit 0
 fi
 
+if [ "$1" = "build" ] && [ "${2:-}" = "--impure" ] && [ "${3:-}" = "--expr" ] && [[ "${4:-}" != *'pkgs.dotfilesPackages.${builtins.getEnv "UPDATE_PINS_PACKAGE"}'* ]]; then
+  echo "local package build did not use pkgs.dotfilesPackages" >&2
+  exit 1
+fi
+
 if [ "$1" = "build" ] && [ "${2:-}" = "--impure" ] && [ "${3:-}" = "--expr" ] && [ "${5:-}" = "--no-link" ] && [ "${UPDATE_PINS_PACKAGE:-}" = "shellfirm" ]; then
   count=0
   if [ -f "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT" ]; then
