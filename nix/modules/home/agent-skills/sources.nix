@@ -86,7 +86,7 @@ let
       customization.disableAutomaticInvocation = true;
     };
 
-    # バイナリ本体は overlays/hcom.nix (hcom-src input とは update-pins が同期)
+    # CLI と skill は同じ hcom-src input を version authority として使う。
     hcom-agent-messaging = {
       root = "${hcom-src}/skills/hcom-agent-messaging";
     };

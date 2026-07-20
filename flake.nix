@@ -113,7 +113,7 @@
       flake = false;
     };
 
-    # difit official agent skills (the CLI itself is packaged in nix/overlays/difit.nix).
+    # difit official agent skills (the CLI implementation is in nix/packages/difit).
     # バイナリ側の pin (nix/pins/difit.json) とは `nix run .#update-pins` が
     # この input ごと同期する。
     difit-src = {
@@ -121,7 +121,7 @@
       flake = false;
     };
 
-    # hcom skill source (the binary itself is packaged in nix/overlays/hcom.nix).
+    # hcom skill source (the CLI implementation is in nix/packages/hcom).
     # バイナリ側の pin (nix/pins/hcom.json) とは `nix run .#update-pins` が
     # この input ごと同期する。
     hcom-src = {

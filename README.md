@@ -50,9 +50,9 @@ nix/
 ├── lib/           # 構成ビルダーと共有設定生成器
 ├── modules/       # home (共通) / darwin / linux / wsl (+ windows companion)
 ├── hosts/         # ホストごとのモジュール束ね
-├── packages/      # nixpkgs にないパッケージの定義
-├── overlays/      # packages/ の公開と input 由来パッケージの橋渡し (llm-agents)
-├── pins/          # バイナリの version / hash (update-pins が更新)
+├── packages/      # ローカルパッケージの実装と明示的な登録
+├── overlays/      # 登録の適用、外部 input の橋渡し、意図的な上書き
+├── pins/          # 配布物の version や hash (update-pins が更新)
 └── apps/          # pptx / markdownlint / textlint / update-pins
 agents/skills/     # ローカル agent skills
 pi/                # Pi 拡張 (extensions/)

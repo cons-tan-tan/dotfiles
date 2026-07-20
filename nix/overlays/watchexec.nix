@@ -1,7 +1,9 @@
+{
+  pin ? builtins.fromJSON (builtins.readFile ../pins/watchexec.json),
+}:
 _final: prev:
 let
   inherit (prev.stdenv.hostPlatform) system;
-  pin = builtins.fromJSON (builtins.readFile ../pins/watchexec.json);
   inherit (pin) version;
   asset = pin.assets.${system} or (throw "watchexec: unsupported system '${system}'");
   assetName = "watchexec-${version}-${asset.target}.tar.xz";

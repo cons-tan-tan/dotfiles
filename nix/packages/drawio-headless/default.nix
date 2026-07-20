@@ -1,4 +1,5 @@
 {
+  lib,
   writeShellApplication,
   coreutils,
   dbus,
@@ -54,5 +55,6 @@ writeShellApplication {
            are filtered from stderr.
     '';
     mainProgram = "drawio";
+    platforms = lib.platforms.linux;
   };
 }
