@@ -1,4 +1,5 @@
 {
+  bash,
   coreutils,
   findutils,
   ghq,
@@ -12,6 +13,7 @@ writeShellApplication {
     "pipefail"
   ];
   runtimeInputs = [
+    bash
     ghq
     git
     coreutils

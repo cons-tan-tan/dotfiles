@@ -80,6 +80,22 @@ let
 
   evalChecks = lib.listToAttrs (map mkEvalCheck testFiles);
 
+  ghqFetchAllSmokePackage =
+    let
+      fakeGhq = pkgs.writeShellApplication {
+        name = "ghq";
+        text = ''printf '%s\n' /tmp/repo'';
+      };
+      fakeGit = pkgs.writeShellApplication {
+        name = "git";
+        text = "exit 0";
+      };
+    in
+    pkgs.callPackage ../packages/ghq-fetch-all {
+      ghq = fakeGhq;
+      git = fakeGit;
+    };
+
   fixedChecks = {
     package-smoke-tests =
       pkgs.runCommand "package-smoke-tests"
@@ -95,6 +111,10 @@ let
 
           agent_slack_version="$(agent-slack --version 2>&1)"
           test -n "$agent_slack_version"
+
+          # The service starts the package directly, so every subprocess must
+          # remain available without inheriting the activating user's PATH.
+          PATH=/nonexistent ${ghqFetchAllSmokePackage}/bin/ghq-fetch-all
 
           touch "$out"
         '';
