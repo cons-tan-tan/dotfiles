@@ -3,6 +3,7 @@
   imports = [
     inputs.nix-index-database.homeModules.default
     ./agent-skills
+    ./hcom.nix
     ./packages.nix
     ./programs
     ./registries.nix

@@ -1,4 +1,9 @@
-{ pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 {
   home.packages =
     (with pkgs; [
@@ -66,7 +71,9 @@
       agent-browser
       agent-slack
       difit
-      hcom.package
       shellfirm
-    ]);
+    ])
+    ++ lib.optionals config.dotfiles.hcom.enable [
+      pkgs.dotfilesPackages.hcom.package
+    ];
 }

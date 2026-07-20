@@ -5,6 +5,8 @@
   ...
 }:
 let
+  enableHcom = config.dotfiles.hcom.enable;
+
   # 生成は package (hcom+codex を実行) に任せ参照のみ — Codex の内部仕様 (hash
   # アルゴリズム等) をこちらで再実装しないため。
   hcomCodex = pkgs.dotfilesPackages.hcom.integrations.codexHooks;
@@ -34,21 +36,37 @@ let
     }
   );
 
-  # hcom state key は実環境の hooks.json 絶対パスを含むため、build 時に生成する。
-  # hcomCodex の生成 JSON を eval 時に読む (IFD) と異種プラットフォーム向け構成の
-  # 評価 (nix flake check 等) が壊れる。
+  emptyHooksJson = jsonFormat.generate "codex-hooks-hcom-disabled.json" { hooks = { }; };
+  hcomHooksJson = if enableHcom then "${hcomCodex}/hooks.json" else emptyHooksJson;
+
+  # hcom state key は実環境の hooks.json 絶対パスを含むため、有効時はbuild時に
+  # 生成する。無効時は同じhooks.jsonに属する既存stateをprefixで削除し、後段で
+  # Herdr分だけを再投入する。
   hcomHooksPayloadJson =
-    pkgs.runCommand "codex-hcom-hooks-payload.json"
-      {
-        nativeBuildInputs = [ pkgs.jq ];
-      }
-      ''
-        jq --arg hooksJsonPath ${lib.escapeShellArg hooksJsonPath} '
-          { hooks: { state: (to_entries
-                              | map({ key: ($hooksJsonPath + ":" + .key + ":0:0"), value: .value })
-                              | from_entries) } }
-        ' ${hcomCodex}/hooks-state.json > $out
-      '';
+    if enableHcom then
+      pkgs.runCommand "codex-hcom-hooks-payload.json"
+        {
+          nativeBuildInputs = [ pkgs.jq ];
+        }
+        ''
+          jq --arg hooksJsonPath ${lib.escapeShellArg hooksJsonPath} '
+            { hooks: { state: (to_entries
+                                | map({ key: ($hooksJsonPath + ":" + .key + ":0:0"), value: .value })
+                                | from_entries) } }
+          ' ${hcomCodex}/hooks-state.json > $out
+        ''
+    else
+      jsonFormat.generate "codex-hcom-hooks-disabled-payload.json" {
+        __delete_prefixes = [
+          {
+            path = [
+              "hooks"
+              "state"
+            ];
+            prefix = "${hooksJsonPath}:";
+          }
+        ];
+      };
 
   hooksJson =
     pkgs.runCommand "codex-hooks.json"
@@ -68,7 +86,7 @@ let
               ]
             }
           ])
-        ' ${hcomCodex}/hooks.json > $out
+        ' ${hcomHooksJson} > $out
       '';
 
   herdrHooksStatePayloadJson =

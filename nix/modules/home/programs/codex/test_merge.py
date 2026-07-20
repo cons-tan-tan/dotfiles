@@ -79,3 +79,38 @@ source = "old"
     assert "marketplaces.herdr" not in text
     assert "keep@source" in text
     assert "new@source" in text
+
+
+def test_delete_prefixes_remove_only_matching_keys(tmp_path):
+    source = """
+[hooks.state."/home/user/.codex/hooks.json:pre_tool_use:0:0"]
+hcom_hook_definition_hash = "old"
+
+[hooks.state."/home/user/.codex/hooks.json:session_start:1:0"]
+trusted_hash = "herdr-old"
+
+[hooks.state."/tmp/other-hooks.json:session_start:0:0"]
+trusted_hash = "keep"
+"""
+    payload = {
+        "__delete_prefixes": [
+            {
+                "path": ["hooks", "state"],
+                "prefix": "/home/user/.codex/hooks.json:",
+            }
+        ],
+        "hooks": {
+            "state": {
+                "/home/user/.codex/hooks.json:session_start:0:0": {
+                    "trusted_hash": "herdr-new"
+                }
+            }
+        },
+    }
+    out = run_merge(tmp_path, source, payload)
+    text = out.read_text(encoding="utf-8")
+    assert "hcom_hook_definition_hash" not in text
+    assert "herdr-old" not in text
+    assert "herdr-new" in text
+    assert "/tmp/other-hooks.json:session_start:0:0" in text
+    assert "__delete_prefixes" not in text

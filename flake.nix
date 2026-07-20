@@ -338,12 +338,28 @@
           }
           // lib.optionalAttrs (system == darwinSystem) {
             darwin-system = darwinConfigurations.${darwinHostname}.system;
+            # hcom はデフォルト無効でも、opt-in 経路を CI で継続的に評価・build する。
+            darwin-system-hcom-enabled =
+              (darwinConfigurations.${darwinHostname}.extendModules {
+                modules = [
+                  { home-manager.users.${username}.dotfiles.hcom.enable = true; }
+                ];
+              }).system;
           }
           // lib.listToAttrs (
-            map (entry: {
-              name = "home-${entry.hostKind}";
-              value = homeConfigurations.${linuxConfigName entry}.activationPackage;
-            }) (builtins.filter (entry: entry.system == system) linuxHostMatrix)
+            lib.concatMap (entry: [
+              {
+                name = "home-${entry.hostKind}";
+                value = homeConfigurations.${linuxConfigName entry}.activationPackage;
+              }
+              {
+                name = "home-${entry.hostKind}-hcom-enabled";
+                value =
+                  (homeConfigurations.${linuxConfigName entry}.extendModules {
+                    modules = [ { dotfiles.hcom.enable = true; } ];
+                  }).activationPackage;
+              }
+            ]) (builtins.filter (entry: entry.system == system) linuxHostMatrix)
           );
           testChecks = import ./nix/tests {
             inherit lib pkgs username;

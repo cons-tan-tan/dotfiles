@@ -42,7 +42,7 @@ in
         # サブエージェントも同じ Sonnet に固定する。
         CLAUDE_CODE_SUBAGENT_MODEL = models.claude.sonnet;
       }
-      // lib.optionalAttrs (!forWindows) {
+      // lib.optionalAttrs (!forWindows && hcomPath != null) {
         # フックが参照する hcom を store path に固定し PATH 非依存にする。
         HCOM = hcomPath;
       };

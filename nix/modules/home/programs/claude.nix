@@ -7,6 +7,7 @@
 }:
 let
   inherit (config.my) dotfilesDir;
+  enableHcom = config.dotfiles.hcom.enable;
 
   claudeHome = "${config.home.homeDirectory}/.claude";
   herdrClaudeIntegration = pkgs.dotfilesPackages.herdr.integrations.claude;
@@ -25,9 +26,18 @@ let
   baseSettingsFile = jsonFormat.generate "claude-settings-base.json" (
     settingsLib.mkSettings {
       isDarwin = config.my.isDarwin;
-      hcomPath = "${pkgs.dotfilesPackages.hcom.package}/bin/hcom";
+      hcomPath = if enableHcom then "${pkgs.dotfilesPackages.hcom.package}/bin/hcom" else null;
     }
   );
+
+  hcomSettingsFile =
+    if enableHcom then
+      pkgs.dotfilesPackages.hcom.integrations.claudeHooks
+    else
+      jsonFormat.generate "claude-hcom-disabled.json" {
+        hooks = { };
+        permissions.allow = [ ];
+      };
 
   herdrSettingsFile =
     pkgs.runCommand "claude-herdr-settings.json"
@@ -40,7 +50,7 @@ let
         ' ${herdrClaudeIntegration}/settings.json > $out
       '';
 
-  # hcom 分は package が生成した設定から取り、手書きで二重管理しない。
+  # hcom が有効な場合は package が生成した設定を使い、手書きで二重管理しない。
   mergedSettingsRaw =
     pkgs.runCommand "claude-settings.json"
       {
@@ -57,7 +67,7 @@ let
           $base
           | .permissions.allow += $hcom.permissions.allow
           | .hooks = merge_hooks(($hcom.hooks // {}); ($base.hooks // {}); ($herdr.hooks // {}))
-        ' ${baseSettingsFile} ${pkgs.dotfilesPackages.hcom.integrations.claudeHooks} ${herdrSettingsFile} > $out
+        ' ${baseSettingsFile} ${hcomSettingsFile} ${herdrSettingsFile} > $out
       '';
 
   mergedSettingsFile = settingsValidator.validate "claude-settings.json" mergedSettingsRaw;

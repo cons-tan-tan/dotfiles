@@ -1,6 +1,11 @@
 # デプロイ対象 skill の宣言。root は SKILL.md を含むディレクトリ。
 # customization (任意) で frontmatter / body / invocation policy を変更する。
-{ inputs, ... }:
+{
+  config,
+  inputs,
+  lib,
+  ...
+}:
 let
   inherit (inputs)
     ast-grep-skill
@@ -13,6 +18,13 @@ let
     hunk
     improve-skill
     ;
+
+  hcomSkills = {
+    # CLI と skill は同じ hcom-src input を version authority として使う。
+    hcom-agent-messaging = {
+      root = "${hcom-src}/skills/hcom-agent-messaging";
+    };
+  };
 
 in
 {
@@ -94,11 +106,6 @@ in
       customization.disableAutomaticInvocation = true;
     };
 
-    # CLI と skill は同じ hcom-src input を version authority として使う。
-    hcom-agent-messaging = {
-      root = "${hcom-src}/skills/hcom-agent-messaging";
-    };
-
     hunk-review = {
       root = "${hunk}/skills/hunk-review";
     };
@@ -106,5 +113,6 @@ in
     improve = {
       root = "${improve-skill}/skills/improve";
     };
-  };
+  }
+  // lib.optionalAttrs config.dotfiles.hcom.enable hcomSkills;
 }
