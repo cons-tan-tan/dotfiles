@@ -4,7 +4,6 @@ let
   commonNames = [
     "agent-browser"
     "agent-slack"
-    "claude-code"
     "curl-fetch"
     "difit"
     "gh-api-get"
@@ -12,6 +11,7 @@ let
     "shellfirm"
   ];
   packageValues = (map (name: builtins.getAttr name local) commonNames) ++ [
+    local.claude-code.package
     local.hcom.package
     local.herdr.package
     local.hunk.package

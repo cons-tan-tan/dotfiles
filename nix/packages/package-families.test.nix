@@ -1,7 +1,10 @@
+# family の attrset 契約 (attrNames の完全一致) を固定する。
+# どの形を選ぶべきかの規約は nix/packages/default.nix のヘッダーを参照。
 { pkgs }:
 let
   inherit (pkgs.dotfilesPackages)
     aws
+    claude-code
     codex
     hcom
     herdr
@@ -10,6 +13,16 @@ let
     ;
 in
 {
+  testClaudeCodeFamilyShape = {
+    expr = builtins.attrNames claude-code;
+    expected = [ "package" ];
+  };
+
+  testClaudeCodePackageIsDerivation = {
+    expr = pkgs.lib.isDerivation claude-code.package;
+    expected = true;
+  };
+
   testAwsFamilyShape = {
     expr = builtins.attrNames aws;
     expected = [ "mkLoginPackage" ];

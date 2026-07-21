@@ -1,3 +1,14 @@
+# dotfilesPackages の登録簿。
+#
+# 登録の形は 3 種で、契約は package-families.test.nix / namespace.test.nix が固定する:
+#   - 葉 package: 成果物が 1 つの CLI は callPackage で derivation を直接登録する
+#     (例: curl-fetch, difit — difit は skill 用の flake input を別途持つが
+#     成果物は CLI 1 つなので family にしない)。
+#   - 直接 derivation 型 family: 複数の成果物を持ち、生成に必要な値が登録時に
+#     すべて揃うものは { package, ... } を持つ (例: hcom, herdr, hunk, claude-code)。
+#   - builder 型 family: wrapper の生成に消費側しか知らない値が要るものは
+#     { mk*, ... } の builder を持つ (例: codex の herdrSkillPath,
+#     pi の packageDir, aws の loginConfigFile)。
 {
   hostPlatform,
   inputs,
@@ -30,7 +41,8 @@ in
   agent-slack = pkgs.callPackage ./agent-slack {
     agentSlackSource = inputs.agent-slack-skill;
   };
-  claude-code = pkgs.callPackage ./claude-code {
+  claude-code = import ./claude-code {
+    inherit (pkgs) callPackage;
     claudeCode = pkgs.claude-code;
     herdrPlugin = herdr.agent.plugin;
   };

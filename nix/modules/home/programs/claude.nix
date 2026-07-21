@@ -75,7 +75,7 @@ in
 {
   programs.claude-code = {
     enable = true;
-    package = pkgs.dotfilesPackages.claude-code;
+    package = pkgs.dotfilesPackages.claude-code.package;
     plugins = [
       "${inputs.codex-plugin-cc}/plugins/codex"
     ];
