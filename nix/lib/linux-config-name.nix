@@ -9,6 +9,5 @@ let
   };
 in
 {
-  inherit shortArch;
   forHost = { hostKind, system, ... }: "${username}@${hostKind}-${shortArch.${system}}";
 }
