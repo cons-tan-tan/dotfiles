@@ -95,7 +95,6 @@ in
   testHerdrAgentShape = {
     expr = builtins.attrNames herdr.agent;
     expected = [
-      "codexMarketplace"
       "plugin"
       "skill"
     ];

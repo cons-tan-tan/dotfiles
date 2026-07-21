@@ -45,29 +45,6 @@ let
       }
     )
   );
-  codexMarketplaceJson = writeText "herdr-codex-marketplace.json" (
-    builtins.toJSON {
-      name = "herdr";
-      interface = {
-        displayName = "Herdr";
-      };
-      plugins = [
-        {
-          name = "herdr";
-          source = {
-            source = "local";
-            path = "./plugins/herdr";
-          };
-          policy = {
-            installation = "AVAILABLE";
-            authentication = "ON_INSTALL";
-          };
-          category = "Productivity";
-        }
-      ];
-    }
-  );
-
   plugin =
     runCommand "herdr-agent-plugin-${version}"
       {
@@ -101,21 +78,5 @@ in
       ''
         mkdir -p "$out"
         cp ${src}/SKILL.md "$out/SKILL.md"
-      '';
-
-  codexMarketplace =
-    runCommand "herdr-codex-marketplace-${version}"
-      {
-        meta = {
-          description = "Codex local marketplace exposing the Herdr plugin";
-          homepage = "https://herdr.dev";
-          license = lib.licenses.agpl3Plus;
-          inherit platforms;
-        };
-      }
-      ''
-        mkdir -p "$out/.agents/plugins" "$out/plugins"
-        ln -s ${plugin} "$out/plugins/herdr"
-        cp ${codexMarketplaceJson} "$out/.agents/plugins/marketplace.json"
       '';
 }
