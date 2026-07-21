@@ -13,7 +13,12 @@ let
   version = (builtins.fromTOML (builtins.readFile "${hcomSource}/Cargo.toml")).package.version;
 
   system = stdenvNoCC.hostPlatform.system;
-  asset = hcomPin.assets.${system} or (throw "hcom: unsupported system '${system}'");
+  pinnedAsset = import ../../lib/mk-pinned-asset.nix {
+    pin = hcomPin;
+    inherit system;
+    label = "hcom";
+  };
+  asset = pinnedAsset.asset;
 in
 stdenvNoCC.mkDerivation {
   pname = "hcom";
@@ -43,7 +48,7 @@ stdenvNoCC.mkDerivation {
     description = "Let AI agents message, watch, and spawn each other across terminals";
     homepage = "https://github.com/aannoo/hcom";
     license = licenses.mit;
-    platforms = builtins.attrNames hcomPin.assets;
+    platforms = pinnedAsset.platforms;
     mainProgram = "hcom";
     sourceProvenance = with sourceTypes; [ binaryNativeCode ];
   };

@@ -5,7 +5,11 @@ _final: prev:
 let
   inherit (prev.stdenv.hostPlatform) system;
   inherit (pin) version;
-  asset = pin.assets.${system} or (throw "watchexec: unsupported system '${system}'");
+  pinnedAsset = import ../lib/mk-pinned-asset.nix {
+    inherit pin system;
+    label = "watchexec";
+  };
+  asset = pinnedAsset.asset;
   assetName = "watchexec-${version}-${asset.target}.tar.xz";
 in
 prev.lib.optionalAttrs prev.stdenv.hostPlatform.isDarwin {

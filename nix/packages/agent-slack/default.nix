@@ -10,7 +10,11 @@
 let
   version = (builtins.fromJSON (builtins.readFile "${agentSlackSource}/package.json")).version;
   system = stdenv.hostPlatform.system;
-  asset = pin.assets.${system} or (throw "agent-slack: unsupported system '${system}'");
+  pinnedAsset = import ../../lib/mk-pinned-asset.nix {
+    inherit pin system;
+    label = "agent-slack";
+  };
+  asset = pinnedAsset.asset;
 in
 
 # Linux 版は glibc 動的リンク (interpreter /lib64/ld-linux-*.so.2) なので、
@@ -42,7 +46,7 @@ in
     description = "Slack automation CLI for AI agents";
     homepage = "https://github.com/stablyai/agent-slack";
     license = licenses.mit;
-    platforms = builtins.attrNames pin.assets;
+    platforms = pinnedAsset.platforms;
     mainProgram = "agent-slack";
     sourceProvenance = with sourceTypes; [ binaryNativeCode ];
   };

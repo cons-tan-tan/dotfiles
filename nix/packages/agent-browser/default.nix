@@ -10,7 +10,11 @@
 let
   version = (builtins.fromJSON (builtins.readFile "${agentBrowserSource}/package.json")).version;
   system = stdenvNoCC.hostPlatform.system;
-  asset = pin.assets.${system} or (throw "agent-browser: unsupported system '${system}'");
+  pinnedAsset = import ../../lib/mk-pinned-asset.nix {
+    inherit pin system;
+    label = "agent-browser";
+  };
+  asset = pinnedAsset.asset;
 in
 stdenvNoCC.mkDerivation {
   pname = "agent-browser";
@@ -44,7 +48,7 @@ stdenvNoCC.mkDerivation {
     homepage = "https://github.com/vercel-labs/agent-browser";
     changelog = "https://github.com/vercel-labs/agent-browser/releases/tag/v${version}";
     license = lib.licenses.asl20;
-    platforms = builtins.attrNames pin.assets;
+    platforms = pinnedAsset.platforms;
     mainProgram = "agent-browser";
     sourceProvenance = with lib.sourceTypes; [ binaryNativeCode ];
   };

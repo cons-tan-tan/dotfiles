@@ -8,8 +8,13 @@
 let
   system = stdenvNoCC.hostPlatform.system;
   inherit (herdrPin) version;
-  asset = herdrPin.assets.${system} or (throw "herdr: unsupported system '${system}'");
-  platforms = builtins.attrNames herdrPin.assets;
+  pinnedAsset = import ../../lib/mk-pinned-asset.nix {
+    pin = herdrPin;
+    inherit system;
+    label = "herdr";
+  };
+  asset = pinnedAsset.asset;
+  platforms = pinnedAsset.platforms;
   src = fetchFromGitHub {
     owner = "ogulcancelik";
     repo = "herdr";
