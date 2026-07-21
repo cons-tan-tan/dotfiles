@@ -7,6 +7,7 @@
 }:
 let
   inherit (import ../../../lib/settings/gpg.nix) cacheTtl sshKeygrips;
+  deploy = import ./deploy.nix { inherit lib; };
 
   windowsHomedir = config.my.windows.homedir;
 
@@ -27,11 +28,21 @@ let
   windowsSshcontrol = pkgs.writeText "windows-sshcontrol" (lib.concatStringsSep "\n" sshKeygrips);
 in
 {
-  home.activation.deployWindowsGpg = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    WIN_GNUPGHOME="${windowsHomedir}/AppData/Roaming/gnupg"
-    run mkdir -p "$WIN_GNUPGHOME"
-    run install -m644 "${windowsGpgAgentConf}" "$WIN_GNUPGHOME/gpg-agent.conf"
-    run install -m644 "${windowsGpgConf}" "$WIN_GNUPGHOME/gpg.conf"
-    run install -m644 "${windowsSshcontrol}" "$WIN_GNUPGHOME/sshcontrol"
-  '';
+  home.activation.deployWindowsGpg = deploy.mkDeployActivation {
+    dirs = [ "${windowsHomedir}/AppData/Roaming/gnupg" ];
+    files = [
+      {
+        src = windowsGpgAgentConf;
+        dst = "${windowsHomedir}/AppData/Roaming/gnupg/gpg-agent.conf";
+      }
+      {
+        src = windowsGpgConf;
+        dst = "${windowsHomedir}/AppData/Roaming/gnupg/gpg.conf";
+      }
+      {
+        src = windowsSshcontrol;
+        dst = "${windowsHomedir}/AppData/Roaming/gnupg/sshcontrol";
+      }
+    ];
+  };
 }

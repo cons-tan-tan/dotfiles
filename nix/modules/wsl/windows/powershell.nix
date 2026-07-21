@@ -10,12 +10,16 @@
 }:
 let
   windowsHomedir = config.my.windows.homedir;
+  deploy = import ./deploy.nix { inherit lib; };
 in
 {
-  home.activation.deployPowerShellProfile = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    WIN_PWSH_PROFILE_DIR="${windowsHomedir}/Documents/PowerShell"
-    run mkdir -p "$WIN_PWSH_PROFILE_DIR"
-    run install -m644 "${./Microsoft.PowerShell_profile.ps1}" \
-      "$WIN_PWSH_PROFILE_DIR/Microsoft.PowerShell_profile.ps1"
-  '';
+  home.activation.deployPowerShellProfile = deploy.mkDeployActivation {
+    dirs = [ "${windowsHomedir}/Documents/PowerShell" ];
+    files = [
+      {
+        src = ./Microsoft.PowerShell_profile.ps1;
+        dst = "${windowsHomedir}/Documents/PowerShell/Microsoft.PowerShell_profile.ps1";
+      }
+    ];
+  };
 }

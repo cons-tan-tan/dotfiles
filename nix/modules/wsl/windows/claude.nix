@@ -10,6 +10,7 @@
 let
   settingsLib = import ../../../lib/settings/claude.nix { inherit lib; };
   settingsValidator = import ../../../lib/mk-claude-settings-validator.nix { inherit pkgs; };
+  deploy = import ./deploy.nix { inherit lib; };
 
   windowsHomedir = config.my.windows.homedir;
 
@@ -23,8 +24,13 @@ let
   windowsSettingsFile = settingsValidator.validate "claude-windows-settings.json" windowsSettingsRaw;
 in
 {
-  home.activation.deployWindowsClaudeSettings = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    run mkdir -p "${windowsHomedir}/.claude"
-    run install -m644 "${windowsSettingsFile}" "${windowsHomedir}/.claude/settings.json"
-  '';
+  home.activation.deployWindowsClaudeSettings = deploy.mkDeployActivation {
+    dirs = [ "${windowsHomedir}/.claude" ];
+    files = [
+      {
+        src = windowsSettingsFile;
+        dst = "${windowsHomedir}/.claude/settings.json";
+      }
+    ];
+  };
 }

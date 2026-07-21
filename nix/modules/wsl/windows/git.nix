@@ -8,6 +8,7 @@
 }:
 let
   gitLib = import ../../../lib/settings/git.nix { inherit lib pkgs; };
+  deploy = import ./deploy.nix { inherit lib; };
 
   windowsHomedir = config.my.windows.homedir;
 
@@ -41,10 +42,24 @@ let
   );
 in
 {
-  home.activation.deployWindowsGit = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    run mkdir -p "${windowsHomedir}/.gitconfig.d" "${windowsHomedir}/.config/git"
-    run install -m644 "${windowsGitIni}" "${windowsHomedir}/.gitconfig"
-    run install -m644 "${gitLib.commitTemplate}" "${windowsHomedir}/.gitconfig.d/commit-template"
-    run install -m644 "${windowsGitIgnore}" "${windowsHomedir}/.config/git/ignore"
-  '';
+  home.activation.deployWindowsGit = deploy.mkDeployActivation {
+    dirs = [
+      "${windowsHomedir}/.gitconfig.d"
+      "${windowsHomedir}/.config/git"
+    ];
+    files = [
+      {
+        src = windowsGitIni;
+        dst = "${windowsHomedir}/.gitconfig";
+      }
+      {
+        src = gitLib.commitTemplate;
+        dst = "${windowsHomedir}/.gitconfig.d/commit-template";
+      }
+      {
+        src = windowsGitIgnore;
+        dst = "${windowsHomedir}/.config/git/ignore";
+      }
+    ];
+  };
 }

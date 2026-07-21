@@ -15,6 +15,7 @@
 }:
 let
   windowsHomedir = config.my.windows.homedir;
+  deploy = import ./deploy.nix { inherit lib; };
 
   yamlFormat = pkgs.formats.yaml { };
 
@@ -80,8 +81,13 @@ let
       '';
 in
 {
-  home.activation.deployWingetConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    run mkdir -p "${windowsHomedir}/.config"
-    run install -m644 "${wingetConfigFile}" "${windowsHomedir}/.config/dev.winget"
-  '';
+  home.activation.deployWingetConfig = deploy.mkDeployActivation {
+    dirs = [ "${windowsHomedir}/.config" ];
+    files = [
+      {
+        src = wingetConfigFile;
+        dst = "${windowsHomedir}/.config/dev.winget";
+      }
+    ];
+  };
 }
