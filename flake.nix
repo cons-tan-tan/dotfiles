@@ -4,6 +4,8 @@
   nixConfig = {
     extra-substituters = [
       "https://cache.nixos.org"
+      # nixConfig は直接の attrset を要求して import を含む let 式を受理しないため、
+      # cache-settings.nix との乖離を cache-settings-tests で検知する。
       "https://cache.numtide.com"
     ];
     extra-trusted-public-keys = [
