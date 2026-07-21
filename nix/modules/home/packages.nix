@@ -4,25 +4,24 @@
   pkgs,
   ...
 }:
+let
+  cliTools = import ../../lib/settings/cli-tools.nix;
+  sharedCliPackages = map (tool: pkgs.${tool.nixpkgsAttr}) (
+    builtins.filter (tool: tool.linux == "home-packages") cliTools
+  );
+in
 {
   home.packages =
-    (with pkgs; [
+    sharedCliPackages
+    ++ (with pkgs; [
       # CLI tools
       # NOTE: fzf / zoxide / starship のシェル統合 (eval "$(... init zsh)") は
       # 意図的に Nix 管理外の ~/.zshrc に手書きしている (シェル init はまだ
       # HM 管理に移行していない)。HM の programs.fzf 等を enable しても
       # programs.zsh が無効な現状では init が配備されないため、ここでは
       # パッケージ導入のみ行う。
-      jq
-      ripgrep
-      fd
-      fzf
-      bat
-      zoxide
-      eza
       fastfetch
       reuse
-      ast-grep
       watchexec
       yazi
       ffmpeg
@@ -31,7 +30,6 @@
       neovim
 
       # Git
-      ghq
       git-wt
       git-cliff
       pinact
