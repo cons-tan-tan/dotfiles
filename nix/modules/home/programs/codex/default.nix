@@ -20,11 +20,8 @@ let
   jsonFormat = pkgs.formats.json { };
   herdrSkillPath = "${codexHome}/skills/herdr/SKILL.md";
   herdrHookPath = "${codexHome}/herdr-agent-state.sh";
-  herdrHookPathEnv = lib.makeBinPath [
-    pkgs.coreutils
-    pkgs.python3
-  ];
-  herdrHookCommand = "${pkgs.coreutils}/bin/env PATH=${herdrHookPathEnv} ${pkgs.bash}/bin/bash ${lib.escapeShellArg herdrHookPath} session";
+  herdrSettings = import ../../../../lib/settings/herdr.nix { inherit lib pkgs; };
+  herdrHookCommand = herdrSettings.mkSessionHookCommand herdrHookPath;
 
   codex = pkgs.dotfilesPackages.codex.mkWrappedPackage {
     inherit herdrSkillPath;

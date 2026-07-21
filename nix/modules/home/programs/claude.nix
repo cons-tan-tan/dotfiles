@@ -12,11 +12,8 @@ let
   claudeHome = "${config.home.homeDirectory}/.claude";
   herdrClaudeIntegration = pkgs.dotfilesPackages.herdr.integrations.claude;
   herdrHookPath = "${claudeHome}/hooks/herdr-agent-state.sh";
-  herdrHookPathEnv = lib.makeBinPath [
-    pkgs.coreutils
-    pkgs.python3
-  ];
-  herdrHookCommand = "${pkgs.coreutils}/bin/env PATH=${herdrHookPathEnv} ${pkgs.bash}/bin/bash ${lib.escapeShellArg herdrHookPath} session";
+  herdrSettings = import ../../../lib/settings/herdr.nix { inherit lib pkgs; };
+  herdrHookCommand = herdrSettings.mkSessionHookCommand herdrHookPath;
 
   settingsLib = import ../../../lib/settings/claude.nix { inherit lib; };
   settingsValidator = import ../../../lib/mk-claude-settings-validator.nix { inherit pkgs; };
