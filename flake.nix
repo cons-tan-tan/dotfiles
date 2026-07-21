@@ -220,14 +220,8 @@
         }
       ];
 
-      # Nix system → 構成名・$target で使う短縮 arch 名。linuxConfigName と
-      # mkLinuxHostApps の双方で使い、構成名と switch 実行時の組み立てを一致させる。
-      linuxShortArch = {
-        "x86_64-linux" = "x86_64";
-        "aarch64-linux" = "aarch64";
-      };
-
-      linuxConfigName = { hostKind, system, ... }: "${username}@${hostKind}-${linuxShortArch.${system}}";
+      configNames = import ./nix/lib/linux-config-name.nix { inherit username; };
+      linuxConfigName = configNames.forHost;
 
       # treefmt: formatter 出力 (wrapper) と checks 出力 (check) の両方に使う
       mkTreefmtEval =
@@ -260,7 +254,6 @@
           username
           windowsUsername
           windowsHomedir
-          linuxShortArch
           ;
       };
 

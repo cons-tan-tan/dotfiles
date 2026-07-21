@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-: "${HM_USERNAME:?HM_USERNAME must be set}"
-: "${HM_ARCH:?HM_ARCH must be set}"
+: "${HM_TARGET_WSL:?HM_TARGET_WSL must be set}"
+: "${HM_TARGET_LINUX:?HM_TARGET_LINUX must be set}"
 
 if [[ -n ${WSL_DISTRO_NAME:-} ]]; then
-  target="${HM_USERNAME}@wsl-${HM_ARCH}"
+  target="$HM_TARGET_WSL"
 else
-  target="${HM_USERNAME}@linux-${HM_ARCH}"
+  target="$HM_TARGET_LINUX"
 fi
 
 echo "Building Home Manager configuration: $target"

@@ -40,15 +40,15 @@ run_home_manager_build() {
   if [ "$wsl_mode" = "wsl" ]; then
     run env WSL_DISTRO_NAME=Ubuntu \
       PATH="$STUB_DIR:$PATH" \
-      HM_USERNAME=alice \
-      HM_ARCH=x86_64 \
+      HM_TARGET_WSL=alice@wsl-x86_64 \
+      HM_TARGET_LINUX=alice@linux-x86_64 \
       NIX_STUB_ARGS_FILE="$NIX_ARGS_FILE" \
       "$BASH_BIN" -eu -o pipefail "$BUILD_SCRIPT" "$@"
   else
     run env -u WSL_DISTRO_NAME \
       PATH="$STUB_DIR:$PATH" \
-      HM_USERNAME=alice \
-      HM_ARCH=x86_64 \
+      HM_TARGET_WSL=alice@wsl-x86_64 \
+      HM_TARGET_LINUX=alice@linux-x86_64 \
       NIX_STUB_ARGS_FILE="$NIX_ARGS_FILE" \
       "$BASH_BIN" -eu -o pipefail "$BUILD_SCRIPT" "$@"
   fi
@@ -79,8 +79,8 @@ run_home_manager_build() {
 @test "home-manager-switch delegates to configured home-manager binary" {
   run env WSL_DISTRO_NAME=Ubuntu \
     PATH="$STUB_DIR:$PATH" \
-    HM_USERNAME=alice \
-    HM_ARCH=aarch64 \
+    HM_TARGET_WSL=alice@wsl-aarch64 \
+    HM_TARGET_LINUX=alice@linux-aarch64 \
     HM_BIN="$HM_STUB" \
     HM_STUB_ARGS_FILE="$HM_ARGS_FILE" \
     "$BASH_BIN" -eu -o pipefail "$SWITCH_SCRIPT"
@@ -96,14 +96,14 @@ run_home_manager_build() {
   [ "$(cat "$HM_ARGS_FILE")" = "$expected" ]
 }
 
-@test "home-manager-build fails before invoking nix when HM_USERNAME is missing" {
-  run env -u HM_USERNAME -u WSL_DISTRO_NAME \
+@test "home-manager-build fails before invoking nix when HM_TARGET_WSL is missing" {
+  run env -u HM_TARGET_WSL -u WSL_DISTRO_NAME \
     PATH="$STUB_DIR:$PATH" \
-    HM_ARCH=x86_64 \
+    HM_TARGET_LINUX=alice@linux-x86_64 \
     NIX_STUB_ARGS_FILE="$NIX_ARGS_FILE" \
     "$BASH_BIN" -eu -o pipefail "$BUILD_SCRIPT"
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"HM_USERNAME"* ]]
+  [[ "$output" == *"HM_TARGET_WSL"* ]]
   [ ! -e "$NIX_ARGS_FILE" ]
 }

@@ -3,20 +3,27 @@
   username,
   windowsUsername,
   windowsHomedir,
-  linuxShortArch,
 }:
 { system, pkgs }:
 let
   inherit (pkgs.lib) escapeShellArg;
 
-  arch = linuxShortArch.${system};
+  configNames = import ./linux-config-name.nix { inherit username; };
+  wslTarget = configNames.forHost {
+    hostKind = "wsl";
+    inherit system;
+  };
+  linuxTarget = configNames.forHost {
+    hostKind = "linux";
+    inherit system;
+  };
   hmBin = "${inputs.home-manager.packages.${system}.default}/bin/home-manager";
 
   buildScript = pkgs.writeShellApplication {
     name = "home-manager-build";
     text = ''
-      export HM_USERNAME=${escapeShellArg username}
-      export HM_ARCH=${escapeShellArg arch}
+      export HM_TARGET_WSL=${escapeShellArg wslTarget}
+      export HM_TARGET_LINUX=${escapeShellArg linuxTarget}
       ${builtins.readFile ../apps/home-manager-build.sh}
     '';
   };
@@ -24,8 +31,8 @@ let
   switchScript = pkgs.writeShellApplication {
     name = "home-manager-switch";
     text = ''
-      export HM_USERNAME=${escapeShellArg username}
-      export HM_ARCH=${escapeShellArg arch}
+      export HM_TARGET_WSL=${escapeShellArg wslTarget}
+      export HM_TARGET_LINUX=${escapeShellArg linuxTarget}
       export HM_BIN=${escapeShellArg hmBin}
       ${builtins.readFile ../apps/home-manager-switch.sh}
     '';
