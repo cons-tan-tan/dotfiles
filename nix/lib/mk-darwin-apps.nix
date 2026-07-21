@@ -2,6 +2,7 @@
 { pkgs }:
 let
   inherit (pkgs.lib) escapeShellArg;
+  appSet = import ./mk-app-set.nix { lib = pkgs.lib; };
 
   buildScript = pkgs.writeShellApplication {
     name = "darwin-build";
@@ -19,22 +20,15 @@ let
     '';
   };
 in
-{
-  apps = {
+appSet.mkAppSet {
+  entries = {
     build = {
-      type = "app";
-      meta.description = "Build the nix-darwin configuration without activating it";
-      program = pkgs.lib.getExe buildScript;
+      description = "Build the nix-darwin configuration without activating it";
+      script = buildScript;
     };
     switch = {
-      type = "app";
-      meta.description = "Build and activate the nix-darwin configuration";
-      program = pkgs.lib.getExe switchScript;
+      description = "Build and activate the nix-darwin configuration";
+      script = switchScript;
     };
   };
-
-  scripts = [
-    buildScript
-    switchScript
-  ];
 }

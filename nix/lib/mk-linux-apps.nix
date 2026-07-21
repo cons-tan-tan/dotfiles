@@ -7,6 +7,7 @@
 { system, pkgs }:
 let
   inherit (pkgs.lib) escapeShellArg;
+  appSet = import ./mk-app-set.nix { lib = pkgs.lib; };
 
   configNames = import ./linux-config-name.nix { inherit username; };
   wslTarget = configNames.forHost {
@@ -47,28 +48,19 @@ let
     '';
   };
 in
-{
-  apps = {
+appSet.mkAppSet {
+  entries = {
     build = {
-      type = "app";
-      meta.description = "Build the Home Manager configuration without activating it (auto-detects WSL/Linux)";
-      program = pkgs.lib.getExe buildScript;
+      description = "Build the Home Manager configuration without activating it (auto-detects WSL/Linux)";
+      script = buildScript;
     };
     switch = {
-      type = "app";
-      meta.description = "Build and activate the Home Manager configuration (auto-detects WSL/Linux)";
-      program = pkgs.lib.getExe switchScript;
+      description = "Build and activate the Home Manager configuration (auto-detects WSL/Linux)";
+      script = switchScript;
     };
     apply-winget = {
-      type = "app";
-      meta.description = "Apply the WinGet DSC configuration on the Windows host (WSL only)";
-      program = pkgs.lib.getExe applyWingetScript;
+      description = "Apply the WinGet DSC configuration on the Windows host (WSL only)";
+      script = applyWingetScript;
     };
   };
-
-  scripts = [
-    buildScript
-    switchScript
-    applyWingetScript
-  ];
 }

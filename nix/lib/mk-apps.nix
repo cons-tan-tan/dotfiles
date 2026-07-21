@@ -9,6 +9,7 @@
 }:
 let
   lib = pkgs.lib;
+  appSet = import ./mk-app-set.nix { inherit lib; };
   mkScript = name: attrs: pkgs.writeShellApplication ({ inherit name; } // attrs);
   nixCustomSettings = import ./nix-custom-settings.nix { inherit lib username; };
 
@@ -91,28 +92,39 @@ let
     '';
   };
 in
-{
-  apps = {
+appSet.mkAppSet {
+  entries = {
     update = {
-      type = "app";
-      meta.description = "Update flake.lock to the latest input revisions";
-      program = pkgs.lib.getExe updateScript;
+      description = "Update flake.lock to the latest input revisions";
+      script = updateScript;
     };
 
     fmt = {
-      type = "app";
-      meta.description = "Format the repository with treefmt";
-      program = pkgs.lib.getExe fmtScript;
+      description = "Format the repository with treefmt";
+      script = fmtScript;
     };
 
     # pin を upstream と同期する。hash 計算用の内部 package は root の
     # packages 出力へ公開せず、update-pins.sh が mk-pkgs.nix から直接評価する。
     update-pins = {
-      type = "app";
-      meta.description = "Sync nix/pins/*.json to the latest upstream state";
-      program = pkgs.lib.getExe updatePinsScript;
+      description = "Sync nix/pins/*.json to the latest upstream state";
+      script = updatePinsScript;
     };
 
+    # sops secrets の明示適用 (案 B: switch と完全分離し、GPG 鍵未導入でも
+    # 環境構築が secrets に依存しないことを保証する)。secrets/README.md 参照。
+    apply-secrets = {
+      description = "Decrypt sops-managed secrets into place (skips gracefully without the GPG key)";
+      script = applySecretsScript;
+    };
+
+    apply-nix-settings = {
+      description = "Sync root-level Nix daemon settings into /etc/nix/nix.custom.conf";
+      script = applyNixSettingsScript;
+    };
+  };
+
+  extraApps = {
     pptx = import ../apps/pptx {
       inherit pkgs;
       inherit (inputs)
@@ -126,27 +138,5 @@ in
     markdownlint = import ../apps/markdownlint { inherit pkgs; };
 
     textlint = import ../apps/textlint { inherit pkgs; };
-
-    # sops secrets の明示適用 (案 B: switch と完全分離し、GPG 鍵未導入でも
-    # 環境構築が secrets に依存しないことを保証する)。secrets/README.md 参照。
-    apply-secrets = {
-      type = "app";
-      meta.description = "Decrypt sops-managed secrets into place (skips gracefully without the GPG key)";
-      program = pkgs.lib.getExe applySecretsScript;
-    };
-
-    apply-nix-settings = {
-      type = "app";
-      meta.description = "Sync root-level Nix daemon settings into /etc/nix/nix.custom.conf";
-      program = pkgs.lib.getExe applyNixSettingsScript;
-    };
   };
-
-  scripts = [
-    updateScript
-    fmtScript
-    updatePinsScript
-    applySecretsScript
-    applyNixSettingsScript
-  ];
 }
