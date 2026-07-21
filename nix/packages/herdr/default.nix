@@ -3,12 +3,7 @@
   herdrPin ? builtins.fromJSON (builtins.readFile ../../pins/herdr.json),
 }:
 let
-  callFamilyPart =
-    path: args:
-    builtins.removeAttrs (callPackage path args) [
-      "override"
-      "overrideDerivation"
-    ];
+  callFamilyPart = import ../call-family-part.nix { inherit callPackage; };
   build = callPackage ./package.nix {
     inherit herdrPin;
   };
