@@ -16,7 +16,7 @@ let
   configPath = "${codexHome}/config.toml";
   hooksJsonPath = "${codexHome}/hooks.json";
 
-  settingsLib = import ../../../../lib/settings/codex.nix { };
+  settingsLib = import ../../../../lib/settings/codex.nix;
   jsonFormat = pkgs.formats.json { };
   herdrSkillPath = "${codexHome}/skills/herdr/SKILL.md";
   herdrHookPath = "${codexHome}/herdr-agent-state.sh";

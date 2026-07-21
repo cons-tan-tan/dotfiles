@@ -1,7 +1,6 @@
 # Codex config.toml の共有生成器。Codex 自身が動的に書く [projects]/[notice]
 # などは既存 config から保持し、ここでは dotfiles 側で固定したい設定だけを
 # merge payload として返す。
-{ }:
 let
   models = import ./models.nix;
 in
