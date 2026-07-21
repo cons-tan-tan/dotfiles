@@ -1,5 +1,8 @@
 # Central place for agent model IDs. Keep this out of update-pins: switching
 # models is a reviewed product/runtime choice, not a mechanical dependency bump.
+let
+  codexFamilyModel = "gpt-5.6-sol";
+in
 {
   claude = {
     main = "claude-opus-4-7[1m]";
@@ -7,18 +10,18 @@
   };
 
   codex = {
-    model = "gpt-5.6-sol";
+    model = codexFamilyModel;
     reasoningEffort = "high";
   };
 
   pi = {
     provider = "openai-codex";
-    model = "gpt-5.6-sol";
+    model = codexFamilyModel;
     thinkingLevel = "high";
   };
 
   opencode = {
-    model = "openai/gpt-5.6-sol";
+    model = "openai/${codexFamilyModel}";
     reasoningEffort = "high";
   };
 }

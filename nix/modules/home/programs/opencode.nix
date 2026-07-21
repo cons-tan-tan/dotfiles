@@ -1,11 +1,13 @@
 {
   config,
+  lib,
   pkgs,
   ...
 }:
 let
   herdrOpenCodeIntegration = pkgs.dotfilesPackages.herdr.integrations.opencode;
   models = import ../../../lib/settings/models.nix;
+  openaiModelName = lib.removePrefix "openai/" models.opencode.model;
 in
 {
   programs.opencode = {
@@ -15,7 +17,7 @@ in
       provider = {
         openai = {
           models = {
-            "gpt-5.6-sol" = {
+            ${openaiModelName} = {
               options = {
                 reasoningEffort = models.opencode.reasoningEffort;
               };
