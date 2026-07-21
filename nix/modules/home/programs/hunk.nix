@@ -15,7 +15,7 @@ in
   programs.hunk = {
     enable = true;
     enableGitIntegration = true;
-    package = if config.my.hostKind == "wsl" then hunk.wslRuntime else hunk.package;
+    package = if config.my.isWsl then hunk.wslRuntime else hunk.package;
     settings.wrap_lines = true;
   };
 }
