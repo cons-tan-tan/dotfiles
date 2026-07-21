@@ -62,6 +62,31 @@ build_local_package() {
   ' --no-link
 }
 
+# hash フィールドを空にした pin で一度わざと失敗ビルドし、Nix の
+# hash mismatch エラー ("got: sha256-...") から実値を取り出して書き戻す。
+# 抽出パターンは Nix のエラーメッセージ形式に依存する (このスクリプトで唯一の場所)。
+compute_hash_via_failed_build() {
+  local label=$1 package=$2 pin=$3 field=$4
+  local build_log hash tmp
+  echo "$label: computing $field (expect one failing build)..."
+  build_log=$(build_local_package "$package" 2>&1 || true)
+  hash=$(echo "$build_log" | grep -Eo 'got: *sha256-[A-Za-z0-9+/=_-]+' | head -1 | grep -Eo 'sha256-[A-Za-z0-9+/=_-]+' || true)
+  if [ -z "$hash" ]; then
+    echo "$label: failed to extract $field from build output:" >&2
+    echo "$build_log" | tail -10 >&2
+    exit 1
+  fi
+  tmp=$(mktemp)
+  TMPFILES+=("$tmp")
+  jq --arg field "$field" --arg hash "$hash" '.[$field] = $hash' "$pin" >"$tmp"
+  mv "$tmp" "$pin"
+  echo "$label: verifying build..."
+  if ! build_local_package "$package"; then
+    echo "$label: verification build failed" >&2
+    exit 1
+  fi
+}
+
 check_managed_files_clean() {
   if ! git diff --quiet -- "${managed_pathspecs[@]}"; then
     echo "update-pins: managed files already have unstaged changes; refusing to overwrite them" >&2
@@ -463,23 +488,7 @@ else
   jq --arg v "$ver" --arg s "$src_hash" \
     '.version = $v | .srcHash = $s | .cargoHash = ""' "$pin" >"$tmp"
   mv "$tmp" "$pin"
-  echo "shellfirm: computing cargoHash (expect one failing build)..."
-  build_log=$(build_local_package shellfirm 2>&1 || true)
-  cargo_hash=$(echo "$build_log" | grep -Eo 'got: *sha256-[A-Za-z0-9+/=_-]+' | head -1 | grep -Eo 'sha256-[A-Za-z0-9+/=_-]+' || true)
-  if [ -z "$cargo_hash" ]; then
-    echo "shellfirm: failed to extract cargoHash from build output:" >&2
-    echo "$build_log" | tail -10 >&2
-    exit 1
-  fi
-  tmp=$(mktemp)
-  TMPFILES+=("$tmp")
-  jq --arg h "$cargo_hash" '.cargoHash = $h' "$pin" >"$tmp"
-  mv "$tmp" "$pin"
-  echo "shellfirm: verifying build..."
-  if ! build_local_package shellfirm; then
-    echo "shellfirm: verification build failed" >&2
-    exit 1
-  fi
+  compute_hash_via_failed_build shellfirm shellfirm "$pin" cargoHash
 fi
 
 echo "== herdr"
@@ -530,23 +539,7 @@ else
     '.srcHash = $s | .npmDepsHash = ""' "$difit_pin" >"$tmp"
   mv "$tmp" "$difit_pin"
   update_paired_flake_input difit-src yoshiko-pg/difit "$difit_ver"
-  echo "difit: computing npmDepsHash (expect one failing build)..."
-  build_log=$(build_local_package difit 2>&1 || true)
-  npm_deps_hash=$(echo "$build_log" | grep -Eo 'got: *sha256-[A-Za-z0-9+/=_-]+' | head -1 | grep -Eo 'sha256-[A-Za-z0-9+/=_-]+' || true)
-  if [ -z "$npm_deps_hash" ]; then
-    echo "difit: failed to extract npmDepsHash from build output:" >&2
-    echo "$build_log" | tail -10 >&2
-    exit 1
-  fi
-  tmp=$(mktemp)
-  TMPFILES+=("$tmp")
-  jq --arg h "$npm_deps_hash" '.npmDepsHash = $h' "$difit_pin" >"$tmp"
-  mv "$tmp" "$difit_pin"
-  echo "difit: verifying build..."
-  if ! build_local_package difit; then
-    echo "difit: verification build failed" >&2
-    exit 1
-  fi
+  compute_hash_via_failed_build difit difit "$difit_pin" npmDepsHash
 fi
 
 echo "== claude-code-settings-schema"
