@@ -8,9 +8,7 @@ import inputs.nixpkgs {
   inherit system;
   config.allowUnfree = true;
   overlays = [
-    (final: prev: {
-      mozuku-lsp = inputs.mozuku.packages.${system}.default;
-    })
+    (import ../overlays/mozuku-lsp.nix { inherit inputs; })
     (import ../overlays/llm-agents.nix inputs.llm-agents)
     (import ../overlays/local-packages.nix {
       inherit inputs;
