@@ -214,6 +214,36 @@ update_url_pin() {
   echo "$label: hash updated"
 }
 
+# .assets | keys[] をループし、resolver が返すアセット名を prefetch して
+# tmp 側の JSON に hash を書き戻す。resolver は "system pin tag" を受け取り
+# アセットのファイル名を stdout に返す関数名。
+refresh_pin_assets() {
+  local pin=$1 tmp=$2 repo=$3 tag=$4 resolver=$5
+  local system name hash next
+  while IFS= read -r system; do
+    name=$("$resolver" "$system" "$pin" "$tag")
+    hash=$(prefetch "https://github.com/$repo/releases/download/$tag/$name")
+    next=$(mktemp)
+    TMPFILES+=("$next")
+    jq --arg system "$system" --arg hash "$hash" '.assets[$system].hash = $hash' "$tmp" >"$next"
+    mv "$next" "$tmp"
+  done < <(jq -r '.assets | keys[]' "$pin")
+}
+
+# release アセット名を pin の .assets[system].name から読む標準 resolver
+asset_name_from_pin() {
+  local system=$1 pin=$2
+  jq -r --arg system "$system" '.assets[$system].name' "$pin"
+}
+
+# watchexec はアセット名を version と .assets[system].target から構築する
+watchexec_asset_name() {
+  local system=$1 pin=$2 tag=$3
+  local target
+  target=$(jq -r --arg system "$system" '.assets[$system].target' "$pin")
+  printf 'watchexec-%s-%s.tar.xz\n' "${tag#v}" "$target"
+}
+
 # release アセット型 pin (hcom / agent-slack) の共通更新処理。
 # JSON の assets.<system>.name を読んで各アセットを prefetch し直す。
 update_release_pin() {
@@ -230,15 +260,7 @@ update_release_pin() {
   tmp=$(mktemp)
   TMPFILES+=("$tmp")
   jq --arg version "$ver" '.version = $version' "$pin" >"$tmp"
-  local system name hash next
-  while IFS= read -r system; do
-    name=$(jq -r --arg s "$system" '.assets[$s].name' "$pin")
-    hash=$(prefetch "https://github.com/$repo/releases/download/$tag/$name")
-    next=$(mktemp)
-    TMPFILES+=("$next")
-    jq --arg s "$system" --arg h "$hash" '.assets[$s].hash = $h' "$tmp" >"$next"
-    mv "$next" "$tmp"
-  done < <(jq -r '.assets | keys[]' "$pin")
+  refresh_pin_assets "$pin" "$tmp" "$repo" "$tag" asset_name_from_pin
   mv "$tmp" "$pin"
 }
 
@@ -296,7 +318,7 @@ PY
 
 update_paired_release_pin() {
   local label=$1 repo=$2 pin=$3 input=$4
-  local tag version current tmp system name hash next
+  local tag version current tmp
   tag=$(latest_tag "$repo")
   if [[ $tag != v* ]]; then
     echo "$label: unsupported release tag '$tag'" >&2
@@ -314,21 +336,14 @@ update_paired_release_pin() {
   tmp=$(mktemp)
   TMPFILES+=("$tmp")
   cp "$pin" "$tmp"
-  while IFS= read -r system; do
-    name=$(jq -r --arg system "$system" '.assets[$system].name' "$pin")
-    hash=$(prefetch "https://github.com/$repo/releases/download/$tag/$name")
-    next=$(mktemp)
-    TMPFILES+=("$next")
-    jq --arg system "$system" --arg hash "$hash" '.assets[$system].hash = $hash' "$tmp" >"$next"
-    mv "$next" "$tmp"
-  done < <(jq -r '.assets | keys[]' "$pin")
+  refresh_pin_assets "$pin" "$tmp" "$repo" "$tag" asset_name_from_pin
   mv "$tmp" "$pin"
   update_paired_flake_input "$input" "$repo" "$version"
 }
 
 update_watchexec_pin() {
   local pin=nix/pins/watchexec.json
-  local tag version current tmp system target name hash next
+  local tag version current tmp
   tag=$(latest_tag watchexec/watchexec)
   version=${tag#v}
   current=$(jq -r .version "$pin")
@@ -341,15 +356,7 @@ update_watchexec_pin() {
   tmp=$(mktemp)
   TMPFILES+=("$tmp")
   jq --arg version "$version" '.version = $version' "$pin" >"$tmp"
-  while IFS= read -r system; do
-    target=$(jq -r --arg system "$system" '.assets[$system].target' "$pin")
-    name="watchexec-$version-$target.tar.xz"
-    hash=$(prefetch "https://github.com/watchexec/watchexec/releases/download/$tag/$name")
-    next=$(mktemp)
-    TMPFILES+=("$next")
-    jq --arg system "$system" --arg hash "$hash" '.assets[$system].hash = $hash' "$tmp" >"$next"
-    mv "$next" "$tmp"
-  done < <(jq -r '.assets | keys[]' "$pin")
+  refresh_pin_assets "$pin" "$tmp" watchexec/watchexec "$tag" watchexec_asset_name
   mv "$tmp" "$pin"
 }
 
