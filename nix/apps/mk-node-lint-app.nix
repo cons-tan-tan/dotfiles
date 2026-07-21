@@ -8,16 +8,8 @@
   nodeDir,
 }:
 let
-  nodePackage = pkgs.lib.importJSON (nodeDir + "/package.json");
-
-  nodeModules = pkgs.importNpmLock.buildNodeModules {
-    package = nodePackage;
-    packageLock = pkgs.lib.importJSON (nodeDir + "/package-lock.json");
-    inherit (pkgs) nodejs;
-    derivationArgs = {
-      pname = "${name}-node-modules";
-      version = nodePackage.version;
-    };
+  nodeModules = import ./mk-node-modules.nix { inherit pkgs; } {
+    inherit name nodeDir;
   };
 in
 {

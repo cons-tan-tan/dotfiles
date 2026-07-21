@@ -53,16 +53,9 @@ let
     ln -s python "$out/bin/python3"
   '';
 
-  pptxNodePackage = pkgs.lib.importJSON ./node/package.json;
-
-  pptxNodeModules = pkgs.importNpmLock.buildNodeModules {
-    package = pptxNodePackage;
-    packageLock = pkgs.lib.importJSON ./node/package-lock.json;
-    inherit (pkgs) nodejs;
-    derivationArgs = {
-      pname = "pptx-node-modules";
-      version = pptxNodePackage.version;
-    };
+  pptxNodeModules = import ../mk-node-modules.nix { inherit pkgs; } {
+    name = "pptx";
+    nodeDir = ./node;
   };
 
   nodeWrapper = pkgs.runCommandLocal "pptx-node-wrapper" { } ''
