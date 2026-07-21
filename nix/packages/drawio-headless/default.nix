@@ -19,16 +19,8 @@ writeShellApplication {
   ];
 
   text = ''
-    tmpdir=$(mktemp -d)
-    trap 'rm -rf "$tmpdir"' EXIT
-
-    XDG_CONFIG_HOME="$tmpdir" \
-      dbus-run-session --config-file=${dbus}/share/dbus-1/session.conf -- \
-        xvfb-run \
-          --auto-display \
-          --server-args="-screen 0 1024x768x24 -nolisten unix -nolisten tcp" \
-          drawio --no-sandbox "$@" --disable-gpu \
-      2> >(grep --line-buffered -E -v '^dbus-daemon\[[0-9]+\]:' >&2 || true)
+    export DRAWIO_DBUS_SESSION_CONF=${lib.escapeShellArg "${dbus}/share/dbus-1/session.conf"}
+    ${builtins.readFile ./drawio-wrapper.sh}
   '';
 
   meta = {
