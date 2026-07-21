@@ -25,10 +25,12 @@ let
     ;
   skills = mergeSkillDefinitions externalSkills localSkills;
 
-  inherit (import ./frontmatter.nix { inherit lib; })
-    disableCodexImplicitInvocation
+  inherit (import ./skill-policy.nix { inherit lib; })
     prepareSkill
     validateSkillDefinition
+    ;
+  inherit (import ./codex-invocation-policy.nix { inherit lib; })
+    disableCodexImplicitInvocation
     ;
 
   # customization や frontmatter filtering が必要な skill はコピーを作る。

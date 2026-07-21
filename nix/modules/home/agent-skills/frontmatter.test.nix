@@ -2,7 +2,10 @@
 # 収集して lib.runTests を適用する。
 { lib }:
 let
-  fm = import ./frontmatter.nix { inherit lib; };
+  fm =
+    (import ./yaml-frontmatter.nix { inherit lib; })
+    // (import ./skill-policy.nix { inherit lib; })
+    // (import ./codex-invocation-policy.nix { inherit lib; });
   policy = import ./policy.nix { inherit lib; };
 
   withFm = "---\nname: demo\n---\nbody line\n";

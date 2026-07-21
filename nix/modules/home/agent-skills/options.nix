@@ -1,7 +1,8 @@
 { lib, ... }:
 let
   inherit (lib) mkOption types;
-  inherit (import ./frontmatter.nix { inherit lib; }) isFrontmatterFieldName isSkillName;
+  inherit (import ./yaml-frontmatter.nix { inherit lib; }) isFrontmatterFieldName;
+  inherit (import ./skill-policy.nix { inherit lib; }) isSkillName;
 
   frontmatterFieldType = types.strMatching "^[A-Za-z0-9_-]+$";
   validateSetFieldNames =
