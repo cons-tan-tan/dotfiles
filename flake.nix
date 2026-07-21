@@ -261,6 +261,26 @@
           linuxShortArch
           ;
       };
+
+      # apps と checks は同じ { apps, scripts } 束を使うため、
+      # pkgsFor / treefmtEvalFor と同様に system ごとに一度だけ組み立てて共有する
+      commonAppsFor = lib.genAttrs systems (
+        system:
+        mkCommonApps {
+          pkgs = pkgsFor.${system};
+          treefmtWrapper = treefmtEvalFor.${system}.config.build.wrapper;
+        }
+      );
+      hostAppsFor = lib.genAttrs systems (
+        system:
+        if system == darwinSystem then
+          mkDarwinHostApps { pkgs = pkgsFor.${system}; }
+        else
+          mkLinuxHostApps {
+            inherit system;
+            pkgs = pkgsFor.${system};
+          }
+      );
       darwinConfigurations = {
         ${darwinHostname} = mkDarwin {
           system = darwinSystem;
@@ -279,18 +299,7 @@
       inherit darwinConfigurations homeConfigurations;
 
       # 全 system で同一の app 集合になるよう genAttrs で生成する
-      apps = lib.genAttrs systems (
-        system:
-        let
-          pkgs = pkgsFor.${system};
-          common = mkCommonApps {
-            inherit pkgs;
-            treefmtWrapper = treefmtEvalFor.${system}.config.build.wrapper;
-          };
-          host = if system == darwinSystem then mkDarwinHostApps pkgs else mkLinuxHostApps system pkgs;
-        in
-        common.apps // host.apps
-      );
+      apps = lib.genAttrs systems (system: commonAppsFor.${system}.apps // hostAppsFor.${system}.apps);
 
       # 作業用ツール (テスト・lint・secrets 編集) の宣言的な入口。
       # 構成の build / switch には不要 — apps だけで完結する。
@@ -322,18 +331,13 @@
         system:
         let
           pkgs = pkgsFor.${system};
-          common = mkCommonApps {
-            inherit pkgs;
-            treefmtWrapper = treefmtEvalFor.${system}.config.build.wrapper;
-          };
-          host = if system == darwinSystem then mkDarwinHostApps pkgs else mkLinuxHostApps system pkgs;
           baseChecks = {
             treefmt = treefmtEvalFor.${system}.config.build.check self;
             # 全 app スクリプトをビルドし、wrapper のビルド時 shellcheck を
             # CI (build-linux ジョブ) で強制する
             app-scripts = pkgs.symlinkJoin {
               name = "app-scripts";
-              paths = common.scripts ++ host.scripts;
+              paths = commonAppsFor.${system}.scripts ++ hostAppsFor.${system}.scripts;
             };
           }
           // lib.optionalAttrs (system == darwinSystem) {

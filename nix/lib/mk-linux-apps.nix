@@ -5,7 +5,7 @@
   windowsHomedir,
   linuxShortArch,
 }:
-system: pkgs:
+{ system, pkgs }:
 let
   inherit (pkgs.lib) escapeShellArg;
 
