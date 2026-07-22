@@ -1,0 +1,45 @@
+name: Cache GC
+
+on:
+  schedule:
+    # デフォルトブランチで、生存中の root から参照されなくなったキャッシュを
+    # 毎日回収する。
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Plan deletions without changing the cache
+        type: boolean
+        default: false
+
+# GC 同士のrepackと削除が競合しないよう、手動実行も直列化する。
+concurrency:
+  group: hestia-gc
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  gc:
+    # workflow_dispatch では任意の ref を選べるが、Hestia GC はデフォルト
+    # ブランチの cache view を基準に実行する必要がある。
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
+        with:
+          enable_kvm: false
+      - uses: Mic92/hestia@fb239a2f72d4b6e26eec5425f289dea23b27a527 # v2.0.0
+        with:
+          version: v2.0.0
+      - name: Run Hestia garbage collection
+        run: |
+          "$HESTIA_BIN" gc \
+            ${{ inputs.dry-run && '--dry-run' || '' }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

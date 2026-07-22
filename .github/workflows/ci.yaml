@@ -43,28 +43,21 @@ jobs:
 
   # x86_64-linux の checks (home-linux / home-wsl / treefmt / tests) を実ビルドする。
   # eval だけでは hash 切れや vendorHash 不一致が素通りするため。
-  # mozuku-lsp は公開キャッシュに無くソースビルドになるため、Nix store を
-  # cache-nix-action でラン間キャッシュする。mozuku 更新時はキャッシュミスして
-  # ソースビルドが走るので、検証性は保たれる。
+  # mozuku-lsp は公開キャッシュに無くソースビルドになるため、ビルド結果を
+  # Hestia でラン間キャッシュする。公開キャッシュ由来の path は保存せず、
+  # GitHub Actions のキャッシュ枠をこのリポジトリ固有の成果物へ使う。
   build-linux:
     runs-on: ubuntu-latest
-    permissions:
-      actions: write
-      contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
         with:
           enable_kvm: false
-      - uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
+      - uses: Mic92/hestia@fb239a2f72d4b6e26eec5425f289dea23b27a527 # v2.0.0
         with:
-          primary-key: nix-store-${{ runner.os }}-${{ hashFiles('flake.lock') }}
-          restore-prefixes-first-match: nix-store-${{ runner.os }}-
-          gc-max-store-size-linux: 2G
-          purge: true
-          purge-prefixes: nix-store-${{ runner.os }}-
-          purge-created: 0
-          purge-primary-key: never
+          version: v2.0.0
+          upstream-cache-filter: true
+          upstream-cache-key-names: cache.nixos.org-1 niks3.numtide.com-1
       # 軽量なテストを先に完了させ、後続の全checkでは同じstore pathを再利用する。
       - name: Build test checks
         run: nix build .#checks.x86_64-linux.bats-tests .#checks.x86_64-linux.merge-py-tests --print-build-logs
@@ -76,21 +69,14 @@ jobs:
   # ビルド対象の分割を検討する。
   build-darwin:
     runs-on: macos-14
-    permissions:
-      actions: write
-      contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
         with:
           enable_kvm: false
-      - uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
+      - uses: Mic92/hestia@fb239a2f72d4b6e26eec5425f289dea23b27a527 # v2.0.0
         with:
-          primary-key: nix-store-${{ runner.os }}-${{ hashFiles('flake.lock') }}
-          restore-prefixes-first-match: nix-store-${{ runner.os }}-
-          gc-max-store-size-macos: 2G
-          purge: true
-          purge-prefixes: nix-store-${{ runner.os }}-
-          purge-created: 0
-          purge-primary-key: never
+          version: v2.0.0
+          upstream-cache-filter: true
+          upstream-cache-key-names: cache.nixos.org-1 niks3.numtide.com-1
       - run: nix flake check --print-build-logs
