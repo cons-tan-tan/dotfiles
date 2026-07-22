@@ -1,6 +1,63 @@
 # nix/pins/*.json を upstream の最新状態に同期する。
-# 実行: nix run .#update-pins
+# 実行:
+#   nix run .#update-pins          # すべて更新
+#   nix run .#update-pins -- herdr # Herdr だけ更新
 # 変更が出たら git diff を確認し、nix run .#build を通してからコミットする。
+
+supported_targets=(
+  hcom
+  agent-slack
+  agent-browser
+  watchexec
+  shellfirm
+  herdr
+  difit
+  claude-code-settings-schema
+  codex-app
+)
+
+usage() {
+  cat <<'EOF'
+Usage: update-pins [target]
+
+Targets:
+  all (default)
+EOF
+  printf '  %s\n' "${supported_targets[@]}"
+}
+
+is_known_target() {
+  local candidate=$1 target
+  [ "$candidate" = all ] && return 0
+  for target in "${supported_targets[@]}"; do
+    [ "$candidate" = "$target" ] && return 0
+  done
+  return 1
+}
+
+select_target() {
+  local cli_target=${1:-}
+
+  if [ "$#" -gt 1 ]; then
+    echo "update-pins: expected at most one target" >&2
+    usage >&2
+    return 2
+  fi
+  if [ "$cli_target" = "--help" ] || [ "$cli_target" = "-h" ]; then
+    usage
+    exit 0
+  fi
+
+  selected_target=${cli_target:-all}
+  if ! is_known_target "$selected_target"; then
+    echo "update-pins: unknown target '$selected_target'" >&2
+    usage >&2
+    return 2
+  fi
+}
+
+selected_target=
+select_target "$@"
 
 # 失敗時に一時ファイルを残さない。各ブロックは TMPFILES に追記してから使う。
 TMPFILES=()
@@ -446,112 +503,141 @@ update_codex_app_pin() {
   mv "$tmp" "$pin"
 }
 
-if [ "${UPDATE_PINS_ONLY:-}" = "codex-app" ]; then
-  echo "== codex-app"
-  update_codex_app_pin
-  echo
-  if git diff --quiet -- "${managed_pathspecs[@]}"; then
-    echo "All pins up to date."
+update_shellfirm_pin() {
+  local pin=nix/pins/shellfirm.json
+  local tag ver cur src_hash tmp
+  tag=$(latest_tag kaplanelad/shellfirm)
+  ver=${tag#v}
+  cur=$(jq -r .version "$pin")
+  if [ "$ver" = "$cur" ]; then
+    echo "shellfirm: $cur (up to date)"
   else
-    echo "Pins updated. Review with 'git diff', verify with 'nix run .#build', then commit."
+    echo "shellfirm: $cur -> $ver (prefetching source...)"
+    src_hash=$(prefetch_unpack "https://github.com/kaplanelad/shellfirm/archive/refs/tags/$tag.tar.gz")
+    tmp=$(mktemp)
+    TMPFILES+=("$tmp")
+    # cargoHash は Cargo.lock ベースの vendor tree から決まるため、fake hash
+    # で一度ビルドして hash mismatch から実値を取り出す。
+    jq --arg v "$ver" --arg s "$src_hash" \
+      '.version = $v | .srcHash = $s | .cargoHash = ""' "$pin" >"$tmp"
+    mv "$tmp" "$pin"
+    compute_hash_via_failed_build shellfirm shellfirm "$pin" cargoHash
   fi
-  restore_managed_files=false
-  exit 0
-fi
+}
 
-echo "== hcom"
-update_paired_release_pin hcom aannoo/hcom nix/pins/hcom.json hcom-src
-
-echo "== agent-slack"
-update_paired_release_pin agent-slack stablyai/agent-slack nix/pins/agent-slack.json agent-slack-skill
-
-echo "== agent-browser"
-update_paired_release_pin agent-browser vercel-labs/agent-browser nix/pins/agent-browser.json agent-browser-skill
-
-echo "== watchexec"
-update_watchexec_pin
-
-echo "== shellfirm"
-pin=nix/pins/shellfirm.json
-tag=$(latest_tag kaplanelad/shellfirm)
-ver=${tag#v}
-cur=$(jq -r .version "$pin")
-if [ "$ver" = "$cur" ]; then
-  echo "shellfirm: $cur (up to date)"
-else
-  echo "shellfirm: $cur -> $ver (prefetching source...)"
-  src_hash=$(prefetch_unpack "https://github.com/kaplanelad/shellfirm/archive/refs/tags/$tag.tar.gz")
-  tmp=$(mktemp)
-  TMPFILES+=("$tmp")
-  # cargoHash は Cargo.lock ベースの vendor tree から決まるため、fake hash
-  # で一度ビルドして hash mismatch から実値を取り出す。
-  jq --arg v "$ver" --arg s "$src_hash" \
-    '.version = $v | .srcHash = $s | .cargoHash = ""' "$pin" >"$tmp"
-  mv "$tmp" "$pin"
-  compute_hash_via_failed_build shellfirm shellfirm "$pin" cargoHash
-fi
-
-echo "== herdr"
-herdr_pin=nix/pins/herdr.json
-herdr_before=$(jq -r .version "$herdr_pin")
-update_release_pin "herdr" "ogulcancelik/herdr" "$herdr_pin"
-herdr_after=$(jq -r .version "$herdr_pin")
-if [ "$herdr_after" != "$herdr_before" ]; then
-  echo "herdr: updating srcHash"
-  src_hash=$(prefetch_unpack "https://github.com/ogulcancelik/herdr/archive/refs/tags/v$herdr_after.tar.gz")
-  tmp=$(mktemp)
-  TMPFILES+=("$tmp")
-  jq --arg h "$src_hash" '.srcHash = $h' "$herdr_pin" >"$tmp"
-  mv "$tmp" "$herdr_pin"
-fi
-
-echo "== difit"
-difit_pin=nix/pins/difit.json
-difit_lock=nix/packages/difit/package-lock.json
-difit_cur=$(current_paired_version yoshiko-pg/difit)
-difit_ver=$(latest_npm_version difit)
-validate_release_version difit "$difit_ver"
-if [ "$difit_ver" = "$difit_cur" ]; then
-  echo "difit: $difit_cur (up to date)"
-else
-  echo "difit: $difit_cur -> $difit_ver (prefetching source...)"
-  difit_url="https://registry.npmjs.org/difit/-/difit-$difit_ver.tgz"
-  difit_src_hash=$(prefetch "$difit_url")
-
-  difit_tmpdir=$(mktemp -d)
-  TMPDIRS+=("$difit_tmpdir")
-  curl -fsSL "$difit_url" | tar -xz -C "$difit_tmpdir"
-  if [ ! -f "$difit_tmpdir/package/package.json" ]; then
-    echo "difit: npm tarball did not contain package/package.json" >&2
-    exit 1
+update_herdr_pin() {
+  local herdr_pin=nix/pins/herdr.json
+  local herdr_before herdr_after src_hash tmp
+  herdr_before=$(jq -r .version "$herdr_pin")
+  update_release_pin "herdr" "ogulcancelik/herdr" "$herdr_pin"
+  herdr_after=$(jq -r .version "$herdr_pin")
+  if [ "$herdr_after" != "$herdr_before" ]; then
+    echo "herdr: updating srcHash"
+    src_hash=$(prefetch_unpack "https://github.com/ogulcancelik/herdr/archive/refs/tags/v$herdr_after.tar.gz")
+    tmp=$(mktemp)
+    TMPFILES+=("$tmp")
+    jq --arg h "$src_hash" '.srcHash = $h' "$herdr_pin" >"$tmp"
+    mv "$tmp" "$herdr_pin"
   fi
-  (
-    cd "$difit_tmpdir/package"
-    npm install --package-lock-only --ignore-scripts --no-audit --no-fund
-  )
-  cp "$difit_tmpdir/package/package-lock.json" "$difit_lock"
+}
 
-  tmp=$(mktemp)
-  TMPFILES+=("$tmp")
-  # npmDepsHash は npm 依存のダウンロード結果から決まるため事前計算できない。
-  # 空にして lib.fakeHash でビルドし、hash mismatch エラーから実値を取り出す。
-  jq --arg s "$difit_src_hash" \
-    '.srcHash = $s | .npmDepsHash = ""' "$difit_pin" >"$tmp"
-  mv "$tmp" "$difit_pin"
-  update_paired_flake_input difit-src yoshiko-pg/difit "$difit_ver"
-  compute_hash_via_failed_build difit difit "$difit_pin" npmDepsHash
+update_difit_pin() {
+  local difit_pin=nix/pins/difit.json
+  local difit_lock=nix/packages/difit/package-lock.json
+  local difit_cur difit_ver difit_url difit_src_hash difit_tmpdir tmp
+  difit_cur=$(current_paired_version yoshiko-pg/difit)
+  difit_ver=$(latest_npm_version difit)
+  validate_release_version difit "$difit_ver"
+  if [ "$difit_ver" = "$difit_cur" ]; then
+    echo "difit: $difit_cur (up to date)"
+  else
+    echo "difit: $difit_cur -> $difit_ver (prefetching source...)"
+    difit_url="https://registry.npmjs.org/difit/-/difit-$difit_ver.tgz"
+    difit_src_hash=$(prefetch "$difit_url")
+
+    difit_tmpdir=$(mktemp -d)
+    TMPDIRS+=("$difit_tmpdir")
+    curl -fsSL "$difit_url" | tar -xz -C "$difit_tmpdir"
+    if [ ! -f "$difit_tmpdir/package/package.json" ]; then
+      echo "difit: npm tarball did not contain package/package.json" >&2
+      exit 1
+    fi
+    (
+      cd "$difit_tmpdir/package"
+      npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+    )
+    cp "$difit_tmpdir/package/package-lock.json" "$difit_lock"
+
+    tmp=$(mktemp)
+    TMPFILES+=("$tmp")
+    # npmDepsHash は npm 依存のダウンロード結果から決まるため事前計算できない。
+    # 空にして lib.fakeHash でビルドし、hash mismatch エラーから実値を取り出す。
+    jq --arg s "$difit_src_hash" \
+      '.srcHash = $s | .npmDepsHash = ""' "$difit_pin" >"$tmp"
+    mv "$tmp" "$difit_pin"
+    update_paired_flake_input difit-src yoshiko-pg/difit "$difit_ver"
+    compute_hash_via_failed_build difit difit "$difit_pin" npmDepsHash
+  fi
+}
+
+run_target() {
+  local target=$1
+  echo "== $target"
+  case $target in
+  hcom)
+    update_paired_release_pin hcom aannoo/hcom nix/pins/hcom.json hcom-src
+    ;;
+  agent-slack)
+    update_paired_release_pin agent-slack stablyai/agent-slack nix/pins/agent-slack.json agent-slack-skill
+    ;;
+  agent-browser)
+    update_paired_release_pin agent-browser vercel-labs/agent-browser nix/pins/agent-browser.json agent-browser-skill
+    ;;
+  watchexec)
+    update_watchexec_pin
+    ;;
+  shellfirm)
+    update_shellfirm_pin
+    ;;
+  herdr)
+    update_herdr_pin
+    ;;
+  difit)
+    update_difit_pin
+    ;;
+  claude-code-settings-schema)
+    update_url_pin "claude-code-settings-schema" "nix/pins/claude-code-settings-schema.json"
+    ;;
+  codex-app)
+    update_codex_app_pin
+    ;;
+  *)
+    echo "update-pins: internal error: target '$target' has no updater" >&2
+    return 2
+    ;;
+  esac
+}
+
+if [ "$selected_target" = all ]; then
+  for target in "${supported_targets[@]}"; do
+    run_target "$target"
+  done
+else
+  run_target "$selected_target"
 fi
-
-echo "== claude-code-settings-schema"
-update_url_pin "claude-code-settings-schema" "nix/pins/claude-code-settings-schema.json"
-
-echo "== codex-app"
-update_codex_app_pin
 
 echo
 if git diff --quiet -- "${managed_pathspecs[@]}"; then
-  echo "All pins up to date."
+  if [ "$selected_target" = all ]; then
+    echo "All pins up to date."
+  else
+    echo "$selected_target is up to date."
+  fi
 else
-  echo "Pins updated. Review with 'git diff', verify with 'nix run .#build', then commit."
+  if [ "$selected_target" = all ]; then
+    echo "Pins updated. Review with 'git diff', verify with 'nix run .#build', then commit."
+  else
+    echo "$selected_target updated. Review with 'git diff', verify with 'nix run .#build', then commit."
+  fi
 fi
 restore_managed_files=false

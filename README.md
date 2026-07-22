@@ -33,7 +33,8 @@ nix run .#apply-secrets
 | `nix run .#switch` | 構成のビルドと適用(ホスト自動判別) |
 | `nix run .#build` | 適用せずビルドのみ |
 | `nix run .#update` | flake.lock を更新 |
-| `nix run .#update-pins` | バイナリ pin(`nix/pins/*.json`)を最新リリースへ同期 |
+| `nix run .#update-pins` | すべての更新対象をupstreamの最新状態へ同期 |
+| `nix run .#update-pins -- <target>` | 指定したtargetのみ同期。target一覧は`nix run .#update-pins -- --help`で表示 |
 | `nix run .#fmt` | treefmt で整形 |
 | `nix run .#apply-nix-settings` | `/etc/nix/nix.custom.conf` に Nix daemon 設定を同期 |
 | `nix run .#apply-secrets` | sops secrets の復号・配置(鍵が無ければスキップ) |
