@@ -1,5 +1,5 @@
 # sops secrets をマニフェストに従って $HOME へ復号配置する本体。
-# nix/lib/mk-apps.nix の applySecretsScript が以下を export して埋め込む:
+# nix/lib/apps/mk-common-apps.nix の applySecretsScript が以下を export して埋め込む:
 #   APPLY_SECRETS_ROOT          — secrets/ を含むソースルート (flake の self)
 #   APPLY_SECRETS_MANIFEST      — 適用エントリの JSON 配列ファイル
 #   APPLY_SECRETS_RENDERERS_DIR — secret format ごとの renderer 置き場

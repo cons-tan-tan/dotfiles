@@ -8,7 +8,7 @@ let
     name = "darwin-build";
     text = ''
       export DARWIN_HOSTNAME=${escapeShellArg darwinHostname}
-      ${builtins.readFile ../apps/darwin-build.sh}
+      ${builtins.readFile ../../apps/darwin-build.sh}
     '';
   };
 
@@ -16,7 +16,7 @@ let
     name = "darwin-switch";
     text = ''
       export DARWIN_HOSTNAME=${escapeShellArg darwinHostname}
-      ${builtins.readFile ../apps/darwin-switch.sh}
+      ${builtins.readFile ../../apps/darwin-switch.sh}
     '';
   };
 in

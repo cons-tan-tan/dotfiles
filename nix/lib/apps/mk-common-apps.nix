@@ -11,7 +11,7 @@ let
   lib = pkgs.lib;
   appSet = import ./mk-app-set.nix { inherit lib; };
   mkScript = name: attrs: pkgs.writeShellApplication ({ inherit name; } // attrs);
-  nixCustomSettings = import ./nix-custom-settings.nix { inherit lib username; };
+  nixCustomSettings = import ../nix-custom-settings.nix { inherit lib username; };
 
   nixCustomSettingsFile = pkgs.writeText "dotfiles-nix-custom.conf" nixCustomSettings.text;
 
@@ -40,7 +40,7 @@ let
       pkgs.gzip
       pkgs.unzip
     ];
-    text = builtins.readFile ../apps/update-pins.sh;
+    text = builtins.readFile ../../apps/update-pins.sh;
   };
 
   # 適用する secrets の宣言。追加はここに 1 エントリ足すだけ
@@ -61,7 +61,7 @@ let
   applySecretsRenderers = pkgs.linkFarm "apply-secrets-renderers" [
     {
       name = "ssh-config-yaml.jq";
-      path = ../apps/apply-secrets/renderers/ssh-config-yaml.jq;
+      path = ../../apps/apply-secrets/renderers/ssh-config-yaml.jq;
     }
   ];
 
@@ -75,7 +75,7 @@ let
       export APPLY_SECRETS_ROOT=${inputs.self}
       export APPLY_SECRETS_MANIFEST=${secretsManifestFile}
       export APPLY_SECRETS_RENDERERS_DIR=${applySecretsRenderers}
-      ${builtins.readFile ../apps/apply-secrets/apply-secrets.sh}
+      ${builtins.readFile ../../apps/apply-secrets/apply-secrets.sh}
     '';
   };
 
@@ -88,7 +88,7 @@ let
     ];
     text = ''
       export APPLY_NIX_SETTINGS_SNIPPET=${nixCustomSettingsFile}
-      ${builtins.readFile ../apps/apply-nix-settings.sh}
+      ${builtins.readFile ../../apps/apply-nix-settings.sh}
     '';
   };
 in
@@ -125,7 +125,7 @@ appSet.mkAppSet {
   };
 
   extraApps = {
-    pptx = import ../apps/pptx {
+    pptx = import ../../apps/pptx {
       inherit pkgs;
       inherit (inputs)
         anthropic-skills
@@ -135,8 +135,8 @@ appSet.mkAppSet {
         ;
     };
 
-    markdownlint = import ../apps/markdownlint { inherit pkgs; };
+    markdownlint = import ../../apps/markdownlint { inherit pkgs; };
 
-    textlint = import ../apps/textlint { inherit pkgs; };
+    textlint = import ../../apps/textlint { inherit pkgs; };
   };
 }

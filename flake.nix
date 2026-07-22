@@ -245,11 +245,11 @@
       # apps / formatter / checks で同じ評価を共有する
       treefmtEvalFor = lib.genAttrs systems (system: mkTreefmtEval pkgsFor.${system});
 
-      mkCommonApps = import ./nix/lib/mk-apps.nix { inherit inputs username; };
-      appSet = import ./nix/lib/mk-app-set.nix { inherit lib; };
+      mkCommonApps = import ./nix/lib/apps/mk-common-apps.nix { inherit inputs username; };
+      appSet = import ./nix/lib/apps/mk-app-set.nix { inherit lib; };
 
-      mkDarwinHostApps = import ./nix/lib/mk-darwin-apps.nix { inherit darwinHostname; };
-      mkLinuxHostApps = import ./nix/lib/mk-linux-apps.nix {
+      mkDarwinHostApps = import ./nix/lib/apps/mk-darwin-apps.nix { inherit darwinHostname; };
+      mkLinuxHostApps = import ./nix/lib/apps/mk-linux-apps.nix {
         inherit
           inputs
           username

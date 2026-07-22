@@ -9,7 +9,7 @@ let
   inherit (pkgs.lib) escapeShellArg;
   appSet = import ./mk-app-set.nix { lib = pkgs.lib; };
 
-  configNames = import ./linux-config-name.nix { inherit username; };
+  configNames = import ../linux-config-name.nix { inherit username; };
   wslTarget = configNames.forHost {
     hostKind = "wsl";
     inherit system;
@@ -25,7 +25,7 @@ let
     text = ''
       export HM_TARGET_WSL=${escapeShellArg wslTarget}
       export HM_TARGET_LINUX=${escapeShellArg linuxTarget}
-      ${builtins.readFile ../apps/home-manager-build.sh}
+      ${builtins.readFile ../../apps/home-manager-build.sh}
     '';
   };
 
@@ -35,7 +35,7 @@ let
       export HM_TARGET_WSL=${escapeShellArg wslTarget}
       export HM_TARGET_LINUX=${escapeShellArg linuxTarget}
       export HM_BIN=${escapeShellArg hmBin}
-      ${builtins.readFile ../apps/home-manager-switch.sh}
+      ${builtins.readFile ../../apps/home-manager-switch.sh}
     '';
   };
 
@@ -44,7 +44,7 @@ let
     text = ''
       export APPLY_WINGET_WINDOWS_HOMEDIR=${escapeShellArg windowsHomedir}
       export APPLY_WINGET_WINDOWS_USERNAME=${escapeShellArg windowsUsername}
-      ${builtins.readFile ../apps/apply-winget.sh}
+      ${builtins.readFile ../../apps/apply-winget.sh}
     '';
   };
 in
