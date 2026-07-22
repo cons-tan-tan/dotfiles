@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 # 同一 ref の旧 run をキャンセルする。build-linux が mozuku-lsp をソース
 # ビルドして重いため、force-push 時の並走が特に無駄になる。
