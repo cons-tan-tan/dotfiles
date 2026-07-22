@@ -23,4 +23,20 @@
           // extraApps;
         scripts = lib.mapAttrsToList (_: entry: entry.script) entries;
       };
+
+  mergeAppSets =
+    appSets:
+    let
+      appNames = lib.concatMap (appSet: builtins.attrNames appSet.apps) appSets;
+      duplicateNames = builtins.filter (
+        name: builtins.length (builtins.filter (other: other == name) appNames) > 1
+      ) (lib.unique appNames);
+    in
+    if duplicateNames != [ ] then
+      throw "app names must be unique across app sets: ${builtins.toJSON duplicateNames}"
+    else
+      {
+        apps = lib.foldl' (acc: appSet: acc // appSet.apps) { } appSets;
+        scripts = lib.concatMap (appSet: appSet.scripts) appSets;
+      };
 }

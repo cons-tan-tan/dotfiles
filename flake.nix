@@ -246,6 +246,7 @@
       treefmtEvalFor = lib.genAttrs systems (system: mkTreefmtEval pkgsFor.${system});
 
       mkCommonApps = import ./nix/lib/mk-apps.nix { inherit inputs username; };
+      appSet = import ./nix/lib/mk-app-set.nix { inherit lib; };
 
       mkDarwinHostApps = import ./nix/lib/mk-darwin-apps.nix { inherit darwinHostname; };
       mkLinuxHostApps = import ./nix/lib/mk-linux-apps.nix {
@@ -276,6 +277,13 @@
             pkgs = pkgsFor.${system};
           }
       );
+      appsFor = lib.genAttrs systems (
+        system:
+        appSet.mergeAppSets [
+          commonAppsFor.${system}
+          hostAppsFor.${system}
+        ]
+      );
       darwinConfigurations = {
         ${darwinHostname} = mkDarwin {
           system = darwinSystem;
@@ -294,7 +302,7 @@
       inherit darwinConfigurations homeConfigurations;
 
       # 全 system で同一の app 集合になるよう genAttrs で生成する
-      apps = lib.genAttrs systems (system: commonAppsFor.${system}.apps // hostAppsFor.${system}.apps);
+      apps = lib.genAttrs systems (system: appsFor.${system}.apps);
 
       # 作業用ツール (テスト・lint・secrets 編集) の宣言的な入口。
       # 構成の build / switch には不要 — apps だけで完結する。
@@ -332,7 +340,7 @@
             # CI (build-linux ジョブ) で強制する
             app-scripts = pkgs.symlinkJoin {
               name = "app-scripts";
-              paths = commonAppsFor.${system}.scripts ++ hostAppsFor.${system}.scripts;
+              paths = appsFor.${system}.scripts;
             };
           }
           // lib.optionalAttrs (system == darwinSystem) {

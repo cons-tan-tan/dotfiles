@@ -32,6 +32,16 @@ let
     };
     extraApps.extra = fixtureExtraApp;
   };
+  otherFixture = appSet.mkAppSet {
+    entries.other = {
+      description = "Other fixture application";
+      script = secondFixtureScript;
+    };
+  };
+  mergedFixture = appSet.mergeAppSets [
+    fixtureWithExtra
+    otherFixture
+  ];
 in
 {
   testAppsDeriveFromEntries = {
@@ -84,6 +94,40 @@ in
           };
           extraApps.fixture = fixtureExtraApp;
         }
+      )).success;
+    expected = false;
+  };
+
+  testAppSetsMergeAppsAndScripts = {
+    expr = {
+      appNames = builtins.attrNames mergedFixture.apps;
+      scriptNames = map lib.getName mergedFixture.scripts;
+    };
+    expected = {
+      appNames = [
+        "extra"
+        "fixture"
+        "other"
+      ];
+      scriptNames = [
+        "fixture-app"
+        "second-fixture-app"
+      ];
+    };
+  };
+
+  testDuplicateNamesAcrossAppSetsRejected = {
+    expr =
+      (builtins.tryEval (
+        appSet.mergeAppSets [
+          fixture
+          (appSet.mkAppSet {
+            entries.fixture = {
+              description = "Duplicate fixture application";
+              script = fixtureScript;
+            };
+          })
+        ]
       )).success;
     expected = false;
   };
