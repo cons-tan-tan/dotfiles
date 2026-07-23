@@ -116,9 +116,8 @@ EOS
 set -euo pipefail
 
 {
-  printf 'curl'
-  printf ' %q' "$@"
-  printf '\n'
+  printf -v command_line '%q ' curl "$@"
+  printf '%s\n' "${command_line% }"
 } >>"$UPDATE_PINS_COMMAND_LOG"
 
 flake_version() {
@@ -294,9 +293,8 @@ EOS
 set -euo pipefail
 
 {
-  printf 'nix'
-  printf ' %q' "$@"
-  printf '\n'
+  printf -v command_line '%q ' nix "$@"
+  printf '%s\n' "${command_line% }"
 } >>"$UPDATE_PINS_COMMAND_LOG"
 
 if { [ "$#" -eq 6 ] || [ "$#" -eq 7 ]; } \
@@ -628,6 +626,45 @@ make_unrelated_updates_noop() {
   export UPDATE_PINS_SCHEMA_HASH="$(jq -r .hash "$WORK/nix/pins/claude-code-settings-schema.json")"
 }
 
+set_hcom_asset_hash_fixture() {
+  local fixed_hash=sha256-1ZOG4K5DXikvvg6825VLde1fs5IgkSd8sZ95j8XVBxg=
+  jq --arg hash "$fixed_hash" '.assets[].hash = $hash' "$WORK/nix/pins/hcom.json" >"$WORK/hcom.json"
+  mv "$WORK/hcom.json" "$WORK/nix/pins/hcom.json"
+  git -C "$WORK" add nix/pins/hcom.json
+  git -C "$WORK" commit -q -m "fixed hcom hash fixture"
+}
+
+hcom_asset_trace() {
+  awk '
+    /^gh / {
+      print "gh " $NF
+      next
+    }
+    /^curl / && $NF ~ /^https:\/\/github.com\/aannoo\/hcom\/releases\/download\// {
+      print "curl " $NF
+      next
+    }
+    /^nix store prefetch-file / {
+      for (field = 1; field < NF; field++) {
+        if ($field == "--name") {
+          print "nix " $(field + 1)
+          next
+        }
+      }
+    }
+  ' "$UPDATE_PINS_COMMAND_LOG"
+}
+
+expected_hcom_asset_trace() {
+  local version name
+  version=$(paired_version aannoo/hcom)
+  printf 'gh repos/aannoo/hcom/releases/latest\n'
+  while IFS= read -r name; do
+    printf 'curl https://github.com/aannoo/hcom/releases/download/v%s/%s\n' "$version" "$name"
+    printf 'nix update-pins-%s\n' "$name"
+  done < <(jq -r '.assets | to_entries[].value.name' "$WORK/nix/pins/hcom.json")
+}
+
 @test "help lists supported targets without updating pins" {
   original="$WORK/original"
   save_managed "$original"
@@ -635,7 +672,8 @@ make_unrelated_updates_noop() {
   run_update_pins --help
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Usage: update-pins [--retry <MAX_ATTEMPTS>] [--force] [target]"* ]]
+  [[ "$output" == *"Usage: update-pins [--jobs <N>] [--retry <MAX_ATTEMPTS>] [--force] [target]"* ]]
+  [[ "$output" == *"--jobs <N>              Maximum parallel jobs for release asset prefetch only (1-4; default 1)"* ]]
   [[ "$output" == *"herdr"* ]]
   [[ "$output" == *"codex-app"* ]]
   assert_managed_matches "$original"
@@ -689,6 +727,82 @@ make_unrelated_updates_noop() {
   assert_managed_matches "$original"
 }
 
+@test "asset jobs accept one and four while rejecting malformed values without side effects" {
+  original="$WORK/original"
+  save_managed "$original"
+
+  run_update_pins --jobs 0
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"--jobs must be an integer from 1 to 4, got '0'"* ]]
+  run_update_pins --jobs 5
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"--jobs must be an integer from 1 to 4, got '5'"* ]]
+  run_update_pins --jobs many
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"--jobs must be an integer from 1 to 4, got 'many'"* ]]
+  run_update_pins --jobs
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"--jobs requires a maximum job count"* ]]
+
+  [ ! -e "$UPDATE_PINS_COMMAND_LOG" ]
+  assert_managed_matches "$original"
+
+  set_hcom_asset_hash_fixture
+  save_managed "$original"
+  run_update_pins --jobs=4 --force hcom
+  [ "$status" -eq 0 ]
+  asset_count=$(jq '.assets | length' "$WORK/nix/pins/hcom.json")
+  [ "$(grep -c '^curl .*github.com/aannoo/hcom/releases/download/' "$UPDATE_PINS_COMMAND_LOG")" -eq "$asset_count" ]
+  [ "$(grep '^curl .*github.com/aannoo/hcom/releases/download/' "$UPDATE_PINS_COMMAND_LOG" | awk '{print $NF}' | sort -u | wc -l)" -eq "$asset_count" ]
+  [ "$(grep -c '^nix store prefetch-file' "$UPDATE_PINS_COMMAND_LOG")" -eq "$asset_count" ]
+  assert_managed_matches "$original"
+}
+
+@test "default asset jobs and explicit one preserve the sequential registry command trace" {
+  set_hcom_asset_hash_fixture
+  original="$WORK/original"
+  save_managed "$original"
+
+  run_update_pins --force hcom
+
+  [ "$status" -eq 0 ]
+  default_trace=$(hcom_asset_trace)
+  [ "$default_trace" = "$(expected_hcom_asset_trace)" ]
+  assert_managed_matches "$original"
+
+  : >"$UPDATE_PINS_COMMAND_LOG"
+  run_update_pins --jobs 1 --force hcom
+
+  [ "$status" -eq 0 ]
+  [ "$(hcom_asset_trace)" = "$default_trace" ]
+  assert_managed_matches "$original"
+}
+
+@test "parallel asset retries stay per asset and prefetch each successful asset once" {
+  set_hcom_asset_hash_fixture
+  original="$WORK/original"
+  save_managed "$original"
+  failing_name=$(jq -r '.assets["aarch64-darwin"].name' "$WORK/nix/pins/hcom.json")
+  export UPDATE_PINS_CURL_FAIL_PATTERN="$failing_name"
+  export UPDATE_PINS_CURL_FAIL_COUNT=2
+
+  run_update_pins --jobs=4 --retry 3 --force hcom
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"retrying attempt 2/3"* ]]
+  [[ "$output" == *"retrying attempt 3/3"* ]]
+  while IFS= read -r name; do
+    expected=1
+    if [ "$name" = "$failing_name" ]; then
+      expected=3
+    fi
+    [ "$(grep -Fc "https://github.com/aannoo/hcom/releases/download/v$(paired_version aannoo/hcom)/$name" "$UPDATE_PINS_COMMAND_LOG")" -eq "$expected" ]
+  done < <(jq -r '.assets | to_entries[].value.name' "$WORK/nix/pins/hcom.json")
+  asset_count=$(jq '.assets | length' "$WORK/nix/pins/hcom.json")
+  [ "$(grep -c '^nix store prefetch-file' "$UPDATE_PINS_COMMAND_LOG")" -eq "$asset_count" ]
+  assert_managed_matches "$original"
+}
+
 @test "force refreshes and re-pins a changed same-version Codex artifact" {
   fixed_hash=sha256-V95M9AFEvffQABDy9VV6fWQsK5cFMJv63hZ90xPiypM=
   original="$WORK/original"
@@ -717,11 +831,7 @@ make_unrelated_updates_noop() {
 }
 
 @test "same-version paired force refreshes assets without flake input churn" {
-  fixed_hash=sha256-1ZOG4K5DXikvvg6825VLde1fs5IgkSd8sZ95j8XVBxg=
-  jq --arg hash "$fixed_hash" '.assets[].hash = $hash' "$WORK/nix/pins/hcom.json" >"$WORK/hcom.json"
-  mv "$WORK/hcom.json" "$WORK/nix/pins/hcom.json"
-  git -C "$WORK" add nix/pins/hcom.json
-  git -C "$WORK" commit -q -m "fixed hcom hash fixture"
+  set_hcom_asset_hash_fixture
   original="$WORK/original"
   save_managed "$original"
 
@@ -1119,10 +1229,13 @@ make_unrelated_updates_noop() {
   export UPDATE_PINS_HCOM_TAG=v1.2.3
   export UPDATE_PINS_FAIL_FLAKE_UPDATE=hcom-src
 
-  run_update_pins --retry 5
+  run_update_pins --jobs 4 --retry 5
 
   [ "$status" -ne 0 ]
   [ "$(wc -l <"$UPDATE_PINS_FLAKE_UPDATE_LOG")" -eq 1 ]
+  last_asset_prefetch_line=$(grep -n '^nix store prefetch-file' "$UPDATE_PINS_COMMAND_LOG" | tail -n 1 | cut -d: -f1)
+  flake_update_line=$(grep -n '^nix flake update hcom-src$' "$UPDATE_PINS_COMMAND_LOG" | cut -d: -f1)
+  [ "$last_asset_prefetch_line" -lt "$flake_update_line" ]
   [[ "$output" != *"retrying attempt"* ]]
   [[ "$output" != *"Applied changes:"* ]]
   [[ "$output" == *"Rolled back candidate changes:"* ]]
@@ -1283,11 +1396,14 @@ make_unrelated_updates_noop() {
   export UPDATE_PINS_FAIL_NPM_INSTALL=1
   make_difit_tarball "$UPDATE_PINS_DIFIT_VERSION"
 
-  run_update_pins --retry 5 difit
+  run_update_pins --jobs 4 --retry 5 difit
 
   [ "$status" -eq 1 ]
   [[ "$output" == *"npm install failed"* ]]
   [ "$(grep -c '^npm install ' "$UPDATE_PINS_COMMAND_LOG")" -eq 1 ]
+  source_prefetch_line=$(grep -n '^nix store prefetch-file' "$UPDATE_PINS_COMMAND_LOG" | tail -n 1 | cut -d: -f1)
+  npm_line=$(grep -n '^npm install ' "$UPDATE_PINS_COMMAND_LOG" | cut -d: -f1)
+  [ "$source_prefetch_line" -lt "$npm_line" ]
   [[ "$output" != *"retrying attempt"* ]]
   assert_managed_matches "$original"
 }
@@ -1585,11 +1701,14 @@ make_unrelated_updates_noop() {
   export UPDATE_PINS_SHELLFIRM_TAG=v8.8.8
   export UPDATE_PINS_SHELLFIRM_BUILD_MODE=fails
 
-  run_update_pins --retry 5 shellfirm
+  run_update_pins --jobs 4 --retry 5 shellfirm
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"shellfirm: candidate package build failed with status 1"* ]]
   [ "$(cat "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT")" -eq 1 ]
+  source_prefetch_line=$(grep -n '^nix store prefetch-file' "$UPDATE_PINS_COMMAND_LOG" | cut -d: -f1)
+  build_line=$(grep -n '^nix build ' "$UPDATE_PINS_COMMAND_LOG" | cut -d: -f1)
+  [ "$source_prefetch_line" -lt "$build_line" ]
   [[ "$output" != *"retrying attempt"* ]]
   [[ "$output" != *"Applied changes:"* ]]
   section=$(report_section "Rolled back candidate changes:")

@@ -1,6 +1,9 @@
 use std::ffi::OsString;
 
-use crate::policy::{DEFAULT_MAX_ATTEMPTS, MAX_ATTEMPTS_LIMIT, RetryPolicy, RunPolicy};
+use crate::policy::{
+    AssetJobsPolicy, DEFAULT_ASSET_JOBS, DEFAULT_MAX_ATTEMPTS, MAX_ASSET_JOBS_LIMIT,
+    MAX_ATTEMPTS_LIMIT, RetryPolicy, RunPolicy,
+};
 pub use crate::registry::Target;
 use crate::registry::{TARGET_SPECS, target_by_name};
 
@@ -21,6 +24,8 @@ pub enum UsageError {
     TooManyTargets,
     UnknownTarget(String),
     UnknownOption(String),
+    MissingJobsValue,
+    InvalidJobsValue(String),
     MissingRetryValue,
     InvalidRetryValue(String),
 }
@@ -35,6 +40,13 @@ impl std::fmt::Display for UsageError {
             Self::UnknownOption(option) => {
                 write!(formatter, "update-pins: unknown option '{option}'")
             }
+            Self::MissingJobsValue => {
+                formatter.write_str("update-pins: --jobs requires a maximum job count")
+            }
+            Self::InvalidJobsValue(value) => write!(
+                formatter,
+                "update-pins: --jobs must be an integer from 1 to {MAX_ASSET_JOBS_LIMIT}, got '{value}'"
+            ),
             Self::MissingRetryValue => {
                 formatter.write_str("update-pins: --retry requires a maximum attempt count")
             }
@@ -55,12 +67,24 @@ where
     let _program = arguments.next();
     let mut target = None;
     let mut force = false;
+    let mut max_asset_jobs = DEFAULT_ASSET_JOBS;
     let mut max_attempts = DEFAULT_MAX_ATTEMPTS;
     while let Some(argument) = arguments.next() {
         let argument = argument.to_string_lossy();
         match argument.as_ref() {
             "--help" | "-h" => return Ok(ParseAction::Help),
             "--force" => force = true,
+            "--jobs" => {
+                let value = arguments
+                    .next()
+                    .ok_or(UsageError::MissingJobsValue)?
+                    .to_string_lossy()
+                    .into_owned();
+                max_asset_jobs = parse_jobs_value(&value)?;
+            }
+            value if value.starts_with("--jobs=") => {
+                max_asset_jobs = parse_jobs_value(&value["--jobs=".len()..])?;
+            }
             "--retry" => {
                 let value = arguments
                     .next()
@@ -90,8 +114,18 @@ where
             force,
             retry: RetryPolicy::new(max_attempts)
                 .expect("CLI retry bounds must produce a valid retry policy"),
+            asset_jobs: AssetJobsPolicy::new(max_asset_jobs)
+                .expect("CLI asset job bounds must produce a valid asset jobs policy"),
         },
     }))
+}
+
+fn parse_jobs_value(value: &str) -> Result<u8, UsageError> {
+    value
+        .parse::<u8>()
+        .ok()
+        .filter(|jobs| (1..=MAX_ASSET_JOBS_LIMIT).contains(jobs))
+        .ok_or_else(|| UsageError::InvalidJobsValue(value.to_owned()))
 }
 
 fn parse_retry_value(value: &str) -> Result<u8, UsageError> {
@@ -104,8 +138,9 @@ fn parse_retry_value(value: &str) -> Result<u8, UsageError> {
 
 pub fn usage() -> String {
     let mut usage = String::from(
-        "Usage: update-pins [--retry <MAX_ATTEMPTS>] [--force] [target]\n\n\
+        "Usage: update-pins [--jobs <N>] [--retry <MAX_ATTEMPTS>] [--force] [target]\n\n\
          Options:\n  --retry <MAX_ATTEMPTS>  Fetch attempts, including the first (1-5; default 3)\n  \
+         --jobs <N>              Maximum parallel jobs for release asset prefetch only (1-4; default 1)\n  \
          --force                 Refresh and validate artifacts even at the same version\n\n\
          Targets:\n  all (default)\n",
     );
@@ -122,7 +157,7 @@ mod tests {
     use super::{
         Invocation, ParseAction, TARGET_SPECS, Target, UsageError, parse_compatible_from, usage,
     };
-    use crate::policy::{RetryPolicy, RunPolicy};
+    use crate::policy::{AssetJobsPolicy, RetryPolicy, RunPolicy};
 
     fn invocation(target: Target) -> ParseAction {
         ParseAction::Run(Invocation {
@@ -156,20 +191,35 @@ mod tests {
     }
 
     #[test]
-    fn compatible_parser_accepts_force_and_bounded_retry_in_any_order() {
+    fn compatible_parser_accepts_force_retry_and_jobs_in_any_order() {
         let expected = ParseAction::Run(Invocation {
             target: Target::Herdr,
             policy: RunPolicy {
                 force: true,
                 retry: RetryPolicy::new(5).expect("valid retry policy"),
+                asset_jobs: AssetJobsPolicy::new(4).expect("valid asset jobs policy"),
             },
         });
         assert_eq!(
-            parse_compatible_from(["update-pins", "--force", "--retry=5", "herdr"]),
+            parse_compatible_from([
+                "update-pins",
+                "--force",
+                "--jobs",
+                "4",
+                "--retry=5",
+                "herdr",
+            ]),
             Ok(expected)
         );
         assert_eq!(
-            parse_compatible_from(["update-pins", "herdr", "--retry", "5", "--force"]),
+            parse_compatible_from([
+                "update-pins",
+                "herdr",
+                "--retry",
+                "5",
+                "--jobs=4",
+                "--force",
+            ]),
             Ok(expected)
         );
         for value in ["0", "6", "-1", "many", ""] {
@@ -185,12 +235,42 @@ mod tests {
     }
 
     #[test]
+    fn compatible_parser_accepts_bounded_jobs_and_rejects_invalid_values() {
+        for value in ["1", "4"] {
+            let parsed = parse_compatible_from(["update-pins", "--jobs", value])
+                .expect("valid asset job count");
+            let ParseAction::Run(invocation) = parsed else {
+                panic!("jobs must produce a runnable invocation");
+            };
+            assert_eq!(
+                invocation.policy.asset_jobs.max_jobs(),
+                value.parse::<usize>().expect("numeric fixture")
+            );
+        }
+        for value in ["0", "5", "-1", "many", ""] {
+            assert!(matches!(
+                parse_compatible_from(["update-pins", "--jobs", value]),
+                Err(UsageError::InvalidJobsValue(_))
+            ));
+        }
+        assert_eq!(
+            parse_compatible_from(["update-pins", "--jobs"]),
+            Err(UsageError::MissingJobsValue)
+        );
+        assert_eq!(
+            parse_compatible_from(["update-pins", "--jobs="]),
+            Err(UsageError::InvalidJobsValue(String::new()))
+        );
+    }
+
+    #[test]
     fn compatible_usage_lists_targets_in_execution_order() {
         let rendered = usage();
-        assert!(
-            rendered
-                .starts_with("Usage: update-pins [--retry <MAX_ATTEMPTS>] [--force] [target]\n")
-        );
+        assert!(rendered.starts_with(
+            "Usage: update-pins [--jobs <N>] [--retry <MAX_ATTEMPTS>] [--force] [target]\n"
+        ));
+        assert!(rendered.contains("release asset prefetch only"));
+        assert!(rendered.contains("1-4; default 1"));
         let positions: Vec<_> = TARGET_SPECS
             .iter()
             .map(|spec| {

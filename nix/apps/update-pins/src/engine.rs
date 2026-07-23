@@ -11,7 +11,7 @@ pub fn run(invocation: Invocation) -> Result<(), UpdateError> {
     run_with_runner(invocation, &SystemCommandRunner)
 }
 
-pub fn run_with_runner<R: CommandRunner>(
+pub fn run_with_runner<R: CommandRunner + Sync>(
     invocation: Invocation,
     runner: &R,
 ) -> Result<(), UpdateError> {

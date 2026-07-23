@@ -114,6 +114,7 @@ fn smoke_policy() -> RunPolicy {
     RunPolicy {
         force: false,
         retry: RetryPolicy::new(2).expect("two attempts are within the retry policy bounds"),
+        ..RunPolicy::default()
     }
 }
 

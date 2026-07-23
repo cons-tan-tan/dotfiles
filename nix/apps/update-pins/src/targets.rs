@@ -12,7 +12,7 @@ use crate::command::{CommandRunner, CommandSpec, run_checked};
 use crate::error::UpdateError;
 use crate::ledger::{FileState, Ledger, diff_target};
 use crate::pins::PinDocument;
-use crate::policy::RunPolicy;
+use crate::policy::{MAX_ASSET_JOBS_LIMIT, RunPolicy};
 use crate::prefetch::{prefetch_hash as prefetch, prefetch_result};
 use crate::registry::{AssetNaming, TargetKind, TargetSpec, target_spec};
 use crate::transaction::Transaction;
@@ -22,7 +22,7 @@ pub fn is_implemented(target: Target) -> bool {
     target_spec(target).is_some_and(|spec| spec.kind.is_implemented())
 }
 
-pub fn run_target<R: CommandRunner>(
+pub fn run_target<R: CommandRunner + Sync>(
     target: Target,
     policy: RunPolicy,
     runner: &R,
@@ -129,7 +129,7 @@ pub fn run_target<R: CommandRunner>(
     }
 }
 
-fn update_paired_release<R: CommandRunner>(
+fn update_paired_release<R: CommandRunner + Sync>(
     spec: &TargetSpec,
     repository: &str,
     pin_path: &str,
@@ -186,7 +186,7 @@ struct ReleaseUpdate<'a> {
     source_hash: bool,
 }
 
-fn update_release<R: CommandRunner>(
+fn update_release<R: CommandRunner + Sync>(
     spec: &TargetSpec,
     release: ReleaseUpdate<'_>,
     policy: RunPolicy,
@@ -567,7 +567,7 @@ fn update_paired_flake_input<R: CommandRunner>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn refresh_assets<R: CommandRunner>(
+fn refresh_assets<R: CommandRunner + Sync>(
     spec: &TargetSpec,
     pin_path: &str,
     pin: &mut PinDocument,
@@ -579,7 +579,54 @@ fn refresh_assets<R: CommandRunner>(
     runner: &R,
     root: &Path,
 ) -> Result<(), UpdateError> {
-    for system in pin.keys(&["assets"])? {
+    refresh_assets_with(
+        spec,
+        pin_path,
+        pin,
+        repository,
+        tag,
+        version,
+        naming,
+        policy.asset_jobs.max_jobs(),
+        &|request| prefetch(&request.label, policy, runner, root, &request.url, false),
+    )
+}
+
+struct AssetPrefetchRequest {
+    ordinal: usize,
+    system: String,
+    label: String,
+    url: String,
+}
+
+struct AssetPrefetchResult {
+    ordinal: usize,
+    system: String,
+    hash: String,
+}
+
+enum AssetWorkerOutcome {
+    Completed(Result<String, UpdateError>),
+    Panicked,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn refresh_assets_with<F>(
+    spec: &TargetSpec,
+    pin_path: &str,
+    pin: &mut PinDocument,
+    repository: &str,
+    tag: &str,
+    version: &str,
+    naming: AssetNaming,
+    max_jobs: usize,
+    worker: &F,
+) -> Result<(), UpdateError>
+where
+    F: Fn(&AssetPrefetchRequest) -> Result<String, UpdateError> + Sync,
+{
+    let mut requests = Vec::new();
+    for (ordinal, system) in pin.keys(&["assets"])?.into_iter().enumerate() {
         let name = match naming {
             AssetNaming::NameField => pin.string(&["assets", &system, "name"])?.to_owned(),
             AssetNaming::WatchexecTarget => {
@@ -588,17 +635,82 @@ fn refresh_assets<R: CommandRunner>(
             }
         };
         let url = format!("https://github.com/{repository}/releases/download/{tag}/{name}");
-        let hash = prefetch(
-            &format!("{}: {pin_path}: assets.{system}.hash", spec.name),
-            policy,
-            runner,
-            root,
-            &url,
-            false,
-        )?;
-        pin.set_string(&["assets", &system, "hash"], hash)?;
+        requests.push(AssetPrefetchRequest {
+            ordinal,
+            label: format!("{}: {pin_path}: assets.{system}.hash", spec.name),
+            system,
+            url,
+        });
+    }
+
+    let results = run_asset_workers(spec, pin_path, &requests, max_jobs, worker)?;
+    for result in results {
+        pin.set_string(&["assets", &result.system, "hash"], result.hash)?;
     }
     Ok(())
+}
+
+fn run_asset_workers<F>(
+    spec: &TargetSpec,
+    pin_path: &str,
+    requests: &[AssetPrefetchRequest],
+    max_jobs: usize,
+    worker: &F,
+) -> Result<Vec<AssetPrefetchResult>, UpdateError>
+where
+    F: Fn(&AssetPrefetchRequest) -> Result<String, UpdateError> + Sync,
+{
+    let mut results = Vec::with_capacity(requests.len());
+    for batch in requests.chunks(max_jobs.clamp(1, usize::from(MAX_ASSET_JOBS_LIMIT))) {
+        let outcomes = std::thread::scope(|scope| {
+            let handles = batch
+                .iter()
+                .map(|request| {
+                    let handle = scope.spawn(move || worker(request));
+                    (request, handle)
+                })
+                .collect::<Vec<_>>();
+            handles
+                .into_iter()
+                .map(|(request, handle)| {
+                    let outcome = match handle.join() {
+                        Ok(result) => AssetWorkerOutcome::Completed(result),
+                        Err(_) => AssetWorkerOutcome::Panicked,
+                    };
+                    (request, outcome)
+                })
+                .collect::<Vec<_>>()
+        });
+
+        let mut first_failure = None;
+        for (request, outcome) in outcomes {
+            match outcome {
+                AssetWorkerOutcome::Completed(Ok(hash)) => results.push(AssetPrefetchResult {
+                    ordinal: request.ordinal,
+                    system: request.system.clone(),
+                    hash,
+                }),
+                AssetWorkerOutcome::Completed(Err(error)) => {
+                    if first_failure.is_none() {
+                        first_failure = Some(error);
+                    }
+                }
+                AssetWorkerOutcome::Panicked => {
+                    if first_failure.is_none() {
+                        first_failure = Some(UpdateError::message(format!(
+                            "{}: {pin_path}: assets.{}.hash: prefetch worker panicked",
+                            spec.name, request.system
+                        )));
+                    }
+                }
+            }
+        }
+        if let Some(error) = first_failure {
+            return Err(error);
+        }
+    }
+    results.sort_by_key(|result| result.ordinal);
+    Ok(results)
 }
 
 pub(crate) fn load_pin<R: CommandRunner>(
@@ -675,18 +787,22 @@ mod tests {
     use std::cell::RefCell;
     use std::fs::File;
     use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Condvar, Mutex, mpsc};
+    use std::time::Duration;
 
     use flate2::Compression;
     use flate2::write::GzEncoder;
 
     use super::{
-        is_implemented, paired_version, read_npm_package_json, replace_paired_version,
-        validate_npm_identity, validate_npm_lock,
+        is_implemented, paired_version, read_npm_package_json, refresh_assets_with,
+        replace_paired_version, validate_npm_identity, validate_npm_lock,
     };
     use crate::cli::Target;
     use crate::command::{CommandOutput, CommandRunner, CommandSpec};
     use crate::error::UpdateError;
     use crate::policy::RunPolicy;
+    use crate::registry::{AssetNaming, target_spec};
     use crate::upstream::latest_tag;
 
     struct RecordingRunner {
@@ -820,6 +936,212 @@ mod tests {
     }
 
     #[test]
+    fn asset_jobs_bound_concurrency_and_preserve_pin_bytes_after_reverse_completion() {
+        let spec = target_spec(Target::Hcom).expect("hcom spec");
+        let mut sequential_pin = asset_test_pin();
+        let sequential_active = AtomicUsize::new(0);
+        let sequential_max_active = AtomicUsize::new(0);
+        let sequential_order = Mutex::new(Vec::new());
+        refresh_assets_with(
+            spec,
+            "pin.json",
+            &mut sequential_pin,
+            "owner/repo",
+            "v1.2.3",
+            "1.2.3",
+            AssetNaming::NameField,
+            1,
+            &|request| {
+                let active = sequential_active.fetch_add(1, Ordering::SeqCst) + 1;
+                sequential_max_active.fetch_max(active, Ordering::SeqCst);
+                sequential_order
+                    .lock()
+                    .expect("sequential order lock")
+                    .push(request.ordinal);
+                sequential_active.fetch_sub(1, Ordering::SeqCst);
+                Ok(asset_test_hash(request.ordinal))
+            },
+        )
+        .expect("sequential refresh");
+        assert_eq!(sequential_max_active.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            *sequential_order.lock().expect("sequential order lock"),
+            vec![0, 1, 2, 3]
+        );
+        let sequential_bytes = sequential_pin
+            .rendered()
+            .expect("render sequential pin")
+            .expect("sequential pin changed");
+
+        let gates = Arc::new(
+            (0..4)
+                .map(|_| (Mutex::new(false), Condvar::new()))
+                .collect::<Vec<_>>(),
+        );
+        let active = Arc::new(AtomicUsize::new(0));
+        let max_active = Arc::new(AtomicUsize::new(0));
+        let completion_order = Arc::new(Mutex::new(Vec::new()));
+        let (started_tx, started_rx) = mpsc::channel();
+        let (completed_tx, completed_rx) = mpsc::channel();
+        let worker_gates = Arc::clone(&gates);
+        let worker_active = Arc::clone(&active);
+        let worker_max_active = Arc::clone(&max_active);
+        let worker_completion_order = Arc::clone(&completion_order);
+        let refresh = std::thread::spawn(move || {
+            let mut pin = asset_test_pin();
+            let result = refresh_assets_with(
+                spec,
+                "pin.json",
+                &mut pin,
+                "owner/repo",
+                "v1.2.3",
+                "1.2.3",
+                AssetNaming::NameField,
+                2,
+                &|request| {
+                    let current = worker_active.fetch_add(1, Ordering::SeqCst) + 1;
+                    worker_max_active.fetch_max(current, Ordering::SeqCst);
+                    started_tx
+                        .send(request.ordinal)
+                        .expect("report worker start");
+                    let (released, ready) = &worker_gates[request.ordinal];
+                    let mut released = released.lock().expect("worker gate lock");
+                    while !*released {
+                        released = ready.wait(released).expect("wait for worker release");
+                    }
+                    worker_completion_order
+                        .lock()
+                        .expect("completion order lock")
+                        .push(request.ordinal);
+                    worker_active.fetch_sub(1, Ordering::SeqCst);
+                    completed_tx
+                        .send(request.ordinal)
+                        .expect("report worker completion");
+                    Ok(asset_test_hash(request.ordinal))
+                },
+            );
+            (result, pin)
+        });
+
+        assert_started_batch(&started_rx, &[0, 1]);
+        release_worker(&gates, 1);
+        assert_eq!(
+            completed_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("second worker completes first"),
+            1
+        );
+        release_worker(&gates, 0);
+        assert_eq!(
+            completed_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("first worker completes second"),
+            0
+        );
+        assert_started_batch(&started_rx, &[2, 3]);
+        release_worker(&gates, 3);
+        assert_eq!(
+            completed_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("fourth worker completes first"),
+            3
+        );
+        release_worker(&gates, 2);
+        assert_eq!(
+            completed_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("third worker completes second"),
+            2
+        );
+
+        let (result, parallel_pin) = refresh.join().expect("refresh controller thread");
+        result.expect("parallel refresh");
+        assert_eq!(max_active.load(Ordering::SeqCst), 2);
+        assert_eq!(
+            *completion_order.lock().expect("completion order lock"),
+            vec![1, 0, 3, 2]
+        );
+        let parallel_bytes = parallel_pin
+            .rendered()
+            .expect("render parallel pin")
+            .expect("parallel pin changed");
+        assert_eq!(parallel_bytes, sequential_bytes);
+    }
+
+    #[test]
+    fn asset_batch_failure_or_panic_leaves_pin_unchanged_and_stops_new_batches() {
+        let spec = target_spec(Target::Hcom).expect("hcom spec");
+        let mut failed_pin = asset_test_pin();
+        let failure_calls = Mutex::new(Vec::new());
+        let completed_after_failure = AtomicUsize::new(0);
+        let error = refresh_assets_with(
+            spec,
+            "pin.json",
+            &mut failed_pin,
+            "owner/repo",
+            "v1.2.3",
+            "1.2.3",
+            AssetNaming::NameField,
+            2,
+            &|request| {
+                failure_calls
+                    .lock()
+                    .expect("failure calls lock")
+                    .push(request.ordinal);
+                if request.ordinal == 0 {
+                    Err(UpdateError::message("first asset failed"))
+                } else {
+                    completed_after_failure.fetch_add(1, Ordering::SeqCst);
+                    Ok(asset_test_hash(request.ordinal))
+                }
+            },
+        )
+        .expect_err("asset failure");
+        assert_eq!(error.to_string(), "first asset failed");
+        let mut calls = failure_calls.into_inner().expect("failure calls");
+        calls.sort_unstable();
+        assert_eq!(calls, vec![0, 1]);
+        assert_eq!(completed_after_failure.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            failed_pin.rendered().expect("render failed pin"),
+            None,
+            "a failed batch must not apply successful sibling hashes"
+        );
+
+        let mut panicked_pin = asset_test_pin();
+        let panic_calls = Mutex::new(Vec::new());
+        let error = refresh_assets_with(
+            spec,
+            "pin.json",
+            &mut panicked_pin,
+            "owner/repo",
+            "v1.2.3",
+            "1.2.3",
+            AssetNaming::NameField,
+            2,
+            &|request| {
+                panic_calls
+                    .lock()
+                    .expect("panic calls lock")
+                    .push(request.ordinal);
+                if request.ordinal == 1 {
+                    panic!("intentional asset worker panic");
+                }
+                Ok(asset_test_hash(request.ordinal))
+            },
+        )
+        .expect_err("asset worker panic");
+        assert_eq!(
+            error.to_string(),
+            "hcom: pin.json: assets.x86_64-darwin.hash: prefetch worker panicked"
+        );
+        let mut calls = panic_calls.into_inner().expect("panic calls");
+        calls.sort_unstable();
+        assert_eq!(calls, vec![0, 1]);
+        assert_eq!(panicked_pin.rendered().expect("render panicked pin"), None);
+    }
+
+    #[test]
     fn reads_only_the_exact_npm_package_manifest() {
         let directory = tempfile::tempdir().expect("temporary directory");
         let archive = directory.path().join("package.tgz");
@@ -898,6 +1220,46 @@ mod tests {
         let error =
             read_npm_package_json(&special, "difit").expect_err("FIFO entry must be rejected");
         assert!(error.to_string().contains("unsupported entry package/fifo"));
+    }
+
+    fn asset_test_pin() -> crate::pins::PinDocument {
+        crate::pins::PinDocument::parse(
+            "pin.json",
+            br#"{
+  "assets": {
+    "aarch64-darwin": {"name": "asset-a", "hash": "old-a"},
+    "x86_64-darwin": {"name": "asset-b", "hash": "old-b"},
+    "aarch64-linux": {"name": "asset-c", "hash": "old-c"},
+    "x86_64-linux": {"name": "asset-d", "hash": "old-d"}
+  }
+}
+"#
+            .to_vec(),
+        )
+        .expect("asset test pin")
+    }
+
+    fn asset_test_hash(ordinal: usize) -> String {
+        format!("new-hash-{ordinal}")
+    }
+
+    fn assert_started_batch(receiver: &mpsc::Receiver<usize>, expected: &[usize]) {
+        let mut started = expected
+            .iter()
+            .map(|_| {
+                receiver
+                    .recv_timeout(Duration::from_secs(2))
+                    .expect("worker starts")
+            })
+            .collect::<Vec<_>>();
+        started.sort_unstable();
+        assert_eq!(started, expected);
+    }
+
+    fn release_worker(gates: &[(Mutex<bool>, Condvar)], ordinal: usize) {
+        let (released, ready) = &gates[ordinal];
+        *released.lock().expect("worker gate lock") = true;
+        ready.notify_one();
     }
 
     #[test]
