@@ -5,6 +5,7 @@ pub mod command;
 pub mod engine;
 pub mod error;
 pub mod fetch;
+pub mod ledger;
 pub mod pins;
 pub mod policy;
 pub mod prefetch;

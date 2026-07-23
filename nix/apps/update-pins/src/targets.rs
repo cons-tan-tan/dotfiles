@@ -1,26 +1,22 @@
 use std::fs::File;
-use std::io::{Read as _, Write as _};
+use std::io::Read as _;
 use std::path::{Component, Path};
 
 use flate2::read::GzDecoder;
 use serde_json::Value;
 
-use crate::build::compute_hash_via_failed_build;
+use crate::build::{compute_hash_via_failed_build, refresh_existing_hash_via_build};
 use crate::cli::Target;
 use crate::codex_app;
 use crate::command::{CommandRunner, CommandSpec, run_checked};
 use crate::error::UpdateError;
 use crate::fetch::{download_bytes, gh_api_bytes};
+use crate::ledger::{FileState, Ledger, diff_target};
 use crate::pins::PinDocument;
 use crate::policy::RunPolicy;
 use crate::prefetch::{prefetch_hash as prefetch, prefetch_result};
 use crate::registry::{AssetNaming, TargetKind, TargetSpec, target_spec};
 use crate::transaction::Transaction;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct TargetResult {
-    pub changed: bool,
-}
 
 pub fn is_implemented(target: Target) -> bool {
     target_spec(target).is_some_and(|spec| spec.kind.is_implemented())
@@ -31,7 +27,8 @@ pub fn run_target<R: CommandRunner>(
     policy: RunPolicy,
     runner: &R,
     transaction: &mut Transaction<'_, R>,
-) -> Result<TargetResult, UpdateError> {
+    ledger: &mut Ledger,
+) -> Result<(), UpdateError> {
     let Some(spec) = target_spec(target) else {
         return Err(UpdateError::message(format!(
             "update-pins: Rust updater for {} is not yet implemented",
@@ -41,14 +38,19 @@ pub fn run_target<R: CommandRunner>(
     let before = spec
         .managed_paths
         .iter()
-        .map(|path| transaction.read(path).map(|bytes| (*path, bytes)))
+        .map(|path| {
+            transaction.read(path).map(|bytes| FileState {
+                path,
+                bytes: Some(bytes),
+            })
+        })
         .collect::<Result<Vec<_>, _>>()?;
-    let _reported_changed = match spec.kind {
+    let result = match spec.kind {
         TargetKind::PairedRelease {
             repository,
             pin,
             input,
-        } => update_paired_release(spec, repository, pin, input, policy, runner, transaction)?,
+        } => update_paired_release(spec, repository, pin, input, policy, runner, transaction),
         TargetKind::Release {
             repository,
             pin,
@@ -65,13 +67,13 @@ pub fn run_target<R: CommandRunner>(
             policy,
             runner,
             transaction,
-        )?,
-        TargetKind::UrlHash { pin } => update_url_hash(spec, pin, policy, runner, transaction)?,
+        ),
+        TargetKind::UrlHash { pin } => update_url_hash(spec, pin, policy, runner, transaction),
         TargetKind::Shellfirm {
             repository,
             pin,
             package,
-        } => update_shellfirm(spec, repository, pin, package, policy, runner, transaction)?,
+        } => update_shellfirm(spec, repository, pin, package, policy, runner, transaction),
         TargetKind::Difit {
             repository,
             npm_package,
@@ -90,21 +92,31 @@ pub fn run_target<R: CommandRunner>(
             policy,
             runner,
             transaction,
-        )?,
-        TargetKind::CodexApp { pin } => codex_app::update(spec, pin, policy, runner, transaction)?,
-        TargetKind::Unimplemented => {
-            return Err(UpdateError::message(format!(
-                "update-pins: Rust updater for {} is not yet implemented",
-                spec.name
-            )));
-        }
+        ),
+        TargetKind::CodexApp { pin } => codex_app::update(spec, pin, policy, runner, transaction),
+        TargetKind::Unimplemented => Err(UpdateError::message(format!(
+            "update-pins: Rust updater for {} is not yet implemented",
+            spec.name
+        ))),
     };
-    let changed = before
-        .into_iter()
-        .try_fold(false, |changed, (path, bytes)| {
-            Ok::<_, UpdateError>(changed || transaction.read(path)? != bytes)
-        })?;
-    Ok(TargetResult { changed })
+    let after = spec
+        .managed_paths
+        .iter()
+        .map(|path| {
+            transaction.read(path).map(|bytes| FileState {
+                path,
+                bytes: Some(bytes),
+            })
+        })
+        .collect::<Result<Vec<_>, _>>();
+    match (result, after) {
+        (result, Ok(after)) => {
+            ledger.extend(diff_target(spec, &before, &after));
+            result.map(|_| ())
+        }
+        (Ok(_), Err(observation)) => Err(observation),
+        (Err(primary), Err(_observation)) => Err(primary),
+    }
 }
 
 fn update_paired_release<R: CommandRunner>(
@@ -133,7 +145,7 @@ fn update_paired_release<R: CommandRunner>(
     }
 
     println!(
-        "{}: {current} -> {version} (prefetching assets...)",
+        "{}: prefetching candidate {version} (current {current})...",
         spec.name
     );
     let mut pin = load_pin(transaction, pin_path)?;
@@ -188,7 +200,7 @@ fn update_release<R: CommandRunner>(
     }
 
     println!(
-        "{}: {current} -> {version} (prefetching assets...)",
+        "{}: prefetching candidate {version} (current {current})...",
         spec.name
     );
     pin.set_string(&["version"], version)?;
@@ -205,7 +217,7 @@ fn update_release<R: CommandRunner>(
         transaction.root(),
     )?;
     if source_hash {
-        println!("{}: updating srcHash", spec.name);
+        println!("{}: prefetching candidate source hash...", spec.name);
         let source_url =
             format!("https://github.com/{repository}/archive/refs/tags/v{version}.tar.gz");
         let hash = prefetch(
@@ -247,7 +259,7 @@ fn update_url_hash<R: CommandRunner>(
     }
     pin.set_string(&["hash"], hash)?;
     write_pin(transaction, pin_path, &pin)?;
-    println!("{}: hash updated", spec.name);
+    println!("{}: candidate schema hash differs", spec.name);
     Ok(true)
 }
 
@@ -266,13 +278,14 @@ fn update_shellfirm<R: CommandRunner>(
 
     let mut pin = load_pin(transaction, pin_path)?;
     let current = pin.string(&["version"])?.to_owned();
+    let current_source_hash = pin.string(&["srcHash"])?.to_owned();
     if version == current && !policy.force {
         println!("{}: {current} (up to date)", spec.name);
         return Ok(false);
     }
 
     println!(
-        "{}: {current} -> {version} (prefetching source...)",
+        "{}: prefetching candidate {version} (current {current})...",
         spec.name
     );
     let source_url = format!("https://github.com/{repository}/archive/refs/tags/{tag}.tar.gz");
@@ -284,6 +297,19 @@ fn update_shellfirm<R: CommandRunner>(
         &source_url,
         true,
     )?;
+    if version == current && source_hash == current_source_hash {
+        let changed = refresh_existing_hash_via_build(
+            spec.name,
+            package,
+            pin_path,
+            "cargoHash",
+            &mut pin,
+            runner,
+            transaction,
+        )?;
+        println!("{}: candidate source is unchanged", spec.name);
+        return Ok(changed);
+    }
     pin.set_string(&["version"], version)?;
     pin.set_string(&["srcHash"], source_hash)?;
     pin.set_string(&["cargoHash"], "")?;
@@ -314,6 +340,9 @@ fn update_difit<R: CommandRunner>(
     transaction: &mut Transaction<'_, R>,
 ) -> Result<bool, UpdateError> {
     let flake = transaction.read("flake.nix")?;
+    let current_lock = transaction.read(lock_path)?;
+    let mut pin = load_pin(transaction, pin_path)?;
+    let current_source_hash = pin.string(&["srcHash"])?.to_owned();
     let current = paired_version(&flake, repository)?;
     let version = latest_npm_version(policy, runner, transaction.root(), npm_package)?;
     validate_release_version(spec.name, &version)?;
@@ -323,7 +352,7 @@ fn update_difit<R: CommandRunner>(
     }
 
     println!(
-        "{}: {current} -> {version} (prefetching source...)",
+        "{}: prefetching candidate {version} (current {current})...",
         spec.name
     );
     let source_url =
@@ -380,8 +409,7 @@ fn update_difit<R: CommandRunner>(
             "--no-fund",
         ])
         .current_dir(&package_dir);
-    let npm_output = run_checked(runner, &npm)?;
-    forward_output(&npm_output.stdout, &npm_output.stderr)?;
+    run_checked(runner, &npm)?;
 
     let generated_lock = package_dir.join("package-lock.json");
     require_regular_file(
@@ -391,9 +419,21 @@ fn update_difit<R: CommandRunner>(
     let lock_bytes = std::fs::read(&generated_lock)
         .map_err(|source| UpdateError::io(&generated_lock, source))?;
     validate_npm_lock(&lock_bytes, npm_package, &version, spec.name)?;
-    transaction.replace(lock_path, &lock_bytes)?;
+    if version == current && source.hash == current_source_hash && lock_bytes == current_lock {
+        let changed = refresh_existing_hash_via_build(
+            spec.name,
+            package,
+            pin_path,
+            "npmDepsHash",
+            &mut pin,
+            runner,
+            transaction,
+        )?;
+        println!("{}: candidate source and lockfile are unchanged", spec.name);
+        return Ok(changed);
+    }
+    transaction.write_if_changed(lock_path, &lock_bytes)?;
 
-    let mut pin = load_pin(transaction, pin_path)?;
     pin.set_string(&["srcHash"], source.hash)?;
     pin.set_string(&["npmDepsHash"], "")?;
     write_pin(transaction, pin_path, &pin)?;
@@ -603,14 +643,13 @@ fn update_paired_flake_input<R: CommandRunner>(
     transaction: &mut Transaction<'_, R>,
 ) -> Result<(), UpdateError> {
     let updated_flake = replace_paired_version(flake, repository, version)?;
-    transaction.replace("flake.nix", &updated_flake)?;
-    println!("{input}: updating flake input to v{version}");
+    transaction.write_if_changed("flake.nix", &updated_flake)?;
+    println!("{input}: preparing candidate flake input v{version}");
     // Mutating commands are deliberately single-shot; bounded retry applies only to reads.
     let command = CommandSpec::new("nix")
         .args(["flake", "update", input])
         .current_dir(transaction.root());
-    let output = run_checked(runner, &command)?;
-    forward_output(&output.stdout, &output.stderr)
+    run_checked(runner, &command).map(|_| ())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -707,7 +746,7 @@ fn write_pin<R: CommandRunner>(
     pin: &PinDocument,
 ) -> Result<(), UpdateError> {
     if let Some(rendered) = pin.rendered()? {
-        transaction.replace(path, &rendered)?;
+        transaction.write_if_changed(path, &rendered)?;
     }
     Ok(())
 }
@@ -801,15 +840,6 @@ fn is_release_version(version: &str) -> bool {
         && component_count >= 2
         && prerelease.is_none_or(valid_suffix)
         && build.is_none_or(valid_suffix)
-}
-
-fn forward_output(stdout: &[u8], stderr: &[u8]) -> Result<(), UpdateError> {
-    std::io::stdout()
-        .write_all(stdout)
-        .map_err(|source| UpdateError::io("<stdout>", source))?;
-    std::io::stderr()
-        .write_all(stderr)
-        .map_err(|source| UpdateError::io("<stderr>", source))
 }
 
 #[cfg(test)]

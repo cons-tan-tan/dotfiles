@@ -12,7 +12,7 @@ use crate::registry::{AssetNaming, TargetKind, TargetSpec};
 use crate::targets::{paired_version, validate_release_version};
 use crate::transaction::Transaction;
 
-const FOUR_SYSTEMS: &[&str] = &[
+pub(crate) const CANONICAL_SYSTEMS: &[&str] = &[
     "aarch64-darwin",
     "x86_64-darwin",
     "aarch64-linux",
@@ -31,7 +31,13 @@ pub fn validate_target_input<R: CommandRunner>(
             input,
         } => {
             let document = load_pin(transaction, pin)?;
-            validate_assets(spec, pin, &document, FOUR_SYSTEMS, AssetNaming::NameField)?;
+            validate_assets(
+                spec,
+                pin,
+                &document,
+                CANONICAL_SYSTEMS,
+                AssetNaming::NameField,
+            )?;
             let flake = transaction.read("flake.nix")?;
             let version = paired_input_version(&flake, input, repository)?;
             validate_release_version(spec.name, &version)
@@ -47,7 +53,7 @@ pub fn validate_target_input<R: CommandRunner>(
             let systems = if spec.target == Target::Watchexec {
                 DARWIN_SYSTEMS
             } else {
-                FOUR_SYSTEMS
+                CANONICAL_SYSTEMS
             };
             validate_assets(spec, pin, &document, systems, asset_naming)?;
             if source_hash {

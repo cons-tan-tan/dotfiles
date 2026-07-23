@@ -16,6 +16,31 @@ in
 pkgs.dotfilesPackages.${builtins.getEnv "UPDATE_PINS_PACKAGE"}
 "#;
 
+const CANDIDATE_PACKAGE_EXPRESSION: &str = r#"
+let
+  flake = builtins.getFlake (toString ./.);
+  pkgs = import ./nix/lib/mk-pkgs.nix {
+    inputs = flake.inputs;
+  } builtins.currentSystem;
+  packageName = builtins.getEnv "UPDATE_PINS_PACKAGE";
+  rawPin = builtins.fromJSON (builtins.getEnv "UPDATE_PINS_PIN_JSON");
+  pin =
+    if packageName == "shellfirm" then
+      rawPin // { cargoHash = pkgs.lib.fakeHash; }
+    else if packageName == "difit" then
+      rawPin // { npmDepsHash = pkgs.lib.fakeHash; }
+    else
+      throw "unsupported update-pins candidate package";
+  package = pkgs.dotfilesPackages.${packageName};
+in
+if packageName == "shellfirm" then
+  package.override { inherit pin; }
+else if packageName == "difit" then
+  package.override { difitPin = pin; }
+else
+  throw "unsupported update-pins candidate package"
+"#;
+
 pub fn compute_hash_via_failed_build<R: CommandRunner>(
     label: &str,
     package: &str,
@@ -51,10 +76,72 @@ pub fn compute_hash_via_failed_build<R: CommandRunner>(
     validate_sri_hash(&format!("{label}: {field}"), &hash)?;
     pin.set_string(&[field], &hash)?;
     if let Some(rendered) = pin.rendered()? {
-        transaction.replace(pin_path, &rendered)?;
+        transaction.write_if_changed(pin_path, &rendered)?;
     }
 
     println!("{label}: verifying build...");
+    verify_package_build(label, package, field, runner, transaction)
+}
+
+pub fn refresh_existing_hash_via_build<R: CommandRunner>(
+    label: &str,
+    package: &str,
+    pin_path: &str,
+    field: &str,
+    pin: &mut PinDocument,
+    runner: &R,
+    transaction: &mut Transaction<'_, R>,
+) -> Result<bool, UpdateError> {
+    println!("{label}: recomputing candidate {field}...");
+    let current = pin.string(&[field])?.to_owned();
+    let pin_json = serde_json::to_string(pin.object()).map_err(|source| {
+        UpdateError::message(format!(
+            "{label}: failed to serialize candidate pin for {field}: {source}"
+        ))
+    })?;
+    let command = candidate_package_command(transaction.root(), package, &pin_json);
+    let build = runner.run(&command)?;
+    match build.status {
+        Some(0) => {
+            return Err(UpdateError::message(format!(
+                "{label}: expected the candidate build for {field} to fail with a hash mismatch"
+            )));
+        }
+        Some(_) => {}
+        None => {
+            return Err(UpdateError::message(format!(
+                "{label}: candidate build for {field} was terminated before reporting a hash mismatch"
+            )));
+        }
+    }
+    let hash = parse_mismatch_hash(&build).map_err(|reason| {
+        let diagnostic = output_tail(&build, 10);
+        UpdateError::message(format!(
+            "{label}: failed to refresh {field} from candidate build output ({reason}):\n{diagnostic}"
+        ))
+    })?;
+    validate_sri_hash(&format!("{label}: {field}"), &hash)?;
+    let changed = hash != current;
+    if changed {
+        pin.set_string(&[field], &hash)?;
+        if let Some(rendered) = pin.rendered()? {
+            transaction.write_if_changed(pin_path, &rendered)?;
+        }
+    }
+
+    println!("{label}: verifying candidate {field}...");
+    verify_package_build(label, package, field, runner, transaction)?;
+    Ok(changed)
+}
+
+fn verify_package_build<R: CommandRunner>(
+    label: &str,
+    package: &str,
+    field: &str,
+    runner: &R,
+    transaction: &Transaction<'_, R>,
+) -> Result<(), UpdateError> {
+    let command = local_package_command(transaction.root(), package);
     let verification = runner.run(&command)?;
     if !verification.success() {
         let status = verification
@@ -78,6 +165,20 @@ fn local_package_command(root: &Path, package: &str) -> CommandSpec {
             "--no-link",
         ])
         .env("UPDATE_PINS_PACKAGE", package)
+        .current_dir(root)
+}
+
+fn candidate_package_command(root: &Path, package: &str, pin_json: &str) -> CommandSpec {
+    CommandSpec::new("nix")
+        .args([
+            "build",
+            "--impure",
+            "--expr",
+            CANDIDATE_PACKAGE_EXPRESSION,
+            "--no-link",
+        ])
+        .env("UPDATE_PINS_PACKAGE", package)
+        .env("UPDATE_PINS_PIN_JSON", pin_json)
         .current_dir(root)
 }
 
@@ -132,7 +233,8 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use super::{
-        LOCAL_PACKAGE_EXPRESSION, local_package_command, output_tail, parse_mismatch_hash,
+        CANDIDATE_PACKAGE_EXPRESSION, LOCAL_PACKAGE_EXPRESSION, candidate_package_command,
+        local_package_command, output_tail, parse_mismatch_hash,
     };
     use crate::command::{CommandOutput, CommandSpec};
 
@@ -195,6 +297,30 @@ mod tests {
                 .contains(r#"pkgs.dotfilesPackages.${builtins.getEnv "UPDATE_PINS_PACKAGE"}"#)
         );
         assert!(!LOCAL_PACKAGE_EXPRESSION.contains("shellfirm"));
+    }
+
+    #[test]
+    fn candidate_build_injects_fake_hash_without_interpolating_pin_data() {
+        let pin_json = r#"{"cargoHash":"sha256-private"}"#;
+        let command = candidate_package_command(Path::new("/repo"), "shellfirm", pin_json);
+        assert_eq!(
+            command,
+            CommandSpec::new("nix")
+                .args([
+                    "build",
+                    "--impure",
+                    "--expr",
+                    CANDIDATE_PACKAGE_EXPRESSION,
+                    "--no-link",
+                ])
+                .env("UPDATE_PINS_PACKAGE", "shellfirm")
+                .env("UPDATE_PINS_PIN_JSON", pin_json)
+                .current_dir(PathBuf::from("/repo"))
+        );
+        assert!(CANDIDATE_PACKAGE_EXPRESSION.contains("pkgs.lib.fakeHash"));
+        assert!(CANDIDATE_PACKAGE_EXPRESSION.contains("package.override { inherit pin; }"));
+        assert!(CANDIDATE_PACKAGE_EXPRESSION.contains("package.override { difitPin = pin; }"));
+        assert!(!CANDIDATE_PACKAGE_EXPRESSION.contains("sha256-private"));
     }
 
     #[test]

@@ -78,7 +78,15 @@ pub struct Transaction<'a, R: CommandRunner> {
     _lock: File,
     snapshots: BTreeMap<PathBuf, FileSnapshot>,
     managed_paths: Option<BTreeSet<PathBuf>>,
-    finalized: bool,
+    state: FinalizationState,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum FinalizationState {
+    Active,
+    Committed,
+    RolledBack,
+    Failed,
 }
 
 impl<'a, R: CommandRunner> Transaction<'a, R> {
@@ -169,7 +177,7 @@ impl<'a, R: CommandRunner> Transaction<'a, R> {
             _lock: lock,
             snapshots,
             managed_paths,
-            finalized: false,
+            state: FinalizationState::Active,
         })
     }
 
@@ -194,9 +202,18 @@ impl<'a, R: CommandRunner> Transaction<'a, R> {
         relative: impl AsRef<Path>,
         contents: &[u8],
     ) -> Result<bool, UpdateError> {
+        self.write_if_changed(relative, contents)
+    }
+
+    pub fn write_if_changed(
+        &mut self,
+        relative: impl AsRef<Path>,
+        contents: &[u8],
+    ) -> Result<bool, UpdateError> {
+        self.ensure_active()?;
         let relative = relative.as_ref();
         self.ensure_authorized_path(relative)?;
-        self.snapshot_if_needed(relative)?;
+        ensure_safe_repository_path(&self.repository.root, relative)?;
         let path = self.repository.root.join(relative);
         let current = match std::fs::read(&path) {
             Ok(bytes) => Some(bytes),
@@ -206,6 +223,7 @@ impl<'a, R: CommandRunner> Transaction<'a, R> {
         if current.as_deref() == Some(contents) {
             return Ok(false);
         }
+        self.snapshot_if_needed(relative)?;
         let permissions = std::fs::metadata(&path)
             .map(|metadata| Some(metadata.permissions()))
             .or_else(|error| {
@@ -220,6 +238,7 @@ impl<'a, R: CommandRunner> Transaction<'a, R> {
     }
 
     pub fn remove(&mut self, relative: impl AsRef<Path>) -> Result<bool, UpdateError> {
+        self.ensure_active()?;
         let relative = relative.as_ref();
         self.ensure_authorized_path(relative)?;
         self.snapshot_if_needed(relative)?;
@@ -231,17 +250,41 @@ impl<'a, R: CommandRunner> Transaction<'a, R> {
         }
     }
 
-    pub fn rollback(mut self) -> Result<(), UpdateError> {
-        let result = self.rollback_inner();
-        let unlock = fs2::FileExt::unlock(&self._lock).map_err(|source| {
+    pub fn rollback(&mut self) -> Result<(), UpdateError> {
+        self.rollback_with_unlock(fs2::FileExt::unlock)
+    }
+
+    fn rollback_with_unlock(
+        &mut self,
+        unlock: impl FnOnce(&File) -> std::io::Result<()>,
+    ) -> Result<(), UpdateError> {
+        if self.state != FinalizationState::Active {
+            return Err(UpdateError::TransactionFinalized);
+        }
+        let restore = self.rollback_inner();
+        let unlock = unlock(&self._lock).map_err(|source| {
             UpdateError::io(self.repository.git_dir.join("update-pins.lock"), source)
         });
-        self.finalized = true;
-        result.and(unlock)
+        self.state = if restore.is_ok() && unlock.is_ok() {
+            FinalizationState::RolledBack
+        } else {
+            FinalizationState::Failed
+        };
+        match (restore, unlock) {
+            (Ok(()), Ok(())) => Ok(()),
+            (Err(restore), Ok(())) => Err(restore),
+            (Ok(()), Err(unlock)) => Err(UpdateError::RollbackUnlock {
+                unlock: Box::new(unlock),
+            }),
+            (Err(restore), Err(unlock)) => Err(UpdateError::RollbackAndUnlock {
+                restore: Box::new(restore),
+                unlock: Box::new(unlock),
+            }),
+        }
     }
 
     fn rollback_inner(&mut self) -> Result<(), UpdateError> {
-        if self.finalized {
+        if self.state != FinalizationState::Active {
             return Ok(());
         }
 
@@ -284,15 +327,51 @@ impl<'a, R: CommandRunner> Transaction<'a, R> {
         }
     }
 
-    pub fn commit(mut self) -> Result<(), UpdateError> {
-        fs2::FileExt::unlock(&self._lock).map_err(|source| {
-            UpdateError::io(self.repository.git_dir.join("update-pins.lock"), source)
-        })?;
-        self.finalized = true;
+    pub fn commit(&mut self) -> Result<(), UpdateError> {
+        self.commit_with_unlock(fs2::FileExt::unlock)
+    }
+
+    fn commit_with_unlock(
+        &mut self,
+        unlock: impl FnOnce(&File) -> std::io::Result<()>,
+    ) -> Result<(), UpdateError> {
+        self.ensure_active()?;
+        self.preserve_snapshot_permissions()?;
+        unlock(&self._lock)
+            .map_err(|source| {
+                UpdateError::io(self.repository.git_dir.join("update-pins.lock"), source)
+            })
+            .map(|()| {
+                self.state = FinalizationState::Committed;
+            })
+    }
+
+    fn preserve_snapshot_permissions(&self) -> Result<(), UpdateError> {
+        for (relative, snapshot) in &self.snapshots {
+            let FileSnapshot::Present { permissions, .. } = snapshot else {
+                continue;
+            };
+            ensure_safe_repository_path(&self.repository.root, relative)?;
+            let path = self.repository.root.join(relative);
+            let current = std::fs::metadata(&path)
+                .map_err(|source| UpdateError::io(&path, source))?
+                .permissions();
+            if !same_permissions(&current, permissions) {
+                std::fs::set_permissions(&path, permissions.clone())
+                    .map_err(|source| UpdateError::io(&path, source))?;
+            }
+        }
         Ok(())
     }
 
+    fn unlock(&self) -> Result<(), UpdateError> {
+        fs2::FileExt::unlock(&self._lock).map_err(|source| {
+            UpdateError::io(self.repository.git_dir.join("update-pins.lock"), source)
+        })
+    }
+
     fn snapshot_if_needed(&mut self, relative: &Path) -> Result<(), UpdateError> {
+        self.ensure_active()?;
         self.ensure_authorized_path(relative)?;
         ensure_safe_repository_path(&self.repository.root, relative)?;
         if self.snapshots.contains_key(relative) {
@@ -326,14 +405,22 @@ impl<'a, R: CommandRunner> Transaction<'a, R> {
         }
         Ok(())
     }
+
+    fn ensure_active(&self) -> Result<(), UpdateError> {
+        if self.state == FinalizationState::Active {
+            Ok(())
+        } else {
+            Err(UpdateError::TransactionFinalized)
+        }
+    }
 }
 
 impl<R: CommandRunner> Drop for Transaction<'_, R> {
     fn drop(&mut self) {
-        if !self.finalized {
+        if self.state == FinalizationState::Active {
             let _ = self.rollback_inner();
-            let _ = fs2::FileExt::unlock(&self._lock);
-            self.finalized = true;
+            let _ = self.unlock();
+            self.state = FinalizationState::RolledBack;
         }
     }
 }
@@ -691,6 +778,33 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn identical_write_does_not_replace_or_touch_the_file() {
+        use std::os::unix::fs::MetadataExt as _;
+
+        let repository = TestRepository::new();
+        let pin = repository.path().join("nix/pins/example.json");
+        let runner = SystemCommandRunner;
+        let mut transaction =
+            Transaction::begin(repository.repository(), &runner).expect("begin transaction");
+        let before = std::fs::metadata(&pin).expect("metadata before identical write");
+        let snapshot_count = transaction.snapshots.len();
+
+        assert!(
+            !transaction
+                .write_if_changed("nix/pins/example.json", b"{\"hash\":\"old\"}\n")
+                .expect("identical write")
+        );
+
+        let after = std::fs::metadata(&pin).expect("metadata after identical write");
+        assert_eq!(after.ino(), before.ino());
+        assert_eq!(after.mode(), before.mode());
+        assert_eq!(after.mtime(), before.mtime());
+        assert_eq!(after.mtime_nsec(), before.mtime_nsec());
+        assert_eq!(transaction.snapshots.len(), snapshot_count);
+    }
+
     #[test]
     fn commit_keeps_replacement_and_releases_lock() {
         let repository = TestRepository::new();
@@ -705,6 +819,121 @@ mod tests {
         run_git(repository.path(), ["add", "nix/pins/example.json"]);
         run_git(repository.path(), ["commit", "-q", "-m", "updated"]);
         Transaction::begin(repo, &runner).expect("lock should be released");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn commit_restores_mode_after_an_external_atomic_replacement() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let repository = TestRepository::new();
+        let pin = repository.path().join("nix/pins/example.json");
+        std::fs::set_permissions(&pin, Permissions::from_mode(0o440)).expect("restrict pin");
+        let runner = SystemCommandRunner;
+        let mut transaction =
+            Transaction::begin(repository.repository(), &runner).expect("begin transaction");
+
+        std::fs::remove_file(&pin).expect("remove pin like an external atomic updater");
+        std::fs::write(&pin, b"{\"hash\":\"external\"}\n").expect("replace pin externally");
+        std::fs::set_permissions(&pin, Permissions::from_mode(0o644))
+            .expect("external updater mode");
+        transaction.commit().expect("commit transaction");
+
+        assert_eq!(
+            std::fs::metadata(&pin)
+                .expect("pin metadata")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o440
+        );
+        assert_eq!(
+            std::fs::read(pin).expect("committed external replacement"),
+            b"{\"hash\":\"external\"}\n"
+        );
+    }
+
+    #[test]
+    fn failed_commit_remains_active_for_explicit_rollback() {
+        let repository = TestRepository::new();
+        let pin = repository.path().join("nix/pins/example.json");
+        let runner = SystemCommandRunner;
+        let mut transaction =
+            Transaction::begin(repository.repository(), &runner).expect("begin transaction");
+        transaction
+            .write_if_changed("nix/pins/example.json", b"{\"hash\":\"new\"}\n")
+            .expect("replace pin");
+
+        let error = transaction
+            .commit_with_unlock(|_| Err(std::io::Error::other("injected unlock failure")))
+            .expect_err("commit should fail");
+
+        assert!(error.to_string().contains("injected unlock failure"));
+        assert_eq!(transaction.state, super::FinalizationState::Active);
+        transaction
+            .rollback()
+            .expect("failed commit can be rolled back explicitly");
+        assert_eq!(
+            std::fs::read(pin).expect("restored pin"),
+            b"{\"hash\":\"old\"}\n"
+        );
+        assert_eq!(transaction.state, super::FinalizationState::RolledBack);
+    }
+
+    #[test]
+    fn rollback_preserves_restore_and_unlock_failures() {
+        let repository = TestRepository::new();
+        let pin = repository.path().join("nix/pins/example.json");
+        let runner = SystemCommandRunner;
+        let mut transaction =
+            Transaction::begin(repository.repository(), &runner).expect("begin transaction");
+        transaction
+            .write_if_changed("nix/pins/example.json", b"{\"hash\":\"new\"}\n")
+            .expect("replace pin");
+        std::fs::remove_file(&pin).expect("remove candidate file");
+        std::fs::create_dir(&pin).expect("block restoration with a directory");
+
+        let error = transaction
+            .rollback_with_unlock(|_| Err(std::io::Error::other("injected unlock failure")))
+            .expect_err("rollback should retain both failures");
+
+        assert!(matches!(
+            error,
+            UpdateError::RollbackAndUnlock { restore, unlock }
+                if restore.to_string().contains("rollback failed")
+                    && unlock.to_string().contains("injected unlock failure")
+        ));
+        assert_eq!(transaction.state, super::FinalizationState::Failed);
+        assert!(matches!(
+            transaction.commit(),
+            Err(UpdateError::TransactionFinalized)
+        ));
+    }
+
+    #[test]
+    fn finalized_transactions_reject_writes_and_repeated_finalization() {
+        let repository = TestRepository::new();
+        let runner = SystemCommandRunner;
+        let mut transaction =
+            Transaction::begin(repository.repository(), &runner).expect("begin transaction");
+        transaction.commit().expect("commit transaction");
+
+        assert!(matches!(
+            transaction.write_if_changed("nix/pins/example.json", b"changed\n"),
+            Err(UpdateError::TransactionFinalized)
+        ));
+        assert!(matches!(
+            transaction.remove("nix/pins/example.json"),
+            Err(UpdateError::TransactionFinalized)
+        ));
+        assert!(matches!(
+            transaction.commit(),
+            Err(UpdateError::TransactionFinalized)
+        ));
+        assert!(matches!(
+            transaction.rollback(),
+            Err(UpdateError::TransactionFinalized)
+        ));
     }
 
     #[test]

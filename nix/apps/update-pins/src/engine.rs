@@ -1,6 +1,7 @@
 use crate::cli::{Invocation, Target};
 use crate::command::{CommandRunner, SystemCommandRunner};
 use crate::error::UpdateError;
+use crate::ledger::Ledger;
 use crate::registry::{TARGET_SPECS, target_spec, unimplemented_target_names};
 use crate::targets::run_target;
 use crate::transaction::{Repository, Transaction};
@@ -23,12 +24,17 @@ pub fn run_with_runner<R: CommandRunner>(
         let spec = target_spec(*selected).expect("selected targets are concrete registry entries");
         validate_target_input(spec, &transaction)?;
     }
-    let mut changed = false;
+    let mut ledger = Ledger::default();
 
     let result = targets.iter().copied().try_for_each(|target| {
         println!("== {}", target.name());
-        let result = run_target(target, invocation.policy, runner, &mut transaction)?;
-        changed |= result.changed;
+        run_target(
+            target,
+            invocation.policy,
+            runner,
+            &mut transaction,
+            &mut ledger,
+        )?;
         Ok::<(), UpdateError>(())
     });
     let result = result.and_then(|()| {
@@ -42,8 +48,16 @@ pub fn run_with_runner<R: CommandRunner>(
 
     match result {
         Ok(()) => {
-            transaction.commit()?;
+            let report = ledger.applied().render();
+            if let Err(error) = transaction.commit() {
+                return Err(rollback_after_error(&mut transaction, &ledger, error));
+            }
+            let changed = !ledger.is_empty();
             println!();
+            if let Some(report) = report {
+                println!("{report}");
+                println!();
+            }
             match (target, changed) {
                 (Target::All, true) => println!(
                     "Pins updated. Review with 'git diff', verify with 'nix run .#build', then commit."
@@ -57,13 +71,28 @@ pub fn run_with_runner<R: CommandRunner>(
             }
             Ok(())
         }
-        Err(error) => {
-            eprintln!("update-pins: failed; restoring managed files from backup");
-            match transaction.rollback() {
-                Ok(()) => Err(error),
-                Err(rollback) => Err(UpdateError::message(format!("{error}; {rollback}"))),
+        Err(error) => Err(rollback_after_error(&mut transaction, &ledger, error)),
+    }
+}
+
+fn rollback_after_error<R: CommandRunner>(
+    transaction: &mut Transaction<'_, R>,
+    ledger: &Ledger,
+    error: UpdateError,
+) -> UpdateError {
+    let report = ledger.rolled_back().render();
+    eprintln!("update-pins: failed; restoring managed files from backup");
+    match transaction.rollback() {
+        Ok(()) => {
+            if let Some(report) = report {
+                eprintln!("{report}");
             }
+            error
         }
+        Err(rollback) => UpdateError::OperationAndRollback {
+            operation: Box::new(error),
+            rollback: Box::new(rollback),
+        },
     }
 }
 

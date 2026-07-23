@@ -145,7 +145,7 @@ pub fn update<R: CommandRunner>(
     }
 
     println!(
-        "{}: {current_version} -> {} (prefetching app...)",
+        "{}: prefetching candidate {} (current {current_version})...",
         spec.name, latest.version
     );
     let prefetched = prefetch_result(
@@ -196,7 +196,7 @@ pub fn update<R: CommandRunner>(
     pin.set_string(&["url"], &latest.url)?;
     pin.set_string(&["hash"], prefetched.hash)?;
     if let Some(rendered) = pin.rendered()? {
-        transaction.replace(pin_path, &rendered)?;
+        transaction.write_if_changed(pin_path, &rendered)?;
     }
     Ok(true)
 }

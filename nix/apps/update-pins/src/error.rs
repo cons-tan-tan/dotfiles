@@ -51,6 +51,9 @@ pub enum UpdateError {
     #[error("update-pins: another update-pins process is already running")]
     AlreadyRunning,
 
+    #[error("update-pins: transaction has already been finalized")]
+    TransactionFinalized,
+
     #[error("update-pins: managed path is outside the repository: {0}")]
     UnsafeManagedPath(PathBuf),
 
@@ -59,6 +62,23 @@ pub enum UpdateError {
 
     #[error("update-pins: rollback failed: {0}")]
     Rollback(String),
+
+    #[error(
+        "update-pins: rollback failed while restoring managed files ({restore}) and releasing the transaction lock ({unlock})"
+    )]
+    RollbackAndUnlock {
+        restore: Box<UpdateError>,
+        unlock: Box<UpdateError>,
+    },
+
+    #[error("update-pins: rollback failed while releasing the transaction lock: {unlock}")]
+    RollbackUnlock { unlock: Box<UpdateError> },
+
+    #[error("{operation}; rollback also failed: {rollback}")]
+    OperationAndRollback {
+        operation: Box<UpdateError>,
+        rollback: Box<UpdateError>,
+    },
 
     #[error("{0}")]
     Message(String),

@@ -54,7 +54,7 @@ setup() {
   fi
   export UPDATE_PINS_TEST_BIN
 
-  make_difit_tarball "$(sed -n 's|.*github:yoshiko-pg/difit/v\\([^"]*\\)";|\\1|p' "$WORK/flake.nix")"
+  make_difit_tarball "$(sed -n 's|.*github:yoshiko-pg/difit/v\([^"]*\)";|\1|p' "$WORK/flake.nix")"
 
   printf '#!%s\n' "$BASH_BIN" >"$STUB_DIR/gh"
   cat >>"$STUB_DIR/gh" <<'EOS'
@@ -249,6 +249,10 @@ if [ "$#" -eq 5 ] \
   && [ "$3" = "--ignore-scripts" ] \
   && [ "$4" = "--no-audit" ] \
   && [ "$5" = "--no-fund" ]; then
+  if [ "${UPDATE_PINS_DIFIT_REUSE_LOCK:-}" = "1" ]; then
+    cp "$UPDATE_PINS_FAKE_ROOT/nix/packages/difit/package-lock.json" package-lock.json
+    exit 0
+  fi
   cat >package-lock.json <<JSON
 {
   "name": "difit",
@@ -313,7 +317,7 @@ if { [ "$#" -eq 6 ] || [ "$#" -eq 7 ]; } \
     exit 0
     ;;
   *.tgz)
-    printf '{"hash":"sha256-gmer9Ei3Jq/YwFQ13VuGqxjSZiafe7wWoJnabLgSrKE=","storePath":"%s"}\n' "$UPDATE_PINS_DIFIT_TARBALL"
+    printf '{"hash":"%s","storePath":"%s"}\n' "${UPDATE_PINS_DIFIT_SOURCE_HASH:-sha256-gmer9Ei3Jq/YwFQ13VuGqxjSZiafe7wWoJnabLgSrKE=}" "$UPDATE_PINS_DIFIT_TARBALL"
     exit 0
     ;;
   esac
@@ -325,7 +329,10 @@ if { [ "$#" -eq 6 ] || [ "$#" -eq 7 ]; } \
   exit 0
 fi
 
-if [ "$1" = "build" ] && [ "${2:-}" = "--impure" ] && [ "${3:-}" = "--expr" ] && [[ "${4:-}" != *'pkgs.dotfilesPackages.${builtins.getEnv "UPDATE_PINS_PACKAGE"}'* ]]; then
+if [ "$1" = "build" ] \
+  && [ "${2:-}" = "--impure" ] \
+  && [ "${3:-}" = "--expr" ] \
+  && { [[ "${4:-}" != *"pkgs.dotfilesPackages"* ]] || [[ "${4:-}" != *'builtins.getEnv "UPDATE_PINS_PACKAGE"'* ]]; }; then
   echo "local package build did not use pkgs.dotfilesPackages" >&2
   exit 1
 fi
@@ -358,6 +365,28 @@ if [ "$1" = "build" ] && [ "${2:-}" = "--impure" ] && [ "${3:-}" = "--expr" ] &&
       exit 1
     fi
     echo "verification build failed" >&2
+    exit 1
+    ;;
+  verify-existing)
+    if [ "$count" -eq 1 ]; then
+      [[ "${4:-}" == *"pkgs.lib.fakeHash"* ]]
+      [ -n "${UPDATE_PINS_PIN_JSON:-}" ]
+      echo "error: hash mismatch" >&2
+      echo "got: ${UPDATE_PINS_REFRESHED_CARGO_HASH:?}" >&2
+      exit 1
+    fi
+    exit 0
+    ;;
+  refresh-existing)
+    if [ "$count" -eq 1 ]; then
+      echo "error: hash mismatch" >&2
+      echo "got: ${UPDATE_PINS_REFRESHED_CARGO_HASH:?}" >&2
+      exit 1
+    fi
+    exit 0
+    ;;
+  verify-existing-fails)
+    echo "existing cargoHash verification failed" >&2
     exit 1
     ;;
   *)
@@ -397,6 +426,28 @@ if [ "$1" = "build" ] && [ "${2:-}" = "--impure" ] && [ "${3:-}" = "--expr" ] &&
     echo "verification build failed" >&2
     exit 1
     ;;
+  verify-existing)
+    if [ "$count" -eq 1 ]; then
+      [[ "${4:-}" == *"pkgs.lib.fakeHash"* ]]
+      [ -n "${UPDATE_PINS_PIN_JSON:-}" ]
+      echo "error: hash mismatch" >&2
+      echo "got: ${UPDATE_PINS_REFRESHED_NPM_HASH:?}" >&2
+      exit 1
+    fi
+    exit 0
+    ;;
+  refresh-existing)
+    if [ "$count" -eq 1 ]; then
+      echo "error: hash mismatch" >&2
+      echo "got: ${UPDATE_PINS_REFRESHED_NPM_HASH:?}" >&2
+      exit 1
+    fi
+    exit 0
+    ;;
+  verify-existing-fails)
+    echo "existing npmDepsHash verification failed" >&2
+    exit 1
+    ;;
   *)
     echo "UPDATE_PINS_DIFIT_BUILD_MODE is not set" >&2
     exit 1
@@ -407,14 +458,43 @@ fi
 if [ "$1" = "flake" ] && [ "${2:-}" = "update" ]; then
   input=${3:-}
   printf '%s\n' "$input" >>"$UPDATE_PINS_FLAKE_UPDATE_LOG"
-  printf '{"updated":"%s"}\n' "$input" >"$UPDATE_PINS_FAKE_ROOT/flake.lock"
+  case "$input" in
+  hcom-src) repo=aannoo/hcom ;;
+  agent-slack-skill) repo=stablyai/agent-slack ;;
+  agent-browser-skill) repo=vercel-labs/agent-browser ;;
+  difit-src) repo=yoshiko-pg/difit ;;
+  *)
+    echo "unexpected flake input: $input" >&2
+    exit 1
+    ;;
+  esac
+  version=$(sed -n "s|.*github:$repo/v\\([^\"]*\\)\";|\\1|p" "$UPDATE_PINS_FAKE_ROOT/flake.nix")
+  node=$(jq -r --arg input "$input" '.nodes[.root].inputs[$input]' "$UPDATE_PINS_FAKE_ROOT/flake.lock")
+  jq \
+    --arg node "$node" \
+    --arg ref "v$version" \
+    --arg rev "fixture-$input-v$version" \
+    '.nodes[$node].original.ref = $ref | .nodes[$node].locked.rev = $rev' \
+    "$UPDATE_PINS_FAKE_ROOT/flake.lock" >"$UPDATE_PINS_FAKE_ROOT/flake.lock.new"
+  mv "$UPDATE_PINS_FAKE_ROOT/flake.lock.new" "$UPDATE_PINS_FAKE_ROOT/flake.lock"
   if [ "${UPDATE_PINS_FAIL_FLAKE_UPDATE:-}" = "$input" ]; then
     echo "flake update failed for $input" >&2
     exit 1
   fi
+  if [ "${UPDATE_PINS_BREAK_ROLLBACK:-}" = "$input" ]; then
+    rm "$UPDATE_PINS_FAKE_ROOT/flake.lock"
+    mkdir "$UPDATE_PINS_FAKE_ROOT/flake.lock"
+    echo "flake update failed before rollback" >&2
+    exit 1
+  fi
+  if [ "${UPDATE_PINS_DELETE_FLAKE_AFTER_UPDATE:-}" = "$input" ]; then
+    rm "$UPDATE_PINS_FAKE_ROOT/flake.lock"
+    exit 0
+  fi
   if [ "${UPDATE_PINS_CORRUPT_FLAKE_AFTER_UPDATE:-}" = "$input" ]; then
     printf '\n# url = "github:aannoo/hcom/v0.0.0";\n' >>"$UPDATE_PINS_FAKE_ROOT/flake.nix"
   fi
+  echo "Updated input $input with secret-before-commit" >&2
   exit 0
 fi
 
@@ -470,6 +550,17 @@ if stat.S_IMODE(os.stat(actual).st_mode) != stat.S_IMODE(os.stat(expected).st_mo
 PY
 }
 
+file_identity() {
+  python3 - "$1" <<'PY'
+import os
+import stat
+import sys
+
+value = os.stat(sys.argv[1])
+print(value.st_ino, value.st_mtime_ns, stat.S_IMODE(value.st_mode), value.st_size)
+PY
+}
+
 assert_no_staging_files() {
   local leftover
   leftover=$(find "$WORK" -name '*.update-pins*' -print -quit)
@@ -479,6 +570,21 @@ assert_no_staging_files() {
 paired_version() {
   local repo=$1 file=${2:-"$WORK/flake.nix"}
   sed -n "s|.*github:$repo/v\\([^\"]*\\)\";|\\1|p" "$file"
+}
+
+flake_lock_ref() {
+  local input=$1 node
+  node=$(jq -r --arg input "$input" '.nodes[.root].inputs[$input]' "$WORK/flake.lock")
+  jq -r --arg node "$node" '.nodes[$node].original.ref' "$WORK/flake.lock"
+}
+
+report_section() {
+  local heading=$1
+  awk -v heading="$heading" '
+    $0 == heading { inside = 1; next }
+    inside && /^  / { print; next }
+    inside { exit }
+  ' <<<"$output"
 }
 
 make_unrelated_updates_noop() {
@@ -559,6 +665,10 @@ make_unrelated_updates_noop() {
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"codex-app updated."* ]]
+  section=$(report_section "Applied changes:")
+  [ "$section" = $'  codex-app:\n    - app hash: changed' ]
+  [[ "$output" != *"$fixed_hash"* ]]
+  [[ "$output" != *"Rolled back candidate changes:"* ]]
   [ "$(jq -r .version "$WORK/nix/pins/codex-app.json")" = "$original_version" ]
   [ "$(jq -r .url "$WORK/nix/pins/codex-app.json")" = "$original_url" ]
   [ "$(jq -r .hash "$WORK/nix/pins/codex-app.json")" = "$fixed_hash" ]
@@ -584,6 +694,8 @@ make_unrelated_updates_noop() {
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"hcom is up to date."* ]]
+  [[ "$output" != *"Applied changes:"* ]]
+  [[ "$output" != *"Rolled back candidate changes:"* ]]
   grep -Fq "gh api --include repos/aannoo/hcom/releases/latest" "$UPDATE_PINS_COMMAND_LOG"
   asset_count=$(jq '.assets | length' "$WORK/nix/pins/hcom.json")
   [ "$(grep -c '^curl .*github.com/aannoo/hcom/releases/download/' "$UPDATE_PINS_COMMAND_LOG")" -eq "$asset_count" ]
@@ -591,6 +703,79 @@ make_unrelated_updates_noop() {
   [ "$(grep -c '^nix store prefetch-file' "$UPDATE_PINS_COMMAND_LOG")" -eq "$asset_count" ]
   ! grep -Fq "nix flake update" "$UPDATE_PINS_COMMAND_LOG"
   [ ! -e "$UPDATE_PINS_FLAKE_UPDATE_LOG" ]
+  assert_managed_matches "$original"
+}
+
+@test "same-version shellfirm force validates without writing" {
+  original="$WORK/original"
+  save_managed "$original"
+  before=$(file_identity "$WORK/nix/pins/shellfirm.json")
+  export UPDATE_PINS_SOURCE_HASH
+  UPDATE_PINS_SOURCE_HASH=$(jq -r .srcHash "$WORK/nix/pins/shellfirm.json")
+  export UPDATE_PINS_REFRESHED_CARGO_HASH
+  UPDATE_PINS_REFRESHED_CARGO_HASH=$(jq -r .cargoHash "$WORK/nix/pins/shellfirm.json")
+  export UPDATE_PINS_SHELLFIRM_BUILD_MODE=verify-existing
+
+  run_update_pins --force shellfirm
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"shellfirm: candidate source is unchanged"* ]]
+  [[ "$output" == *"shellfirm is up to date."* ]]
+  [[ "$output" != *"Applied changes:"* ]]
+  [ "$(cat "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT")" -eq 2 ]
+  [ "$(file_identity "$WORK/nix/pins/shellfirm.json")" = "$before" ]
+  assert_managed_matches "$original"
+}
+
+@test "same-version difit force validates without writing" {
+  original="$WORK/original"
+  save_managed "$original"
+  pin_before=$(file_identity "$WORK/nix/pins/difit.json")
+  lock_before=$(file_identity "$WORK/nix/packages/difit/package-lock.json")
+  export UPDATE_PINS_DIFIT_SOURCE_HASH
+  UPDATE_PINS_DIFIT_SOURCE_HASH=$(jq -r .srcHash "$WORK/nix/pins/difit.json")
+  export UPDATE_PINS_DIFIT_REUSE_LOCK=1
+  export UPDATE_PINS_REFRESHED_NPM_HASH
+  UPDATE_PINS_REFRESHED_NPM_HASH=$(jq -r .npmDepsHash "$WORK/nix/pins/difit.json")
+  export UPDATE_PINS_DIFIT_BUILD_MODE=verify-existing
+
+  run_update_pins --force difit
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"difit: candidate source and lockfile are unchanged"* ]]
+  [[ "$output" == *"difit is up to date."* ]]
+  [[ "$output" != *"Applied changes:"* ]]
+  [ "$(cat "$UPDATE_PINS_DIFIT_BUILD_COUNT")" -eq 2 ]
+  [ ! -e "$UPDATE_PINS_FLAKE_UPDATE_LOG" ]
+  [ "$(file_identity "$WORK/nix/pins/difit.json")" = "$pin_before" ]
+  [ "$(file_identity "$WORK/nix/packages/difit/package-lock.json")" = "$lock_before" ]
+  assert_managed_matches "$original"
+}
+
+@test "same-version shellfirm force re-pins a stale derived hash without source churn" {
+  refreshed=$(jq -r .cargoHash "$WORK/nix/pins/shellfirm.json")
+  replacement=sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+  jq --arg hash "$replacement" '.cargoHash = $hash' "$WORK/nix/pins/shellfirm.json" >"$WORK/shellfirm.json"
+  mv "$WORK/shellfirm.json" "$WORK/nix/pins/shellfirm.json"
+  git -C "$WORK" add nix/pins/shellfirm.json
+  git -C "$WORK" commit -q -m "stale shellfirm hash fixture"
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_SOURCE_HASH
+  UPDATE_PINS_SOURCE_HASH=$(jq -r .srcHash "$WORK/nix/pins/shellfirm.json")
+  export UPDATE_PINS_SHELLFIRM_BUILD_MODE=refresh-existing
+  export UPDATE_PINS_REFRESHED_CARGO_HASH="$refreshed"
+
+  run_update_pins --force shellfirm
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"shellfirm updated."* ]]
+  [ "$(jq -r .cargoHash "$WORK/nix/pins/shellfirm.json")" = "$refreshed" ]
+  section=$(report_section "Applied changes:")
+  [ "$section" = $'  shellfirm:\n    - Cargo dependency hash: changed' ]
+  [[ "$output" != *"$refreshed"* ]]
+  [ "$(cat "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT")" -eq 2 ]
+  cp "$WORK/nix/pins/shellfirm.json" "$original/nix/pins/shellfirm.json"
   assert_managed_matches "$original"
 }
 
@@ -603,6 +788,8 @@ make_unrelated_updates_noop() {
   run_update_pins --retry 1 --force claude-code-settings-schema
 
   [ "$status" -eq 0 ]
+  [[ "$output" != *"Applied changes:"* ]]
+  [[ "$output" != *"Rolled back candidate changes:"* ]]
   [ "$(grep -c '^curl ' "$UPDATE_PINS_COMMAND_LOG")" -eq 1 ]
   grep -Eq '^nix store prefetch-file --json --name update-pins-.+\.json file:///tmp/update-pins-fetch-.+\.json$' "$UPDATE_PINS_COMMAND_LOG"
   assert_managed_matches "$original"
@@ -653,6 +840,8 @@ make_unrelated_updates_noop() {
   headers="$(printf '%s\n' "$output" | sed -n 's/^== //p')"
   [ "$headers" = $'hcom\nagent-slack\nagent-browser\nwatchexec\nshellfirm\nherdr\ndifit\nclaude-code-settings-schema\ncodex-app' ]
   [ "$(printf '%s\n' "$output" | tail -n 1)" = "All pins up to date." ]
+  [[ "$output" != *"Applied changes:"* ]]
+  [[ "$output" != *"Rolled back candidate changes:"* ]]
   assert_managed_matches "$original"
 }
 
@@ -683,7 +872,7 @@ make_unrelated_updates_noop() {
   [ "$status" -eq 0 ]
   [ "$(jq -r '.assets["x86_64-linux"].hash' "$WORK/nix/pins/hcom.json")" = "sha256-1ZOG4K5DXikvvg6825VLde1fs5IgkSd8sZ95j8XVBxg=" ]
   grep -Fq 'url = "github:aannoo/hcom/v9.9.9";' "$WORK/flake.nix"
-  [ "$(jq -r .updated "$WORK/flake.lock")" = "hcom-src" ]
+  [ "$(flake_lock_ref hcom-src)" = "v9.9.9" ]
   grep -Fq "gh api --include repos/aannoo/hcom/releases/latest" "$UPDATE_PINS_COMMAND_LOG"
   grep -Fq "nix flake update hcom-src" "$UPDATE_PINS_COMMAND_LOG"
   cp "$WORK/nix/pins/hcom.json" "$original/nix/pins/hcom.json"
@@ -702,7 +891,7 @@ make_unrelated_updates_noop() {
   [ "$status" -eq 0 ]
   [ "$(jq -r '.assets["x86_64-linux"].hash' "$WORK/nix/pins/agent-slack.json")" = "sha256-1ZOG4K5DXikvvg6825VLde1fs5IgkSd8sZ95j8XVBxg=" ]
   grep -Fq 'url = "github:stablyai/agent-slack/v9.9.9";' "$WORK/flake.nix"
-  [ "$(jq -r .updated "$WORK/flake.lock")" = "agent-slack-skill" ]
+  [ "$(flake_lock_ref agent-slack-skill)" = "v9.9.9" ]
   cp "$WORK/nix/pins/agent-slack.json" "$original/nix/pins/agent-slack.json"
   cp "$WORK/flake.nix" "$original/flake.nix"
   cp "$WORK/flake.lock" "$original/flake.lock"
@@ -861,6 +1050,9 @@ make_unrelated_updates_noop() {
   [ "$status" -eq 1 ]
   [[ "$output" == *"expected one tagged flake input URL"* ]]
   [[ "$output" == *"update-pins: failed; restoring managed files from backup"* ]]
+  [[ "$output" != *"Applied changes:"* ]]
+  section=$(report_section "Rolled back candidate changes:")
+  [ "$(printf '%s\n' "$section" | sed -n 's/^  \([^ ].*\):$/\1/p')" = "hcom" ]
   assert_managed_matches "$original"
   assert_no_staging_files
 }
@@ -900,8 +1092,41 @@ make_unrelated_updates_noop() {
   [ "$status" -ne 0 ]
   [ "$(wc -l <"$UPDATE_PINS_FLAKE_UPDATE_LOG")" -eq 1 ]
   [[ "$output" != *"retrying attempt"* ]]
+  [[ "$output" != *"Applied changes:"* ]]
+  [[ "$output" == *"Rolled back candidate changes:"* ]]
   assert_managed_matches "$original"
   assert_no_staging_files
+}
+
+@test "after-state read failure aborts and restores a successful target" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_HCOM_TAG=v9.9.9
+  export UPDATE_PINS_DELETE_FLAKE_AFTER_UPDATE=hcom-src
+
+  run_update_pins hcom
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"failed to access"* ]]
+  [[ "$output" != *"Applied changes:"* ]]
+  [[ "$output" != *"Rolled back candidate changes:"* ]]
+  [[ "$output" != *"secret-before-commit"* ]]
+  assert_managed_matches "$original"
+  assert_no_staging_files
+}
+
+@test "rollback failure retains the update error and suppresses success status" {
+  export UPDATE_PINS_HCOM_TAG=v9.9.9
+  export UPDATE_PINS_BREAK_ROLLBACK=hcom-src
+
+  run_update_pins hcom
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"flake update failed before rollback"* ]]
+  [[ "$output" == *"rollback also failed"* ]]
+  [[ "$output" != *"Applied changes:"* ]]
+  [[ "$output" != *"Rolled back candidate changes:"* ]]
+  [ -d "$WORK/flake.lock" ]
 }
 
 @test "successful update preserves restrictive managed file modes" {
@@ -1007,7 +1232,7 @@ make_unrelated_updates_noop() {
   [ "$(jq -r .version "$WORK/nix/packages/difit/package-lock.json")" = "9.9.9" ]
   [ "$(jq -r '.packages[""].version' "$WORK/nix/packages/difit/package-lock.json")" = "9.9.9" ]
   grep -Fq 'url = "github:yoshiko-pg/difit/v9.9.9";' "$WORK/flake.nix"
-  [ "$(jq -r .updated "$WORK/flake.lock")" = "difit-src" ]
+  [ "$(flake_lock_ref difit-src)" = "v9.9.9" ]
   [ "$(cat "$UPDATE_PINS_DIFIT_BUILD_COUNT")" -eq 2 ]
   npm_cwd=$(sed -n 's/^npm-cwd //p' "$UPDATE_PINS_COMMAND_LOG")
   [[ "$npm_cwd" == */package ]]
@@ -1074,7 +1299,7 @@ make_unrelated_updates_noop() {
   [ "$status" -eq 0 ]
   [ "$(jq -r '.assets["x86_64-linux"].hash' "$WORK/nix/pins/agent-browser.json")" = "sha256-1ZOG4K5DXikvvg6825VLde1fs5IgkSd8sZ95j8XVBxg=" ]
   grep -Fq 'url = "github:vercel-labs/agent-browser/v9.9.9";' "$WORK/flake.nix"
-  [ "$(jq -r .updated "$WORK/flake.lock")" = "agent-browser-skill" ]
+  [ "$(flake_lock_ref agent-browser-skill)" = "v9.9.9" ]
   [ "$(cat "$UPDATE_PINS_FLAKE_UPDATE_LOG")" = "agent-browser-skill" ]
   cp "$WORK/nix/pins/agent-browser.json" "$original/nix/pins/agent-browser.json"
   cp "$WORK/flake.nix" "$original/flake.nix"
@@ -1236,6 +1461,10 @@ make_unrelated_updates_noop() {
   run_update_pins
 
   [ "$status" -ne 0 ]
+  [[ "$output" != *"Applied changes:"* ]]
+  section=$(report_section "Rolled back candidate changes:")
+  targets=$(printf '%s\n' "$section" | sed -n 's/^  \([^ ].*\):$/\1/p')
+  [ "$targets" = $'hcom\nagent-slack' ]
   assert_managed_matches "$original"
 }
 
@@ -1255,6 +1484,9 @@ make_unrelated_updates_noop() {
   [[ "$output" == *"update-pins: failed; restoring managed files from backup"* ]]
   [[ "$output" != *"Pins updated."* ]]
   [[ "$output" != *"All pins up to date."* ]]
+  [[ "$output" != *"Applied changes:"* ]]
+  section=$(report_section "Rolled back candidate changes:")
+  [ "$(printf '%s\n' "$section" | sed -n 's/^  \([^ ].*\):$/\1/p')" = "hcom" ]
   assert_managed_matches "$original"
   assert_no_staging_files
 }
@@ -1287,6 +1519,9 @@ make_unrelated_updates_noop() {
   [[ "$output" == *"shellfirm: verification build failed"* ]]
   [ "$(cat "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT")" -eq 2 ]
   [[ "$output" != *"retrying attempt"* ]]
+  [[ "$output" != *"Applied changes:"* ]]
+  section=$(report_section "Rolled back candidate changes:")
+  [ "$(printf '%s\n' "$section" | sed -n 's/^  \([^ ].*\):$/\1/p')" = "shellfirm" ]
   assert_managed_matches "$original"
 }
 
@@ -1328,8 +1563,16 @@ make_unrelated_updates_noop() {
   [ "$(jq -r .srcHash "$WORK/nix/pins/herdr.json")" = "sha256-JaZjQmPBsfb8RpegTiuZBOpLBCqJr1nck+wfXUSEiiY=" ]
   [ "$(jq -r '.assets["x86_64-linux"].hash' "$WORK/nix/pins/herdr.json")" = "sha256-1ZOG4K5DXikvvg6825VLde1fs5IgkSd8sZ95j8XVBxg=" ]
   [ "$(jq -r .hash "$WORK/nix/pins/claude-code-settings-schema.json")" = "sha256-3wrW5DiA8JyQ6/lfGREBeKumiQ3wAQ69p0hQKeK1Q7Q=" ]
-  [ "$(jq -r .updated "$WORK/flake.lock")" = "agent-slack-skill" ]
+  [ "$(flake_lock_ref hcom-src)" = "v1.2.3" ]
+  [ "$(flake_lock_ref agent-slack-skill)" = "v4.5.6" ]
   [ "$(cat "$UPDATE_PINS_FLAKE_UPDATE_LOG")" = $'hcom-src\nagent-slack-skill' ]
+  [ "$(printf '%s\n' "$output" | grep -c '^Applied changes:$')" -eq 1 ]
+  section=$(report_section "Applied changes:")
+  targets=$(printf '%s\n' "$section" | sed -n 's/^  \([^ ].*\):$/\1/p')
+  [ "$targets" = $'hcom\nagent-slack\nshellfirm\nherdr\nclaude-code-settings-schema' ]
+  [[ "$section" != *"sha256-"* ]]
+  [[ "$output" != *"Rolled back candidate changes:"* ]]
+  [[ "$output" != *"secret-before-commit"* ]]
   [ "$(printf '%s\n' "$output" | tail -n 1)" = "Pins updated. Review with 'git diff', verify with 'nix run .#build', then commit." ]
   ! assert_managed_matches "$original"
   assert_no_staging_files
@@ -1354,5 +1597,7 @@ make_unrelated_updates_noop() {
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"All pins up to date."* ]]
+  [[ "$output" != *"Applied changes:"* ]]
+  [[ "$output" != *"Rolled back candidate changes:"* ]]
   assert_managed_matches "$after_first"
 }
