@@ -97,6 +97,8 @@ let
     };
 
   fixedChecks = {
+    update-pins-rust = pkgs.callPackage ../apps/update-pins { };
+
     package-smoke-tests =
       pkgs.runCommand "package-smoke-tests"
         {

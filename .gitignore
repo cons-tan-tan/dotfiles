@@ -1,3 +1,4 @@
 .idea
 result
 .envrc
+/nix/apps/update-pins/target/

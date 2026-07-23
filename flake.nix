@@ -230,6 +230,7 @@
           projectRootFile = "flake.nix";
           programs = {
             nixfmt.enable = true;
+            rustfmt.enable = true;
             shfmt.enable = true;
             ruff-format.enable = true;
           };
@@ -315,8 +316,12 @@
           default = pkgs.mkShell {
             packages = with pkgs; [
               bats
+              cargo
+              clippy
               shellcheck
               jq
+              rustc
+              rustfmt
               sops
               reuse
               (python3.withPackages (ps: [
