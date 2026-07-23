@@ -249,7 +249,9 @@
       mkCommonApps = import ./nix/lib/apps/mk-common-apps.nix { inherit inputs username; };
       appSet = import ./nix/lib/apps/mk-app-set.nix { inherit lib; };
 
-      mkDarwinHostApps = import ./nix/lib/apps/mk-darwin-apps.nix { inherit darwinHostname; };
+      mkDarwinHostApps = import ./nix/lib/apps/mk-darwin-apps.nix {
+        inherit inputs darwinHostname;
+      };
       mkLinuxHostApps = import ./nix/lib/apps/mk-linux-apps.nix {
         inherit
           inputs
@@ -271,7 +273,10 @@
       hostAppsFor = lib.genAttrs systems (
         system:
         if system == darwinSystem then
-          mkDarwinHostApps { pkgs = pkgsFor.${system}; }
+          mkDarwinHostApps {
+            inherit system;
+            pkgs = pkgsFor.${system};
+          }
         else
           mkLinuxHostApps {
             inherit system;

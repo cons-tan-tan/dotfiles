@@ -10,8 +10,9 @@ setup() {
   STUB_DIR="$WORK/stub"
   NIX_ARGS_FILE="$WORK/nix.args"
   SUDO_ARGS_FILE="$WORK/sudo.args"
+  DARWIN_REBUILD_BIN="$WORK/nix store/bin/darwin-rebuild"
 
-  mkdir -p "$STUB_DIR"
+  mkdir -p "$STUB_DIR" "$(dirname "$DARWIN_REBUILD_BIN")"
 
   cat > "$STUB_DIR/nix" <<'EOS'
 #!/bin/sh
@@ -26,6 +27,12 @@ EOS
 printf '%s\n' "$@" > "$SUDO_STUB_ARGS_FILE"
 EOS
   chmod +x "$STUB_DIR/sudo"
+
+  cat > "$DARWIN_REBUILD_BIN" <<'EOS'
+#!/bin/sh
+exit 99
+EOS
+  chmod +x "$DARWIN_REBUILD_BIN"
 }
 
 teardown() {
@@ -57,31 +64,43 @@ teardown() {
   [ ! -e "$NIX_ARGS_FILE" ]
 }
 
-@test "darwin-switch delegates to sudo nix run nix-darwin" {
+@test "darwin-switch delegates to sudo with the pinned darwin-rebuild executable" {
   run env DARWIN_HOSTNAME=testhost \
+    DARWIN_REBUILD_BIN="$DARWIN_REBUILD_BIN" \
     PATH="$STUB_DIR:$PATH" \
     SUDO_STUB_ARGS_FILE="$SUDO_ARGS_FILE" \
     "$BASH_BIN" -eu -o pipefail "$SWITCH_SCRIPT"
 
   [ "$status" -eq 0 ]
   expected=$(printf '%s\n' \
-    "nix" \
-    "run" \
-    "nix-darwin" \
-    "--" \
+    "$DARWIN_REBUILD_BIN" \
     "switch" \
     "--flake" \
     ".#testhost")
   [ "$(cat "$SUDO_ARGS_FILE")" = "$expected" ]
+  [ ! -e "$NIX_ARGS_FILE" ]
 }
 
 @test "darwin-switch fails before invoking sudo when DARWIN_HOSTNAME is missing" {
   run env -u DARWIN_HOSTNAME \
+    DARWIN_REBUILD_BIN="$DARWIN_REBUILD_BIN" \
     PATH="$STUB_DIR:$PATH" \
     SUDO_STUB_ARGS_FILE="$SUDO_ARGS_FILE" \
     "$BASH_BIN" -eu -o pipefail "$SWITCH_SCRIPT"
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"DARWIN_HOSTNAME"* ]]
+  [ ! -e "$SUDO_ARGS_FILE" ]
+}
+
+@test "darwin-switch fails before invoking sudo when DARWIN_REBUILD_BIN is missing" {
+  run env -u DARWIN_REBUILD_BIN \
+    DARWIN_HOSTNAME=testhost \
+    PATH="$STUB_DIR:$PATH" \
+    SUDO_STUB_ARGS_FILE="$SUDO_ARGS_FILE" \
+    "$BASH_BIN" -eu -o pipefail "$SWITCH_SCRIPT"
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"DARWIN_REBUILD_BIN"* ]]
   [ ! -e "$SUDO_ARGS_FILE" ]
 }
