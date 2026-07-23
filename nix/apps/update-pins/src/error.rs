@@ -1,0 +1,68 @@
+use std::io;
+use std::path::PathBuf;
+
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum UpdateError {
+    #[error("failed to execute {program}: {source}")]
+    Spawn {
+        program: String,
+        #[source]
+        source: io::Error,
+    },
+
+    #[error("{command} failed with status {status}: {stderr}")]
+    CommandFailed {
+        command: String,
+        status: String,
+        stderr: String,
+    },
+
+    #[error("{command} returned non-UTF-8 output")]
+    NonUtf8Output { command: String },
+
+    #[error("failed to access {path}: {source}")]
+    Io {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+
+    #[error("invalid JSON in {path}: {source}")]
+    InvalidJson {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+
+    #[error("{path}: expected a JSON object")]
+    ExpectedObject { path: PathBuf },
+
+    #[error("{path}: missing or invalid string field {field}")]
+    InvalidStringField { path: PathBuf, field: String },
+
+    #[error("update-pins: managed files already have {kind} changes; refusing to overwrite them")]
+    DirtyManagedFiles { kind: &'static str },
+
+    #[error("update-pins: another update-pins process is already running")]
+    AlreadyRunning,
+
+    #[error("update-pins: managed path is outside the repository: {0}")]
+    UnsafeManagedPath(PathBuf),
+
+    #[error("update-pins: refusing to modify unmanaged path: {0}")]
+    UnmanagedPath(PathBuf),
+
+    #[error("update-pins: rollback failed: {0}")]
+    Rollback(String),
+}
+
+impl UpdateError {
+    pub fn io(path: impl Into<PathBuf>, source: io::Error) -> Self {
+        Self::Io {
+            path: path.into(),
+            source,
+        }
+    }
+}

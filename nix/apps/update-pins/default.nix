@@ -1,4 +1,5 @@
 {
+  git,
   lib,
   rustPlatform,
 }:
@@ -17,6 +18,8 @@ rustPlatform.buildRustPackage {
   };
 
   cargoLock.lockFile = ./Cargo.lock;
+
+  nativeCheckInputs = [ git ];
 
   meta = {
     description = "Synchronize repository pins with their upstream releases";

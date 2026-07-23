@@ -1,9 +1,7 @@
-mod cli;
-
 use std::process::ExitCode;
 
 use clap::Parser;
-use cli::Cli;
+use update_pins::cli::Cli;
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
