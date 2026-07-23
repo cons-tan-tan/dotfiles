@@ -67,8 +67,9 @@ in
           "Bash(gh run view *)"
           "Bash(gh repo view *)"
           "Bash(gh search *)"
-          # These broad command patterns remain safe only because the Rust
-          # wrappers positively validate every forwarded argument.
+          # These broad command patterns are auto-approved because the Rust
+          # wrappers positively validate every forwarded argument. gh-api-get
+          # fixes the host to GitHub; curl-fetch permits only GET/HEAD requests.
           "Bash(gh api-get *)"
           "Bash(curl-fetch *)"
         ]
