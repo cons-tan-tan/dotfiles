@@ -1,12 +1,24 @@
 #!/usr/bin/env bats
-# apply-secrets 本体 (nix/apps/apply-secrets/apply-secrets.sh) の分岐テスト。
-# sops をスタブし、HOME / ソースルート / マニフェストを fixture に差し替える。
+# Nix で build した apply-secrets を synthetic manifest と sops stub で検査する。
+
+setup_file() {
+  if [ -z "${APPLY_SECRETS_TEST_BIN:-}" ]; then
+    echo "APPLY_SECRETS_TEST_BIN must be set to the built apply-secrets binary" >&2
+    return 1
+  fi
+  if [[ "$APPLY_SECRETS_TEST_BIN" != /* ]]; then
+    echo "APPLY_SECRETS_TEST_BIN must be an absolute path" >&2
+    return 1
+  fi
+  if [ ! -x "$APPLY_SECRETS_TEST_BIN" ]; then
+    echo "APPLY_SECRETS_TEST_BIN is not executable: $APPLY_SECRETS_TEST_BIN" >&2
+    return 1
+  fi
+}
 
 setup() {
-  REPO_ROOT="$(git rev-parse --show-toplevel)"
   BASH_BIN="$(command -v bash)"
-  SCRIPT="$REPO_ROOT/nix/apps/apply-secrets/apply-secrets.sh"
-  RENDERERS_DIR="$REPO_ROOT/nix/apps/apply-secrets/renderers"
+  APP="$APPLY_SECRETS_TEST_BIN"
   WORK="$(mktemp -d)"
   FAKE_HOME="$WORK/home"
   SRC_ROOT="$WORK/src"
@@ -25,6 +37,10 @@ if [ "${SOPS_STUB_FAIL:-}" = "1" ]; then
 fi
 for arg in "$@"; do
   if [ "$arg" = "--output-type" ]; then
+    if [ -n "${SOPS_STUB_JSON_FILE:-}" ]; then
+      cat "$SOPS_STUB_JSON_FILE"
+      exit 0
+    fi
     if [ "${SOPS_STUB_JSON_MODE:-valid}" = "malformed" ]; then
       cat <<'JSON'
 {
@@ -69,23 +85,23 @@ done
 echo "decrypted-content"
 EOS
   chmod +x "$STUB_DIR/sops"
-  export PATH="$STUB_DIR:$PATH"
 }
 
 teardown() {
   rm -rf "$WORK"
 }
 
-# manifest JSON を書いてスクリプトを実行する共通ヘルパ
+# manifest JSON を書いてbinaryを実行する共通helper
 run_apply() {
   local manifest=$1
   shift
   printf '%s' "$manifest" > "$WORK/manifest.json"
+  chmod 600 "$WORK/manifest.json"
   run env HOME="$FAKE_HOME" \
     APPLY_SECRETS_ROOT="$SRC_ROOT" \
     APPLY_SECRETS_MANIFEST="$WORK/manifest.json" \
-    APPLY_SECRETS_RENDERERS_DIR="$RENDERERS_DIR" \
-    bash -eu -o pipefail "$SCRIPT" "$@"
+    APPLY_SECRETS_SOPS_BIN="$STUB_DIR/sops" \
+    "$APP" "$@"
 }
 
 # GNU (stat -c) と BSD (stat -f) の両対応
@@ -117,7 +133,7 @@ SSH_MANIFEST='[{"src":"secrets/ssh.yaml","dst":".ssh/config.d/50-private.conf","
 }
 
 @test "intermediate dirs created by apply-secrets are not world-accessible" {
-  umask 022
+  umask 0777
   run_apply "$MANIFEST"
   [ "$status" -eq 0 ]
   [ "$(mode_of "$FAKE_HOME/.ssh")" = "700" ]
@@ -157,7 +173,7 @@ Host lab lab.local
 }
 
 @test "ssh-config-yaml renderer validates and renders JSON input" {
-  run jq -r -f "$RENDERERS_DIR/ssh-config-yaml.jq" <<'JSON'
+  cat > "$WORK/ssh.json" <<'JSON'
 {
   "hosts": [
     {
@@ -171,8 +187,10 @@ Host lab lab.local
   ]
 }
 JSON
+  export SOPS_STUB_JSON_FILE="$WORK/ssh.json"
+  run_apply "$SSH_MANIFEST"
   [ "$status" -eq 0 ]
-  [ "$output" = "# Managed by apply-secrets - do not edit directly
+  [ "$(cat "$FAKE_HOME/.ssh/config.d/50-private.conf")" = "# Managed by apply-secrets - do not edit directly
 
 Host work
     HostName 192.0.2.10
@@ -181,7 +199,7 @@ Host work
 }
 
 @test "ssh-config-yaml renderer rejects host pattern whitespace" {
-  run jq -r -f "$RENDERERS_DIR/ssh-config-yaml.jq" <<'JSON'
+  cat > "$WORK/ssh.json" <<'JSON'
 {
   "hosts": [
     {
@@ -193,12 +211,15 @@ Host work
   ]
 }
 JSON
-  [ "$status" -ne 0 ]
+  export SOPS_STUB_JSON_FILE="$WORK/ssh.json"
+  run_apply "$SSH_MANIFEST"
+  [ "$status" -eq 0 ]
   [[ "$output" == *"without whitespace or control characters"* ]]
+  [ ! -e "$FAKE_HOME/.ssh/config.d/50-private.conf" ]
 }
 
 @test "ssh-config-yaml renderer rejects line breaks in option values" {
-  run jq -r -f "$RENDERERS_DIR/ssh-config-yaml.jq" <<'JSON'
+  cat > "$WORK/ssh.json" <<'JSON'
 {
   "hosts": [
     {
@@ -210,8 +231,11 @@ JSON
   ]
 }
 JSON
-  [ "$status" -ne 0 ]
+  export SOPS_STUB_JSON_FILE="$WORK/ssh.json"
+  run_apply "$SSH_MANIFEST"
+  [ "$status" -eq 0 ]
   [[ "$output" == *"option values must not contain line breaks"* ]]
+  [ ! -e "$FAKE_HOME/.ssh/config.d/50-private.conf" ]
 }
 
 @test "ssh-config-yaml render failure skips and leaves no temp file" {
@@ -221,7 +245,7 @@ JSON
   [[ "$output" == *"decryption/rendering of secrets/ssh.yaml failed"* ]]
   [[ "$output" == *"1 file(s) skipped"* ]]
   [ ! -e "$FAKE_HOME/.ssh/config.d/50-private.conf" ]
-  [ -z "$(find "$FAKE_HOME/.ssh/config.d" -name '50-private.conf.*' 2>/dev/null)" ]
+  [ -z "$(find "$FAKE_HOME/.ssh/config.d" -type f 2>/dev/null)" ]
 }
 
 @test "unsupported format is a manifest error" {
@@ -262,8 +286,21 @@ JSON
   [[ "$output" == *"decryption/rendering of secrets/demo.conf failed"* ]]
   [[ "$output" == *"1 file(s) skipped"* ]]
   [ ! -e "$FAKE_HOME/.ssh/config.d/50-demo.conf" ]
-  # mktemp の残骸 (50-demo.conf.XXXXXX) が無いこと
-  [ -z "$(find "$FAKE_HOME/.ssh/config.d" -name '50-demo.conf.*' 2>/dev/null)" ]
+  [ -z "$(find "$FAKE_HOME/.ssh/config.d" -type f 2>/dev/null)" ]
+}
+
+@test "one rendering failure does not prevent later entries" {
+  mkdir -p "$FAKE_HOME/.ssh/config.d"
+  printf 'keep\n' > "$FAKE_HOME/.ssh/config.d/first"
+  export SOPS_STUB_JSON_MODE=malformed
+  run_apply '[
+    {"src":"secrets/ssh.yaml","dst":".ssh/config.d/first","format":"ssh-config-yaml","mode":"600","dirMode":"700"},
+    {"src":"secrets/demo.conf","dst":".ssh/config.d/second","mode":"600","dirMode":"700"}
+  ]'
+  [ "$status" -eq 0 ]
+  [ "$(cat "$FAKE_HOME/.ssh/config.d/first")" = "keep" ]
+  [ "$(cat "$FAKE_HOME/.ssh/config.d/second")" = "decrypted-content" ]
+  [[ "$output" == *"1 file(s) skipped"* ]]
 }
 
 @test "dst escaping HOME is rejected" {
@@ -273,4 +310,87 @@ JSON
   [[ "$output" == *"escapes HOME"* ]]
   [[ "$output" != *"decryption failed"* ]]
   [ ! -e "$WORK/evil.conf" ]
+}
+
+@test "malformed manifest is rejected before writing" {
+  run_apply '[{"src":"secrets/demo.conf"'
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"manifest error: invalid JSON"* ]]
+  [ ! -e "$FAKE_HOME/.ssh" ]
+}
+
+@test "non-array manifest is rejected before writing" {
+  run_apply '{"src":"secrets/demo.conf"}'
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"manifest error: invalid JSON"* ]]
+  [ ! -e "$FAKE_HOME/.ssh" ]
+}
+
+@test "all entries are preflighted before any write" {
+  run_apply '[
+    {"src":"secrets/demo.conf","dst":".ssh/config.d/first","mode":"600","dirMode":"700"},
+    {"src":"secrets/demo.conf","dst":"../escape","mode":"600","dirMode":"700"}
+  ]'
+  [ "$status" -eq 1 ]
+  [ ! -e "$FAKE_HOME/.ssh/config.d/first" ]
+}
+
+@test "invalid mode and duplicate destinations are rejected" {
+  run_apply '[{"src":"secrets/demo.conf","dst":"out","mode":"68x","dirMode":"700"}]'
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"mode must be a 3- or 4-digit octal string"* ]]
+
+  run_apply '[
+    {"src":"secrets/demo.conf","dst":"out","mode":"600","dirMode":"700"},
+    {"src":"secrets/demo.conf","dst":"out","mode":"600","dirMode":"700"}
+  ]'
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"duplicate dst"* ]]
+}
+
+@test "source symlink is rejected" {
+  ln -s "$SRC_ROOT/secrets/demo.conf" "$SRC_ROOT/secrets/link.conf"
+  run_apply '[{"src":"secrets/link.conf","dst":"out","mode":"600","dirMode":"700"}]'
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"contains a symlink"* ]]
+  [ ! -e "$FAKE_HOME/out" ]
+}
+
+@test "destination parent symlink is rejected without touching target" {
+  mkdir -p "$WORK/outside"
+  ln -s "$WORK/outside" "$FAKE_HOME/link"
+  run_apply '[{"src":"secrets/demo.conf","dst":"link/private","mode":"600","dirMode":"700"}]'
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"contains a symlink"* ]]
+  [ ! -e "$WORK/outside/private" ]
+}
+
+@test "destination symlink is rejected without touching target" {
+  printf 'keep\n' > "$WORK/outside"
+  ln -s "$WORK/outside" "$FAKE_HOME/private"
+  run_apply '[{"src":"secrets/demo.conf","dst":"private","mode":"600","dirMode":"700"}]'
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"contains a symlink"* ]]
+  [ "$(cat "$WORK/outside")" = "keep" ]
+}
+
+@test "dry-run still performs full preflight" {
+  run_apply '[{"src":"secrets/nope","dst":"out","mode":"600","dirMode":"700"}]' --dry-run
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"is not in the repo"* ]]
+  [ ! -e "$FAKE_HOME/out" ]
+}
+
+@test "unknown option is a usage error" {
+  run_apply "$MANIFEST" --unknown
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"unknown argument"* ]]
+  [ ! -e "$FAKE_HOME/.ssh" ]
+}
+
+@test "help does not hide an unknown option" {
+  run_apply "$MANIFEST" --help --unknown
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"unknown argument"* ]]
+  [ ! -e "$FAKE_HOME/.ssh" ]
 }

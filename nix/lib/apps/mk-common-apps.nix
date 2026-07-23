@@ -15,6 +15,7 @@ let
 
   nixCustomSettingsFile = pkgs.writeText "dotfiles-nix-custom.conf" nixCustomSettings.text;
   updatePinsCore = pkgs.callPackage ../../apps/update-pins { };
+  applySecretsCore = pkgs.callPackage ../../apps/apply-secrets { };
 
   updateScript = mkScript "flake-update" {
     text = ''
@@ -56,24 +57,13 @@ let
 
   secretsManifestFile = pkgs.writeText "secrets-manifest.json" (builtins.toJSON secretsManifest);
 
-  applySecretsRenderers = pkgs.linkFarm "apply-secrets-renderers" [
-    {
-      name = "ssh-config-yaml.jq";
-      path = ../../apps/apply-secrets/renderers/ssh-config-yaml.jq;
-    }
-  ];
-
   applySecretsScript = mkScript "apply-secrets" {
-    runtimeInputs = [
-      pkgs.gnupg
-      pkgs.sops
-      pkgs.jq
-    ];
+    runtimeInputs = [ pkgs.gnupg ];
     text = ''
       export APPLY_SECRETS_ROOT=${inputs.self}
       export APPLY_SECRETS_MANIFEST=${secretsManifestFile}
-      export APPLY_SECRETS_RENDERERS_DIR=${applySecretsRenderers}
-      ${builtins.readFile ../../apps/apply-secrets/apply-secrets.sh}
+      export APPLY_SECRETS_SOPS_BIN=${lib.getExe pkgs.sops}
+      exec ${lib.getExe applySecretsCore} "$@"
     '';
   };
 
