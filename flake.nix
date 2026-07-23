@@ -339,7 +339,6 @@
               jq
               rustc
               rustfmt
-              safeFetch.core
               curlFetch
               sops
               reuse
