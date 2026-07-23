@@ -739,6 +739,8 @@ mod tests {
     fn replace_preserves_special_permission_bits() {
         use std::os::unix::fs::PermissionsExt as _;
 
+        const REQUESTED_MODE: u32 = 0o4750;
+
         let repository = TestRepository::new();
         let pin = repository.path().join("nix/pins/example.json");
         std::fs::set_permissions(&pin, Permissions::from_mode(0o750)).expect("make pin executable");
@@ -747,12 +749,23 @@ mod tests {
             repository.path(),
             ["commit", "-q", "-m", "make fixture executable"],
         );
-        if let Err(error) = std::fs::set_permissions(&pin, Permissions::from_mode(0o4750)) {
+        if let Err(error) = std::fs::set_permissions(&pin, Permissions::from_mode(REQUESTED_MODE)) {
             assert_eq!(
                 error.kind(),
                 std::io::ErrorKind::PermissionDenied,
                 "unexpected error setting special permission bits"
             );
+            return;
+        }
+        let configured_mode = std::fs::metadata(&pin)
+            .expect("pin metadata after setting special permission bits")
+            .permissions()
+            .mode()
+            & 0o7777;
+        if configured_mode != REQUESTED_MODE {
+            // Darwin's Nix sandbox can report success without retaining the
+            // rejected setugid bit.
+            assert_eq!(configured_mode, 0o750);
             return;
         }
 
@@ -769,7 +782,7 @@ mod tests {
                 .permissions()
                 .mode()
                 & 0o7777,
-            0o4750
+            configured_mode
         );
     }
 
