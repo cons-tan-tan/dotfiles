@@ -82,6 +82,7 @@ let
   updatePinsCore = pkgs.callPackage ../apps/update-pins { };
   updatePinsSmoke = pkgs.callPackage ../apps/update-pins/smoke.nix { };
   applySecretsCore = pkgs.callPackage ../apps/apply-secrets { };
+  applyNixSettingsCore = pkgs.callPackage ../apps/apply-nix-settings { };
   safeFetch = pkgs.callPackage ../packages/safe-fetch { };
   curlFetch = pkgs.dotfilesPackages.curl-fetch;
   ghApiGet = pkgs.dotfilesPackages.gh-api-get;
@@ -120,6 +121,7 @@ let
     update-pins-rust = updatePinsCore;
     update-pins-smoke = updatePinsSmoke;
     apply-secrets-rust = applySecretsCore;
+    apply-nix-settings-rust = applyNixSettingsCore;
     safe-fetch-rust = safeFetchCheck;
 
     workflow-lint-tests =
@@ -192,12 +194,14 @@ let
             pkgs.python3
             pkgs.yq-go
             applySecretsCore
+            applyNixSettingsCore
             ghApiGet
             safeFetch.core
             curlFetch
             updatePinsCore
           ];
           APPLY_SECRETS_TEST_BIN = lib.getExe applySecretsCore;
+          APPLY_NIX_SETTINGS_TEST_BIN = lib.getExe applyNixSettingsCore;
           CURL_FETCH_PUBLIC_BIN = lib.getExe curlFetch;
           CURL_FETCH_TEST_BIN = "${safeFetch.core}/bin/curl-fetch";
           GH_API_GET_EXTENSION_ROOT = ghApiGet;

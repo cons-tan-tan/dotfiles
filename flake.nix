@@ -313,6 +313,7 @@
           pkgs = pkgsFor.${system};
           updatePinsCore = pkgs.callPackage ./nix/apps/update-pins { };
           applySecretsCore = pkgs.callPackage ./nix/apps/apply-secrets { };
+          applyNixSettingsCore = pkgs.callPackage ./nix/apps/apply-nix-settings { };
           safeFetch = pkgs.callPackage ./nix/packages/safe-fetch { };
           curlFetch = pkgs.dotfilesPackages.curl-fetch;
           ghApiGet = pkgs.dotfilesPackages.gh-api-get;
@@ -320,6 +321,7 @@
         {
           default = pkgs.mkShell {
             APPLY_SECRETS_TEST_BIN = lib.getExe applySecretsCore;
+            APPLY_NIX_SETTINGS_TEST_BIN = lib.getExe applyNixSettingsCore;
             CURL_FETCH_PUBLIC_BIN = lib.getExe curlFetch;
             CURL_FETCH_TEST_BIN = "${safeFetch.core}/bin/curl-fetch";
             GH_API_GET_EXTENSION_ROOT = ghApiGet;
@@ -328,6 +330,7 @@
             UPDATE_PINS_TEST_BIN = lib.getExe updatePinsCore;
             packages = with pkgs; [
               applySecretsCore
+              applyNixSettingsCore
               bats
               cargo
               clippy
