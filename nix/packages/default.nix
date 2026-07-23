@@ -33,6 +33,7 @@ let
   pi = import ./pi {
     inherit (pkgs) callPackage pi;
   };
+  safeFetch = pkgs.callPackage ./safe-fetch { };
 in
 {
   agent-browser = pkgs.callPackage ./agent-browser {
@@ -49,8 +50,10 @@ in
   difit = pkgs.callPackage ./difit {
     difitSource = inputs.difit-src;
   };
-  curl-fetch = pkgs.callPackage ./curl-fetch { };
-  gh-api-get = pkgs.callPackage ./gh-api-get { };
+  curl-fetch = safeFetch.curlFetch;
+  gh-api-get = pkgs.callPackage ./gh-api-get {
+    safeFetchCore = safeFetch.core;
+  };
   ghq-fetch-all = pkgs.callPackage ./ghq-fetch-all { };
   hunk = import ./hunk {
     inherit (pkgs) callPackage;

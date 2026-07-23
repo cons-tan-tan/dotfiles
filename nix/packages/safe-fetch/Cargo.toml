@@ -1,0 +1,18 @@
+[package]
+name = "safe-fetch"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "CC0-1.0"
+autobins = false
+
+[[bin]]
+name = "curl-fetch"
+path = "src/bin/curl-fetch.rs"
+
+[[bin]]
+name = "gh-api-get"
+path = "src/bin/gh-api-get.rs"
+
+[dev-dependencies]
+proptest = "1.8"

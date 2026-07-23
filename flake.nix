@@ -313,20 +313,31 @@
           pkgs = pkgsFor.${system};
           updatePinsCore = pkgs.callPackage ./nix/apps/update-pins { };
           applySecretsCore = pkgs.callPackage ./nix/apps/apply-secrets { };
+          safeFetch = pkgs.callPackage ./nix/packages/safe-fetch { };
+          curlFetch = pkgs.dotfilesPackages.curl-fetch;
+          ghApiGet = pkgs.dotfilesPackages.gh-api-get;
         in
         {
           default = pkgs.mkShell {
             APPLY_SECRETS_TEST_BIN = lib.getExe applySecretsCore;
+            CURL_FETCH_PUBLIC_BIN = lib.getExe curlFetch;
+            CURL_FETCH_TEST_BIN = "${safeFetch.core}/bin/curl-fetch";
+            GH_API_GET_EXTENSION_ROOT = ghApiGet;
+            GH_API_GET_PUBLIC_BIN = lib.getExe ghApiGet;
+            GH_API_GET_TEST_BIN = "${safeFetch.core}/bin/gh-api-get";
             UPDATE_PINS_TEST_BIN = lib.getExe updatePinsCore;
             packages = with pkgs; [
               applySecretsCore
               bats
               cargo
               clippy
+              ghApiGet
               shellcheck
               jq
               rustc
               rustfmt
+              safeFetch.core
+              curlFetch
               sops
               reuse
               updatePinsCore
