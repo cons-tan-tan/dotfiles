@@ -49,25 +49,6 @@ nix run .#apply-secrets
 
 `--check`は、更新候補の取得、hash計算、package build、検証までを通常の更新と同じtransactionで実行し、成功後に管理fileを元の内容・mode・存在状態へ戻す。network access、download cache、Nix storeへのbuild結果は発生するため、副作用のないdry-runではない。同じversionも含めて配布物とbuild contractを再検証する場合は、`--force --check <target>`を使う。
 
-## update-pinsの上流smoke test
-
-`.github/workflows/update-pins-smoke.yaml`は、GitHub Releases、npmレジストリ、Codex appcast、shellfirmの配布形式を週1回検査する。続けて一時clone内で`nix run .#update-pins -- --force --check difit`を実行する。これにより、npmレジストリのtarball、上流pnpm lock、依存hash、package build、transaction rollbackまでの本番経路を確認する。cloneと元のcheckoutがcleanなことも検査する。手動実行には対応するが、pushやpull requestでは実行せず、repositoryへの書き込み権限も持たない。通常のflake checkはprivateなsmoke binaryとmock testだけをビルドし、外部networkへ接続しない。
-
-手元でlive smokeを実行する場合は、publicなflake appやpackageを追加せず、private checkの出力を直接起動する。
-
-```sh
-update_pins_smoke=$(
-  nix build \
-    .#checks.$(nix eval --impure --raw --expr builtins.currentSystem).update-pins-smoke \
-    --no-link \
-    --print-out-paths
-)
-"$update_pins_smoke/bin/update-pins-smoke"
-git status --short
-```
-
-失敗時の診断は、上流形式の変更、一時的なnetwork障害、rate limit、実行環境の問題を区別する。smoke binaryは一時ディレクトリとNix storeだけを使い、pinやlockfileを更新しない。
-
 ## 構成
 
 ```text
