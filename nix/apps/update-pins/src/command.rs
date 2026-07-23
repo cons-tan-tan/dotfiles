@@ -150,21 +150,19 @@ impl CommandRunner for SystemCommandRunner {
             std::thread::spawn(move || read_at_most(stderr, stderr_limit.saturating_add(1)));
         let started = Instant::now();
         let (status, timed_out) = loop {
-            if let Some(status) = child.try_wait().map_err(|source| UpdateError::Spawn {
-                program: command.program.to_string_lossy().into_owned(),
-                source,
-            })? {
+            if let Some(status) = child
+                .try_wait()
+                .map_err(|source| process_runtime_error(command, "wait for", source))?
+            {
                 break (status, false);
             }
             if started.elapsed() >= LIMITED_COMMAND_TIMEOUT {
-                child.kill().map_err(|source| UpdateError::Spawn {
-                    program: command.program.to_string_lossy().into_owned(),
-                    source,
-                })?;
-                let status = child.wait().map_err(|source| UpdateError::Spawn {
-                    program: command.program.to_string_lossy().into_owned(),
-                    source,
-                })?;
+                child
+                    .kill()
+                    .map_err(|source| process_runtime_error(command, "terminate", source))?;
+                let status = child
+                    .wait()
+                    .map_err(|source| process_runtime_error(command, "reap", source))?;
                 break (status, true);
             }
             std::thread::sleep(Duration::from_millis(10));
@@ -172,11 +170,10 @@ impl CommandRunner for SystemCommandRunner {
         let stdout = join_reader(stdout_reader, command, "stdout")?;
         let stderr = join_reader(stderr_reader, command, "stderr")?;
         if timed_out {
-            return Err(UpdateError::message(format!(
-                "{}: exceeded {} second execution limit",
-                command.display(),
-                LIMITED_COMMAND_TIMEOUT.as_secs()
-            )));
+            return Err(UpdateError::CommandTimedOut {
+                program: command.program.to_string_lossy().into_owned(),
+                seconds: LIMITED_COMMAND_TIMEOUT.as_secs(),
+            });
         }
         enforce_output_limits(
             command,
@@ -203,6 +200,17 @@ impl CommandRunner for SystemCommandRunner {
             })
             .unwrap_or(false)
     }
+}
+
+fn process_runtime_error(
+    command: &CommandSpec,
+    operation: &str,
+    source: std::io::Error,
+) -> UpdateError {
+    UpdateError::message(format!(
+        "{}: failed to {operation} process: {source}",
+        command.display()
+    ))
 }
 
 fn configured_process(command: &CommandSpec) -> Command {

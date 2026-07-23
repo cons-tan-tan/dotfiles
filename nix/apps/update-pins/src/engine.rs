@@ -1,4 +1,4 @@
-use crate::cli::Target;
+use crate::cli::{Invocation, Target};
 use crate::command::{CommandRunner, SystemCommandRunner};
 use crate::error::UpdateError;
 use crate::registry::{TARGET_SPECS, target_spec, unimplemented_target_names};
@@ -6,11 +6,15 @@ use crate::targets::run_target;
 use crate::transaction::{Repository, Transaction};
 use crate::validation::validate_target_input;
 
-pub fn run(target: Target) -> Result<(), UpdateError> {
-    run_with_runner(target, &SystemCommandRunner)
+pub fn run(invocation: Invocation) -> Result<(), UpdateError> {
+    run_with_runner(invocation, &SystemCommandRunner)
 }
 
-pub fn run_with_runner<R: CommandRunner>(target: Target, runner: &R) -> Result<(), UpdateError> {
+pub fn run_with_runner<R: CommandRunner>(
+    invocation: Invocation,
+    runner: &R,
+) -> Result<(), UpdateError> {
+    let target = invocation.target;
     let targets = selected_targets(target)?;
     let managed_paths = selected_managed_paths(&targets);
     let repository = Repository::discover(runner)?;
@@ -23,7 +27,7 @@ pub fn run_with_runner<R: CommandRunner>(target: Target, runner: &R) -> Result<(
 
     let result = targets.iter().copied().try_for_each(|target| {
         println!("== {}", target.name());
-        let result = run_target(target, runner, &mut transaction)?;
+        let result = run_target(target, invocation.policy, runner, &mut transaction)?;
         changed |= result.changed;
         Ok::<(), UpdateError>(())
     });

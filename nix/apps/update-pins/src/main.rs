@@ -17,7 +17,7 @@ fn main() -> ExitCode {
             print!("{}", usage());
             ExitCode::SUCCESS
         }
-        ParseAction::Run(target) => match engine::run(target) {
+        ParseAction::Run(invocation) => match engine::run(invocation) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
                 eprintln!("{error}");

@@ -11,9 +11,11 @@ use quick_xml::name::ResolveResult;
 use quick_xml::reader::NsReader;
 use rawzip::{CompressionMethod, RECOMMENDED_BUFFER_SIZE, ZipArchive, ZipArchiveEntryWayfinder};
 
-use crate::command::{CommandRunner, CommandSpec, run_checked_limited};
+use crate::command::CommandRunner;
 use crate::error::UpdateError;
+use crate::fetch::download_bytes;
 use crate::pins::PinDocument;
+use crate::policy::RunPolicy;
 use crate::prefetch::prefetch_result;
 use crate::registry::TargetSpec;
 use crate::targets::validate_release_version;
@@ -21,7 +23,6 @@ use crate::transaction::Transaction;
 
 const MAX_APPCAST_BYTES: usize = 4 * 1024 * 1024;
 const MAX_APPCAST_DEPTH: usize = 128;
-const MAX_APPCAST_STDERR_BYTES: usize = 64 * 1024;
 const MAX_PLIST_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_PLIST_DEPTH: usize = 128;
 const MAX_PLIST_EVENTS: usize = 16_384;
@@ -111,6 +112,7 @@ enum ElementKind {
 pub fn update<R: CommandRunner>(
     spec: &TargetSpec,
     pin_path: &str,
+    policy: RunPolicy,
     runner: &R,
     transaction: &mut Transaction<'_, R>,
 ) -> Result<bool, UpdateError> {
@@ -127,17 +129,17 @@ pub fn update<R: CommandRunner>(
         )));
     }
 
-    let command = CommandSpec::new("curl")
-        .args(["-fsSL", &appcast_url])
-        .current_dir(transaction.root());
-    let output = run_checked_limited(
+    let appcast = download_bytes(
+        policy.retry,
         runner,
-        &command,
+        transaction.root(),
+        spec.name,
+        "appcast download",
+        &appcast_url,
         MAX_APPCAST_BYTES,
-        MAX_APPCAST_STDERR_BYTES,
     )?;
-    let latest = parse_appcast(&output.stdout, pin_path)?;
-    if latest.version == current_version && latest.url == current_url {
+    let latest = parse_appcast(&appcast, pin_path)?;
+    if latest.version == current_version && latest.url == current_url && !policy.force {
         println!("{}: {current_version} (up to date)", spec.name);
         return Ok(false);
     }
@@ -148,6 +150,7 @@ pub fn update<R: CommandRunner>(
     );
     let prefetched = prefetch_result(
         &format!("{}: {pin_path}: hash", spec.name),
+        policy,
         runner,
         transaction.root(),
         &latest.url,

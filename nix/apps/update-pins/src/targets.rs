@@ -10,7 +10,9 @@ use crate::cli::Target;
 use crate::codex_app;
 use crate::command::{CommandRunner, CommandSpec, run_checked};
 use crate::error::UpdateError;
+use crate::fetch::{download_bytes, gh_api_bytes};
 use crate::pins::PinDocument;
+use crate::policy::RunPolicy;
 use crate::prefetch::{prefetch_hash as prefetch, prefetch_result};
 use crate::registry::{AssetNaming, TargetKind, TargetSpec, target_spec};
 use crate::transaction::Transaction;
@@ -26,6 +28,7 @@ pub fn is_implemented(target: Target) -> bool {
 
 pub fn run_target<R: CommandRunner>(
     target: Target,
+    policy: RunPolicy,
     runner: &R,
     transaction: &mut Transaction<'_, R>,
 ) -> Result<TargetResult, UpdateError> {
@@ -35,12 +38,17 @@ pub fn run_target<R: CommandRunner>(
             target.name()
         )));
     };
-    let changed = match spec.kind {
+    let before = spec
+        .managed_paths
+        .iter()
+        .map(|path| transaction.read(path).map(|bytes| (*path, bytes)))
+        .collect::<Result<Vec<_>, _>>()?;
+    let _reported_changed = match spec.kind {
         TargetKind::PairedRelease {
             repository,
             pin,
             input,
-        } => update_paired_release(spec, repository, pin, input, runner, transaction)?,
+        } => update_paired_release(spec, repository, pin, input, policy, runner, transaction)?,
         TargetKind::Release {
             repository,
             pin,
@@ -48,19 +56,22 @@ pub fn run_target<R: CommandRunner>(
             source_hash,
         } => update_release(
             spec,
-            repository,
-            pin,
-            asset_naming,
-            source_hash,
+            ReleaseUpdate {
+                repository,
+                pin_path: pin,
+                asset_naming,
+                source_hash,
+            },
+            policy,
             runner,
             transaction,
         )?,
-        TargetKind::UrlHash { pin } => update_url_hash(spec, pin, runner, transaction)?,
+        TargetKind::UrlHash { pin } => update_url_hash(spec, pin, policy, runner, transaction)?,
         TargetKind::Shellfirm {
             repository,
             pin,
             package,
-        } => update_shellfirm(spec, repository, pin, package, runner, transaction)?,
+        } => update_shellfirm(spec, repository, pin, package, policy, runner, transaction)?,
         TargetKind::Difit {
             repository,
             npm_package,
@@ -76,10 +87,11 @@ pub fn run_target<R: CommandRunner>(
             input,
             lock,
             package,
+            policy,
             runner,
             transaction,
         )?,
-        TargetKind::CodexApp { pin } => codex_app::update(spec, pin, runner, transaction)?,
+        TargetKind::CodexApp { pin } => codex_app::update(spec, pin, policy, runner, transaction)?,
         TargetKind::Unimplemented => {
             return Err(UpdateError::message(format!(
                 "update-pins: Rust updater for {} is not yet implemented",
@@ -87,6 +99,11 @@ pub fn run_target<R: CommandRunner>(
             )));
         }
     };
+    let changed = before
+        .into_iter()
+        .try_fold(false, |changed, (path, bytes)| {
+            Ok::<_, UpdateError>(changed || transaction.read(path)? != bytes)
+        })?;
     Ok(TargetResult { changed })
 }
 
@@ -95,10 +112,11 @@ fn update_paired_release<R: CommandRunner>(
     repository: &str,
     pin_path: &str,
     input: &str,
+    policy: RunPolicy,
     runner: &R,
     transaction: &mut Transaction<'_, R>,
 ) -> Result<bool, UpdateError> {
-    let tag = latest_tag(runner, transaction.root(), repository)?;
+    let tag = latest_tag(policy, runner, transaction.root(), repository)?;
     let Some(version) = tag.strip_prefix('v') else {
         return Err(UpdateError::message(format!(
             "{}: unsupported release tag '{tag}'",
@@ -109,7 +127,7 @@ fn update_paired_release<R: CommandRunner>(
 
     let flake = transaction.read("flake.nix")?;
     let current = paired_version(&flake, repository)?;
-    if version == current {
+    if version == current && !policy.force {
         println!("{}: {current} (up to date)", spec.name);
         return Ok(false);
     }
@@ -127,30 +145,44 @@ fn update_paired_release<R: CommandRunner>(
         &tag,
         version,
         AssetNaming::NameField,
+        policy,
         runner,
         transaction.root(),
     )?;
     write_pin(transaction, pin_path, &pin)?;
 
-    update_paired_flake_input(input, repository, version, &flake, runner, transaction)?;
+    if version != current {
+        update_paired_flake_input(input, repository, version, &flake, runner, transaction)?;
+    }
     Ok(true)
+}
+
+struct ReleaseUpdate<'a> {
+    repository: &'a str,
+    pin_path: &'a str,
+    asset_naming: AssetNaming,
+    source_hash: bool,
 }
 
 fn update_release<R: CommandRunner>(
     spec: &TargetSpec,
-    repository: &str,
-    pin_path: &str,
-    asset_naming: AssetNaming,
-    source_hash: bool,
+    release: ReleaseUpdate<'_>,
+    policy: RunPolicy,
     runner: &R,
     transaction: &mut Transaction<'_, R>,
 ) -> Result<bool, UpdateError> {
+    let ReleaseUpdate {
+        repository,
+        pin_path,
+        asset_naming,
+        source_hash,
+    } = release;
     let mut pin = load_pin(transaction, pin_path)?;
     let current = pin.string(&["version"])?.to_owned();
-    let tag = latest_tag(runner, transaction.root(), repository)?;
+    let tag = latest_tag(policy, runner, transaction.root(), repository)?;
     let version = tag.strip_prefix('v').unwrap_or(&tag);
     validate_release_version(spec.name, version)?;
-    if version == current {
+    if version == current && !policy.force {
         println!("{}: {current} (up to date)", spec.name);
         return Ok(false);
     }
@@ -168,6 +200,7 @@ fn update_release<R: CommandRunner>(
         &tag,
         version,
         asset_naming,
+        policy,
         runner,
         transaction.root(),
     )?;
@@ -177,6 +210,7 @@ fn update_release<R: CommandRunner>(
             format!("https://github.com/{repository}/archive/refs/tags/v{version}.tar.gz");
         let hash = prefetch(
             &format!("{}: {pin_path}: srcHash", spec.name),
+            policy,
             runner,
             transaction.root(),
             &source_url,
@@ -191,6 +225,7 @@ fn update_release<R: CommandRunner>(
 fn update_url_hash<R: CommandRunner>(
     spec: &TargetSpec,
     pin_path: &str,
+    policy: RunPolicy,
     runner: &R,
     transaction: &mut Transaction<'_, R>,
 ) -> Result<bool, UpdateError> {
@@ -200,6 +235,7 @@ fn update_url_hash<R: CommandRunner>(
     println!("{}: checking schema hash...", spec.name);
     let hash = prefetch(
         &format!("{}: {pin_path}: hash", spec.name),
+        policy,
         runner,
         transaction.root(),
         &url,
@@ -220,16 +256,17 @@ fn update_shellfirm<R: CommandRunner>(
     repository: &str,
     pin_path: &str,
     package: &str,
+    policy: RunPolicy,
     runner: &R,
     transaction: &mut Transaction<'_, R>,
 ) -> Result<bool, UpdateError> {
-    let tag = latest_tag(runner, transaction.root(), repository)?;
+    let tag = latest_tag(policy, runner, transaction.root(), repository)?;
     let version = tag.strip_prefix('v').unwrap_or(&tag);
     validate_release_version(spec.name, version)?;
 
     let mut pin = load_pin(transaction, pin_path)?;
     let current = pin.string(&["version"])?.to_owned();
-    if version == current {
+    if version == current && !policy.force {
         println!("{}: {current} (up to date)", spec.name);
         return Ok(false);
     }
@@ -241,6 +278,7 @@ fn update_shellfirm<R: CommandRunner>(
     let source_url = format!("https://github.com/{repository}/archive/refs/tags/{tag}.tar.gz");
     let source_hash = prefetch(
         &format!("{}: {pin_path}: srcHash", spec.name),
+        policy,
         runner,
         transaction.root(),
         &source_url,
@@ -271,14 +309,15 @@ fn update_difit<R: CommandRunner>(
     input: &str,
     lock_path: &str,
     package: &str,
+    policy: RunPolicy,
     runner: &R,
     transaction: &mut Transaction<'_, R>,
 ) -> Result<bool, UpdateError> {
     let flake = transaction.read("flake.nix")?;
     let current = paired_version(&flake, repository)?;
-    let version = latest_npm_version(runner, transaction.root(), npm_package)?;
+    let version = latest_npm_version(policy, runner, transaction.root(), npm_package)?;
     validate_release_version(spec.name, &version)?;
-    if version == current {
+    if version == current && !policy.force {
         println!("{}: {current} (up to date)", spec.name);
         return Ok(false);
     }
@@ -291,6 +330,7 @@ fn update_difit<R: CommandRunner>(
         format!("https://registry.npmjs.org/{npm_package}/-/{npm_package}-{version}.tgz");
     let source = prefetch_result(
         &format!("{}: {pin_path}: srcHash", spec.name),
+        policy,
         runner,
         transaction.root(),
         &source_url,
@@ -357,7 +397,9 @@ fn update_difit<R: CommandRunner>(
     pin.set_string(&["srcHash"], source.hash)?;
     pin.set_string(&["npmDepsHash"], "")?;
     write_pin(transaction, pin_path, &pin)?;
-    update_paired_flake_input(input, repository, &version, &flake, runner, transaction)?;
+    if version != current {
+        update_paired_flake_input(input, repository, &version, &flake, runner, transaction)?;
+    }
     compute_hash_via_failed_build(
         spec.name,
         package,
@@ -371,16 +413,22 @@ fn update_difit<R: CommandRunner>(
 }
 
 fn latest_npm_version<R: CommandRunner>(
+    policy: RunPolicy,
     runner: &R,
     root: &Path,
     package: &str,
 ) -> Result<String, UpdateError> {
     let url = format!("https://registry.npmjs.org/{package}/latest");
-    let command = CommandSpec::new("curl")
-        .args(["-fsSL", &url])
-        .current_dir(root);
-    let output = run_checked(runner, &command)?;
-    let response: Value = serde_json::from_slice(&output.stdout).map_err(|source| {
+    let bytes = download_bytes(
+        policy.retry,
+        runner,
+        root,
+        "difit",
+        "npm latest metadata",
+        &url,
+        1024 * 1024,
+    )?;
+    let response: Value = serde_json::from_slice(&bytes).map_err(|source| {
         UpdateError::message(format!(
             "latest_npm_version: {package} returned invalid JSON: {source}"
         ))
@@ -574,6 +622,7 @@ fn refresh_assets<R: CommandRunner>(
     tag: &str,
     version: &str,
     naming: AssetNaming,
+    policy: RunPolicy,
     runner: &R,
     root: &Path,
 ) -> Result<(), UpdateError> {
@@ -588,6 +637,7 @@ fn refresh_assets<R: CommandRunner>(
         let url = format!("https://github.com/{repository}/releases/download/{tag}/{name}");
         let hash = prefetch(
             &format!("{}: {pin_path}: assets.{system}.hash", spec.name),
+            policy,
             runner,
             root,
             &url,
@@ -599,38 +649,43 @@ fn refresh_assets<R: CommandRunner>(
 }
 
 fn latest_tag<R: CommandRunner>(
+    policy: RunPolicy,
     runner: &R,
     root: &Path,
     repository: &str,
 ) -> Result<String, UpdateError> {
-    let tag = if runner.is_available(Path::new("gh")) {
-        let command = CommandSpec::new("gh")
-            .args([
-                "api",
-                &format!("repos/{repository}/releases/latest"),
-                "--jq",
-                ".tag_name",
-            ])
-            .current_dir(root);
-        let output = run_checked(runner, &command)?;
-        output.stdout_utf8(&command)?.trim().to_owned()
+    let bytes = if runner.is_available(Path::new("gh")) {
+        gh_api_bytes(
+            policy.retry,
+            runner,
+            root,
+            repository,
+            "GitHub latest release",
+            &format!("repos/{repository}/releases/latest"),
+            4 * 1024 * 1024,
+        )?
     } else {
         let url = format!("https://api.github.com/repos/{repository}/releases/latest");
-        let command = CommandSpec::new("curl")
-            .args(["-fsSL", &url])
-            .current_dir(root);
-        let output = run_checked(runner, &command)?;
-        let response: Value = serde_json::from_slice(&output.stdout).map_err(|source| {
-            UpdateError::message(format!(
-                "latest_tag: {repository} returned invalid JSON: {source}"
-            ))
-        })?;
-        response
-            .get("tag_name")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_owned()
+        download_bytes(
+            policy.retry,
+            runner,
+            root,
+            repository,
+            "GitHub latest release",
+            &url,
+            4 * 1024 * 1024,
+        )?
     };
+    let response: Value = serde_json::from_slice(&bytes).map_err(|source| {
+        UpdateError::message(format!(
+            "latest_tag: {repository} returned invalid JSON: {source}"
+        ))
+    })?;
+    let tag = response
+        .get("tag_name")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
     if tag.is_empty() || tag == "null" {
         return Err(UpdateError::message(format!(
             "latest_tag: {repository} の latest release tag を取得できなかった"
@@ -773,6 +828,7 @@ mod tests {
     use crate::cli::Target;
     use crate::command::{CommandOutput, CommandRunner, CommandSpec};
     use crate::error::UpdateError;
+    use crate::policy::RunPolicy;
 
     struct RecordingRunner {
         available: bool,
@@ -783,6 +839,21 @@ mod tests {
     impl CommandRunner for RecordingRunner {
         fn run(&self, command: &CommandSpec) -> Result<CommandOutput, UpdateError> {
             self.commands.borrow_mut().push(command.clone());
+            if command.program == "curl" {
+                let output_index = command
+                    .args
+                    .iter()
+                    .position(|argument| argument == "--output")
+                    .expect("curl output argument");
+                let path = PathBuf::from(&command.args[output_index + 1]);
+                std::fs::write(&path, &self.output.stdout)
+                    .map_err(|source| UpdateError::io(&path, source))?;
+                return Ok(CommandOutput {
+                    status: self.output.status,
+                    stdout: b"200".to_vec(),
+                    stderr: self.output.stderr.clone(),
+                });
+            }
             Ok(self.output.clone())
         }
 
@@ -838,17 +909,46 @@ mod tests {
         };
 
         assert_eq!(
-            latest_tag(&runner, Path::new("/repo"), "owner/repo").expect("latest tag"),
+            latest_tag(
+                RunPolicy::default(),
+                &runner,
+                Path::new("/repo"),
+                "owner/repo"
+            )
+            .expect("latest tag"),
             "v1.2.3"
         );
+        let commands = runner.commands.into_inner();
+        assert_eq!(commands.len(), 1);
+        let command = &commands[0];
+        assert_eq!(command.program, "curl");
+        assert_eq!(command.cwd, Some(PathBuf::from("/repo")));
         assert_eq!(
-            runner.commands.into_inner(),
-            [CommandSpec::new("curl")
-                .args([
-                    "-fsSL",
-                    "https://api.github.com/repos/owner/repo/releases/latest",
-                ])
-                .current_dir(PathBuf::from("/repo"))]
+            command.args[..13],
+            [
+                "-sS",
+                "--location",
+                "--proto",
+                "=https",
+                "--proto-redir",
+                "=https",
+                "--connect-timeout",
+                "15",
+                "--max-time",
+                "110",
+                "--max-filesize",
+                "4194304",
+                "--output",
+            ]
+        );
+        assert!(Path::new(&command.args[13]).is_absolute());
+        assert_eq!(
+            command.args[14..],
+            [
+                "--write-out",
+                "%{http_code}",
+                "https://api.github.com/repos/owner/repo/releases/latest",
+            ]
         );
     }
 

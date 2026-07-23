@@ -12,6 +12,9 @@ pub enum UpdateError {
         source: io::Error,
     },
 
+    #[error("{program} exceeded {seconds} second execution limit")]
+    CommandTimedOut { program: String, seconds: u64 },
+
     #[error("{command} failed with status {status}: {stderr}")]
     CommandFailed {
         command: String,

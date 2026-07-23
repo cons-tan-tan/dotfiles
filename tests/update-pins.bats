@@ -71,24 +71,29 @@ flake_version() {
   sed -n "s|.*github:$repo/v\\([^\"]*\\)\";|\\1|p" "$UPDATE_PINS_FAKE_ROOT/flake.nix"
 }
 
+gh_response() {
+  printf 'HTTP/2.0 200 OK\r\ncontent-type: application/json\r\n\r\n'
+  jq -cn --arg tag "$1" '{tag_name: $tag}'
+}
+
 case "$*" in
-"api repos/aannoo/hcom/releases/latest --jq .tag_name")
-  printf '%s\n' "${UPDATE_PINS_HCOM_TAG:-v$(flake_version aannoo/hcom)}"
+"api --include repos/aannoo/hcom/releases/latest")
+  gh_response "${UPDATE_PINS_HCOM_TAG:-v$(flake_version aannoo/hcom)}"
   ;;
-"api repos/stablyai/agent-slack/releases/latest --jq .tag_name")
-  printf '%s\n' "${UPDATE_PINS_AGENT_SLACK_TAG:-v$(flake_version stablyai/agent-slack)}"
+"api --include repos/stablyai/agent-slack/releases/latest")
+  gh_response "${UPDATE_PINS_AGENT_SLACK_TAG:-v$(flake_version stablyai/agent-slack)}"
   ;;
-"api repos/vercel-labs/agent-browser/releases/latest --jq .tag_name")
-  printf '%s\n' "${UPDATE_PINS_AGENT_BROWSER_TAG:-v$(flake_version vercel-labs/agent-browser)}"
+"api --include repos/vercel-labs/agent-browser/releases/latest")
+  gh_response "${UPDATE_PINS_AGENT_BROWSER_TAG:-v$(flake_version vercel-labs/agent-browser)}"
   ;;
-"api repos/watchexec/watchexec/releases/latest --jq .tag_name")
-  printf '%s\n' "${UPDATE_PINS_WATCHEXEC_TAG:-v$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/watchexec.json")}"
+"api --include repos/watchexec/watchexec/releases/latest")
+  gh_response "${UPDATE_PINS_WATCHEXEC_TAG:-v$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/watchexec.json")}"
   ;;
-"api repos/kaplanelad/shellfirm/releases/latest --jq .tag_name")
-  printf '%s\n' "${UPDATE_PINS_SHELLFIRM_TAG:-v$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/shellfirm.json")}"
+"api --include repos/kaplanelad/shellfirm/releases/latest")
+  gh_response "${UPDATE_PINS_SHELLFIRM_TAG:-v$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/shellfirm.json")}"
   ;;
-"api repos/ogulcancelik/herdr/releases/latest --jq .tag_name")
-  printf '%s\n' "${UPDATE_PINS_HERDR_TAG:-v$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/herdr.json")}"
+"api --include repos/ogulcancelik/herdr/releases/latest")
+  gh_response "${UPDATE_PINS_HERDR_TAG:-v$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/herdr.json")}"
   ;;
 *)
   echo "unexpected gh invocation: $*" >&2
@@ -112,22 +117,67 @@ flake_version() {
   sed -n "s|.*github:$repo/v\\([^\"]*\\)\";|\\1|p" "$UPDATE_PINS_FAKE_ROOT/flake.nix"
 }
 
-if [ "$1" != "-fsSL" ]; then
+if [ "$#" -ne 17 ] \
+  || [ "$1" != "-sS" ] \
+  || [ "$2" != "--location" ] \
+  || [ "$3" != "--proto" ] \
+  || [ "$4" != "=https" ] \
+  || [ "$5" != "--proto-redir" ] \
+  || [ "$6" != "=https" ] \
+  || [ "$7" != "--connect-timeout" ] \
+  || [ "$8" != "15" ] \
+  || [ "$9" != "--max-time" ] \
+  || [ "${10}" != "110" ] \
+  || [ "${11}" != "--max-filesize" ] \
+  || ! [[ "${12}" =~ ^[1-9][0-9]*$ ]] \
+  || [ "${13}" != "--output" ] \
+  || [ "${15}" != "--write-out" ] \
+  || [ "${16}" != "%{http_code}" ]; then
   echo "unexpected curl invocation: $*" >&2
   exit 1
 fi
 
-case "${2:-}" in
+output_path=${14}
+url=${17}
+if [ -n "${UPDATE_PINS_CURL_FAIL_PATTERN:-}" ] \
+  && [[ "$url" == *"$UPDATE_PINS_CURL_FAIL_PATTERN"* ]]; then
+  count=0
+  if [ -f "$UPDATE_PINS_FAKE_ROOT/curl-failure-count" ]; then
+    count=$(cat "$UPDATE_PINS_FAKE_ROOT/curl-failure-count")
+  fi
+  count=$((count + 1))
+  printf '%s\n' "$count" >"$UPDATE_PINS_FAKE_ROOT/curl-failure-count"
+  if [ "$count" -le "${UPDATE_PINS_CURL_FAIL_COUNT:-0}" ]; then
+    printf '%s' "${UPDATE_PINS_CURL_FAIL_HTTP_STATUS:-503}"
+    exit "${UPDATE_PINS_CURL_FAIL_EXIT_STATUS:-0}"
+  fi
+fi
+if [ "${UPDATE_PINS_FAIL_HERDR_PREFETCH:-}" = "source" ] \
+  && [[ "$url" == *"github.com/ogulcancelik/herdr/archive/refs/tags/"* ]]; then
+  printf '000'
+  exit 7
+fi
+if [ -n "${UPDATE_PINS_FAIL_WATCHEXEC_TARGET:-}" ] \
+  && [[ "$url" == *"github.com/watchexec/watchexec/releases/download/"*"$UPDATE_PINS_FAIL_WATCHEXEC_TARGET"* ]]; then
+  printf '000'
+  exit 7
+fi
+
+case "$url" in
 https://registry.npmjs.org/difit/latest)
-  printf '{"version":"%s"}\n' "${UPDATE_PINS_DIFIT_VERSION:-$(flake_version yoshiko-pg/difit)}"
+  if [ "${UPDATE_PINS_INVALID_NPM_JSON:-}" = "1" ]; then
+    printf '{invalid\n' >"$output_path"
+  else
+    printf '{"version":"%s"}\n' "${UPDATE_PINS_DIFIT_VERSION:-$(flake_version yoshiko-pg/difit)}" >"$output_path"
+  fi
   ;;
 https://registry.npmjs.org/difit/-/difit-*.tgz)
-  cat "$UPDATE_PINS_DIFIT_TARBALL"
+  cp "$UPDATE_PINS_DIFIT_TARBALL" "$output_path"
   ;;
 https://persistent.oaistatic.com/codex-app-prod/appcast.xml)
   version=${UPDATE_PINS_CODEX_APP_VERSION:-$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/codex-app.json")}
   url=${UPDATE_PINS_CODEX_APP_URL:-$(jq -r .url "$UPDATE_PINS_FAKE_ROOT/nix/pins/codex-app.json")}
-  cat <<XML
+  cat >"$output_path" <<XML
 <?xml version="1.0" encoding="utf-8"?>
 <rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
   <channel>
@@ -141,11 +191,40 @@ https://persistent.oaistatic.com/codex-app-prod/appcast.xml)
 </rss>
 XML
   ;;
+https://persistent.oaistatic.com/codex-app-prod/*.zip)
+  app_name=${UPDATE_PINS_CODEX_APP_NAME:-$(jq -r .appName "$UPDATE_PINS_FAKE_ROOT/nix/pins/codex-app.json")}
+  bundle_identifier=${UPDATE_PINS_CODEX_APP_BUNDLE_IDENTIFIER:-$(jq -r .bundleIdentifier "$UPDATE_PINS_FAKE_ROOT/nix/pins/codex-app.json")}
+  display_name=${UPDATE_PINS_CODEX_APP_DISPLAY_NAME:-$(jq -r .displayName "$UPDATE_PINS_FAKE_ROOT/nix/pins/codex-app.json")}
+  version=${UPDATE_PINS_CODEX_APP_BUNDLE_VERSION:-${UPDATE_PINS_CODEX_APP_VERSION:-$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/codex-app.json")}}
+  python3 - "$output_path" "$app_name" "$bundle_identifier" "$display_name" "$version" <<'PY'
+import plistlib
+import sys
+import zipfile
+
+zip_path, app_name, bundle_identifier, display_name, version = sys.argv[1:]
+plist = {
+    "CFBundleDisplayName": display_name,
+    "CFBundleIdentifier": bundle_identifier,
+    "CFBundleName": display_name,
+    "CFBundleShortVersionString": version,
+}
+
+with zipfile.ZipFile(zip_path, "w") as archive:
+    archive.writestr(f"{app_name}/Contents/Info.plist", plistlib.dumps(plist))
+PY
+  ;;
+https://json.schemastore.org/claude-code-settings.json)
+  printf '{}\n' >"$output_path"
+  ;;
+https://github.com/*)
+  printf 'artifact fixture\n' >"$output_path"
+  ;;
 *)
   echo "unexpected curl invocation: $*" >&2
   exit 1
   ;;
 esac
+printf '200'
 EOS
 
   printf '#!%s\n' "$BASH_BIN" >"$STUB_DIR/npm"
@@ -158,6 +237,11 @@ set -euo pipefail
   printf '\n'
   printf 'npm-cwd %q\n' "$PWD"
 } >>"$UPDATE_PINS_COMMAND_LOG"
+
+if [ "${UPDATE_PINS_FAIL_NPM_INSTALL:-}" = "1" ]; then
+  echo "npm install failed" >&2
+  exit 1
+fi
 
 if [ "$#" -eq 5 ] \
   && [ "$1" = "install" ] \
@@ -195,49 +279,45 @@ set -euo pipefail
   printf '\n'
 } >>"$UPDATE_PINS_COMMAND_LOG"
 
-if [ "$1" = "store" ] && [ "${2:-}" = "prefetch-file" ]; then
-  if [[ " $* " == *"github.com/ogulcancelik/herdr/archive/refs/tags/"* ]] && [ "${UPDATE_PINS_FAIL_HERDR_PREFETCH:-}" = "source" ]; then
-    echo "herdr source prefetch failed" >&2
+if { [ "$#" -eq 6 ] || [ "$#" -eq 7 ]; } \
+  && [ "$1" = "store" ] \
+  && [ "$2" = "prefetch-file" ] \
+  && [ "$3" = "--json" ] \
+  && [ "$4" = "--name" ] \
+  && [[ "$5" == update-pins-* ]]; then
+  if [ "$#" -eq 7 ] && [ "$6" != "--unpack" ]; then
+    echo "unexpected nix prefetch invocation: $*" >&2
     exit 1
   fi
-  if [[ " $* " == *"github.com/watchexec/watchexec/releases/download/"* ]] && [ -n "${UPDATE_PINS_FAIL_WATCHEXEC_TARGET:-}" ] && [[ " $* " == *"$UPDATE_PINS_FAIL_WATCHEXEC_TARGET"* ]]; then
-    echo "watchexec asset prefetch failed for $UPDATE_PINS_FAIL_WATCHEXEC_TARGET" >&2
+  local_url=${!#}
+  case "$local_url" in
+  file:///*) local_path=${local_url#file://} ;;
+  *)
+    echo "nix prefetch did not receive a local download: $*" >&2
+    exit 1
+    ;;
+  esac
+  if [ ! -f "$local_path" ]; then
+    echo "nix prefetch local download is missing: $local_path" >&2
     exit 1
   fi
-  if [[ " $* " == *"persistent.oaistatic.com/codex-app-prod/"*".zip"* ]]; then
+  case "$local_path" in
+  *.zip)
     zip_path="$UPDATE_PINS_FAKE_ROOT/codex-app.zip"
-    app_name=${UPDATE_PINS_CODEX_APP_NAME:-$(jq -r .appName "$UPDATE_PINS_FAKE_ROOT/nix/pins/codex-app.json")}
-    bundle_identifier=${UPDATE_PINS_CODEX_APP_BUNDLE_IDENTIFIER:-$(jq -r .bundleIdentifier "$UPDATE_PINS_FAKE_ROOT/nix/pins/codex-app.json")}
-    display_name=${UPDATE_PINS_CODEX_APP_DISPLAY_NAME:-$(jq -r .displayName "$UPDATE_PINS_FAKE_ROOT/nix/pins/codex-app.json")}
-    version=${UPDATE_PINS_CODEX_APP_BUNDLE_VERSION:-${UPDATE_PINS_CODEX_APP_VERSION:-$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/codex-app.json")}}
-    python3 - "$zip_path" "$app_name" "$bundle_identifier" "$display_name" "$version" <<'PY'
-import plistlib
-import sys
-import zipfile
-
-zip_path, app_name, bundle_identifier, display_name, version = sys.argv[1:]
-plist = {
-    "CFBundleDisplayName": display_name,
-    "CFBundleIdentifier": bundle_identifier,
-    "CFBundleName": display_name,
-    "CFBundleShortVersionString": version,
-}
-
-with zipfile.ZipFile(zip_path, "w") as archive:
-    archive.writestr(f"{app_name}/Contents/Info.plist", plistlib.dumps(plist))
-PY
+    cp "$local_path" "$zip_path"
     printf '{"hash":"sha256-V95M9AFEvffQABDy9VV6fWQsK5cFMJv63hZ90xPiypM=","storePath":"%s"}\n' "$zip_path"
     exit 0
-  fi
-  if [ "${3:-}" = "--json" ] && [ "${4:-}" = "https://json.schemastore.org/claude-code-settings.json" ]; then
+    ;;
+  *.json)
     printf '{"hash":"%s"}\n' "${UPDATE_PINS_SCHEMA_HASH:-sha256-3wrW5DiA8JyQ6/lfGREBeKumiQ3wAQ69p0hQKeK1Q7Q=}"
     exit 0
-  fi
-  if [[ " $* " == *"registry.npmjs.org/difit/-/difit-"* ]]; then
+    ;;
+  *.tgz)
     printf '{"hash":"sha256-gmer9Ei3Jq/YwFQ13VuGqxjSZiafe7wWoJnabLgSrKE=","storePath":"%s"}\n' "$UPDATE_PINS_DIFIT_TARBALL"
     exit 0
-  fi
-  if [[ " $* " == *" --unpack "* ]]; then
+    ;;
+  esac
+  if [ "$#" -eq 7 ]; then
     printf '{"hash":"%s"}\n' "${UPDATE_PINS_SOURCE_HASH:-sha256-JaZjQmPBsfb8RpegTiuZBOpLBCqJr1nck+wfXUSEiiY=}"
   else
     printf '{"hash":"%s"}\n' "${UPDATE_PINS_ASSET_HASH:-sha256-1ZOG4K5DXikvvg6825VLde1fs5IgkSd8sZ95j8XVBxg=}"
@@ -414,7 +494,7 @@ make_unrelated_updates_noop() {
   run_update_pins --help
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Usage: update-pins [target]"* ]]
+  [[ "$output" == *"Usage: update-pins [--retry <MAX_ATTEMPTS>] [--force] [target]"* ]]
   [[ "$output" == *"herdr"* ]]
   [[ "$output" == *"codex-app"* ]]
   assert_managed_matches "$original"
@@ -439,6 +519,126 @@ make_unrelated_updates_noop() {
 
   [ "$status" -eq 2 ]
   [[ "$output" == *"expected at most one target"* ]]
+  assert_managed_matches "$original"
+}
+
+@test "retry attempts are bounded and malformed options have no side effects" {
+  original="$WORK/original"
+  save_managed "$original"
+
+  run_update_pins --retry 0
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"--retry must be an integer from 1 to 5, got '0'"* ]]
+  run_update_pins --retry 6
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"--retry must be an integer from 1 to 5, got '6'"* ]]
+  run_update_pins --retry many
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"--retry must be an integer from 1 to 5, got 'many'"* ]]
+  run_update_pins --retry
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"--retry requires a maximum attempt count"* ]]
+  run_update_pins --retry=
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"--retry must be an integer from 1 to 5, got ''"* ]]
+  run_update_pins --unknown
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"unknown option '--unknown'"* ]]
+  [ ! -e "$UPDATE_PINS_COMMAND_LOG" ]
+  assert_managed_matches "$original"
+}
+
+@test "force refreshes and re-pins a changed same-version Codex artifact" {
+  fixed_hash=sha256-V95M9AFEvffQABDy9VV6fWQsK5cFMJv63hZ90xPiypM=
+  original="$WORK/original"
+  save_managed "$original"
+  original_version=$(jq -r .version "$WORK/nix/pins/codex-app.json")
+  original_url=$(jq -r .url "$WORK/nix/pins/codex-app.json")
+
+  run_update_pins codex-app --force --retry=5
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"codex-app updated."* ]]
+  [ "$(jq -r .version "$WORK/nix/pins/codex-app.json")" = "$original_version" ]
+  [ "$(jq -r .url "$WORK/nix/pins/codex-app.json")" = "$original_url" ]
+  [ "$(jq -r .hash "$WORK/nix/pins/codex-app.json")" = "$fixed_hash" ]
+  [ "$(grep -c '^curl ' "$UPDATE_PINS_COMMAND_LOG")" -eq 2 ]
+  grep -Fq "https://persistent.oaistatic.com/codex-app-prod/appcast.xml" "$UPDATE_PINS_COMMAND_LOG"
+  grep -Fq "$(jq -r .url "$WORK/nix/pins/codex-app.json")" "$UPDATE_PINS_COMMAND_LOG"
+  grep -Eq '^nix store prefetch-file --json --name update-pins-.+\.zip file:///tmp/update-pins-fetch-.+\.zip$' "$UPDATE_PINS_COMMAND_LOG"
+  [ ! -e "$UPDATE_PINS_FLAKE_UPDATE_LOG" ]
+  cp "$WORK/nix/pins/codex-app.json" "$original/nix/pins/codex-app.json"
+  assert_managed_matches "$original"
+}
+
+@test "same-version paired force refreshes assets without flake input churn" {
+  fixed_hash=sha256-1ZOG4K5DXikvvg6825VLde1fs5IgkSd8sZ95j8XVBxg=
+  jq --arg hash "$fixed_hash" '.assets[].hash = $hash' "$WORK/nix/pins/hcom.json" >"$WORK/hcom.json"
+  mv "$WORK/hcom.json" "$WORK/nix/pins/hcom.json"
+  git -C "$WORK" add nix/pins/hcom.json
+  git -C "$WORK" commit -q -m "fixed hcom hash fixture"
+  original="$WORK/original"
+  save_managed "$original"
+
+  run_update_pins --force hcom
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"hcom is up to date."* ]]
+  grep -Fq "gh api --include repos/aannoo/hcom/releases/latest" "$UPDATE_PINS_COMMAND_LOG"
+  asset_count=$(jq '.assets | length' "$WORK/nix/pins/hcom.json")
+  [ "$(grep -c '^curl .*github.com/aannoo/hcom/releases/download/' "$UPDATE_PINS_COMMAND_LOG")" -eq "$asset_count" ]
+  [ "$(grep '^curl .*github.com/aannoo/hcom/releases/download/' "$UPDATE_PINS_COMMAND_LOG" | awk '{print $NF}' | sort -u | wc -l)" -eq "$asset_count" ]
+  [ "$(grep -c '^nix store prefetch-file' "$UPDATE_PINS_COMMAND_LOG")" -eq "$asset_count" ]
+  ! grep -Fq "nix flake update" "$UPDATE_PINS_COMMAND_LOG"
+  [ ! -e "$UPDATE_PINS_FLAKE_UPDATE_LOG" ]
+  assert_managed_matches "$original"
+}
+
+@test "one-attempt force refresh reaches the local prefetch without an implicit retry" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_SCHEMA_HASH
+  UPDATE_PINS_SCHEMA_HASH=$(jq -r .hash "$WORK/nix/pins/claude-code-settings-schema.json")
+
+  run_update_pins --retry 1 --force claude-code-settings-schema
+
+  [ "$status" -eq 0 ]
+  [ "$(grep -c '^curl ' "$UPDATE_PINS_COMMAND_LOG")" -eq 1 ]
+  grep -Eq '^nix store prefetch-file --json --name update-pins-.+\.json file:///tmp/update-pins-fetch-.+\.json$' "$UPDATE_PINS_COMMAND_LOG"
+  assert_managed_matches "$original"
+}
+
+@test "transient fetch failures recover at the default bound with fresh files" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_SCHEMA_HASH
+  UPDATE_PINS_SCHEMA_HASH=$(jq -r .hash "$WORK/nix/pins/claude-code-settings-schema.json")
+  export UPDATE_PINS_CURL_FAIL_PATTERN=json.schemastore.org
+  export UPDATE_PINS_CURL_FAIL_COUNT=2
+
+  run_update_pins claude-code-settings-schema
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"retrying attempt 2/3"* ]]
+  [[ "$output" == *"retrying attempt 3/3"* ]]
+  [ "$(grep -c '^curl ' "$UPDATE_PINS_COMMAND_LOG")" -eq 3 ]
+  [ "$(sed -n 's/.* --output \([^ ]*\) --write-out.*/\1/p' "$UPDATE_PINS_COMMAND_LOG" | sort -u | wc -l)" -eq 3 ]
+  assert_managed_matches "$original"
+}
+
+@test "permanent HTTP failure is attempted once and rolls back" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_CURL_FAIL_PATTERN=json.schemastore.org
+  export UPDATE_PINS_CURL_FAIL_COUNT=5
+  export UPDATE_PINS_CURL_FAIL_HTTP_STATUS=404
+
+  run_update_pins claude-code-settings-schema
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"HTTP 404"* ]]
+  [[ "$output" != *"retrying attempt"* ]]
+  [ "$(grep -c '^curl ' "$UPDATE_PINS_COMMAND_LOG")" -eq 1 ]
   assert_managed_matches "$original"
 }
 
@@ -484,7 +684,7 @@ make_unrelated_updates_noop() {
   [ "$(jq -r '.assets["x86_64-linux"].hash' "$WORK/nix/pins/hcom.json")" = "sha256-1ZOG4K5DXikvvg6825VLde1fs5IgkSd8sZ95j8XVBxg=" ]
   grep -Fq 'url = "github:aannoo/hcom/v9.9.9";' "$WORK/flake.nix"
   [ "$(jq -r .updated "$WORK/flake.lock")" = "hcom-src" ]
-  grep -Fq "gh api repos/aannoo/hcom/releases/latest --jq .tag_name" "$UPDATE_PINS_COMMAND_LOG"
+  grep -Fq "gh api --include repos/aannoo/hcom/releases/latest" "$UPDATE_PINS_COMMAND_LOG"
   grep -Fq "nix flake update hcom-src" "$UPDATE_PINS_COMMAND_LOG"
   cp "$WORK/nix/pins/hcom.json" "$original/nix/pins/hcom.json"
   cp "$WORK/flake.nix" "$original/flake.nix"
@@ -646,7 +846,7 @@ make_unrelated_updates_noop() {
 
   [ "$status" -eq 1 ]
   [[ "$output" == *"herdr: unsupported release version"* ]]
-  ! grep -Fq "nix store prefetch-file" "$UPDATE_PINS_COMMAND_LOG"
+  ! grep -Fq "store prefetch-file" "$UPDATE_PINS_COMMAND_LOG"
   assert_managed_matches "$original"
 }
 
@@ -695,9 +895,11 @@ make_unrelated_updates_noop() {
   export UPDATE_PINS_HCOM_TAG=v1.2.3
   export UPDATE_PINS_FAIL_FLAKE_UPDATE=hcom-src
 
-  run_update_pins
+  run_update_pins --retry 5
 
   [ "$status" -ne 0 ]
+  [ "$(wc -l <"$UPDATE_PINS_FLAKE_UPDATE_LOG")" -eq 1 ]
+  [[ "$output" != *"retrying attempt"* ]]
   assert_managed_matches "$original"
   assert_no_staging_files
 }
@@ -776,6 +978,20 @@ make_unrelated_updates_noop() {
   [ ! -e "$UPDATE_PINS_FLAKE_UPDATE_LOG" ]
 }
 
+@test "invalid fetched metadata is not retried" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_INVALID_NPM_JSON=1
+
+  run_update_pins difit
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"returned invalid JSON"* ]]
+  [ "$(grep -c 'registry.npmjs.org/difit/latest' "$UPDATE_PINS_COMMAND_LOG")" -eq 1 ]
+  [[ "$output" != *"retrying attempt"* ]]
+  assert_managed_matches "$original"
+}
+
 @test "difit version bump updates pin, lockfile, and flake input" {
   original="$WORK/original"
   save_managed "$original"
@@ -800,6 +1016,22 @@ make_unrelated_updates_noop() {
   cp "$WORK/nix/packages/difit/package-lock.json" "$original/nix/packages/difit/package-lock.json"
   cp "$WORK/flake.nix" "$original/flake.nix"
   cp "$WORK/flake.lock" "$original/flake.lock"
+  assert_managed_matches "$original"
+}
+
+@test "npm install failure is not retried" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_DIFIT_VERSION=9.9.9
+  export UPDATE_PINS_FAIL_NPM_INSTALL=1
+  make_difit_tarball "$UPDATE_PINS_DIFIT_VERSION"
+
+  run_update_pins --retry 5 difit
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"npm install failed"* ]]
+  [ "$(grep -c '^npm install ' "$UPDATE_PINS_COMMAND_LOG")" -eq 1 ]
+  [[ "$output" != *"retrying attempt"* ]]
   assert_managed_matches "$original"
 }
 
@@ -888,7 +1120,8 @@ make_unrelated_updates_noop() {
   run_update_pins watchexec
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"watchexec asset prefetch failed for x86_64-apple-darwin"* ]]
+  [[ "$output" == *"watchexec: artifact download: curl failed with status 7"* ]]
+  [ "$(grep -c "$UPDATE_PINS_FAIL_WATCHEXEC_TARGET" "$UPDATE_PINS_COMMAND_LOG")" -eq 3 ]
   assert_managed_matches "$original"
 }
 
@@ -920,7 +1153,7 @@ make_unrelated_updates_noop() {
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"codex-app: $(jq -r .version "$WORK/nix/pins/codex-app.json") (up to date)"* ]]
-  grep -Fxq "curl -fsSL https://persistent.oaistatic.com/codex-app-prod/appcast.xml" "$UPDATE_PINS_COMMAND_LOG"
+  grep -Fq "https://persistent.oaistatic.com/codex-app-prod/appcast.xml" "$UPDATE_PINS_COMMAND_LOG"
   ! grep -q '^nix ' "$UPDATE_PINS_COMMAND_LOG"
   assert_managed_matches "$original"
 }
@@ -1048,11 +1281,12 @@ make_unrelated_updates_noop() {
   export UPDATE_PINS_SHELLFIRM_TAG=v8.8.8
   export UPDATE_PINS_SHELLFIRM_BUILD_MODE=verify-fails
 
-  run_update_pins shellfirm
+  run_update_pins --retry 5 shellfirm
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"shellfirm: verification build failed"* ]]
   [ "$(cat "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT")" -eq 2 ]
+  [[ "$output" != *"retrying attempt"* ]]
   assert_managed_matches "$original"
 }
 
@@ -1067,7 +1301,8 @@ make_unrelated_updates_noop() {
   run_update_pins
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"herdr source prefetch failed"* ]]
+  [[ "$output" == *"herdr: artifact download: curl failed with status 7"* ]]
+  [ "$(grep -c "github.com/ogulcancelik/herdr/archive/refs/tags/" "$UPDATE_PINS_COMMAND_LOG")" -eq 3 ]
   assert_managed_matches "$original"
 }
 
