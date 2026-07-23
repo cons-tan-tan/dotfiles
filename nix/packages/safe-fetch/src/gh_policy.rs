@@ -40,6 +40,16 @@ const LONG_VALUE: &[(&str, ValueOption)] = &[
     ("--template", ValueOption::Template),
 ];
 
+const SHORT_NO_VALUE: &[u8] = b"i";
+const SHORT_VALUE: &[(u8, ValueOption)] = &[
+    (b'F', ValueOption::Field),
+    (b'H', ValueOption::Header),
+    (b'q', ValueOption::Jq),
+    (b'p', ValueOption::Preview),
+    (b'f', ValueOption::RawField),
+    (b't', ValueOption::Template),
+];
+
 pub fn build_arguments(arguments: Vec<OsString>) -> Result<Vec<OsString>, PolicyError> {
     let mut pending: Option<ValueOption> = None;
     let mut endpoint_count = 0usize;
@@ -118,25 +128,24 @@ fn parse_long(argument: &[u8]) -> Result<Option<ValueOption>, PolicyError> {
 }
 
 fn parse_short(argument: &[u8]) -> Result<Option<ValueOption>, PolicyError> {
-    if argument == b"-i" {
+    if argument.len() == 2 && SHORT_NO_VALUE.contains(&argument[1]) {
         return Ok(None);
     }
     if argument.starts_with(b"-X") {
         return reject("-X", "this wrapper always uses GET");
     }
-    let (option, value) = match argument.get(1).copied() {
-        Some(b'F') => (ValueOption::Field, &argument[2..]),
-        Some(b'H') => (ValueOption::Header, &argument[2..]),
-        Some(b'q') => (ValueOption::Jq, &argument[2..]),
-        Some(b'p') => (ValueOption::Preview, &argument[2..]),
-        Some(b'f') => (ValueOption::RawField, &argument[2..]),
-        Some(b't') => (ValueOption::Template, &argument[2..]),
-        _ => return reject_lossy(argument, "it is not on the positive read-only allowlist"),
+    let Some((_, option)) = argument.get(1).and_then(|character| {
+        SHORT_VALUE
+            .iter()
+            .find(|(candidate, _)| candidate == character)
+    }) else {
+        return reject_lossy(argument, "it is not on the positive read-only allowlist");
     };
+    let value = &argument[2..];
     if value.is_empty() {
-        Ok(Some(option))
+        Ok(Some(*option))
     } else {
-        validate_value(option, value)?;
+        validate_value(*option, value)?;
         Ok(None)
     }
 }
@@ -302,6 +311,122 @@ mod tests {
         values.iter().map(OsString::from).collect()
     }
 
+    fn assert_allowed(values: &[&str]) {
+        assert!(
+            build_arguments(args(values)).is_ok(),
+            "expected arguments to be allowed: {values:?}"
+        );
+    }
+
+    fn assert_denied(values: &[&str]) {
+        assert!(
+            build_arguments(args(values)).is_err(),
+            "expected arguments to be denied: {values:?}"
+        );
+    }
+
+    #[test]
+    fn long_no_value_inventory_is_complete_and_allowed() {
+        let cases = ["--include", "--paginate", "--silent", "--slurp", "--help"];
+
+        assert_eq!(cases.as_slice(), LONG_NO_VALUE);
+        for option in cases {
+            let endpoint = if option == "--help" {
+                Vec::new()
+            } else {
+                vec!["repos/o/r"]
+            };
+            let mut values = endpoint;
+            values.push(option);
+            assert_allowed(&values);
+            assert_denied(&["repos/o/r", &format!("{option}=true")]);
+        }
+    }
+
+    #[test]
+    fn long_value_inventory_is_complete_and_classified() {
+        let field_values = [("--field", "state=open"), ("--raw-field", "per_page=10")];
+        let header_values = [("--header", "Accept: application/vnd.github+json")];
+        let host_values = [("--hostname", "github.com")];
+        let response_values = [
+            ("--jq", ".id"),
+            ("--preview", "nebula"),
+            ("--template", "{{.id}}"),
+        ];
+        let classified = field_values
+            .iter()
+            .chain(&header_values)
+            .chain(&host_values)
+            .chain(&response_values)
+            .map(|(name, _)| *name)
+            .collect::<Vec<_>>();
+        let mut inventory = LONG_VALUE.iter().map(|(name, _)| *name).collect::<Vec<_>>();
+        let mut classified_sorted = classified;
+        inventory.sort_unstable();
+        classified_sorted.sort_unstable();
+
+        assert_eq!(classified_sorted, inventory);
+        for (option, value) in field_values
+            .iter()
+            .chain(&header_values)
+            .chain(&host_values)
+            .chain(&response_values)
+        {
+            assert_allowed(&["repos/o/r", option, value]);
+            assert_allowed(&["repos/o/r", &format!("{option}={value}")]);
+            assert_denied(&["repos/o/r", option]);
+        }
+    }
+
+    #[test]
+    fn short_option_inventory_is_classified() {
+        assert_eq!(SHORT_NO_VALUE, b"i");
+        assert_eq!(
+            SHORT_VALUE,
+            &[
+                (b'F', ValueOption::Field),
+                (b'H', ValueOption::Header),
+                (b'q', ValueOption::Jq),
+                (b'p', ValueOption::Preview),
+                (b'f', ValueOption::RawField),
+                (b't', ValueOption::Template),
+            ]
+        );
+        assert_allowed(&["repos/o/r", "-i"]);
+        for (option, attached, value) in [
+            ("-F", "-Fstate=open", "state=open"),
+            ("-f", "-fper_page=10", "per_page=10"),
+            (
+                "-H",
+                "-HAccept: application/json",
+                "Accept: application/json",
+            ),
+            ("-q", "-q.id", ".id"),
+            ("-p", "-pnebula", "nebula"),
+            ("-t", "-t{{.id}}", "{{.id}}"),
+        ] {
+            assert_allowed(&["repos/o/r", option, value]);
+            assert_allowed(&["repos/o/r", attached]);
+            assert_denied(&["repos/o/r", option]);
+        }
+    }
+
+    #[test]
+    fn rejected_request_and_input_options_are_fixed() {
+        for values in [
+            vec!["repos/o/r", "--method", "DELETE"],
+            vec!["repos/o/r", "--method=DELETE"],
+            vec!["repos/o/r", "-X", "DELETE"],
+            vec!["repos/o/r", "-XDELETE"],
+            vec!["repos/o/r", "--input", "/tmp/body"],
+            vec!["repos/o/r", "--input=/tmp/body"],
+            vec!["repos/o/r", "--", "--method", "DELETE"],
+            vec!["repos/o/r", "--cache", "1h"],
+        ] {
+            assert_denied(&values);
+        }
+    }
+
     #[test]
     fn allows_response_flags_and_forces_get() {
         let child = build_arguments(args(&[
@@ -362,6 +487,18 @@ mod tests {
     }
 
     #[test]
+    fn rejected_values_are_not_echoed() {
+        let field_secret = "token={owner}-sensitive-value";
+        let field_error =
+            build_arguments(args(&["repos/o/r", "--raw-field", field_secret])).unwrap_err();
+        assert!(!field_error.to_string().contains(field_secret));
+
+        let jq_secret = "env.SAFE_FETCH_SECRET_VALUE";
+        let jq_error = build_arguments(args(&["repos/o/r", "--jq", jq_secret])).unwrap_err();
+        assert!(!jq_error.to_string().contains(jq_secret));
+    }
+
+    #[test]
     fn rejects_jq_environment_access() {
         for values in [
             vec!["repos/o/r", "--jq", "env.GH_TOKEN"],
@@ -389,6 +526,32 @@ mod tests {
                 OsString::from("repos/o/r"),
                 OsString::from(flag),
             ]).is_err());
+        }
+
+        #[test]
+        fn every_header_control_byte_is_denied(
+            prefix in "[ -~]{0,16}",
+            control in prop::sample::select(
+                (0u8..=0x1f).chain(std::iter::once(0x7f)).collect::<Vec<_>>()
+            ),
+            suffix in "[ -~]{0,16}",
+        ) {
+            let mut header = format!("X-Test: {prefix}").into_bytes();
+            header.push(control);
+            header.extend(suffix.bytes());
+            prop_assert!(build_arguments(vec![
+                OsString::from("repos/o/r"),
+                OsString::from("--header"),
+                OsString::from_vec(header),
+            ]).is_err());
+        }
+
+        #[test]
+        fn absolute_endpoint_schemes_are_denied(
+            scheme in "[A-Za-z][A-Za-z0-9+.-]{0,12}"
+        ) {
+            let endpoint = format!("{scheme}:resource");
+            prop_assert!(build_arguments(vec![OsString::from(endpoint)]).is_err());
         }
     }
 }

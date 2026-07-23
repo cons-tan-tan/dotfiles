@@ -16,10 +16,15 @@ let
         ./Cargo.toml
         ./Cargo.lock
         ./src
+        ./tests
       ];
     };
 
     cargoLock.lockFile = ./Cargo.lock;
+    cargoTestFlags = [
+      "--all-targets"
+      "--all-features"
+    ];
 
     meta = {
       description = "Typed argument policies for read-only curl and GitHub API wrappers";

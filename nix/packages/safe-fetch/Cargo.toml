@@ -14,5 +14,13 @@ path = "src/bin/curl-fetch.rs"
 name = "gh-api-get"
 path = "src/bin/gh-api-get.rs"
 
+[[bin]]
+name = "safe-fetch-test-fixture"
+path = "src/bin/safe-fetch-test-fixture.rs"
+required-features = ["test-fixture"]
+
+[features]
+test-fixture = []
+
 [dev-dependencies]
 proptest = "1.8"

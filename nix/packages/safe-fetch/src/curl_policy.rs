@@ -68,6 +68,16 @@ const LONG_VALUE: &[(&str, ValueOption)] = &[
     ("--write-out", ValueOption::WriteOut),
 ];
 
+const SHORT_NO_VALUE: &[u8] = b"sSLfIig";
+const SHORT_VALUE: &[(u8, ValueOption)] = &[
+    (b'A', ValueOption::UserAgent),
+    (b'H', ValueOption::Header),
+    (b'm', ValueOption::MaxTime),
+    (b'o', ValueOption::Output),
+    (b'w', ValueOption::WriteOut),
+    (b'r', ValueOption::Range),
+];
+
 pub fn build_arguments(arguments: Vec<OsString>) -> Result<Vec<OsString>, PolicyError> {
     let mut pending: Option<ValueOption> = None;
     for argument in &arguments {
@@ -141,24 +151,21 @@ fn parse_short(argument: &[u8]) -> Result<Option<ValueOption>, PolicyError> {
     let mut index = 0;
     while index < characters.len() {
         let character = characters[index];
-        if matches!(character, b's' | b'S' | b'L' | b'f' | b'I' | b'i' | b'g') {
+        if SHORT_NO_VALUE.contains(&character) {
             index += 1;
             continue;
         }
-        let option = match character {
-            b'A' => ValueOption::UserAgent,
-            b'H' => ValueOption::Header,
-            b'm' => ValueOption::MaxTime,
-            b'o' => ValueOption::Output,
-            b'w' => ValueOption::WriteOut,
-            b'r' => ValueOption::Range,
-            _ => return reject(&format!("-{}", char::from(character))),
+        let Some((_, option)) = SHORT_VALUE
+            .iter()
+            .find(|(candidate, _)| *candidate == character)
+        else {
+            return reject(&format!("-{}", char::from(character)));
         };
         let rest = &characters[index + 1..];
         if rest.is_empty() {
-            return Ok(Some(option));
+            return Ok(Some(*option));
         }
-        validate_value(option, rest)?;
+        validate_value(*option, rest)?;
         return Ok(None);
     }
     Ok(None)
@@ -363,6 +370,186 @@ mod tests {
         values.iter().map(OsString::from).collect()
     }
 
+    fn assert_allowed(values: &[&str]) {
+        assert!(
+            build_arguments(args(values)).is_ok(),
+            "expected arguments to be allowed: {values:?}"
+        );
+    }
+
+    fn assert_denied(values: &[&str]) {
+        assert!(
+            build_arguments(args(values)).is_err(),
+            "expected arguments to be denied: {values:?}"
+        );
+    }
+
+    #[test]
+    fn long_no_value_inventory_is_complete_and_allowed() {
+        let cases = [
+            "--silent",
+            "--show-error",
+            "--location",
+            "--fail",
+            "--fail-with-body",
+            "--compressed",
+            "--no-progress-meter",
+            "--ipv4",
+            "--ipv6",
+            "--head",
+            "--show-headers",
+            "--globoff",
+        ];
+
+        assert_eq!(cases.as_slice(), LONG_NO_VALUE);
+        for option in cases {
+            assert_allowed(&[option, "https://example.com"]);
+            assert_denied(&[&format!("{option}=true"), "https://example.com"]);
+        }
+    }
+
+    #[test]
+    fn long_value_inventory_is_complete_and_classified() {
+        let literal_values = [
+            ("--user-agent", "safe-fetch/1"),
+            ("--header", "Accept: application/json"),
+            ("--max-time", "10"),
+            ("--connect-timeout", "5"),
+            ("--retry", "2"),
+            ("--retry-delay", "1"),
+            ("--retry-max-time", "30"),
+            ("--max-redirs", "4"),
+            ("--range", "0-499"),
+        ];
+        let url_values = [("--url", "https://example.com")];
+        let explicit_output_values = [("--output", "/tmp/explicit-output")];
+        let response_output_values = [("--write-out", "%{http_code}")];
+        let classified = literal_values
+            .iter()
+            .chain(&url_values)
+            .chain(&explicit_output_values)
+            .chain(&response_output_values)
+            .map(|(name, _)| *name)
+            .collect::<Vec<_>>();
+        let inventory = LONG_VALUE.iter().map(|(name, _)| *name).collect::<Vec<_>>();
+
+        assert_eq!(classified, inventory);
+        for (option, value) in literal_values
+            .iter()
+            .chain(&url_values)
+            .chain(&explicit_output_values)
+            .chain(&response_output_values)
+        {
+            assert_allowed(&[option, value, "https://example.com"]);
+            assert_allowed(&[&format!("{option}={value}"), "https://example.com"]);
+            assert_denied(&[option]);
+        }
+    }
+
+    #[test]
+    fn short_option_inventory_is_classified() {
+        assert_eq!(SHORT_NO_VALUE, b"sSLfIig");
+        assert_eq!(
+            SHORT_VALUE,
+            &[
+                (b'A', ValueOption::UserAgent),
+                (b'H', ValueOption::Header),
+                (b'm', ValueOption::MaxTime),
+                (b'o', ValueOption::Output),
+                (b'w', ValueOption::WriteOut),
+                (b'r', ValueOption::Range),
+            ]
+        );
+        for option in ["-s", "-S", "-L", "-f", "-I", "-i", "-g", "-fsSL"] {
+            assert_allowed(&[option, "https://example.com"]);
+        }
+        for (option, attached, value) in [
+            ("-A", "-Asafe-fetch/1", "safe-fetch/1"),
+            (
+                "-H",
+                "-HAccept: application/json",
+                "Accept: application/json",
+            ),
+            ("-m", "-m10", "10"),
+            ("-o", "-o/tmp/explicit-output", "/tmp/explicit-output"),
+            ("-w", "-w%{http_code}", "%{http_code}"),
+            ("-r", "-r0-499", "0-499"),
+        ] {
+            assert_allowed(&[option, value, "https://example.com"]);
+            assert_allowed(&[attached, "https://example.com"]);
+            assert_denied(&[option]);
+        }
+    }
+
+    #[test]
+    fn rejected_effectful_option_inventory_is_default_denied() {
+        for arguments in [
+            vec!["-X", "POST"],
+            vec!["--request", "POST"],
+            vec!["--request-target", "/other"],
+            vec!["-d", "body"],
+            vec!["--data", "body"],
+            vec!["-F", "file=@/tmp/body"],
+            vec!["-T", "/tmp/body"],
+            vec!["--upload-file", "/tmp/body"],
+            vec!["--json", "{}"],
+            vec!["--config", "/tmp/config"],
+            vec!["--netrc-file", "/tmp/netrc"],
+            vec!["--variable", "name=@/tmp/value"],
+            vec!["-O"],
+            vec!["--remote-name"],
+            vec!["--remote-name-all"],
+            vec!["-J"],
+            vec!["--remote-header-name"],
+            vec!["--output-dir", "/tmp"],
+            vec!["--create-dirs"],
+            vec!["--create-file-mode", "0600"],
+            vec!["--no-clobber"],
+            vec!["--skip-existing"],
+            vec!["--remove-on-error"],
+            vec!["-D", "/tmp/headers"],
+            vec!["--dump-header", "/tmp/headers"],
+            vec!["-c", "/tmp/cookies"],
+            vec!["--cookie-jar", "/tmp/cookies"],
+            vec!["--trace", "/tmp/trace"],
+            vec!["--etag-save", "/tmp/etag"],
+            vec!["--libcurl", "/tmp/request.c"],
+            vec!["--hsts", "/tmp/hsts"],
+            vec!["--alt-svc", "/tmp/alt-svc"],
+            vec!["--stderr", "/tmp/stderr"],
+            vec!["--ssl-sessions", "/tmp/sessions"],
+        ] {
+            let mut values = arguments;
+            values.push("https://example.com");
+            assert_denied(&values);
+        }
+    }
+
+    #[test]
+    fn url_and_argument_boundaries_are_fixed() {
+        for values in [
+            vec!["https://example.com"],
+            vec!["http://example.com"],
+            vec!["http://127.0.0.1/resource"],
+            vec!["http://169.254.169.254/latest/meta-data"],
+            vec!["--url=https://example.com"],
+            vec!["--url", "http://example.com"],
+        ] {
+            assert_allowed(&values);
+        }
+        for values in [
+            vec!["--", "https://example.com"],
+            vec!["--unknown", "https://example.com"],
+            vec!["-Z", "https://example.com"],
+            vec!["file:///etc/passwd"],
+            vec!["ftp://example.com/file"],
+            vec!["--url=file:///etc/passwd"],
+            vec!["--url", "ftp://example.com/file"],
+        ] {
+            assert_denied(&values);
+        }
+    }
+
     #[test]
     fn accepts_documented_forms_and_pins_protocols() {
         let child =
@@ -417,6 +604,11 @@ mod tests {
         for values in [
             vec!["--write-out", "@/tmp/format", "https://example.com"],
             vec!["--write-out=%output{/tmp/status}", "https://example.com"],
+            vec![
+                "--write-out",
+                "%output{>>/tmp/status}%{http_code}",
+                "https://example.com",
+            ],
             vec!["-H@/tmp/header", "https://example.com"],
             vec!["file:///etc/passwd"],
             vec!["--url", "ftp://example.com"],
@@ -477,6 +669,31 @@ mod tests {
             ));
             let flag = OsString::from_vec(vec![b'-', character]);
             prop_assert!(build_arguments(vec![flag]).is_err());
+        }
+
+        #[test]
+        fn every_header_control_byte_is_denied(
+            prefix in "[ -~]{0,16}",
+            control in prop::sample::select(
+                (0u8..=0x1f).chain(std::iter::once(0x7f)).collect::<Vec<_>>()
+            ),
+            suffix in "[ -~]{0,16}",
+        ) {
+            let mut header = format!("X-Test: {prefix}").into_bytes();
+            header.push(control);
+            header.extend(suffix.bytes());
+            prop_assert!(build_arguments(vec![
+                OsString::from("--header"),
+                OsString::from_vec(header),
+                OsString::from("https://example.com"),
+            ]).is_err());
+        }
+
+        #[test]
+        fn non_http_url_schemes_are_denied(scheme in "[A-Za-z][A-Za-z0-9+.-]{0,12}") {
+            prop_assume!(scheme != "http" && scheme != "https");
+            let url = format!("{scheme}://example.com/resource");
+            prop_assert!(build_arguments(vec![OsString::from(url)]).is_err());
         }
     }
 }
