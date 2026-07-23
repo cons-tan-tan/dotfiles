@@ -1,5 +1,41 @@
 #!/usr/bin/env bats
-# update-pins の全体 transaction を fake repo とスタブだけで検査する。
+# Nix-built public binary, real Git transactions, and real child-process argv
+# remain here. Removed Bats assertions map to these narrower Rust assertions:
+# - CLI/jobs/retry: cli::compatible_parser_*, policy::*_policy_*, and
+#   fetch::transient_* assert exact values, bounds, attempts, and fresh files;
+#   the public exit contract remains in test 1.
+# - target selection/order/report: engine::all_runs_*, engine::all_preflights_*,
+#   and ledger::rendering_* assert registry execution and field order; test 2
+#   retains the process-visible headers and no-op report.
+# - preflight/postflight: engine::failed_all_target_preflight_* asserts that no
+#   updater runs after a preflight failure, while engine::all_preflights_*
+#   asserts the full validate/update/validate sequence; tests 3 and 7 retain
+#   public check and rollback reporting.
+# - transaction/dirty/mode/untracked/lock: transaction::dirty_*,
+#   scoped_transaction_*, rollback_*, concurrent_transaction_*, and
+#   identical_write_* assert bytes, permissions, ownership, lock release,
+#   restore+unlock error retention, and inode/mtime stability; test 3 retains
+#   the real process boundary.
+# - flake input update: targets::paired_flake_version_* asserts byte-preserving
+#   source replacement and mutating_commands_* asserts bounded argv; tests 4
+#   and 5 retain real `nix flake update` argv and lock publication.
+# - release/multi-asset: targets::asset_jobs_* and asset_batch_failure_* assert
+#   reverse-completion ordering, bounded concurrency, and no partial pin
+#   publication; test 5 retains a paired multi-asset E2E.
+# - Shellfirm source/hash/lock: shellfirm::validates_*, rejects_*, reads_one_*,
+#   build::diagnostics_*, and the engine rollback tests assert validation,
+#   bounded diagnostics, and restoration; test 8 traverses the success path.
+# - Difit source/pnpm/build: targets::npm_archive_*/validates_npm_* and
+#   build::parses_*/rejects_*/candidate_build_* assert archive identity,
+#   key/hash extraction, one mismatch candidate, and bounded final diagnostics;
+#   fetch::transient_* supplies retry bounds and test 4 retains real child order.
+# - Codex archive identity: codex_app::appcast_* and bundle_identity_* assert
+#   appName, bundle ID, display name, version, URL/archive identity, and unsafe
+#   ZIP rejection; tests 6 and 7 retain real ZIP success and late failure.
+# - all-target rollback/idempotence: engine::late_target_failure_* and
+#   all_preflights_* assert real-Git all-managed rollback, shared flake.lock
+#   restore, commit-only success, and second-run inode/mtime stability; tests 7
+#   and 8 retain the public multi-target boundaries.
 
 make_difit_tarball() {
   local version=$1
@@ -8,11 +44,7 @@ make_difit_tarball() {
 {
   "name": "difit",
   "version": "$version",
-  "packageManager": "pnpm@11.6.0",
-  "devDependencies": {
-    "oxlint": "^1.49.0",
-    "oxlint-tsgolint": "^0.23.0"
-  }
+  "packageManager": "pnpm@11.6.0"
 }
 JSON
   tar -czf "$WORK/difit.tgz" -C "$WORK/difit-tar" package
@@ -46,16 +78,8 @@ setup() {
     git commit -q -m "initial managed files"
   )
 
-  STUB_DIR="$WORK/stub"
-  mkdir -p "$STUB_DIR"
-  export UPDATE_PINS_FAKE_ROOT="$WORK"
-  export UPDATE_PINS_SHELLFIRM_BUILD_COUNT="$WORK/shellfirm-build-count"
-  export UPDATE_PINS_DIFIT_BUILD_COUNT="$WORK/difit-build-count"
-  export UPDATE_PINS_FLAKE_UPDATE_LOG="$WORK/flake-update.log"
-  export UPDATE_PINS_COMMAND_LOG="$WORK/command.log"
-
-  if [ -z "${UPDATE_PINS_TEST_BIN:-}" ]; then
-    echo "UPDATE_PINS_TEST_BIN must identify the unwrapped update-pins binary" >&2
+  if [ -z "${UPDATE_PINS_TEST_BIN:-}" ] || [ ! -x "$UPDATE_PINS_TEST_BIN" ]; then
+    echo "UPDATE_PINS_TEST_BIN must identify the Nix-built update-pins binary" >&2
     return 1
   fi
   case "$UPDATE_PINS_TEST_BIN" in
@@ -65,14 +89,20 @@ setup() {
     return 1
     ;;
   esac
-  if [ ! -x "$UPDATE_PINS_TEST_BIN" ]; then
-    echo "UPDATE_PINS_TEST_BIN is not executable: $UPDATE_PINS_TEST_BIN" >&2
-    return 1
-  fi
-  export UPDATE_PINS_TEST_BIN
+  UPDATE_PINS_ZIP_BIN="$(command -v zip)"
+  export UPDATE_PINS_TEST_BIN UPDATE_PINS_ZIP_BIN
 
-  make_difit_tarball "$(sed -n 's|.*github:yoshiko-pg/difit/v\([^"]*\)";|\1|p' "$WORK/flake.nix")"
+  export UPDATE_PINS_FAKE_ROOT="$WORK"
+  export UPDATE_PINS_COMMAND_LOG="$WORK/command.log"
+  export UPDATE_PINS_FLAKE_UPDATE_LOG="$WORK/flake-update.log"
+  export UPDATE_PINS_SHELLFIRM_BUILD_COUNT="$WORK/shellfirm-build-count"
+  export UPDATE_PINS_DIFIT_BUILD_COUNT="$WORK/difit-build-count"
+
+  make_difit_tarball "$(flake_version yoshiko-pg/difit)"
   make_source_tarball
+
+  STUB_DIR="$WORK/stub"
+  mkdir -p "$STUB_DIR"
 
   printf '#!%s\n' "$BASH_BIN" >"$STUB_DIR/gh"
   cat >>"$STUB_DIR/gh" <<'EOS'
@@ -105,7 +135,7 @@ case "$*" in
   gh_response "${UPDATE_PINS_AGENT_BROWSER_TAG:-v$(flake_version vercel-labs/agent-browser)}"
   ;;
 "api --include repos/watchexec/watchexec/releases/latest")
-  gh_response "${UPDATE_PINS_WATCHEXEC_TAG:-v$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/watchexec.json")}"
+  gh_response "v$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/watchexec.json")"
   ;;
 "api --include repos/kaplanelad/shellfirm/releases/latest")
   gh_response "${UPDATE_PINS_SHELLFIRM_TAG:-v$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/shellfirm.json")}"
@@ -129,11 +159,6 @@ set -euo pipefail
   printf '%s\n' "${command_line% }"
 } >>"$UPDATE_PINS_COMMAND_LOG"
 
-flake_version() {
-  local repo=$1
-  sed -n "s|.*github:$repo/v\\([^\"]*\\)\";|\\1|p" "$UPDATE_PINS_FAKE_ROOT/flake.nix"
-}
-
 if [ "$#" -ne 17 ] \
   || [ "$1" != "-sS" ] \
   || [ "$2" != "--location" ] \
@@ -156,44 +181,18 @@ fi
 
 output_path=${14}
 url=${17}
-if [ -n "${UPDATE_PINS_CURL_FAIL_PATTERN:-}" ] \
-  && [[ "$url" == *"$UPDATE_PINS_CURL_FAIL_PATTERN"* ]]; then
-  count=0
-  if [ -f "$UPDATE_PINS_FAKE_ROOT/curl-failure-count" ]; then
-    count=$(cat "$UPDATE_PINS_FAKE_ROOT/curl-failure-count")
-  fi
-  count=$((count + 1))
-  printf '%s\n' "$count" >"$UPDATE_PINS_FAKE_ROOT/curl-failure-count"
-  if [ "$count" -le "${UPDATE_PINS_CURL_FAIL_COUNT:-0}" ]; then
-    printf '%s' "${UPDATE_PINS_CURL_FAIL_HTTP_STATUS:-503}"
-    exit "${UPDATE_PINS_CURL_FAIL_EXIT_STATUS:-0}"
-  fi
-fi
-if [ "${UPDATE_PINS_FAIL_HERDR_PREFETCH:-}" = "source" ] \
-  && [[ "$url" == *"github.com/ogulcancelik/herdr/archive/refs/tags/"* ]]; then
-  printf '000'
-  exit 7
-fi
-if [ -n "${UPDATE_PINS_FAIL_WATCHEXEC_TARGET:-}" ] \
-  && [[ "$url" == *"github.com/watchexec/watchexec/releases/download/"*"$UPDATE_PINS_FAIL_WATCHEXEC_TARGET"* ]]; then
-  printf '000'
-  exit 7
-fi
-
 case "$url" in
 https://registry.npmjs.org/difit/latest)
-  if [ "${UPDATE_PINS_INVALID_NPM_JSON:-}" = "1" ]; then
-    printf '{invalid\n' >"$output_path"
-  else
-    printf '{"version":"%s"}\n' "${UPDATE_PINS_DIFIT_VERSION:-$(flake_version yoshiko-pg/difit)}" >"$output_path"
-  fi
+  printf '{"version":"%s"}\n' \
+    "${UPDATE_PINS_DIFIT_VERSION:-$(sed -n 's|.*github:yoshiko-pg/difit/v\([^"]*\)";|\1|p' "$UPDATE_PINS_FAKE_ROOT/flake.nix")}" \
+    >"$output_path"
   ;;
 https://registry.npmjs.org/difit/-/difit-*.tgz)
   cp "$UPDATE_PINS_DIFIT_TARBALL" "$output_path"
   ;;
 https://persistent.oaistatic.com/codex-app-prod/appcast.xml)
   version=${UPDATE_PINS_CODEX_APP_VERSION:-$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/codex-app.json")}
-  url=${UPDATE_PINS_CODEX_APP_URL:-$(jq -r .url "$UPDATE_PINS_FAKE_ROOT/nix/pins/codex-app.json")}
+  archive_url=${UPDATE_PINS_CODEX_APP_URL:-$(jq -r .url "$UPDATE_PINS_FAKE_ROOT/nix/pins/codex-app.json")}
   cat >"$output_path" <<XML
 <?xml version="1.0" encoding="utf-8"?>
 <rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
@@ -202,33 +201,38 @@ https://persistent.oaistatic.com/codex-app-prod/appcast.xml)
       <title>$version</title>
       <sparkle:shortVersionString>$version</sparkle:shortVersionString>
       <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-      <enclosure url="$url" length="123" type="application/octet-stream" />
+      <enclosure url="$archive_url" length="123" type="application/octet-stream" />
     </item>
   </channel>
 </rss>
 XML
   ;;
 https://persistent.oaistatic.com/codex-app-prod/*.zip)
-  app_name=${UPDATE_PINS_CODEX_APP_NAME:-$(jq -r .appName "$UPDATE_PINS_FAKE_ROOT/nix/pins/codex-app.json")}
-  bundle_identifier=${UPDATE_PINS_CODEX_APP_BUNDLE_IDENTIFIER:-$(jq -r .bundleIdentifier "$UPDATE_PINS_FAKE_ROOT/nix/pins/codex-app.json")}
-  display_name=${UPDATE_PINS_CODEX_APP_DISPLAY_NAME:-$(jq -r .displayName "$UPDATE_PINS_FAKE_ROOT/nix/pins/codex-app.json")}
+  app_name=$(jq -r .appName "$UPDATE_PINS_FAKE_ROOT/nix/pins/codex-app.json")
+  bundle_identifier=$(jq -r .bundleIdentifier "$UPDATE_PINS_FAKE_ROOT/nix/pins/codex-app.json")
+  display_name=$(jq -r .displayName "$UPDATE_PINS_FAKE_ROOT/nix/pins/codex-app.json")
   version=${UPDATE_PINS_CODEX_APP_BUNDLE_VERSION:-${UPDATE_PINS_CODEX_APP_VERSION:-$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/codex-app.json")}}
-  python3 - "$output_path" "$app_name" "$bundle_identifier" "$display_name" "$version" <<'PY'
-import plistlib
-import sys
-import zipfile
-
-zip_path, app_name, bundle_identifier, display_name, version = sys.argv[1:]
-plist = {
-    "CFBundleDisplayName": display_name,
-    "CFBundleIdentifier": bundle_identifier,
-    "CFBundleName": display_name,
-    "CFBundleShortVersionString": version,
-}
-
-with zipfile.ZipFile(zip_path, "w") as archive:
-    archive.writestr(f"{app_name}/Contents/Info.plist", plistlib.dumps(plist))
-PY
+  fixture="$UPDATE_PINS_FAKE_ROOT/codex-app-fixture"
+  rm -rf "$fixture"
+  mkdir -p "$fixture/$app_name/Contents"
+  cat >"$fixture/$app_name/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDisplayName</key><string>$display_name</string>
+  <key>CFBundleIdentifier</key><string>$bundle_identifier</string>
+  <key>CFBundleName</key><string>$display_name</string>
+  <key>CFBundleShortVersionString</key><string>$version</string>
+</dict>
+</plist>
+PLIST
+  rm -f "$output_path"
+  (
+    cd "$fixture"
+    "$UPDATE_PINS_ZIP_BIN" -q -r "$output_path" "$app_name"
+  )
+  rm -rf "$fixture"
   ;;
 https://json.schemastore.org/claude-code-settings.json)
   printf '{}\n' >"$output_path"
@@ -254,14 +258,8 @@ EOS
   printf '#!%s\n' "$BASH_BIN" >"$STUB_DIR/npm"
   cat >>"$STUB_DIR/npm" <<'EOS'
 set -euo pipefail
-
-{
-  printf 'npm'
-  printf ' %q' "$@"
-  printf '\n'
-} >>"$UPDATE_PINS_COMMAND_LOG"
-
-echo "npm must not be invoked by update-pins: $*" >&2
+printf 'npm %s\n' "$*" >>"$UPDATE_PINS_COMMAND_LOG"
+echo "npm must not be invoked by update-pins" >&2
 exit 97
 EOS
 
@@ -285,89 +283,78 @@ if { [ "$#" -eq 6 ] || [ "$#" -eq 7 ]; } \
     exit 1
   fi
   local_url=${!#}
-  case "$local_url" in
-  file:///*) local_path=${local_url#file://} ;;
-  *)
-    echo "nix prefetch did not receive a local download: $*" >&2
-    exit 1
-    ;;
-  esac
-  if [ ! -f "$local_path" ]; then
-    echo "nix prefetch local download is missing: $local_path" >&2
-    exit 1
-  fi
+  local_path=${local_url#file://}
+  [ "$local_path" != "$local_url" ] && [ -f "$local_path" ]
+
   if [ -f "$UPDATE_PINS_FAKE_ROOT/shellfirm-download-path" ] \
     && [ "$(cat "$UPDATE_PINS_FAKE_ROOT/shellfirm-download-path")" = "$local_path" ]; then
     store="$UPDATE_PINS_FAKE_ROOT/shellfirm-store"
-    mkdir -p "$store/shellfirm"
     version=${UPDATE_PINS_SHELLFIRM_TAG:-v$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/shellfirm.json")}
     version=${version#v}
+    mkdir -p "$store/shellfirm"
     printf '[workspace]\nmembers = ["shellfirm"]\n' >"$store/Cargo.toml"
     printf '[package]\nname = "shellfirm"\nversion = "%s"\n' "$version" >"$store/shellfirm/Cargo.toml"
-    if [ "${UPDATE_PINS_SHELLFIRM_LOCK_MODE:-}" != "missing" ]; then
-      if [ "${UPDATE_PINS_SHELLFIRM_REUSE_LOCK:-}" = "1" ]; then
-        cp "$UPDATE_PINS_FAKE_ROOT/nix/packages/shellfirm/Cargo.lock" "$store/Cargo.lock"
-      else
-        lock_version=$version
-        registry_source=registry+https://github.com/rust-lang/crates.io-index
-        if [ "${UPDATE_PINS_SHELLFIRM_LOCK_MODE:-}" = "version-mismatch" ]; then
-          lock_version=0.0.0
-        fi
-        if [ "${UPDATE_PINS_SHELLFIRM_LOCK_MODE:-}" = "alternate-registry" ]; then
-          registry_source=registry+https://example.invalid/index
-        fi
-        cat >"$store/Cargo.lock" <<LOCK
+    cat >"$store/Cargo.lock" <<LOCK
 version = 4
 
 [[package]]
 name = "fixture-dependency"
 version = "1.0.0"
-source = "$registry_source"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 [[package]]
 name = "shellfirm"
-version = "$lock_version"
+version = "$version"
 LOCK
-        if [ "${UPDATE_PINS_SHELLFIRM_LOCK_MODE:-}" = "git-dependency" ]; then
-          cat >>"$store/Cargo.lock" <<'LOCK'
-
-[[package]]
-name = "git-fixture"
-version = "1.0.0"
-source = "git+https://example.invalid/repository"
-LOCK
-        fi
-      fi
-    fi
-    if [ "${UPDATE_PINS_SHELLFIRM_LOCK_MODE:-}" = "ambiguous" ]; then
-      mkdir -p "$store/nested"
-      printf '[workspace]\n' >"$store/nested/Cargo.toml"
-      printf 'version = 4\n' >"$store/nested/Cargo.lock"
-    fi
-    printf '{"hash":"%s","storePath":"%s"}\n' "${UPDATE_PINS_SOURCE_HASH:-sha256-JaZjQmPBsfb8RpegTiuZBOpLBCqJr1nck+wfXUSEiiY=}" "$store"
+    printf '{"hash":"sha256-JaZjQmPBsfb8RpegTiuZBOpLBCqJr1nck+wfXUSEiiY=","storePath":"%s"}\n' "$store"
     exit 0
   fi
+
   case "$local_path" in
   *.zip)
     zip_path="$UPDATE_PINS_FAKE_ROOT/codex-app.zip"
     cp "$local_path" "$zip_path"
     printf '{"hash":"sha256-V95M9AFEvffQABDy9VV6fWQsK5cFMJv63hZ90xPiypM=","storePath":"%s"}\n' "$zip_path"
-    exit 0
     ;;
   *.json)
     printf '{"hash":"%s"}\n' "${UPDATE_PINS_SCHEMA_HASH:-sha256-3wrW5DiA8JyQ6/lfGREBeKumiQ3wAQ69p0hQKeK1Q7Q=}"
-    exit 0
     ;;
   *.tgz)
-    printf '{"hash":"%s","storePath":"%s"}\n' "${UPDATE_PINS_DIFIT_SOURCE_HASH:-sha256-gmer9Ei3Jq/YwFQ13VuGqxjSZiafe7wWoJnabLgSrKE=}" "$UPDATE_PINS_DIFIT_TARBALL"
-    exit 0
+    printf '{"hash":"sha256-gmer9Ei3Jq/YwFQ13VuGqxjSZiafe7wWoJnabLgSrKE=","storePath":"%s"}\n' "$UPDATE_PINS_DIFIT_TARBALL"
+    ;;
+  *)
+    if [ "$#" -eq 7 ]; then
+      printf '{"hash":"sha256-JaZjQmPBsfb8RpegTiuZBOpLBCqJr1nck+wfXUSEiiY="}\n'
+    else
+      printf '{"hash":"sha256-1ZOG4K5DXikvvg6825VLde1fs5IgkSd8sZ95j8XVBxg="}\n'
+    fi
     ;;
   esac
-  if [ "$#" -eq 7 ]; then
-    printf '{"hash":"%s"}\n' "${UPDATE_PINS_SOURCE_HASH:-sha256-JaZjQmPBsfb8RpegTiuZBOpLBCqJr1nck+wfXUSEiiY=}"
-  else
-    printf '{"hash":"%s"}\n' "${UPDATE_PINS_ASSET_HASH:-sha256-1ZOG4K5DXikvvg6825VLde1fs5IgkSd8sZ95j8XVBxg=}"
+  exit 0
+fi
+
+if [ "$1" = "build" ] \
+  && [ "${2:-}" = "--impure" ] \
+  && [ "${3:-}" = "--expr" ] \
+  && [ "${5:-}" = "--no-link" ] \
+  && [ "${UPDATE_PINS_PACKAGE:-}" = "difit" ]; then
+  count=0
+  if [ -f "$UPDATE_PINS_DIFIT_BUILD_COUNT" ]; then
+    count=$(cat "$UPDATE_PINS_DIFIT_BUILD_COUNT")
+  fi
+  count=$((count + 1))
+  printf '%s\n' "$count" >"$UPDATE_PINS_DIFIT_BUILD_COUNT"
+  if [ "$count" -eq 1 ]; then
+    [ "${UPDATE_PINS_PIN_OVERRIDE:-}" = "difitPin" ]
+    [ "${UPDATE_PINS_DEPENDENCY_HASH_FIELD:-}" = "pnpmDepsHash" ]
+    printf 'candidate-build-env %s %s %s\n' \
+      "$UPDATE_PINS_PACKAGE" \
+      "$UPDATE_PINS_PIN_OVERRIDE" \
+      "$UPDATE_PINS_DEPENDENCY_HASH_FIELD" >>"$UPDATE_PINS_COMMAND_LOG"
+    echo "error: hash mismatch" >&2
+    echo "got: sha256-32X0K6wkLW2x9cJJJ6J+cu5HOM2+oTZe5AEqLRHvpPM=" >&2
+    exit 1
   fi
   exit 0
 fi
@@ -375,116 +362,14 @@ fi
 if [ "$1" = "build" ] \
   && [ "${2:-}" = "--impure" ] \
   && [ "${3:-}" = "--expr" ] \
-  && [[ "${4:-}" != *'builtins.getEnv "UPDATE_PINS_PIN_OVERRIDE"'* ]] \
-  && { [[ "${4:-}" != *"pkgs.dotfilesPackages"* ]] || [[ "${4:-}" != *'builtins.getEnv "UPDATE_PINS_PACKAGE"'* ]]; }; then
-  echo "local package build did not use pkgs.dotfilesPackages" >&2
-  exit 1
-fi
-
-if [ "$1" = "build" ] \
-  && [ "${2:-}" = "--impure" ] \
-  && [ "${3:-}" = "--expr" ] \
-  && [[ "${4:-}" == *'builtins.getEnv "UPDATE_PINS_PIN_OVERRIDE"'* ]]; then
-  if [ "${UPDATE_PINS_PACKAGE:-}" != "difit" ] \
-    || [ "${UPDATE_PINS_PIN_OVERRIDE:-}" != "difitPin" ] \
-    || [ "${UPDATE_PINS_DEPENDENCY_HASH_FIELD:-}" != "pnpmDepsHash" ] \
-    || [ -z "${UPDATE_PINS_DEPENDENCY_PROVENANCE_JSON:-}" ] \
-    || [ -z "${UPDATE_PINS_PIN_JSON:-}" ]; then
-    echo "candidate package build did not receive the typed difit build specification" >&2
-    exit 1
-  fi
-  if [[ "${4:-}" != *'import ./nix/apps/update-pins/candidate-package.nix'* ]] \
-    || [[ "${4:-}" != *'builtins.getEnv "UPDATE_PINS_DEPENDENCY_HASH_FIELD"'* ]] \
-    || [[ "${4:-}" != *'builtins.getEnv "UPDATE_PINS_DEPENDENCY_PROVENANCE_JSON"'* ]] \
-    || [[ "${4:-}" != *'builtins.getEnv "UPDATE_PINS_PIN_JSON"'* ]] \
-    || ! jq -e \
-      '. == {
-        kind: "upstream-pnpm",
-        lockPath: "pnpm-lock.yaml",
-        workspacePath: "pnpm-workspace.yaml",
-        workspace: "difit",
-        pnpmMajor: 11,
-        scope: "production"
-      }' <<<"$UPDATE_PINS_DEPENDENCY_PROVENANCE_JSON" >/dev/null \
-    || ! jq -e \
-      'keys == ["pnpmDepsHash", "srcHash"] and (.srcHash | type == "string") and (.pnpmDepsHash | type == "string")' \
-      <<<"$UPDATE_PINS_PIN_JSON" >/dev/null; then
-    echo "candidate package build did not use the typed pin override expression" >&2
-    exit 1
-  fi
-  printf 'candidate-build-env %s %s %s\n' \
-    "$UPDATE_PINS_PACKAGE" \
-    "$UPDATE_PINS_PIN_OVERRIDE" \
-    "$UPDATE_PINS_DEPENDENCY_HASH_FIELD" >>"$UPDATE_PINS_COMMAND_LOG"
-fi
-
-if [ "$1" = "build" ] && [ "${2:-}" = "--impure" ] && [ "${3:-}" = "--expr" ] && [ "${5:-}" = "--no-link" ] && [ "${UPDATE_PINS_PACKAGE:-}" = "shellfirm" ]; then
+  && [ "${5:-}" = "--no-link" ] \
+  && [ "${UPDATE_PINS_PACKAGE:-}" = "shellfirm" ]; then
   count=0
   if [ -f "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT" ]; then
     count=$(cat "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT")
   fi
-  count=$((count + 1))
-  printf '%s\n' "$count" >"$UPDATE_PINS_SHELLFIRM_BUILD_COUNT"
-
-  case "${UPDATE_PINS_SHELLFIRM_BUILD_MODE:-}" in
-  success)
-    exit 0
-    ;;
-  fails)
-    echo "candidate package build failed" >&2
-    exit 1
-    ;;
-  *)
-    echo "UPDATE_PINS_SHELLFIRM_BUILD_MODE is not set" >&2
-    exit 1
-    ;;
-  esac
-fi
-
-if [ "$1" = "build" ] && [ "${2:-}" = "--impure" ] && [ "${3:-}" = "--expr" ] && [ "${5:-}" = "--no-link" ] && [ "${UPDATE_PINS_PACKAGE:-}" = "difit" ]; then
-  count=0
-  if [ -f "$UPDATE_PINS_DIFIT_BUILD_COUNT" ]; then
-    count=$(cat "$UPDATE_PINS_DIFIT_BUILD_COUNT")
-  fi
-  count=$((count + 1))
-  printf '%s\n' "$count" >"$UPDATE_PINS_DIFIT_BUILD_COUNT"
-
-  case "${UPDATE_PINS_DIFIT_BUILD_MODE:-}" in
-  no-hash)
-    echo "builder failed before printing a hash" >&2
-    exit 1
-    ;;
-  success)
-    if [ "$count" -eq 1 ]; then
-      echo "error: hash mismatch" >&2
-      echo "got: sha256-32X0K6wkLW2x9cJJJ6J+cu5HOM2+oTZe5AEqLRHvpPM=" >&2
-      exit 1
-    fi
-    exit 0
-    ;;
-  verify-fails)
-    if [ "$count" -eq 1 ]; then
-      echo "error: hash mismatch" >&2
-      echo "got: sha256-32X0K6wkLW2x9cJJJ6J+cu5HOM2+oTZe5AEqLRHvpPM=" >&2
-      exit 1
-    fi
-    echo "verification build failed" >&2
-    exit 1
-    ;;
-  verify-existing)
-    if [ "$count" -eq 1 ]; then
-      [ -n "${UPDATE_PINS_PIN_JSON:-}" ]
-      echo "error: hash mismatch" >&2
-      echo "got: ${UPDATE_PINS_REFRESHED_PNPM_HASH:?}" >&2
-      exit 1
-    fi
-    exit 0
-    ;;
-  *)
-    echo "UPDATE_PINS_DIFIT_BUILD_MODE is not set" >&2
-    exit 1
-    ;;
-  esac
+  printf '%s\n' "$((count + 1))" >"$UPDATE_PINS_SHELLFIRM_BUILD_COUNT"
+  exit 0
 fi
 
 if [ "$1" = "flake" ] && [ "${2:-}" = "update" ]; then
@@ -509,31 +394,6 @@ if [ "$1" = "flake" ] && [ "${2:-}" = "update" ]; then
     '.nodes[$node].original.ref = $ref | .nodes[$node].locked.rev = $rev' \
     "$UPDATE_PINS_FAKE_ROOT/flake.lock" >"$UPDATE_PINS_FAKE_ROOT/flake.lock.new"
   mv "$UPDATE_PINS_FAKE_ROOT/flake.lock.new" "$UPDATE_PINS_FAKE_ROOT/flake.lock"
-  if [ "${UPDATE_PINS_OVERSIZED_FLAKE_STDOUT:-}" = "$input" ]; then
-    head -c 1048577 /dev/zero
-    exit 0
-  fi
-  if [ "${UPDATE_PINS_FAIL_FLAKE_UPDATE:-}" = "$input" ]; then
-    echo "flake update failed for $input" >&2
-    exit 1
-  fi
-  if [ "${UPDATE_PINS_BREAK_ROLLBACK:-}" = "$input" ]; then
-    rm "$UPDATE_PINS_FAKE_ROOT/flake.lock"
-    mkdir "$UPDATE_PINS_FAKE_ROOT/flake.lock"
-    echo "flake update failed before rollback" >&2
-    exit 1
-  fi
-  if [ "${UPDATE_PINS_DELETE_FLAKE_AFTER_UPDATE:-}" = "$input" ]; then
-    rm "$UPDATE_PINS_FAKE_ROOT/flake.lock"
-    exit 0
-  fi
-  if [ "${UPDATE_PINS_CORRUPT_FLAKE_AFTER_UPDATE:-}" = "$input" ]; then
-    printf '\n# url = "github:aannoo/hcom/v0.0.0";\n' >>"$UPDATE_PINS_FAKE_ROOT/flake.nix"
-  fi
-  if [ "${UPDATE_PINS_BREAK_CHECK_ROLLBACK:-}" = "$input" ]; then
-    chmod 0555 "$UPDATE_PINS_FAKE_ROOT/nix/pins"
-  fi
-  echo "Updated input $input with secret-before-commit" >&2
   exit 0
 fi
 
@@ -562,42 +422,27 @@ save_managed() {
   cp -p "$WORK/nix/packages/shellfirm/Cargo.lock" "$dst/nix/packages/shellfirm/Cargo.lock"
 }
 
+file_mode() {
+  if stat -c '%a' "$1" >/dev/null 2>&1; then
+    stat -c '%a' "$1"
+  else
+    stat -f '%Lp' "$1"
+  fi
+}
+
 assert_managed_matches() {
   local expected=$1 pin name
-  cmp -s "$WORK/flake.nix" "$expected/flake.nix" || return 1
-  assert_same_mode "$WORK/flake.nix" "$expected/flake.nix" || return 1
-  cmp -s "$WORK/flake.lock" "$expected/flake.lock" || return 1
-  assert_same_mode "$WORK/flake.lock" "$expected/flake.lock" || return 1
-  cmp -s "$WORK/nix/packages/shellfirm/Cargo.lock" "$expected/nix/packages/shellfirm/Cargo.lock" || return 1
-  assert_same_mode "$WORK/nix/packages/shellfirm/Cargo.lock" "$expected/nix/packages/shellfirm/Cargo.lock" || return 1
+  cmp -s "$WORK/flake.nix" "$expected/flake.nix"
+  [ "$(file_mode "$WORK/flake.nix")" = "$(file_mode "$expected/flake.nix")" ]
+  cmp -s "$WORK/flake.lock" "$expected/flake.lock"
+  [ "$(file_mode "$WORK/flake.lock")" = "$(file_mode "$expected/flake.lock")" ]
+  cmp -s "$WORK/nix/packages/shellfirm/Cargo.lock" "$expected/nix/packages/shellfirm/Cargo.lock"
+  [ "$(file_mode "$WORK/nix/packages/shellfirm/Cargo.lock")" = "$(file_mode "$expected/nix/packages/shellfirm/Cargo.lock")" ]
   for pin in "$expected"/nix/pins/*.json; do
     name=$(basename "$pin")
-    cmp -s "$WORK/nix/pins/$name" "$pin" || return 1
-    assert_same_mode "$WORK/nix/pins/$name" "$pin" || return 1
+    cmp -s "$WORK/nix/pins/$name" "$pin"
+    [ "$(file_mode "$WORK/nix/pins/$name")" = "$(file_mode "$pin")" ]
   done
-}
-
-assert_same_mode() {
-  python3 - "$1" "$2" <<'PY'
-import os
-import stat
-import sys
-
-actual, expected = sys.argv[1:]
-if stat.S_IMODE(os.stat(actual).st_mode) != stat.S_IMODE(os.stat(expected).st_mode):
-    raise SystemExit(1)
-PY
-}
-
-file_identity() {
-  python3 - "$1" <<'PY'
-import os
-import stat
-import sys
-
-value = os.stat(sys.argv[1])
-print(value.st_ino, value.st_mtime_ns, stat.S_IMODE(value.st_mode), value.st_size)
-PY
 }
 
 assert_no_staging_files() {
@@ -606,12 +451,7 @@ assert_no_staging_files() {
   [ -z "$leftover" ]
 }
 
-assert_no_difit_package_lock() {
-  [ ! -e "$REPO_ROOT/nix/packages/difit/package-lock.json" ]
-  [ ! -e "$WORK/nix/packages/difit/package-lock.json" ]
-}
-
-paired_version() {
+flake_version() {
   local repo=$1 file=${2:-"$WORK/flake.nix"}
   sed -n "s|.*github:$repo/v\\([^\"]*\\)\";|\\1|p" "$file"
 }
@@ -632,48 +472,8 @@ report_section() {
 }
 
 make_unrelated_updates_noop() {
-  export UPDATE_PINS_AGENT_BROWSER_TAG="v$(paired_version vercel-labs/agent-browser)"
-  export UPDATE_PINS_SHELLFIRM_TAG="v$(jq -r .version "$WORK/nix/pins/shellfirm.json")"
-  export UPDATE_PINS_SCHEMA_HASH="$(jq -r .hash "$WORK/nix/pins/claude-code-settings-schema.json")"
-}
-
-set_hcom_asset_hash_fixture() {
-  local fixed_hash=sha256-1ZOG4K5DXikvvg6825VLde1fs5IgkSd8sZ95j8XVBxg=
-  jq --arg hash "$fixed_hash" '.assets[].hash = $hash' "$WORK/nix/pins/hcom.json" >"$WORK/hcom.json"
-  mv "$WORK/hcom.json" "$WORK/nix/pins/hcom.json"
-  git -C "$WORK" add nix/pins/hcom.json
-  git -C "$WORK" commit -q -m "fixed hcom hash fixture"
-}
-
-hcom_asset_trace() {
-  awk '
-    /^gh / {
-      print "gh " $NF
-      next
-    }
-    /^curl / && $NF ~ /^https:\/\/github.com\/aannoo\/hcom\/releases\/download\// {
-      print "curl " $NF
-      next
-    }
-    /^nix store prefetch-file / {
-      for (field = 1; field < NF; field++) {
-        if ($field == "--name") {
-          print "nix " $(field + 1)
-          next
-        }
-      }
-    }
-  ' "$UPDATE_PINS_COMMAND_LOG"
-}
-
-expected_hcom_asset_trace() {
-  local version name
-  version=$(paired_version aannoo/hcom)
-  printf 'gh repos/aannoo/hcom/releases/latest\n'
-  while IFS= read -r name; do
-    printf 'curl https://github.com/aannoo/hcom/releases/download/v%s/%s\n' "$version" "$name"
-    printf 'nix update-pins-%s\n' "$name"
-  done < <(jq -r '.assets | to_entries[].value.name' "$WORK/nix/pins/hcom.json")
+  export UPDATE_PINS_SCHEMA_HASH
+  UPDATE_PINS_SCHEMA_HASH=$(jq -r .hash "$WORK/nix/pins/claude-code-settings-schema.json")
 }
 
 assert_check_lock_reacquirable() {
@@ -681,330 +481,32 @@ assert_check_lock_reacquirable() {
   [ "$status" -eq 0 ]
 }
 
-@test "help lists supported targets without updating pins" {
+@test "Nix-built public binary preserves help, parse, and exit contracts" {
   original="$WORK/original"
   save_managed "$original"
 
   run_update_pins --help
-
   [ "$status" -eq 0 ]
   [[ "$output" == *"Usage: update-pins [--check] [--force] [--jobs N] [--retry N] [target]"* ]]
-  [[ "$output" == *"--check                 Run updates and validation, then restore repository files"* ]]
-  [[ "$output" == *"--jobs N                Maximum parallel jobs for release asset prefetch only (1-4; default 1)"* ]]
-  [[ "$output" == *"herdr"* ]]
   [[ "$output" == *"codex-app"* ]]
-  assert_managed_matches "$original"
-}
-
-@test "unknown target is rejected without updating pins" {
-  original="$WORK/original"
-  save_managed "$original"
 
   run_update_pins unknown
-
   [ "$status" -eq 2 ]
   [[ "$output" == *"unknown target 'unknown'"* ]]
-  assert_managed_matches "$original"
-}
-
-@test "multiple targets are rejected without updating pins" {
-  original="$WORK/original"
-  save_managed "$original"
 
   run_update_pins herdr hcom
-
   [ "$status" -eq 2 ]
   [[ "$output" == *"expected at most one target"* ]]
-  assert_managed_matches "$original"
-}
-
-@test "retry attempts are bounded and malformed options have no side effects" {
-  original="$WORK/original"
-  save_managed "$original"
 
   run_update_pins --retry 0
   [ "$status" -eq 2 ]
-  [[ "$output" == *"--retry must be an integer from 1 to 5, got '0'"* ]]
-  run_update_pins --retry 6
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"--retry must be an integer from 1 to 5, got '6'"* ]]
-  run_update_pins --retry many
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"--retry must be an integer from 1 to 5, got 'many'"* ]]
-  run_update_pins --retry
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"--retry requires a maximum attempt count"* ]]
-  run_update_pins --retry=
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"--retry must be an integer from 1 to 5, got ''"* ]]
-  run_update_pins --unknown
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"unknown option '--unknown'"* ]]
-  [ ! -e "$UPDATE_PINS_COMMAND_LOG" ]
-  assert_managed_matches "$original"
-}
+  [[ "$output" == *"--retry must be an integer from 1 to 5"* ]]
 
-@test "asset jobs accept one and four while rejecting malformed values without side effects" {
-  original="$WORK/original"
-  save_managed "$original"
-
-  run_update_pins --jobs 0
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"--jobs must be an integer from 1 to 4, got '0'"* ]]
   run_update_pins --jobs 5
   [ "$status" -eq 2 ]
-  [[ "$output" == *"--jobs must be an integer from 1 to 4, got '5'"* ]]
-  run_update_pins --jobs many
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"--jobs must be an integer from 1 to 4, got 'many'"* ]]
-  run_update_pins --jobs
-  [ "$status" -eq 2 ]
-  [[ "$output" == *"--jobs requires a maximum job count"* ]]
+  [[ "$output" == *"--jobs must be an integer from 1 to 4"* ]]
 
   [ ! -e "$UPDATE_PINS_COMMAND_LOG" ]
-  assert_managed_matches "$original"
-
-  set_hcom_asset_hash_fixture
-  save_managed "$original"
-  run_update_pins --jobs=4 --force hcom
-  [ "$status" -eq 0 ]
-  asset_count=$(jq '.assets | length' "$WORK/nix/pins/hcom.json")
-  [ "$(grep -c '^curl .*github.com/aannoo/hcom/releases/download/' "$UPDATE_PINS_COMMAND_LOG")" -eq "$asset_count" ]
-  [ "$(grep '^curl .*github.com/aannoo/hcom/releases/download/' "$UPDATE_PINS_COMMAND_LOG" | awk '{print $NF}' | sort -u | wc -l)" -eq "$asset_count" ]
-  [ "$(grep -c '^nix store prefetch-file' "$UPDATE_PINS_COMMAND_LOG")" -eq "$asset_count" ]
-  assert_managed_matches "$original"
-}
-
-@test "default asset jobs and explicit one preserve the sequential registry command trace" {
-  set_hcom_asset_hash_fixture
-  original="$WORK/original"
-  save_managed "$original"
-
-  run_update_pins --force hcom
-
-  [ "$status" -eq 0 ]
-  default_trace=$(hcom_asset_trace)
-  [ "$default_trace" = "$(expected_hcom_asset_trace)" ]
-  assert_managed_matches "$original"
-
-  : >"$UPDATE_PINS_COMMAND_LOG"
-  run_update_pins --jobs 1 --force hcom
-
-  [ "$status" -eq 0 ]
-  [ "$(hcom_asset_trace)" = "$default_trace" ]
-  assert_managed_matches "$original"
-}
-
-@test "parallel asset retries stay per asset and prefetch each successful asset once" {
-  set_hcom_asset_hash_fixture
-  original="$WORK/original"
-  save_managed "$original"
-  failing_name=$(jq -r '.assets["aarch64-darwin"].name' "$WORK/nix/pins/hcom.json")
-  export UPDATE_PINS_CURL_FAIL_PATTERN="$failing_name"
-  export UPDATE_PINS_CURL_FAIL_COUNT=2
-
-  run_update_pins --jobs=4 --retry 3 --force hcom
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"retrying attempt 2/3"* ]]
-  [[ "$output" == *"retrying attempt 3/3"* ]]
-  while IFS= read -r name; do
-    expected=1
-    if [ "$name" = "$failing_name" ]; then
-      expected=3
-    fi
-    [ "$(grep -Fc "https://github.com/aannoo/hcom/releases/download/v$(paired_version aannoo/hcom)/$name" "$UPDATE_PINS_COMMAND_LOG")" -eq "$expected" ]
-  done < <(jq -r '.assets | to_entries[].value.name' "$WORK/nix/pins/hcom.json")
-  asset_count=$(jq '.assets | length' "$WORK/nix/pins/hcom.json")
-  [ "$(grep -c '^nix store prefetch-file' "$UPDATE_PINS_COMMAND_LOG")" -eq "$asset_count" ]
-  assert_managed_matches "$original"
-}
-
-@test "force refreshes and re-pins a changed same-version Codex artifact" {
-  fixed_hash=sha256-V95M9AFEvffQABDy9VV6fWQsK5cFMJv63hZ90xPiypM=
-  original="$WORK/original"
-  save_managed "$original"
-  original_version=$(jq -r .version "$WORK/nix/pins/codex-app.json")
-  original_url=$(jq -r .url "$WORK/nix/pins/codex-app.json")
-
-  run_update_pins codex-app --force --retry=5
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"codex-app updated."* ]]
-  section=$(report_section "Applied changes:")
-  [ "$section" = $'  codex-app:\n    - app hash: changed' ]
-  [[ "$output" != *"$fixed_hash"* ]]
-  [[ "$output" != *"Rolled back candidate changes:"* ]]
-  [ "$(jq -r .version "$WORK/nix/pins/codex-app.json")" = "$original_version" ]
-  [ "$(jq -r .url "$WORK/nix/pins/codex-app.json")" = "$original_url" ]
-  [ "$(jq -r .hash "$WORK/nix/pins/codex-app.json")" = "$fixed_hash" ]
-  [ "$(grep -c '^curl ' "$UPDATE_PINS_COMMAND_LOG")" -eq 2 ]
-  grep -Fq "https://persistent.oaistatic.com/codex-app-prod/appcast.xml" "$UPDATE_PINS_COMMAND_LOG"
-  grep -Fq "$(jq -r .url "$WORK/nix/pins/codex-app.json")" "$UPDATE_PINS_COMMAND_LOG"
-  grep -Eq '^nix store prefetch-file --json --name update-pins-.+\.zip file:///.*/update-pins-fetch-.+\.zip$' "$UPDATE_PINS_COMMAND_LOG"
-  [ ! -e "$UPDATE_PINS_FLAKE_UPDATE_LOG" ]
-  cp "$WORK/nix/pins/codex-app.json" "$original/nix/pins/codex-app.json"
-  assert_managed_matches "$original"
-}
-
-@test "same-version paired force refreshes assets without flake input churn" {
-  set_hcom_asset_hash_fixture
-  original="$WORK/original"
-  save_managed "$original"
-
-  run_update_pins --force hcom
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"hcom is up to date."* ]]
-  [[ "$output" != *"Applied changes:"* ]]
-  [[ "$output" != *"Rolled back candidate changes:"* ]]
-  grep -Fq "gh api --include repos/aannoo/hcom/releases/latest" "$UPDATE_PINS_COMMAND_LOG"
-  asset_count=$(jq '.assets | length' "$WORK/nix/pins/hcom.json")
-  [ "$(grep -c '^curl .*github.com/aannoo/hcom/releases/download/' "$UPDATE_PINS_COMMAND_LOG")" -eq "$asset_count" ]
-  [ "$(grep '^curl .*github.com/aannoo/hcom/releases/download/' "$UPDATE_PINS_COMMAND_LOG" | awk '{print $NF}' | sort -u | wc -l)" -eq "$asset_count" ]
-  [ "$(grep -c '^nix store prefetch-file' "$UPDATE_PINS_COMMAND_LOG")" -eq "$asset_count" ]
-  ! grep -Fq "nix flake update" "$UPDATE_PINS_COMMAND_LOG"
-  [ ! -e "$UPDATE_PINS_FLAKE_UPDATE_LOG" ]
-  assert_managed_matches "$original"
-}
-
-@test "same-version shellfirm force validates without writing" {
-  original="$WORK/original"
-  save_managed "$original"
-  pin_before=$(file_identity "$WORK/nix/pins/shellfirm.json")
-  lock_before=$(file_identity "$WORK/nix/packages/shellfirm/Cargo.lock")
-  export UPDATE_PINS_SOURCE_HASH
-  UPDATE_PINS_SOURCE_HASH=$(jq -r .srcHash "$WORK/nix/pins/shellfirm.json")
-  export UPDATE_PINS_SHELLFIRM_REUSE_LOCK=1
-  export UPDATE_PINS_SHELLFIRM_BUILD_MODE=success
-
-  run_update_pins --force shellfirm
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"shellfirm: candidate source and lockfile are unchanged"* ]]
-  [[ "$output" == *"shellfirm is up to date."* ]]
-  [[ "$output" != *"Applied changes:"* ]]
-  [ "$(cat "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT")" -eq 1 ]
-  [ "$(file_identity "$WORK/nix/pins/shellfirm.json")" = "$pin_before" ]
-  [ "$(file_identity "$WORK/nix/packages/shellfirm/Cargo.lock")" = "$lock_before" ]
-  assert_managed_matches "$original"
-}
-
-@test "same-version difit force validates without writing" {
-  original="$WORK/original"
-  save_managed "$original"
-  pin_before=$(file_identity "$WORK/nix/pins/difit.json")
-  export UPDATE_PINS_DIFIT_SOURCE_HASH
-  UPDATE_PINS_DIFIT_SOURCE_HASH=$(jq -r .srcHash "$WORK/nix/pins/difit.json")
-  export UPDATE_PINS_REFRESHED_PNPM_HASH
-  UPDATE_PINS_REFRESHED_PNPM_HASH=$(jq -r .pnpmDepsHash "$WORK/nix/pins/difit.json")
-  export UPDATE_PINS_DIFIT_BUILD_MODE=verify-existing
-
-  run_update_pins --force difit
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"difit is up to date."* ]]
-  [[ "$output" != *"Applied changes:"* ]]
-  [ "$(cat "$UPDATE_PINS_DIFIT_BUILD_COUNT")" -eq 2 ]
-  [ ! -e "$UPDATE_PINS_FLAKE_UPDATE_LOG" ]
-  [ "$(file_identity "$WORK/nix/pins/difit.json")" = "$pin_before" ]
-  grep -Fq "candidate-build-env difit difitPin pnpmDepsHash" "$UPDATE_PINS_COMMAND_LOG"
-  ! grep -q '^npm ' "$UPDATE_PINS_COMMAND_LOG"
-  assert_no_difit_package_lock
-  assert_managed_matches "$original"
-}
-
-@test "force check difit performs both same-version builds and restores the repository" {
-  chmod 0440 "$WORK/nix/pins/difit.json"
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_DIFIT_SOURCE_HASH
-  UPDATE_PINS_DIFIT_SOURCE_HASH=$(jq -r .srcHash "$WORK/nix/pins/difit.json")
-  export UPDATE_PINS_REFRESHED_PNPM_HASH
-  UPDATE_PINS_REFRESHED_PNPM_HASH=$(jq -r .pnpmDepsHash "$WORK/nix/pins/difit.json")
-  export UPDATE_PINS_DIFIT_BUILD_MODE=verify-existing
-
-  run_update_pins --force --check difit
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"difit check succeeded; no pin changes required."* ]]
-  [[ "$output" != *"Candidate changes:"* ]]
-  [[ "$output" != *"Applied changes:"* ]]
-  [ "$(cat "$UPDATE_PINS_DIFIT_BUILD_COUNT")" -eq 2 ]
-  grep -Fq "candidate-build-env difit difitPin pnpmDepsHash" "$UPDATE_PINS_COMMAND_LOG"
-  ! grep -q '^npm ' "$UPDATE_PINS_COMMAND_LOG"
-  assert_no_difit_package_lock
-  assert_managed_matches "$original"
-  assert_no_staging_files
-  assert_check_lock_reacquirable
-}
-
-@test "same-version shellfirm force updates only a changed upstream lockfile" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_SOURCE_HASH
-  UPDATE_PINS_SOURCE_HASH=$(jq -r .srcHash "$WORK/nix/pins/shellfirm.json")
-  export UPDATE_PINS_SHELLFIRM_BUILD_MODE=success
-
-  run_update_pins --force shellfirm
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"shellfirm updated."* ]]
-  grep -Fq 'name = "shellfirm"' "$WORK/nix/packages/shellfirm/Cargo.lock"
-  section=$(report_section "Applied changes:")
-  [ "$section" = $'  shellfirm:\n    - lockfile [nix/packages/shellfirm/Cargo.lock]: changed' ]
-  [ "$(cat "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT")" -eq 1 ]
-  cp "$WORK/nix/packages/shellfirm/Cargo.lock" "$original/nix/packages/shellfirm/Cargo.lock"
-  assert_managed_matches "$original"
-}
-
-@test "one-attempt force refresh reaches the local prefetch without an implicit retry" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_SCHEMA_HASH
-  UPDATE_PINS_SCHEMA_HASH=$(jq -r .hash "$WORK/nix/pins/claude-code-settings-schema.json")
-
-  run_update_pins --retry 1 --force claude-code-settings-schema
-
-  [ "$status" -eq 0 ]
-  [[ "$output" != *"Applied changes:"* ]]
-  [[ "$output" != *"Rolled back candidate changes:"* ]]
-  [ "$(grep -c '^curl ' "$UPDATE_PINS_COMMAND_LOG")" -eq 1 ]
-  grep -Eq '^nix store prefetch-file --json --name update-pins-.+\.json file:///.*/update-pins-fetch-.+\.json$' "$UPDATE_PINS_COMMAND_LOG"
-  assert_managed_matches "$original"
-}
-
-@test "transient fetch failures recover at the default bound with fresh files" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_SCHEMA_HASH
-  UPDATE_PINS_SCHEMA_HASH=$(jq -r .hash "$WORK/nix/pins/claude-code-settings-schema.json")
-  export UPDATE_PINS_CURL_FAIL_PATTERN=json.schemastore.org
-  export UPDATE_PINS_CURL_FAIL_COUNT=2
-
-  run_update_pins claude-code-settings-schema
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"retrying attempt 2/3"* ]]
-  [[ "$output" == *"retrying attempt 3/3"* ]]
-  [ "$(grep -c '^curl ' "$UPDATE_PINS_COMMAND_LOG")" -eq 3 ]
-  [ "$(sed -n 's/.* --output \([^ ]*\) --write-out.*/\1/p' "$UPDATE_PINS_COMMAND_LOG" | sort -u | wc -l)" -eq 3 ]
-  assert_managed_matches "$original"
-}
-
-@test "permanent HTTP failure is attempted once and rolls back" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_CURL_FAIL_PATTERN=json.schemastore.org
-  export UPDATE_PINS_CURL_FAIL_COUNT=5
-  export UPDATE_PINS_CURL_FAIL_HTTP_STATUS=404
-
-  run_update_pins claude-code-settings-schema
-
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"HTTP 404"* ]]
-  [[ "$output" != *"retrying attempt"* ]]
-  [ "$(grep -c '^curl ' "$UPDATE_PINS_COMMAND_LOG")" -eq 1 ]
   assert_managed_matches "$original"
 }
 
@@ -1020,11 +522,10 @@ assert_check_lock_reacquirable() {
   [ "$headers" = $'hcom\nagent-slack\nagent-browser\nwatchexec\nshellfirm\nherdr\ndifit\nclaude-code-settings-schema\ncodex-app' ]
   [ "$(printf '%s\n' "$output" | tail -n 1)" = "All pins up to date." ]
   [[ "$output" != *"Applied changes:"* ]]
-  [[ "$output" != *"Rolled back candidate changes:"* ]]
   assert_managed_matches "$original"
 }
 
-@test "check reports a changed release candidate and restores every managed byte and mode" {
+@test "check reports a candidate and restores bytes, modes, and lock" {
   chmod 0440 "$WORK/nix/pins/hcom.json"
   chmod 0640 "$WORK/flake.nix"
   chmod 0600 "$WORK/flake.lock"
@@ -1035,530 +536,20 @@ assert_check_lock_reacquirable() {
   run_update_pins --check hcom
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Candidate changes:"* ]]
   section=$(report_section "Candidate changes:")
   [ "$(printf '%s\n' "$section" | sed -n 's/^  \([^ ].*\):$/\1/p')" = "hcom" ]
   [[ "$section" == *"version:"* ]]
   [[ "$section" == *"flake input [hcom-src]: changed"* ]]
   [[ "$output" == *"hcom check succeeded; no managed changes were kept."* ]]
-  [[ "$output" != *"Applied changes:"* ]]
-  [[ "$output" != *"Rolled back candidate changes:"* ]]
-  [[ "$output" != *"hcom updated."* ]]
   assert_managed_matches "$original"
   assert_no_staging_files
   assert_check_lock_reacquirable
 }
 
-@test "check reports no required pin changes without rewriting an up-to-date target" {
-  original="$WORK/original"
-  save_managed "$original"
-  pin_before=$(file_identity "$WORK/nix/pins/herdr.json")
-
-  run_update_pins herdr --check
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"herdr check succeeded; no pin changes required."* ]]
-  [[ "$output" != *"Candidate changes:"* ]]
-  [[ "$output" != *"Applied changes:"* ]]
-  [[ "$output" != *"Rolled back candidate changes:"* ]]
-  [ "$(file_identity "$WORK/nix/pins/herdr.json")" = "$pin_before" ]
-  assert_managed_matches "$original"
-  assert_no_staging_files
-  assert_check_lock_reacquirable
-}
-
-@test "all check runs every target in registry order and restores all managed paths" {
-  chmod 0440 "$WORK/nix/pins/hcom.json"
-  chmod 0640 "$WORK/flake.nix"
-  chmod 0600 "$WORK/flake.lock"
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_HCOM_TAG=v1.2.3
-  export UPDATE_PINS_AGENT_SLACK_TAG=v4.5.6
-  export UPDATE_PINS_AGENT_BROWSER_TAG=v5.6.7
-  export UPDATE_PINS_WATCHEXEC_TAG=v6.7.8
-  export UPDATE_PINS_SHELLFIRM_TAG=v8.8.8
-  export UPDATE_PINS_HERDR_TAG=v9.9.9
-  export UPDATE_PINS_SHELLFIRM_BUILD_MODE=success
-
-  run_update_pins --check
-
-  [ "$status" -eq 0 ]
-  headers="$(printf '%s\n' "$output" | sed -n 's/^== //p')"
-  [ "$headers" = $'hcom\nagent-slack\nagent-browser\nwatchexec\nshellfirm\nherdr\ndifit\nclaude-code-settings-schema\ncodex-app' ]
-  [[ "$output" == *"Candidate changes:"* ]]
-  [[ "$output" == *"all check succeeded; no managed changes were kept."* ]]
-  [[ "$output" != *"Applied changes:"* ]]
-  [[ "$output" != *"Rolled back candidate changes:"* ]]
-  [ "$(cat "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT")" -eq 1 ]
-  assert_managed_matches "$original"
-  assert_no_staging_files
-  assert_check_lock_reacquirable
-}
-
-@test "single target updates only herdr" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_HERDR_TAG=v9.9.9
-
-  run_update_pins herdr
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"== herdr"* ]]
-  [[ "$output" != *"== hcom"* ]]
-  [ "$(jq -r .version "$WORK/nix/pins/herdr.json")" = "9.9.9" ]
-  [ "$(jq -r .srcHash "$WORK/nix/pins/herdr.json")" = "sha256-JaZjQmPBsfb8RpegTiuZBOpLBCqJr1nck+wfXUSEiiY=" ]
-  [[ "$output" == *"herdr updated."* ]]
-  cp "$WORK/nix/pins/herdr.json" "$original/nix/pins/herdr.json"
-  assert_managed_matches "$original"
-}
-
-@test "single target updates only hcom and its flake input" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_HCOM_TAG=v9.9.9
-
-  run_update_pins hcom
-
-  [ "$status" -eq 0 ]
-  [ "$(jq -r '.assets["x86_64-linux"].hash' "$WORK/nix/pins/hcom.json")" = "sha256-1ZOG4K5DXikvvg6825VLde1fs5IgkSd8sZ95j8XVBxg=" ]
-  grep -Fq 'url = "github:aannoo/hcom/v9.9.9";' "$WORK/flake.nix"
-  [ "$(flake_lock_ref hcom-src)" = "v9.9.9" ]
-  grep -Fq "gh api --include repos/aannoo/hcom/releases/latest" "$UPDATE_PINS_COMMAND_LOG"
-  grep -Fq "nix flake update hcom-src" "$UPDATE_PINS_COMMAND_LOG"
-  cp "$WORK/nix/pins/hcom.json" "$original/nix/pins/hcom.json"
-  cp "$WORK/flake.nix" "$original/flake.nix"
-  cp "$WORK/flake.lock" "$original/flake.lock"
-  assert_managed_matches "$original"
-}
-
-@test "single target updates only agent-slack and its flake input" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_AGENT_SLACK_TAG=v9.9.9
-
-  run_update_pins agent-slack
-
-  [ "$status" -eq 0 ]
-  [ "$(jq -r '.assets["x86_64-linux"].hash' "$WORK/nix/pins/agent-slack.json")" = "sha256-1ZOG4K5DXikvvg6825VLde1fs5IgkSd8sZ95j8XVBxg=" ]
-  grep -Fq 'url = "github:stablyai/agent-slack/v9.9.9";' "$WORK/flake.nix"
-  [ "$(flake_lock_ref agent-slack-skill)" = "v9.9.9" ]
-  cp "$WORK/nix/pins/agent-slack.json" "$original/nix/pins/agent-slack.json"
-  cp "$WORK/flake.nix" "$original/flake.nix"
-  cp "$WORK/flake.lock" "$original/flake.lock"
-  assert_managed_matches "$original"
-}
-
-@test "single target updates only shellfirm" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_SHELLFIRM_TAG=v9.9.9
-  export UPDATE_PINS_SHELLFIRM_BUILD_MODE=success
-
-  run_update_pins shellfirm
-
-  [ "$status" -eq 0 ]
-  [ "$(jq -r .version "$WORK/nix/pins/shellfirm.json")" = "9.9.9" ]
-  [ "$(jq -r .srcHash "$WORK/nix/pins/shellfirm.json")" = "sha256-JaZjQmPBsfb8RpegTiuZBOpLBCqJr1nck+wfXUSEiiY=" ]
-  jq -e 'keys == ["srcHash", "version"]' "$WORK/nix/pins/shellfirm.json"
-  grep -Fq 'version = "9.9.9"' "$WORK/nix/packages/shellfirm/Cargo.lock"
-  [ "$(cat "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT")" -eq 1 ]
-  section=$(report_section "Applied changes:")
-  [ "$section" = $'  shellfirm:\n    - version: 0.3.10 -> 9.9.9\n    - source hash: changed\n    - lockfile [nix/packages/shellfirm/Cargo.lock]: changed' ]
-  cp "$WORK/nix/pins/shellfirm.json" "$original/nix/pins/shellfirm.json"
-  cp "$WORK/nix/packages/shellfirm/Cargo.lock" "$original/nix/packages/shellfirm/Cargo.lock"
-  assert_managed_matches "$original"
-}
-
-@test "shellfirm up to date does not build" {
-  original="$WORK/original"
-  save_managed "$original"
-
-  run_update_pins shellfirm
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"shellfirm: $(jq -r .version "$WORK/nix/pins/shellfirm.json") (up to date)"* ]]
-  [ ! -e "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT" ]
-  assert_managed_matches "$original"
-}
-
-@test "single target updates only the Claude Code settings schema" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_SCHEMA_HASH=sha256-3wrW5DiA8JyQ6/lfGREBeKumiQ3wAQ69p0hQKeK1Q7Q=
-
-  run_update_pins claude-code-settings-schema
-
-  [ "$status" -eq 0 ]
-  [ "$(jq -r .hash "$WORK/nix/pins/claude-code-settings-schema.json")" = "sha256-3wrW5DiA8JyQ6/lfGREBeKumiQ3wAQ69p0hQKeK1Q7Q=" ]
-  cp "$WORK/nix/pins/claude-code-settings-schema.json" "$original/nix/pins/claude-code-settings-schema.json"
-  assert_managed_matches "$original"
-}
-
-@test "managed dirty files are rejected without changing contents" {
-  printf '{"dirty":true}\n' >"$WORK/nix/pins/hcom.json"
-  original="$WORK/original"
-  save_managed "$original"
-
-  run_update_pins hcom
-
-  [ "$status" -ne 0 ]
-  assert_managed_matches "$original"
-}
-
-@test "single target ignores an unrelated dirty pin" {
-  printf '{"dirty":true}\n' >"$WORK/nix/pins/hcom.json"
-  original="$WORK/original"
-  save_managed "$original"
-
-  run_update_pins herdr
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"herdr is up to date."* ]]
-  assert_managed_matches "$original"
-}
-
-@test "all validates every pin before the first upstream command" {
-  jq '.hash = "invalid"' "$WORK/nix/pins/codex-app.json" >"$WORK/codex-app.json"
-  mv "$WORK/codex-app.json" "$WORK/nix/pins/codex-app.json"
-  git -C "$WORK" add nix/pins/codex-app.json
-  git -C "$WORK" commit -q -m "malformed codex pin fixture"
-  original="$WORK/original"
-  save_managed "$original"
-
-  run_update_pins
-
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"codex-app: nix/pins/codex-app.json: hash"* ]]
-  [ ! -e "$UPDATE_PINS_COMMAND_LOG" ]
-  assert_managed_matches "$original"
-}
-
-@test "same-version malformed release pin fails before discovery" {
-  jq '.assets["x86_64-linux"].hash = null' "$WORK/nix/pins/herdr.json" >"$WORK/herdr.json"
-  mv "$WORK/herdr.json" "$WORK/nix/pins/herdr.json"
-  git -C "$WORK" add nix/pins/herdr.json
-  git -C "$WORK" commit -q -m "malformed herdr pin fixture"
-  original="$WORK/original"
-  save_managed "$original"
-
-  run_update_pins herdr
-
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"herdr: nix/pins/herdr.json: assets.x86_64-linux.hash"* ]]
-  [ ! -e "$UPDATE_PINS_COMMAND_LOG" ]
-  assert_managed_matches "$original"
-}
-
-@test "invalid fetched asset hash rolls back without publishing a candidate" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_HERDR_TAG=v9.9.9
-  export UPDATE_PINS_ASSET_HASH=invalid
-
-  run_update_pins herdr
-
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"herdr: nix/pins/herdr.json: assets."*".hash: expected a sha256 SRI hash"* ]]
-  assert_managed_matches "$original"
-  assert_no_staging_files
-}
-
-@test "release pin rejects missing and extra asset platforms before discovery" {
-  for mutation in 'del(.assets["x86_64-linux"])' '.assets.extra = .assets["aarch64-linux"]'; do
-    jq "$mutation" "$WORK/nix/pins/herdr.json" >"$WORK/herdr.json"
-    mv "$WORK/herdr.json" "$WORK/nix/pins/herdr.json"
-    git -C "$WORK" add nix/pins/herdr.json
-    git -C "$WORK" commit -q -m "malformed herdr platform fixture"
-
-    run_update_pins herdr
-
-    [ "$status" -eq 1 ]
-    [[ "$output" == *"herdr: nix/pins/herdr.json: assets: expected systems"* ]]
-    [ ! -e "$UPDATE_PINS_COMMAND_LOG" ]
-
-    git -C "$WORK" reset -q --hard HEAD^
-  done
-}
-
-@test "ordinary release rejects an unsafe candidate version before prefetch" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_HERDR_TAG='v9.9.9"; builtins.abort "unsafe'
-
-  run_update_pins herdr
-
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"herdr: unsupported release version"* ]]
-  ! grep -Fq "store prefetch-file" "$UPDATE_PINS_COMMAND_LOG"
-  assert_managed_matches "$original"
-}
-
-@test "postflight validation failure rolls back the completed target" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_HCOM_TAG=v9.9.9
-  export UPDATE_PINS_CORRUPT_FLAKE_AFTER_UPDATE=hcom-src
-
-  run_update_pins hcom
-
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"expected one tagged flake input URL"* ]]
-  [[ "$output" == *"update-pins: failed; restoring managed files from backup"* ]]
-  [[ "$output" != *"Applied changes:"* ]]
-  section=$(report_section "Rolled back candidate changes:")
-  [ "$(printf '%s\n' "$section" | sed -n 's/^  \([^ ].*\):$/\1/p')" = "hcom" ]
-  assert_managed_matches "$original"
-  assert_no_staging_files
-}
-
-@test "managed staged dirty files are rejected without changing contents" {
-  printf '{"dirty":true}\n' >"$WORK/nix/pins/hcom.json"
-  original="$WORK/original"
-  save_managed "$original"
-  git -C "$WORK" add nix/pins/hcom.json
-
-  run_update_pins
-
-  [ "$status" -ne 0 ]
-  assert_managed_matches "$original"
-}
-
-@test "deleted tracked pin is rejected as managed dirty" {
-  original="$WORK/original"
-  save_managed "$original"
-  rm "$WORK/nix/pins/hcom.json"
-
-  run_update_pins
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"managed files already have unstaged changes"* ]]
-  [ ! -e "$WORK/nix/pins/hcom.json" ]
-}
-
-@test "check rejects a dirty selected managed file without restoring user contents" {
-  printf '{"dirty":"check"}\n' >"$WORK/nix/pins/hcom.json"
-  original="$WORK/original"
-  save_managed "$original"
-
-  run_update_pins --check hcom
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"managed files already have unstaged changes"* ]]
-  [[ "$output" != *"check succeeded"* ]]
-  [ ! -e "$UPDATE_PINS_COMMAND_LOG" ]
-  assert_managed_matches "$original"
-}
-
-@test "check rejects a staged selected managed file without restoring user contents" {
-  printf '{"staged":"check"}\n' >"$WORK/nix/pins/hcom.json"
-  git -C "$WORK" add nix/pins/hcom.json
-  original="$WORK/original"
-  save_managed "$original"
-
-  run_update_pins --check hcom
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"managed files already have staged changes"* ]]
-  [[ "$output" != *"check succeeded"* ]]
-  [ ! -e "$UPDATE_PINS_COMMAND_LOG" ]
-  assert_managed_matches "$original"
-}
-
-@test "check rejects a deleted selected managed file without recreating it" {
-  rm "$WORK/nix/pins/hcom.json"
-
-  run_update_pins --check hcom
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"managed files already have unstaged changes"* ]]
-  [[ "$output" != *"check succeeded"* ]]
-  [ ! -e "$UPDATE_PINS_COMMAND_LOG" ]
-  [ ! -e "$WORK/nix/pins/hcom.json" ]
-}
-
-@test "hcom flake update failure restores hcom pin and flake.lock" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_HCOM_TAG=v1.2.3
-  export UPDATE_PINS_FAIL_FLAKE_UPDATE=hcom-src
-
-  run_update_pins --jobs 4 --retry 5
-
-  [ "$status" -ne 0 ]
-  [ "$(wc -l <"$UPDATE_PINS_FLAKE_UPDATE_LOG")" -eq 1 ]
-  last_asset_prefetch_line=$(grep -n '^nix store prefetch-file' "$UPDATE_PINS_COMMAND_LOG" | tail -n 1 | cut -d: -f1)
-  flake_update_line=$(grep -n '^nix flake update hcom-src$' "$UPDATE_PINS_COMMAND_LOG" | cut -d: -f1)
-  [ "$last_asset_prefetch_line" -lt "$flake_update_line" ]
-  [[ "$output" != *"retrying attempt"* ]]
-  [[ "$output" != *"Applied changes:"* ]]
-  [[ "$output" == *"Rolled back candidate changes:"* ]]
-  assert_managed_matches "$original"
-  assert_no_staging_files
-}
-
-@test "hcom flake update output is bounded and restores managed files" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_HCOM_TAG=v1.2.3
-  export UPDATE_PINS_OVERSIZED_FLAKE_STDOUT=hcom-src
-
-  run_update_pins hcom
-
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"stdout exceeded 1048576 bytes"* ]]
-  [ "$(wc -l <"$UPDATE_PINS_FLAKE_UPDATE_LOG")" -eq 1 ]
-  [[ "$output" != *"retrying attempt"* ]]
-  assert_managed_matches "$original"
-  assert_no_staging_files
-}
-
-@test "after-state read failure aborts and restores a successful target" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_HCOM_TAG=v9.9.9
-  export UPDATE_PINS_DELETE_FLAKE_AFTER_UPDATE=hcom-src
-
-  run_update_pins hcom
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"failed to access"* ]]
-  [[ "$output" != *"Applied changes:"* ]]
-  [[ "$output" != *"Rolled back candidate changes:"* ]]
-  [[ "$output" != *"secret-before-commit"* ]]
-  assert_managed_matches "$original"
-  assert_no_staging_files
-}
-
-@test "rollback failure retains the update error and suppresses success status" {
-  export UPDATE_PINS_HCOM_TAG=v9.9.9
-  export UPDATE_PINS_BREAK_ROLLBACK=hcom-src
-
-  run_update_pins hcom
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"flake update failed before rollback"* ]]
-  [[ "$output" == *"rollback also failed"* ]]
-  [[ "$output" != *"Applied changes:"* ]]
-  [[ "$output" != *"Rolled back candidate changes:"* ]]
-  [ -d "$WORK/flake.lock" ]
-}
-
-@test "successful check rollback failure is nonzero and suppresses every success report" {
-  export UPDATE_PINS_HCOM_TAG=v9.9.9
-  export UPDATE_PINS_BREAK_CHECK_ROLLBACK=hcom-src
-
-  run_update_pins --check hcom
-  check_status=$status
-  check_output=$output
-  chmod 0755 "$WORK/nix/pins"
-
-  [ "$check_status" -ne 0 ]
-  [[ "$check_output" == *"update-pins: check failed while restoring managed files"* ]]
-  [[ "$check_output" == *"rollback failed"* ]]
-  [[ "$check_output" != *"Candidate changes:"* ]]
-  [[ "$check_output" != *"Applied changes:"* ]]
-  [[ "$check_output" != *"Rolled back candidate changes:"* ]]
-  [[ "$check_output" != *"check succeeded"* ]]
-  [[ "$check_output" != *"hcom updated."* ]]
-  assert_check_lock_reacquirable
-}
-
-@test "successful update preserves restrictive managed file modes" {
-  chmod 0440 "$WORK/nix/pins/hcom.json"
-  chmod 0640 "$WORK/flake.nix"
-  chmod 0600 "$WORK/flake.lock"
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_HCOM_TAG=v9.9.9
-
-  run_update_pins hcom
-
-  [ "$status" -eq 0 ]
-  chmod u+w "$original/nix/pins/hcom.json"
-  cp "$WORK/nix/pins/hcom.json" "$original/nix/pins/hcom.json"
-  chmod 0440 "$original/nix/pins/hcom.json"
-  cp "$WORK/flake.nix" "$original/flake.nix"
-  cp "$WORK/flake.lock" "$original/flake.lock"
-  assert_managed_matches "$original"
-  assert_no_staging_files
-}
-
-@test "failed update restores restrictive managed file modes" {
-  chmod 0440 "$WORK/nix/pins/hcom.json"
-  chmod 0640 "$WORK/flake.nix"
-  chmod 0600 "$WORK/flake.lock"
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_HCOM_TAG=v9.9.9
-  export UPDATE_PINS_FAIL_FLAKE_UPDATE=hcom-src
-
-  run_update_pins hcom
-
-  [ "$status" -ne 0 ]
-  assert_managed_matches "$original"
-  assert_no_staging_files
-}
-
-@test "untracked pin file survives a failed run intact" {
-  printf '{"version":"0.0.1"}\n' >"$WORK/nix/pins/newtool.json"
-  original_newtool="$WORK/newtool.json.original"
-  cp "$WORK/nix/pins/newtool.json" "$original_newtool"
-  export UPDATE_PINS_HCOM_TAG=v1.2.3
-  export UPDATE_PINS_FAIL_FLAKE_UPDATE=hcom-src
-
-  run_update_pins
-
-  [ "$status" -ne 0 ]
-  [ -f "$WORK/nix/pins/newtool.json" ]
-  cmp -s "$WORK/nix/pins/newtool.json" "$original_newtool"
-}
-
-@test "untracked pin file does not trip the dirty check" {
-  printf '{"version":"0.0.1"}\n' >"$WORK/nix/pins/newtool.json"
-  original_newtool="$WORK/newtool.json.original"
-  cp "$WORK/nix/pins/newtool.json" "$original_newtool"
-  run_update_pins
-
-  [ "$status" -eq 0 ]
-  [ -f "$WORK/nix/pins/newtool.json" ]
-  cmp -s "$WORK/nix/pins/newtool.json" "$original_newtool"
-}
-
-@test "difit up to date leaves managed files unchanged" {
-  original="$WORK/original"
-  save_managed "$original"
-  run_update_pins difit
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"difit: $(paired_version yoshiko-pg/difit "$original/flake.nix") (up to date)"* ]]
-  [[ "$output" == *"difit is up to date."* ]]
-  [[ "$output" != *"All pins up to date."* ]]
-  assert_no_difit_package_lock
-  assert_managed_matches "$original"
-  [ ! -e "$UPDATE_PINS_FLAKE_UPDATE_LOG" ]
-}
-
-@test "invalid fetched metadata is not retried" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_INVALID_NPM_JSON=1
-
-  run_update_pins difit
-
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"returned invalid JSON"* ]]
-  [ "$(grep -c 'registry.npmjs.org/difit/latest' "$UPDATE_PINS_COMMAND_LOG")" -eq 1 ]
-  [[ "$output" != *"retrying attempt"* ]]
-  assert_no_difit_package_lock
-  assert_managed_matches "$original"
-}
-
-@test "difit version bump updates pin and flake input from upstream pnpm provenance" {
+@test "Difit update preserves real child argv, hash refresh order, and provenance" {
   original="$WORK/original"
   save_managed "$original"
   export UPDATE_PINS_DIFIT_VERSION=9.9.9
-  export UPDATE_PINS_DIFIT_BUILD_MODE=success
   make_difit_tarball "$UPDATE_PINS_DIFIT_VERSION"
 
   run_update_pins difit
@@ -1574,94 +565,15 @@ assert_check_lock_reacquirable() {
   candidate_build_line=$(grep -n '^candidate-build-env difit difitPin pnpmDepsHash$' "$UPDATE_PINS_COMMAND_LOG" | cut -d: -f1)
   [ "$flake_update_line" -lt "$candidate_build_line" ]
   ! grep -q '^npm ' "$UPDATE_PINS_COMMAND_LOG"
-  assert_no_difit_package_lock
+  [ ! -e "$WORK/nix/packages/difit/package-lock.json" ]
+
   cp "$WORK/nix/pins/difit.json" "$original/nix/pins/difit.json"
   cp "$WORK/flake.nix" "$original/flake.nix"
   cp "$WORK/flake.lock" "$original/flake.lock"
   assert_managed_matches "$original"
 }
 
-@test "difit flake update failure precedes candidate build and restores everything" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_DIFIT_VERSION=9.9.9
-  export UPDATE_PINS_FAIL_FLAKE_UPDATE=difit-src
-  make_difit_tarball "$UPDATE_PINS_DIFIT_VERSION"
-
-  run_update_pins difit
-
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"flake update failed for difit-src"* ]]
-  [ "$(cat "$UPDATE_PINS_FLAKE_UPDATE_LOG")" = "difit-src" ]
-  [ ! -e "$UPDATE_PINS_DIFIT_BUILD_COUNT" ]
-  ! grep -q '^candidate-build-env ' "$UPDATE_PINS_COMMAND_LOG"
-  ! grep -q '^npm ' "$UPDATE_PINS_COMMAND_LOG"
-  assert_no_difit_package_lock
-  assert_managed_matches "$original"
-  assert_no_staging_files
-}
-
-@test "difit pnpmDepsHash extraction failure restores everything" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_DIFIT_VERSION=9.9.9
-  export UPDATE_PINS_DIFIT_BUILD_MODE=no-hash
-  make_difit_tarball "$UPDATE_PINS_DIFIT_VERSION"
-
-  run_update_pins difit
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"difit: failed to refresh pnpmDepsHash"* ]]
-  [ "$(cat "$UPDATE_PINS_DIFIT_BUILD_COUNT")" -eq 1 ]
-  ! grep -q '^npm ' "$UPDATE_PINS_COMMAND_LOG"
-  assert_no_difit_package_lock
-  assert_managed_matches "$original"
-  assert_no_staging_files
-}
-
-@test "difit verification build failure restores everything" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_DIFIT_VERSION=9.9.9
-  export UPDATE_PINS_DIFIT_BUILD_MODE=verify-fails
-  make_difit_tarball "$UPDATE_PINS_DIFIT_VERSION"
-
-  run_update_pins difit
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"difit: candidate package build failed"* ]]
-  [ "$(cat "$UPDATE_PINS_DIFIT_BUILD_COUNT")" -eq 2 ]
-  ! grep -q '^npm ' "$UPDATE_PINS_COMMAND_LOG"
-  assert_no_difit_package_lock
-  assert_managed_matches "$original"
-  assert_no_staging_files
-}
-
-@test "check candidate build failure is nonzero and reports the rolled-back candidate" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_DIFIT_VERSION=9.9.9
-  export UPDATE_PINS_DIFIT_BUILD_MODE=verify-fails
-  make_difit_tarball "$UPDATE_PINS_DIFIT_VERSION"
-
-  run_update_pins --check difit
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"difit: candidate package build failed"* ]]
-  [[ "$output" == *"update-pins: failed; restoring managed files from backup"* ]]
-  section=$(report_section "Rolled back candidate changes:")
-  [ "$(printf '%s\n' "$section" | sed -n 's/^  \([^ ].*\):$/\1/p')" = "difit" ]
-  [[ "$output" != *"Candidate changes:"* ]]
-  [[ "$output" != *"Applied changes:"* ]]
-  [[ "$output" != *"check succeeded"* ]]
-  [ "$(cat "$UPDATE_PINS_DIFIT_BUILD_COUNT")" -eq 2 ]
-  assert_no_difit_package_lock
-  assert_managed_matches "$original"
-  assert_no_staging_files
-  assert_check_lock_reacquirable
-}
-
-@test "agent-browser version bump updates its assets and paired skill input" {
+@test "paired Agent Browser update publishes every asset with its flake input" {
   original="$WORK/original"
   save_managed "$original"
   export UPDATE_PINS_AGENT_BROWSER_TAG=v9.9.9
@@ -1669,63 +581,21 @@ assert_check_lock_reacquirable() {
   run_update_pins agent-browser
 
   [ "$status" -eq 0 ]
-  [ "$(jq -r '.assets["x86_64-linux"].hash' "$WORK/nix/pins/agent-browser.json")" = "sha256-1ZOG4K5DXikvvg6825VLde1fs5IgkSd8sZ95j8XVBxg=" ]
+  jq -e 'all(.assets[]; .hash == "sha256-1ZOG4K5DXikvvg6825VLde1fs5IgkSd8sZ95j8XVBxg=")' \
+    "$WORK/nix/pins/agent-browser.json"
   grep -Fq 'url = "github:vercel-labs/agent-browser/v9.9.9";' "$WORK/flake.nix"
   [ "$(flake_lock_ref agent-browser-skill)" = "v9.9.9" ]
   [ "$(cat "$UPDATE_PINS_FLAKE_UPDATE_LOG")" = "agent-browser-skill" ]
+
   cp "$WORK/nix/pins/agent-browser.json" "$original/nix/pins/agent-browser.json"
   cp "$WORK/flake.nix" "$original/flake.nix"
   cp "$WORK/flake.lock" "$original/flake.lock"
   assert_managed_matches "$original"
 }
 
-@test "agent-browser flake update failure restores its pin and flake.lock" {
+@test "Codex app update validates a real ZIP and plist identity" {
   original="$WORK/original"
   save_managed "$original"
-  export UPDATE_PINS_AGENT_BROWSER_TAG=v9.9.9
-  export UPDATE_PINS_FAIL_FLAKE_UPDATE=agent-browser-skill
-
-  run_update_pins agent-browser
-
-  [ "$status" -ne 0 ]
-  assert_managed_matches "$original"
-}
-
-@test "watchexec version bump updates both Darwin assets atomically" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_WATCHEXEC_TAG=v9.9.9
-
-  run_update_pins watchexec
-
-  [ "$status" -eq 0 ]
-  [ "$(jq -r .version "$WORK/nix/pins/watchexec.json")" = "9.9.9" ]
-  [ "$(jq -r '.assets["aarch64-darwin"].target' "$WORK/nix/pins/watchexec.json")" = "aarch64-apple-darwin" ]
-  [ "$(jq -r '.assets["x86_64-darwin"].target' "$WORK/nix/pins/watchexec.json")" = "x86_64-apple-darwin" ]
-  [ "$(jq -r '.assets["aarch64-darwin"].hash' "$WORK/nix/pins/watchexec.json")" = "sha256-1ZOG4K5DXikvvg6825VLde1fs5IgkSd8sZ95j8XVBxg=" ]
-  [ "$(jq -r '.assets["x86_64-darwin"].hash' "$WORK/nix/pins/watchexec.json")" = "sha256-1ZOG4K5DXikvvg6825VLde1fs5IgkSd8sZ95j8XVBxg=" ]
-  cp "$WORK/nix/pins/watchexec.json" "$original/nix/pins/watchexec.json"
-  assert_managed_matches "$original"
-}
-
-@test "watchexec asset failure restores both Darwin assets" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_WATCHEXEC_TAG=v9.9.9
-  export UPDATE_PINS_FAIL_WATCHEXEC_TARGET=x86_64-apple-darwin
-
-  run_update_pins watchexec
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"watchexec: artifact download: curl failed with status 7"* ]]
-  [ "$(grep -c "$UPDATE_PINS_FAIL_WATCHEXEC_TARGET" "$UPDATE_PINS_COMMAND_LOG")" -eq 3 ]
-  assert_managed_matches "$original"
-}
-
-@test "codex app version bump updates pin from appcast" {
-  original="$WORK/original"
-  save_managed "$original"
-  make_unrelated_updates_noop
   export UPDATE_PINS_CODEX_APP_VERSION=26.999.10101
   export UPDATE_PINS_CODEX_APP_URL=https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-arm64-26.999.10101.zip
 
@@ -1738,109 +608,12 @@ assert_check_lock_reacquirable() {
   [ "$(jq -r .appName "$WORK/nix/pins/codex-app.json")" = "ChatGPT.app" ]
   [ "$(jq -r .bundleIdentifier "$WORK/nix/pins/codex-app.json")" = "com.openai.codex" ]
   [ "$(jq -r .displayName "$WORK/nix/pins/codex-app.json")" = "ChatGPT" ]
+
   cp "$WORK/nix/pins/codex-app.json" "$original/nix/pins/codex-app.json"
   assert_managed_matches "$original"
 }
 
-@test "codex app up to date skips prefetch and leaves managed files unchanged" {
-  original="$WORK/original"
-  save_managed "$original"
-
-  run_update_pins codex-app
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"codex-app: $(jq -r .version "$WORK/nix/pins/codex-app.json") (up to date)"* ]]
-  grep -Fq "https://persistent.oaistatic.com/codex-app-prod/appcast.xml" "$UPDATE_PINS_COMMAND_LOG"
-  ! grep -q '^nix ' "$UPDATE_PINS_COMMAND_LOG"
-  assert_managed_matches "$original"
-}
-
-@test "codex app update rejects an appcast and bundle version mismatch" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_CODEX_APP_VERSION=26.999.10101
-  export UPDATE_PINS_CODEX_APP_URL=https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-arm64-26.999.10101.zip
-  export UPDATE_PINS_CODEX_APP_BUNDLE_VERSION=26.999.10100
-
-  run_update_pins codex-app
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"appcast version 26.999.10101 did not match bundle version 26.999.10100"* ]]
-  assert_managed_matches "$original"
-}
-
-@test "paired update rejects unsafe release versions before rewriting flake source" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_HCOM_TAG='v1.2.3${builtins.readFile ./flake.nix}'
-
-  run_update_pins hcom
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"hcom: unsupported release version"* ]]
-  assert_managed_matches "$original"
-}
-
-@test "codex app update rejects a different app name and restores managed files" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_CODEX_APP_VERSION=26.999.10101
-  export UPDATE_PINS_CODEX_APP_URL=https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-arm64-26.999.10101.zip
-  export UPDATE_PINS_CODEX_APP_NAME=NotCodex.app
-
-  run_update_pins codex-app
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"expected app name ChatGPT.app but downloaded NotCodex.app"* ]]
-  assert_managed_matches "$original"
-}
-
-@test "codex app update rejects a different bundle identifier and restores managed files" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_CODEX_APP_VERSION=26.999.10101
-  export UPDATE_PINS_CODEX_APP_URL=https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-arm64-26.999.10101.zip
-  export UPDATE_PINS_CODEX_APP_BUNDLE_IDENTIFIER=com.example.not-codex
-
-  run_update_pins codex-app
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"expected bundle identifier com.openai.codex but downloaded com.example.not-codex"* ]]
-  assert_managed_matches "$original"
-}
-
-@test "codex app update rejects a different display name and restores managed files" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_CODEX_APP_VERSION=26.999.10101
-  export UPDATE_PINS_CODEX_APP_URL=https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-arm64-26.999.10101.zip
-  export UPDATE_PINS_CODEX_APP_DISPLAY_NAME="Not ChatGPT"
-
-  run_update_pins codex-app
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"expected display name ChatGPT but downloaded Not ChatGPT"* ]]
-  assert_managed_matches "$original"
-}
-
-@test "agent-slack flake update failure restores earlier pin changes" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_HCOM_TAG=v1.2.3
-  export UPDATE_PINS_AGENT_SLACK_TAG=v4.5.6
-  export UPDATE_PINS_FAIL_FLAKE_UPDATE=agent-slack-skill
-
-  run_update_pins
-
-  [ "$status" -ne 0 ]
-  [[ "$output" != *"Applied changes:"* ]]
-  section=$(report_section "Rolled back candidate changes:")
-  targets=$(printf '%s\n' "$section" | sed -n 's/^  \([^ ].*\):$/\1/p')
-  [ "$targets" = $'hcom\nagent-slack' ]
-  assert_managed_matches "$original"
-}
-
-@test "codex app late failure restores a change from an earlier target" {
+@test "late Codex failure restores every earlier managed update" {
   original="$WORK/original"
   save_managed "$original"
   make_unrelated_updates_noop
@@ -1854,8 +627,6 @@ assert_check_lock_reacquirable() {
   [ "$status" -eq 1 ]
   [[ "$output" == *"== codex-app"* ]]
   [[ "$output" == *"update-pins: failed; restoring managed files from backup"* ]]
-  [[ "$output" != *"Pins updated."* ]]
-  [[ "$output" != *"All pins up to date."* ]]
   [[ "$output" != *"Applied changes:"* ]]
   section=$(report_section "Rolled back candidate changes:")
   [ "$(printf '%s\n' "$section" | sed -n 's/^  \([^ ].*\):$/\1/p')" = "hcom" ]
@@ -1863,144 +634,11 @@ assert_check_lock_reacquirable() {
   assert_no_staging_files
 }
 
-@test "shellfirm rejects a missing upstream lockfile before mutation" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_SHELLFIRM_TAG=v8.8.8
-  export UPDATE_PINS_SHELLFIRM_LOCK_MODE=missing
-
-  run_update_pins shellfirm
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"expected exactly one directory containing regular Cargo.toml and Cargo.lock files, found 0"* ]]
-  [ ! -e "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT" ]
-  assert_managed_matches "$original"
-}
-
-@test "shellfirm rejects a mismatched lockfile root version before mutation" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_SHELLFIRM_TAG=v8.8.8
-  export UPDATE_PINS_SHELLFIRM_LOCK_MODE=version-mismatch
-
-  run_update_pins shellfirm
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"expected exactly one source-free shellfirm 8.8.8 package, found 1 shellfirm roots"* ]]
-  [ ! -e "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT" ]
-  assert_managed_matches "$original"
-}
-
-@test "shellfirm rejects a git dependency before mutation" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_SHELLFIRM_TAG=v8.8.8
-  export UPDATE_PINS_SHELLFIRM_LOCK_MODE=git-dependency
-
-  run_update_pins shellfirm
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"git dependency is unsupported: git-fixture 1.0.0"* ]]
-  [ ! -e "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT" ]
-  assert_managed_matches "$original"
-}
-
-@test "shellfirm rejects an unsupported registry before mutation" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_SHELLFIRM_TAG=v8.8.8
-  export UPDATE_PINS_SHELLFIRM_LOCK_MODE=alternate-registry
-
-  run_update_pins shellfirm
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"unsupported dependency source for fixture-dependency 1.0.0"* ]]
-  [ ! -e "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT" ]
-  assert_managed_matches "$original"
-}
-
-@test "shellfirm late package build failure restores its pin and lockfile" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_SHELLFIRM_TAG=v8.8.8
-  export UPDATE_PINS_SHELLFIRM_BUILD_MODE=fails
-
-  run_update_pins --jobs 4 --retry 5 shellfirm
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"shellfirm: candidate package build failed with status 1"* ]]
-  [ "$(cat "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT")" -eq 1 ]
-  source_prefetch_line=$(grep -n '^nix store prefetch-file' "$UPDATE_PINS_COMMAND_LOG" | cut -d: -f1)
-  build_line=$(grep -n '^nix build ' "$UPDATE_PINS_COMMAND_LOG" | cut -d: -f1)
-  [ "$source_prefetch_line" -lt "$build_line" ]
-  [[ "$output" != *"retrying attempt"* ]]
-  [[ "$output" != *"Applied changes:"* ]]
-  section=$(report_section "Rolled back candidate changes:")
-  [ "$section" = $'  shellfirm:\n    - version: 0.3.10 -> 8.8.8\n    - source hash: changed\n    - lockfile [nix/packages/shellfirm/Cargo.lock]: changed' ]
-  assert_managed_matches "$original"
-}
-
-@test "herdr source prefetch failure restores all managed files" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_HCOM_TAG=v1.2.3
-  export UPDATE_PINS_AGENT_SLACK_TAG=v4.5.6
-  export UPDATE_PINS_HERDR_TAG=v9.9.9
-  export UPDATE_PINS_FAIL_HERDR_PREFETCH=source
-
-  run_update_pins
-
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"herdr: artifact download: curl failed with status 7"* ]]
-  [ "$(grep -c "github.com/ogulcancelik/herdr/archive/refs/tags/" "$UPDATE_PINS_COMMAND_LOG")" -eq 3 ]
-  assert_managed_matches "$original"
-}
-
-@test "successful update leaves expected managed file changes" {
-  original="$WORK/original"
-  save_managed "$original"
+@test "a committed successful update is byte and mode stable on rerun" {
   export UPDATE_PINS_HCOM_TAG=v1.2.3
   export UPDATE_PINS_AGENT_SLACK_TAG=v4.5.6
   export UPDATE_PINS_SHELLFIRM_TAG=v8.8.8
   export UPDATE_PINS_HERDR_TAG=v9.9.9
-  export UPDATE_PINS_SHELLFIRM_BUILD_MODE=success
-
-  run_update_pins
-
-  [ "$status" -eq 0 ]
-  grep -Fq 'url = "github:aannoo/hcom/v1.2.3";' "$WORK/flake.nix"
-  [ "$(jq -r '.assets["aarch64-darwin"].hash' "$WORK/nix/pins/hcom.json")" = "sha256-1ZOG4K5DXikvvg6825VLde1fs5IgkSd8sZ95j8XVBxg=" ]
-  grep -Fq 'url = "github:stablyai/agent-slack/v4.5.6";' "$WORK/flake.nix"
-  [ "$(jq -r .version "$WORK/nix/pins/shellfirm.json")" = "8.8.8" ]
-  [ "$(jq -r .srcHash "$WORK/nix/pins/shellfirm.json")" = "sha256-JaZjQmPBsfb8RpegTiuZBOpLBCqJr1nck+wfXUSEiiY=" ]
-  jq -e 'keys == ["srcHash", "version"]' "$WORK/nix/pins/shellfirm.json"
-  grep -Fq 'version = "8.8.8"' "$WORK/nix/packages/shellfirm/Cargo.lock"
-  [ "$(cat "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT")" -eq 1 ]
-  [ "$(jq -r .version "$WORK/nix/pins/herdr.json")" = "9.9.9" ]
-  [ "$(jq -r .srcHash "$WORK/nix/pins/herdr.json")" = "sha256-JaZjQmPBsfb8RpegTiuZBOpLBCqJr1nck+wfXUSEiiY=" ]
-  [ "$(jq -r '.assets["x86_64-linux"].hash' "$WORK/nix/pins/herdr.json")" = "sha256-1ZOG4K5DXikvvg6825VLde1fs5IgkSd8sZ95j8XVBxg=" ]
-  [ "$(jq -r .hash "$WORK/nix/pins/claude-code-settings-schema.json")" = "sha256-3wrW5DiA8JyQ6/lfGREBeKumiQ3wAQ69p0hQKeK1Q7Q=" ]
-  [ "$(flake_lock_ref hcom-src)" = "v1.2.3" ]
-  [ "$(flake_lock_ref agent-slack-skill)" = "v4.5.6" ]
-  [ "$(cat "$UPDATE_PINS_FLAKE_UPDATE_LOG")" = $'hcom-src\nagent-slack-skill' ]
-  [ "$(printf '%s\n' "$output" | grep -c '^Applied changes:$')" -eq 1 ]
-  section=$(report_section "Applied changes:")
-  targets=$(printf '%s\n' "$section" | sed -n 's/^  \([^ ].*\):$/\1/p')
-  [ "$targets" = $'hcom\nagent-slack\nshellfirm\nherdr\nclaude-code-settings-schema' ]
-  [[ "$section" != *"sha256-"* ]]
-  [[ "$output" != *"Rolled back candidate changes:"* ]]
-  [[ "$output" != *"secret-before-commit"* ]]
-  [ "$(printf '%s\n' "$output" | tail -n 1)" = "Pins updated. Review with 'git diff', verify with 'nix run .#build', then commit." ]
-  ! assert_managed_matches "$original"
-  assert_no_staging_files
-}
-
-@test "repeating a successful update is byte and mode stable" {
-  export UPDATE_PINS_HCOM_TAG=v1.2.3
-  export UPDATE_PINS_AGENT_SLACK_TAG=v4.5.6
-  export UPDATE_PINS_SHELLFIRM_TAG=v8.8.8
-  export UPDATE_PINS_HERDR_TAG=v9.9.9
-  export UPDATE_PINS_SHELLFIRM_BUILD_MODE=success
 
   run_update_pins
 
@@ -2015,6 +653,5 @@ assert_check_lock_reacquirable() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"All pins up to date."* ]]
   [[ "$output" != *"Applied changes:"* ]]
-  [[ "$output" != *"Rolled back candidate changes:"* ]]
   assert_managed_matches "$after_first"
 }
