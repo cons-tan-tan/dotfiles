@@ -67,6 +67,8 @@ in
           "Bash(gh run view *)"
           "Bash(gh repo view *)"
           "Bash(gh search *)"
+          # These broad command patterns remain safe only because the Rust
+          # wrappers positively validate every forwarded argument.
           "Bash(gh api-get *)"
           "Bash(curl-fetch *)"
         ]
