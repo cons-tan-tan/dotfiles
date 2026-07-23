@@ -1,7 +1,6 @@
 {
   inputs,
   username,
-  windowsUsername,
   windowsHomedir,
 }:
 { system, pkgs }:
@@ -43,7 +42,6 @@ let
     name = "apply-winget";
     text = ''
       export APPLY_WINGET_WINDOWS_HOMEDIR=${escapeShellArg windowsHomedir}
-      export APPLY_WINGET_WINDOWS_USERNAME=${escapeShellArg windowsUsername}
       ${builtins.readFile ../../apps/apply-winget.sh}
     '';
   };

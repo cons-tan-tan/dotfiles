@@ -2,7 +2,6 @@
 set -euo pipefail
 
 : "${APPLY_WINGET_WINDOWS_HOMEDIR:?APPLY_WINGET_WINDOWS_HOMEDIR must be set}"
-: "${APPLY_WINGET_WINDOWS_USERNAME:?APPLY_WINGET_WINDOWS_USERNAME must be set}"
 
 if [[ -z ${WSL_DISTRO_NAME:-} ]]; then
   echo "apply-winget: not running under WSL" >&2
@@ -21,7 +20,15 @@ if [ -z "$WINGET_BIN" ]; then
   exit 1
 fi
 
-WIN_CONFIG_PATH="C:\\Users\\${APPLY_WINGET_WINDOWS_USERNAME}\\.config\\dev.winget"
+if ! WIN_CONFIG_PATH=$(wslpath -w "$WIN_CONFIG"); then
+  echo "apply-winget: failed to convert $WIN_CONFIG to a Windows path" >&2
+  exit 1
+fi
+if [ -z "$WIN_CONFIG_PATH" ]; then
+  echo "apply-winget: wslpath returned an empty Windows path for $WIN_CONFIG" >&2
+  exit 1
+fi
+
 exec "$WINGET_BIN" configure \
   --accept-configuration-agreements \
   -f "$WIN_CONFIG_PATH" "$@"

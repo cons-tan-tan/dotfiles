@@ -6,11 +6,12 @@ setup() {
   SCRIPT="$REPO_ROOT/nix/apps/apply-winget.sh"
   BASH_BIN="$(command -v bash)"
   WORK="$(mktemp -d)"
-  WINDOWS_HOME="$WORK/windows home"
-  WINDOWS_USERNAME="alice"
+  WINDOWS_HOME="$WORK/mnt/d/Users/O'Brien home"
   STUB_DIR="$WORK/stub"
   EMPTY_PATH="$WORK/empty-path"
   WINGET_ARGS_FILE="$WORK/winget.args"
+  WSLPATH_ARGS_FILE="$WORK/wslpath.args"
+  WINDOWS_CONFIG_PATH="D:\\Users\\O'Brien home\\.config\\dev.winget"
 
   mkdir -p "$WINDOWS_HOME" "$STUB_DIR" "$EMPTY_PATH"
 }
@@ -33,6 +34,19 @@ EOS
   chmod +x "$STUB_DIR/winget.exe"
 }
 
+create_wslpath_stub() {
+  cat > "$STUB_DIR/wslpath" <<'EOS'
+#!/bin/sh
+: "${APPLY_WINGET_WSLPATH_ARGS_FILE:?}"
+printf '%s\n' "$#" "$@" > "$APPLY_WINGET_WSLPATH_ARGS_FILE"
+if [ "${APPLY_WINGET_WSLPATH_STATUS:-0}" -ne 0 ]; then
+  exit "$APPLY_WINGET_WSLPATH_STATUS"
+fi
+printf '%s\n' "${APPLY_WINGET_WSLPATH_OUTPUT:-}"
+EOS
+  chmod +x "$STUB_DIR/wslpath"
+}
+
 run_apply_winget() {
   local wsl_mode=$1
   local path_value=$2
@@ -42,15 +56,17 @@ run_apply_winget() {
     run env WSL_DISTRO_NAME=Ubuntu \
       PATH="$path_value" \
       APPLY_WINGET_WINDOWS_HOMEDIR="$WINDOWS_HOME" \
-      APPLY_WINGET_WINDOWS_USERNAME="$WINDOWS_USERNAME" \
       APPLY_WINGET_ARGS_FILE="$WINGET_ARGS_FILE" \
+      APPLY_WINGET_WSLPATH_ARGS_FILE="$WSLPATH_ARGS_FILE" \
+      APPLY_WINGET_WSLPATH_OUTPUT="$WINDOWS_CONFIG_PATH" \
       "$BASH_BIN" -eu -o pipefail "$SCRIPT" "$@"
   else
     run env -u WSL_DISTRO_NAME \
       PATH="$path_value" \
       APPLY_WINGET_WINDOWS_HOMEDIR="$WINDOWS_HOME" \
-      APPLY_WINGET_WINDOWS_USERNAME="$WINDOWS_USERNAME" \
       APPLY_WINGET_ARGS_FILE="$WINGET_ARGS_FILE" \
+      APPLY_WINGET_WSLPATH_ARGS_FILE="$WSLPATH_ARGS_FILE" \
+      APPLY_WINGET_WSLPATH_OUTPUT="$WINDOWS_CONFIG_PATH" \
       "$BASH_BIN" -eu -o pipefail "$SCRIPT" "$@"
   fi
 }
@@ -81,6 +97,7 @@ run_apply_winget() {
 @test "execs winget.exe configure when Windows home path contains a space" {
   create_windows_config
   create_winget_stub
+  create_wslpath_stub
 
   run_apply_winget wsl "$STUB_DIR" --verbose "name with space"
 
@@ -89,8 +106,50 @@ run_apply_winget() {
     "configure" \
     "--accept-configuration-agreements" \
     "-f" \
-    "C:\\Users\\alice\\.config\\dev.winget" \
+    "$WINDOWS_CONFIG_PATH" \
     "--verbose" \
     "name with space")
   [ "$(cat "$WINGET_ARGS_FILE")" = "$expected" ]
+
+  expected_wslpath=$(printf '%s\n' \
+    "2" \
+    "-w" \
+    "$WINDOWS_HOME/.config/dev.winget")
+  [ "$(cat "$WSLPATH_ARGS_FILE")" = "$expected_wslpath" ]
+}
+
+@test "does not invoke winget.exe when wslpath conversion fails" {
+  create_windows_config
+  create_winget_stub
+  create_wslpath_stub
+
+  run env WSL_DISTRO_NAME=Ubuntu \
+    PATH="$STUB_DIR" \
+    APPLY_WINGET_WINDOWS_HOMEDIR="$WINDOWS_HOME" \
+    APPLY_WINGET_ARGS_FILE="$WINGET_ARGS_FILE" \
+    APPLY_WINGET_WSLPATH_ARGS_FILE="$WSLPATH_ARGS_FILE" \
+    APPLY_WINGET_WSLPATH_STATUS=23 \
+    "$BASH_BIN" -eu -o pipefail "$SCRIPT"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"failed to convert"* ]]
+  [ ! -e "$WINGET_ARGS_FILE" ]
+}
+
+@test "does not invoke winget.exe when wslpath returns an empty path" {
+  create_windows_config
+  create_winget_stub
+  create_wslpath_stub
+
+  run env WSL_DISTRO_NAME=Ubuntu \
+    PATH="$STUB_DIR" \
+    APPLY_WINGET_WINDOWS_HOMEDIR="$WINDOWS_HOME" \
+    APPLY_WINGET_ARGS_FILE="$WINGET_ARGS_FILE" \
+    APPLY_WINGET_WSLPATH_ARGS_FILE="$WSLPATH_ARGS_FILE" \
+    APPLY_WINGET_WSLPATH_OUTPUT= \
+    "$BASH_BIN" -eu -o pipefail "$SCRIPT"
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"returned an empty Windows path"* ]]
+  [ ! -e "$WINGET_ARGS_FILE" ]
 }

@@ -256,7 +256,6 @@
         inherit
           inputs
           username
-          windowsUsername
           windowsHomedir
           ;
       };
