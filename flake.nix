@@ -348,7 +348,7 @@
               reuse
               updatePinsCore
               yq-go
-              python3
+              zip
             ];
           };
         }

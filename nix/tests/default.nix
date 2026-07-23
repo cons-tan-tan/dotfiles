@@ -175,7 +175,7 @@ let
             pkgs.gnutar
             pkgs.gzip
             pkgs.jq
-            pkgs.python3
+            pkgs.zip
             pkgs.yq-go
             applySecretsCore
             applyNixSettingsCore
