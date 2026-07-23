@@ -253,6 +253,11 @@ set -euo pipefail
   printf 'npm-cwd %q\n' "$PWD"
 } >>"$UPDATE_PINS_COMMAND_LOG"
 
+if [ "${UPDATE_PINS_OVERSIZED_NPM_STDOUT:-}" = "1" ]; then
+  head -c 1048577 /dev/zero
+  exit 0
+fi
+
 if [ "${UPDATE_PINS_FAIL_NPM_INSTALL:-}" = "1" ]; then
   echo "npm install failed" >&2
   exit 1
@@ -507,6 +512,10 @@ if [ "$1" = "flake" ] && [ "${2:-}" = "update" ]; then
     '.nodes[$node].original.ref = $ref | .nodes[$node].locked.rev = $rev' \
     "$UPDATE_PINS_FAKE_ROOT/flake.lock" >"$UPDATE_PINS_FAKE_ROOT/flake.lock.new"
   mv "$UPDATE_PINS_FAKE_ROOT/flake.lock.new" "$UPDATE_PINS_FAKE_ROOT/flake.lock"
+  if [ "${UPDATE_PINS_OVERSIZED_FLAKE_STDOUT:-}" = "$input" ]; then
+    head -c 1048577 /dev/zero
+    exit 0
+  fi
   if [ "${UPDATE_PINS_FAIL_FLAKE_UPDATE:-}" = "$input" ]; then
     echo "flake update failed for $input" >&2
     exit 1
@@ -1243,6 +1252,22 @@ expected_hcom_asset_trace() {
   assert_no_staging_files
 }
 
+@test "hcom flake update output is bounded and restores managed files" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_HCOM_TAG=v1.2.3
+  export UPDATE_PINS_OVERSIZED_FLAKE_STDOUT=hcom-src
+
+  run_update_pins hcom
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"stdout exceeded 1048576 bytes"* ]]
+  [ "$(wc -l <"$UPDATE_PINS_FLAKE_UPDATE_LOG")" -eq 1 ]
+  [[ "$output" != *"retrying attempt"* ]]
+  assert_managed_matches "$original"
+  assert_no_staging_files
+}
+
 @test "after-state read failure aborts and restores a successful target" {
   original="$WORK/original"
   save_managed "$original"
@@ -1404,6 +1429,22 @@ expected_hcom_asset_trace() {
   source_prefetch_line=$(grep -n '^nix store prefetch-file' "$UPDATE_PINS_COMMAND_LOG" | tail -n 1 | cut -d: -f1)
   npm_line=$(grep -n '^npm install ' "$UPDATE_PINS_COMMAND_LOG" | cut -d: -f1)
   [ "$source_prefetch_line" -lt "$npm_line" ]
+  [[ "$output" != *"retrying attempt"* ]]
+  assert_managed_matches "$original"
+}
+
+@test "npm install output is bounded without retrying or changing managed files" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_DIFIT_VERSION=9.9.9
+  export UPDATE_PINS_OVERSIZED_NPM_STDOUT=1
+  make_difit_tarball "$UPDATE_PINS_DIFIT_VERSION"
+
+  run_update_pins --retry 5 difit
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"stdout exceeded 1048576 bytes"* ]]
+  [ "$(grep -c '^npm install ' "$UPDATE_PINS_COMMAND_LOG")" -eq 1 ]
   [[ "$output" != *"retrying attempt"* ]]
   assert_managed_matches "$original"
 }

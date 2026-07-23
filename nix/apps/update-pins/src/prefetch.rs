@@ -19,17 +19,18 @@ const PREFETCH_STDERR_LIMIT: usize = 64 * 1024;
 const PREFETCH_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 const TAR_MAX_ENTRIES: u64 = 50_000;
 const TAR_MAX_EXPANSION_RATIO: u64 = 32;
+const TAR_MIN_EXPANDED_BYTES: u64 = 64 * 1024;
 const TAR_MAX_EXPANDED_BYTES: u64 = 512 * 1024 * 1024;
 const TAR_MAX_PATH_BYTES: usize = 4_096;
 
 #[derive(Clone, Copy)]
-struct TarPreflightLimits {
-    max_entries: u64,
-    max_expanded_bytes: u64,
-    max_path_bytes: usize,
+pub(crate) struct TarPreflightLimits {
+    pub(crate) max_entries: u64,
+    pub(crate) max_expanded_bytes: u64,
+    pub(crate) max_path_bytes: usize,
 }
 
-struct ExpandedLimitReader<R> {
+pub(crate) struct ExpandedLimitReader<R> {
     inner: R,
     remaining: u64,
     max_expanded_bytes: u64,
@@ -37,7 +38,7 @@ struct ExpandedLimitReader<R> {
 }
 
 impl<R> ExpandedLimitReader<R> {
-    fn new(inner: R, max_expanded_bytes: u64) -> Self {
+    pub(crate) fn new(inner: R, max_expanded_bytes: u64) -> Self {
         Self {
             inner,
             remaining: max_expanded_bytes,
@@ -199,12 +200,12 @@ pub(crate) fn prefetch_result_bounded<R: CommandRunner>(
     })
 }
 
-fn tar_preflight_limits(max_download_bytes: u64) -> TarPreflightLimits {
+pub(crate) fn tar_preflight_limits(max_download_bytes: u64) -> TarPreflightLimits {
     TarPreflightLimits {
         max_entries: TAR_MAX_ENTRIES,
         max_expanded_bytes: max_download_bytes
             .saturating_mul(TAR_MAX_EXPANSION_RATIO)
-            .min(TAR_MAX_EXPANDED_BYTES),
+            .clamp(TAR_MIN_EXPANDED_BYTES, TAR_MAX_EXPANDED_BYTES),
         max_path_bytes: TAR_MAX_PATH_BYTES,
     }
 }

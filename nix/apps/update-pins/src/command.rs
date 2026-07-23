@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::ffi::OsString;
-use std::io::{self, Read as _};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use crate::error::UpdateError;
 
 const LIMITED_COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
+const DEFAULT_COMMAND_OUTPUT_LIMIT: usize = 4 * 1024 * 1024;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CommandSpec {
@@ -127,17 +128,12 @@ pub struct SystemCommandRunner;
 
 impl CommandRunner for SystemCommandRunner {
     fn run(&self, command: &CommandSpec) -> Result<CommandOutput, UpdateError> {
-        let output = configured_process(command)
-            .output()
-            .map_err(|source| UpdateError::Spawn {
-                program: command.program.to_string_lossy().into_owned(),
-                source,
-            })?;
-        Ok(CommandOutput {
-            status: output.status.code(),
-            stdout: output.stdout,
-            stderr: output.stderr,
-        })
+        self.run_limited_with_timeout(
+            command,
+            DEFAULT_COMMAND_OUTPUT_LIMIT,
+            DEFAULT_COMMAND_OUTPUT_LIMIT,
+            LIMITED_COMMAND_TIMEOUT,
+        )
     }
 
     fn run_limited(
@@ -300,9 +296,17 @@ fn terminate_child_tree(child: &mut Child) -> io::Result<()> {
     child.kill()
 }
 
-fn read_at_most(reader: impl std::io::Read, limit: usize) -> std::io::Result<Vec<u8>> {
+fn read_at_most(mut reader: impl std::io::Read, limit: usize) -> std::io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
-    reader.take(limit as u64).read_to_end(&mut bytes)?;
+    let mut buffer = [0_u8; 8192];
+    loop {
+        let read = reader.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        let retained = limit.saturating_sub(bytes.len()).min(read);
+        bytes.extend_from_slice(&buffer[..retained]);
+    }
     Ok(bytes)
 }
 
@@ -498,6 +502,24 @@ mod tests {
         assert!(
             started.elapsed() < Duration::from_secs(2),
             "a descendant kept an inherited output pipe open after timeout"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn oversized_system_output_is_drained_before_reporting_the_limit() {
+        let command = CommandSpec::new("sh").args([
+            "-c",
+            "i=0; while [ \"$i\" -lt 131072 ]; do printf x; i=$((i + 1)); done",
+        ]);
+
+        let error = SystemCommandRunner
+            .run_limited_with_timeout(&command, 16, 16, Duration::from_secs(5))
+            .expect_err("stdout must exceed the configured limit");
+
+        assert!(
+            error.to_string().contains("stdout exceeded 16 bytes"),
+            "a full output pipe must not turn an output-limit failure into a timeout: {error}"
         );
     }
 }

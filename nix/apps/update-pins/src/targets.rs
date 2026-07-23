@@ -1,22 +1,31 @@
 use std::fs::File;
-use std::io::Read as _;
+use std::io::{self, Read as _};
 use std::path::{Component, Path};
+use std::time::Duration;
 
-use flate2::read::GzDecoder;
+use flate2::read::MultiGzDecoder;
 use serde_json::Value;
 
 use crate::build::{compute_hash_via_failed_build, refresh_existing_hash_via_build};
 use crate::cli::Target;
 use crate::codex_app;
-use crate::command::{CommandRunner, CommandSpec, run_checked};
+use crate::command::{CommandRunner, CommandSpec, run_checked_limited_with_timeout};
 use crate::error::UpdateError;
 use crate::ledger::{FileState, Ledger, diff_target};
 use crate::pins::PinDocument;
 use crate::policy::{MAX_ASSET_JOBS_LIMIT, RunPolicy};
-use crate::prefetch::{prefetch_hash as prefetch, prefetch_result};
+use crate::prefetch::{
+    ExpandedLimitReader, TarPreflightLimits, prefetch_hash as prefetch, prefetch_result,
+    tar_preflight_limits,
+};
 use crate::registry::{AssetNaming, TargetKind, TargetSpec, target_spec};
 use crate::transaction::Transaction;
 use crate::upstream::{latest_npm_version, latest_tag, validate_release_version};
+
+const MUTATING_COMMAND_OUTPUT_LIMIT: usize = 1024 * 1024;
+const MUTATING_COMMAND_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+const MAX_PACKAGE_JSON_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_NPM_LOCK_BYTES: usize = 16 * 1024 * 1024;
 
 pub fn is_implemented(target: Target) -> bool {
     target_spec(target).is_some_and(|spec| spec.kind.is_implemented())
@@ -356,15 +365,18 @@ fn update_difit<R: CommandRunner>(
             "--no-fund",
         ])
         .current_dir(&package_dir);
-    run_checked(runner, &npm)?;
+    run_mutating_command_once(runner, &npm)?;
 
     let generated_lock = package_dir.join("package-lock.json");
     require_regular_file(
         &generated_lock,
         &format!("{}: npm did not generate package-lock.json", spec.name),
     )?;
-    let lock_bytes = std::fs::read(&generated_lock)
-        .map_err(|source| UpdateError::io(&generated_lock, source))?;
+    let lock_bytes = read_bounded_file(
+        &generated_lock,
+        &format!("{}: generated package-lock.json", spec.name),
+        MAX_NPM_LOCK_BYTES,
+    )?;
     validate_npm_lock(&lock_bytes, npm_package, &version, spec.name)?;
     if version == current && source.hash == current_source_hash && lock_bytes == current_lock {
         let changed = refresh_existing_hash_via_build(
@@ -400,17 +412,45 @@ fn update_difit<R: CommandRunner>(
 }
 
 fn read_npm_package_json(archive_path: &Path, label: &str) -> Result<Vec<u8>, UpdateError> {
-    const MAX_PACKAGE_JSON_BYTES: u64 = 4 * 1024 * 1024;
-
     let archive_file =
         File::open(archive_path).map_err(|source| UpdateError::io(archive_path, source))?;
-    let decoder = GzDecoder::new(archive_file);
+    let compressed_bytes = archive_file
+        .metadata()
+        .map_err(|source| UpdateError::io(archive_path, source))?
+        .len();
+    read_npm_package_json_with_limits(
+        archive_path,
+        label,
+        archive_file,
+        tar_preflight_limits(compressed_bytes),
+    )
+}
+
+fn read_npm_package_json_with_limits(
+    archive_path: &Path,
+    label: &str,
+    archive_file: File,
+    limits: TarPreflightLimits,
+) -> Result<Vec<u8>, UpdateError> {
+    let decoder = MultiGzDecoder::new(archive_file);
+    let decoder = ExpandedLimitReader::new(decoder, limits.max_expanded_bytes);
     let mut archive = tar::Archive::new(decoder);
     let entries = archive.entries().map_err(|source| {
         UpdateError::message(format!("{label}: failed to read npm tarball: {source}"))
     })?;
     let mut package_json = None;
+    let mut entry_count = 0_u64;
+    let mut expanded_bytes = 0_u64;
     for entry in entries {
+        entry_count = entry_count.checked_add(1).ok_or_else(|| {
+            UpdateError::message(format!("{label}: npm tarball entry count overflowed"))
+        })?;
+        if entry_count > limits.max_entries {
+            return Err(UpdateError::message(format!(
+                "{label}: npm tarball exceeded the {}-entry limit",
+                limits.max_entries
+            )));
+        }
         let mut entry = entry.map_err(|source| {
             UpdateError::message(format!(
                 "{label}: failed to read npm tarball entry: {source}"
@@ -425,6 +465,7 @@ fn read_npm_package_json(archive_path: &Path, label: &str) -> Result<Vec<u8>, Up
             })?
             .into_owned();
         if path.as_os_str().is_empty()
+            || path.as_os_str().as_encoded_bytes().len() > limits.max_path_bytes
             || path.is_absolute()
             || path
                 .components()
@@ -448,18 +489,31 @@ fn read_npm_package_json(archive_path: &Path, label: &str) -> Result<Vec<u8>, Up
                 path.display()
             )));
         }
+        let size = entry.size();
         if path == Path::new("package/package.json") {
             if package_json.is_some() {
                 return Err(UpdateError::message(format!(
                     "{label}: npm tarball contained duplicate package/package.json entries"
                 )));
             }
-            let size = entry.size();
             if size > MAX_PACKAGE_JSON_BYTES {
                 return Err(UpdateError::message(format!(
                     "{label}: package/package.json exceeded {MAX_PACKAGE_JSON_BYTES} bytes"
                 )));
             }
+        }
+        expanded_bytes = expanded_bytes.checked_add(size).ok_or_else(|| {
+            UpdateError::message(format!(
+                "{label}: npm tarball expanded byte count overflowed"
+            ))
+        })?;
+        if expanded_bytes > limits.max_expanded_bytes {
+            return Err(UpdateError::message(format!(
+                "{label}: npm tarball exceeded the {}-byte expanded limit",
+                limits.max_expanded_bytes
+            )));
+        }
+        if path == Path::new("package/package.json") {
             let mut bytes = Vec::new();
             entry.read_to_end(&mut bytes).map_err(|source| {
                 UpdateError::message(format!(
@@ -469,6 +523,13 @@ fn read_npm_package_json(archive_path: &Path, label: &str) -> Result<Vec<u8>, Up
             package_json = Some(bytes);
         }
     }
+    let mut decoder = archive.into_inner();
+    io::copy(&mut decoder, &mut io::sink()).map_err(|source| {
+        UpdateError::message(format!(
+            "{label}: failed to finish reading npm tarball {}: {source}",
+            archive_path.display()
+        ))
+    })?;
     package_json.ok_or_else(|| {
         UpdateError::message(format!(
             "{label}: npm tarball did not contain package/package.json"
@@ -484,6 +545,20 @@ fn require_regular_file(path: &Path, message: &str) -> Result<(), UpdateError> {
     } else {
         Err(UpdateError::message(message.to_owned()))
     }
+}
+
+fn read_bounded_file(path: &Path, label: &str, limit: usize) -> Result<Vec<u8>, UpdateError> {
+    let file = File::open(path).map_err(|source| UpdateError::io(path, source))?;
+    let mut bytes = Vec::new();
+    file.take(limit.saturating_add(1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|source| UpdateError::io(path, source))?;
+    if bytes.len() > limit {
+        return Err(UpdateError::message(format!(
+            "{label} exceeded {limit} bytes"
+        )));
+    }
+    Ok(bytes)
 }
 
 fn validate_npm_identity(
@@ -563,7 +638,21 @@ fn update_paired_flake_input<R: CommandRunner>(
     let command = CommandSpec::new("nix")
         .args(["flake", "update", input])
         .current_dir(transaction.root());
-    run_checked(runner, &command).map(|_| ())
+    run_mutating_command_once(runner, &command)
+}
+
+fn run_mutating_command_once<R: CommandRunner>(
+    runner: &R,
+    command: &CommandSpec,
+) -> Result<(), UpdateError> {
+    run_checked_limited_with_timeout(
+        runner,
+        command,
+        MUTATING_COMMAND_OUTPUT_LIMIT,
+        MUTATING_COMMAND_OUTPUT_LIMIT,
+        MUTATING_COMMAND_TIMEOUT,
+    )
+    .map(|_| ())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -784,7 +873,7 @@ fn paired_version_matches<'a>(text: &'a str, repository: &str) -> Vec<(usize, us
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
     use std::fs::File;
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -795,13 +884,16 @@ mod tests {
     use flate2::write::GzEncoder;
 
     use super::{
-        is_implemented, paired_version, read_npm_package_json, refresh_assets_with,
-        replace_paired_version, validate_npm_identity, validate_npm_lock,
+        MUTATING_COMMAND_OUTPUT_LIMIT, MUTATING_COMMAND_TIMEOUT, is_implemented, paired_version,
+        read_bounded_file, read_npm_package_json, read_npm_package_json_with_limits,
+        refresh_assets_with, replace_paired_version, run_mutating_command_once,
+        validate_npm_identity, validate_npm_lock,
     };
     use crate::cli::Target;
     use crate::command::{CommandOutput, CommandRunner, CommandSpec};
     use crate::error::UpdateError;
     use crate::policy::RunPolicy;
+    use crate::prefetch::TarPreflightLimits;
     use crate::registry::{AssetNaming, target_spec};
     use crate::upstream::latest_tag;
 
@@ -835,6 +927,59 @@ mod tests {
         fn is_available(&self, _program: &Path) -> bool {
             self.available
         }
+    }
+
+    struct BoundedOnlyRunner {
+        calls: Cell<usize>,
+        stdout_limit: Cell<usize>,
+        stderr_limit: Cell<usize>,
+        timeout: Cell<Duration>,
+    }
+
+    impl CommandRunner for BoundedOnlyRunner {
+        fn run(&self, command: &CommandSpec) -> Result<CommandOutput, UpdateError> {
+            panic!("unexpected unbounded command {}", command.display());
+        }
+
+        fn run_limited_with_timeout(
+            &self,
+            _command: &CommandSpec,
+            stdout_limit: usize,
+            stderr_limit: usize,
+            timeout: Duration,
+        ) -> Result<CommandOutput, UpdateError> {
+            self.calls.set(self.calls.get() + 1);
+            self.stdout_limit.set(stdout_limit);
+            self.stderr_limit.set(stderr_limit);
+            self.timeout.set(timeout);
+            Ok(CommandOutput {
+                status: Some(0),
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            })
+        }
+
+        fn is_available(&self, _program: &Path) -> bool {
+            false
+        }
+    }
+
+    #[test]
+    fn mutating_commands_are_single_shot_and_explicitly_bounded() {
+        let runner = BoundedOnlyRunner {
+            calls: Cell::new(0),
+            stdout_limit: Cell::new(0),
+            stderr_limit: Cell::new(0),
+            timeout: Cell::new(Duration::ZERO),
+        };
+
+        run_mutating_command_once(&runner, &CommandSpec::new("mutation"))
+            .expect("bounded mutation");
+
+        assert_eq!(runner.calls.get(), 1);
+        assert_eq!(runner.stdout_limit.get(), MUTATING_COMMAND_OUTPUT_LIMIT);
+        assert_eq!(runner.stderr_limit.get(), MUTATING_COMMAND_OUTPUT_LIMIT);
+        assert_eq!(runner.timeout.get(), MUTATING_COMMAND_TIMEOUT);
     }
 
     #[test]
@@ -1220,6 +1365,87 @@ mod tests {
         let error =
             read_npm_package_json(&special, "difit").expect_err("FIFO entry must be rejected");
         assert!(error.to_string().contains("unsupported entry package/fifo"));
+    }
+
+    #[test]
+    fn npm_archive_scan_enforces_entry_expansion_and_path_limits() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let manifest = br#"{"name":"difit","version":"1.2.3"}"#;
+
+        let entries = directory.path().join("entries.tgz");
+        write_test_archive(
+            &entries,
+            &[
+                ("package/package.json", manifest, false),
+                ("package/one", b"1", false),
+                ("package/two", b"2", false),
+            ],
+        );
+        let error = read_npm_package_json_with_limits(
+            &entries,
+            "difit",
+            File::open(&entries).expect("entry archive"),
+            TarPreflightLimits {
+                max_entries: 2,
+                max_expanded_bytes: 1024 * 1024,
+                max_path_bytes: 4096,
+            },
+        )
+        .expect_err("entry count must be bounded");
+        assert!(error.to_string().contains("2-entry limit"));
+
+        let expansion = directory.path().join("expansion.tgz");
+        write_test_archive(
+            &expansion,
+            &[
+                ("package/package.json", manifest, false),
+                ("package/large", &[0; 256], false),
+            ],
+        );
+        let error = read_npm_package_json_with_limits(
+            &expansion,
+            "difit",
+            File::open(&expansion).expect("expansion archive"),
+            TarPreflightLimits {
+                max_entries: 10,
+                max_expanded_bytes: 128,
+                max_path_bytes: 4096,
+            },
+        )
+        .expect_err("expanded bytes must be bounded");
+        assert!(error.to_string().contains("128-byte expanded limit"));
+
+        let path = directory.path().join("path.tgz");
+        write_test_archive(
+            &path,
+            &[
+                ("package/package.json", manifest, false),
+                ("package/a-path-that-is-too-long", b"x", false),
+            ],
+        );
+        let error = read_npm_package_json_with_limits(
+            &path,
+            "difit",
+            File::open(&path).expect("path archive"),
+            TarPreflightLimits {
+                max_entries: 10,
+                max_expanded_bytes: 1024 * 1024,
+                max_path_bytes: 24,
+            },
+        )
+        .expect_err("entry paths must be bounded");
+        assert!(error.to_string().contains("unsafe path"));
+    }
+
+    #[test]
+    fn generated_lock_read_is_bounded() {
+        let file = tempfile::NamedTempFile::new().expect("temporary lock");
+        std::fs::write(file.path(), b"12345").expect("write lock fixture");
+
+        let error =
+            read_bounded_file(file.path(), "difit lock", 4).expect_err("lock must be bounded");
+
+        assert!(error.to_string().contains("difit lock exceeded 4 bytes"));
     }
 
     fn asset_test_pin() -> crate::pins::PinDocument {
