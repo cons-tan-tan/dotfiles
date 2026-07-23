@@ -44,8 +44,34 @@ jobs:
         run: |
           cd "$RUNNER_TEMP"
           "${{ steps.build.outputs.path }}/bin/update-pins-smoke"
+      - name: Create disposable updater checkout
+        env:
+          UPDATE_PINS_CHECKOUT: ${{ runner.temp }}/update-pins-check
+        run: |
+          test ! -e "$UPDATE_PINS_CHECKOUT"
+          git clone \
+            --no-local \
+            --no-checkout \
+            --single-branch \
+            --depth=1 \
+            --no-tags \
+            "$GITHUB_WORKSPACE" \
+            "$UPDATE_PINS_CHECKOUT"
+          git -C "$UPDATE_PINS_CHECKOUT" checkout --quiet --detach "$GITHUB_SHA"
+          test "$(git -C "$UPDATE_PINS_CHECKOUT" rev-parse HEAD)" = "$GITHUB_SHA"
+          git -C "$UPDATE_PINS_CHECKOUT" remote remove origin
+          clone_status="$(git -C "$UPDATE_PINS_CHECKOUT" status --short)"
+          test -z "$clone_status"
+      - name: Exercise production difit updater
+        working-directory: ${{ runner.temp }}/update-pins-check
+        run: |
+          timeout 15m nix run .#update-pins -- --force --check difit
+          git diff --exit-code
+          clone_status="$(git status --short)"
+          test -z "$clone_status"
       - name: Verify repository remained unchanged
         if: always()
         run: |
-          git diff --exit-code
-          test -z "$(git status --short)"
+          git -C "$GITHUB_WORKSPACE" diff --exit-code
+          original_status="$(git -C "$GITHUB_WORKSPACE" status --short)"
+          test -z "$original_status"

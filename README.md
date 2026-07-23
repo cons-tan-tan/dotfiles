@@ -51,7 +51,7 @@ nix run .#apply-secrets
 
 ## update-pinsの上流smoke test
 
-`.github/workflows/update-pins-smoke.yaml`は、GitHub Releases、npm、Codex appcast、shellfirmの配布形式を週1回検査する。手動実行にも対応するが、pushやpull requestでは実行しない。通常のflake checkはprivateなsmoke binaryとmock testだけをビルドし、外部networkへ接続しない。
+`.github/workflows/update-pins-smoke.yaml`は、GitHub Releases、npmレジストリ、Codex appcast、shellfirmの配布形式を週1回検査する。続けて一時clone内で`nix run .#update-pins -- --force --check difit`を実行し、npmレジストリのtarball、上流pnpm lock、依存hash、package build、transaction rollbackまでの本番経路を確認する。cloneと元のcheckoutがcleanなことも検査する。手動実行には対応するが、pushやpull requestでは実行せず、repositoryへの書き込み権限も持たない。通常のflake checkはprivateなsmoke binaryとmock testだけをビルドし、外部networkへ接続しない。
 
 手元でlive smokeを実行する場合は、publicなflake appやpackageを追加せず、private checkの出力を直接起動する。
 
