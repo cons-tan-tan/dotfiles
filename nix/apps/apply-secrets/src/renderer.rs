@@ -236,6 +236,7 @@ Host lab lab.local
     #[test]
     fn rejects_invalid_shapes_and_injection() {
         for fixture in [
+            br#"{"#.as_slice(),
             br#"{}"#.as_slice(),
             br#"{"hosts":{}}"#.as_slice(),
             br#"{"hosts":[{"host_unencrypted":"bad host","options":{}}]}"#.as_slice(),

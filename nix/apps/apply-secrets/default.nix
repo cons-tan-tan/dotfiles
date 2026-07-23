@@ -13,10 +13,15 @@ rustPlatform.buildRustPackage {
       ./Cargo.toml
       ./Cargo.lock
       ./src
+      ./tests
     ];
   };
 
   cargoLock.lockFile = ./Cargo.lock;
+  cargoTestFlags = [
+    "--all-targets"
+    "--all-features"
+  ];
 
   meta = {
     description = "Decrypt and atomically install manifest-managed secrets";

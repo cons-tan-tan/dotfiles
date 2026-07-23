@@ -288,6 +288,46 @@ mod tests {
     }
 
     #[test]
+    fn rejects_missing_empty_and_wrong_typed_required_fields() {
+        let (_temp, root, home, manifest) = fixture();
+        for document in [
+            br#"[{"dst":"out","mode":"600","dirMode":"700"}]"#.as_slice(),
+            br#"[{"src":"secrets/demo","mode":"600","dirMode":"700"}]"#.as_slice(),
+            br#"[{"src":"secrets/demo","dst":"out","dirMode":"700"}]"#.as_slice(),
+            br#"[{"src":"secrets/demo","dst":"out","mode":"600"}]"#.as_slice(),
+            br#"[{"src":"","dst":"out","mode":"600","dirMode":"700"}]"#.as_slice(),
+            br#"[{"src":"secrets/demo","dst":"","mode":"600","dirMode":"700"}]"#.as_slice(),
+            br#"[{"src":"secrets/demo","dst":"out","mode":"","dirMode":"700"}]"#.as_slice(),
+            br#"[{"src":"secrets/demo","dst":"out","mode":"600","dirMode":""}]"#.as_slice(),
+            br#"[{"src":"secrets/demo","dst":"out","mode":null,"dirMode":"700"}]"#.as_slice(),
+        ] {
+            fs::write(&manifest, document).unwrap();
+            assert!(
+                load_and_preflight(&manifest, &root, &home).is_err(),
+                "document should be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_unsupported_format_and_missing_source() {
+        let (_temp, root, home, manifest) = fixture();
+        fs::write(
+            &manifest,
+            br#"[{"src":"secrets/demo","dst":"out","format":"unsupported","mode":"600","dirMode":"700"}]"#,
+        )
+        .unwrap();
+        assert!(load_and_preflight(&manifest, &root, &home).is_err());
+
+        fs::write(
+            &manifest,
+            br#"[{"src":"secrets/missing","dst":"out","mode":"600","dirMode":"700"}]"#,
+        )
+        .unwrap();
+        assert!(load_and_preflight(&manifest, &root, &home).is_err());
+    }
+
+    #[test]
     fn rejects_unsafe_paths_and_symlinks() {
         let (_temp, root, home, manifest) = fixture();
         for path in ["/absolute", "../escape", "a/./b", "a//b"] {
