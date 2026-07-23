@@ -1,5 +1,8 @@
 pub mod cli;
 pub mod command;
+pub mod engine;
 pub mod error;
 pub mod pins;
+pub mod registry;
+pub mod targets;
 pub mod transaction;

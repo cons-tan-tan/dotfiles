@@ -1,13 +1,28 @@
 use std::process::ExitCode;
 
-use clap::Parser;
-use update_pins::cli::Cli;
+use update_pins::cli::{ParseAction, parse_compatible_from, usage};
+use update_pins::engine;
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
-    eprintln!(
-        "update-pins: Rust updater for {:?} is not implemented yet",
-        cli.target
-    );
-    ExitCode::FAILURE
+    let action = match parse_compatible_from(std::env::args_os()) {
+        Ok(action) => action,
+        Err(error) => {
+            eprintln!("{error}");
+            eprint!("{}", usage());
+            return ExitCode::from(2);
+        }
+    };
+    match action {
+        ParseAction::Help => {
+            print!("{}", usage());
+            ExitCode::SUCCESS
+        }
+        ParseAction::Run(target) => match engine::run(target) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("{error}");
+                ExitCode::FAILURE
+            }
+        },
+    }
 }

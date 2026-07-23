@@ -55,6 +55,19 @@ impl PinDocument {
             })
     }
 
+    pub fn keys(&self, fields: &[&str]) -> Result<Vec<String>, UpdateError> {
+        self.lookup(fields)
+            .and_then(Value::as_object)
+            .map(|object| object.keys().cloned().collect())
+            .ok_or_else(|| {
+                UpdateError::message(format!(
+                    "{}: missing or invalid object field {}",
+                    self.path.display(),
+                    fields.join(".")
+                ))
+            })
+    }
+
     pub fn set_string(
         &mut self,
         fields: &[&str],

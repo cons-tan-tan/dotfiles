@@ -1,0 +1,44 @@
+use crate::cli::Target;
+use crate::command::{CommandRunner, SystemCommandRunner};
+use crate::error::UpdateError;
+use crate::targets::{is_implemented, run_target};
+use crate::transaction::{Repository, Transaction};
+
+pub fn run(target: Target) -> Result<(), UpdateError> {
+    run_with_runner(target, &SystemCommandRunner)
+}
+
+pub fn run_with_runner<R: CommandRunner>(target: Target, runner: &R) -> Result<(), UpdateError> {
+    if !is_implemented(target) {
+        return Err(UpdateError::message(format!(
+            "update-pins: Rust updater for {} is not yet implemented",
+            target.name()
+        )));
+    }
+
+    let repository = Repository::discover(runner)?;
+    let mut transaction = Transaction::begin(repository, runner)?;
+    println!("== {}", target.name());
+    match run_target(target, runner, &mut transaction) {
+        Ok(result) => {
+            transaction.commit()?;
+            println!();
+            if result.changed {
+                println!(
+                    "{} updated. Review with 'git diff', verify with 'nix run .#build', then commit.",
+                    target.name()
+                );
+            } else {
+                println!("{} is up to date.", target.name());
+            }
+            Ok(())
+        }
+        Err(error) => {
+            eprintln!("update-pins: failed; restoring managed files from backup");
+            match transaction.rollback() {
+                Ok(()) => Err(error),
+                Err(rollback) => Err(UpdateError::message(format!("{error}; {rollback}"))),
+            }
+        }
+    }
+}

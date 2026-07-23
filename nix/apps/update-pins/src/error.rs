@@ -56,6 +56,9 @@ pub enum UpdateError {
 
     #[error("update-pins: rollback failed: {0}")]
     Rollback(String),
+
+    #[error("{0}")]
+    Message(String),
 }
 
 impl UpdateError {
@@ -64,5 +67,9 @@ impl UpdateError {
             path: path.into(),
             source,
         }
+    }
+
+    pub fn message(message: impl Into<String>) -> Self {
+        Self::Message(message.into())
     }
 }
