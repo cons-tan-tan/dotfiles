@@ -214,6 +214,19 @@ fn validate_endpoint(value: &[u8]) -> Result<(), PolicyError> {
             "absolute and scheme-relative URLs are not allowed; use a relative GitHub API endpoint",
         );
     }
+    if [
+        b"{owner}".as_slice(),
+        b"{repo}".as_slice(),
+        b"{branch}".as_slice(),
+    ]
+    .iter()
+    .any(|placeholder| contains(value, placeholder))
+    {
+        return reject(
+            "endpoint",
+            "endpoints must be literal and must not expand local repository metadata",
+        );
+    }
     Ok(())
 }
 
@@ -483,6 +496,28 @@ mod tests {
             vec!["repos/o/r", "--hostname", "example.com"],
         ] {
             assert!(build_arguments(args(&values)).is_err(), "{values:?}");
+        }
+    }
+
+    #[test]
+    fn endpoints_must_not_expand_repository_placeholders() {
+        for endpoint in [
+            "{owner}",
+            "repos/{owner}/r",
+            "repos/o/{repo}",
+            "repos/o/r/branches/{branch}",
+        ] {
+            let error = build_arguments(args(&[endpoint])).unwrap_err();
+            assert!(error.to_string().contains("local repository metadata"));
+            assert!(!error.to_string().contains(endpoint));
+        }
+        for endpoint in [
+            "repos/o/r",
+            "repos/%7Bowner%7D/r",
+            "repos/o/%7Brepo%7D",
+            "repos/o/r/branches/%7Bbranch%7D",
+        ] {
+            assert_allowed(&[endpoint]);
         }
     }
 

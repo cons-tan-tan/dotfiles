@@ -132,12 +132,7 @@ fn policy_rejections_do_not_invoke_children_and_keep_exit_contracts() {
     );
 
     let gh_marker = temporary_marker("gh-rejected");
-    assert_not_invoked(
-        gh_api_get(),
-        &["repos/o/r", "--method", "DELETE"],
-        2,
-        &gh_marker,
-    );
+    assert_not_invoked(gh_api_get(), &["repos/{owner}/r"], 2, &gh_marker);
 }
 
 #[test]
