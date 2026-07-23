@@ -9,6 +9,7 @@ setup() {
   ARGS_FILE="$WORK/args"
   STUB_DIR="$WORK/stub"
   HERDR_STUB="$STUB_DIR/herdr"
+  SLEEP_STUB="$STUB_DIR/sleep"
 
   mkdir -p "$STUB_DIR"
   printf '#!%s\n' "$BASH_BIN" > "$HERDR_STUB"
@@ -21,6 +22,9 @@ setup() {
 } >"$HERDR_STUB_ARGS"
 EOS
   chmod +x "$HERDR_STUB"
+
+  printf '#!%s\nexit 0\n' "$BASH_BIN" >"$SLEEP_STUB"
+  chmod +x "$SLEEP_STUB"
 }
 
 teardown() {
@@ -33,6 +37,7 @@ run_wrapper() {
     "PATH=$PATH"
     "HOME=$HOME"
     "HERDR_BIN=$HERDR_STUB"
+    "HERDR_SLEEP_BIN=$SLEEP_STUB"
     "HERDR_STUB_ARGS=$ARGS_FILE"
     "HERDR_WRAPPER_TRACE=$TRACE_FILE"
   )
@@ -126,4 +131,18 @@ assert_stub_args() {
 
   [ "$status" -eq 0 ]
   assert_stub_args $'argc=3\narg=session\narg=attach\narg=--flag'
+}
+
+@test "Nix package pins both the Herdr child and sleep dependency" {
+  if [[ -z ${HERDR_WRAPPER_TEST_PACKAGE:-} ]]; then
+    skip "HERDR_WRAPPER_TEST_PACKAGE is only available in the Nix check"
+  fi
+
+  run env TEST_TMPDIR="$WORK" \
+    "$HERDR_WRAPPER_TEST_PACKAGE/bin/herdr" package-arg
+
+  [ "$status" -eq 0 ]
+  [ "$(cat "$WORK/package-args")" = "package-arg" ]
+  grep -E 'HERDR_SLEEP_BIN=/nix/store/.+-herdr-sleep-fixture/bin/herdr-sleep-fixture' \
+    "$(readlink -f "$HERDR_WRAPPER_TEST_PACKAGE/bin/herdr")"
 }

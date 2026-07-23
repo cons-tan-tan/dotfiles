@@ -1,4 +1,5 @@
 : "${HERDR_BIN:?HERDR_BIN must be set}"
+: "${HERDR_SLEEP_BIN:?HERDR_SLEEP_BIN must be set}"
 
 is_tty_stdout() {
   if [ "${HERDR_WRAPPER_ASSUME_TTY:-}" = "1" ]; then
@@ -31,9 +32,9 @@ if [ "$needs_focus_reporting_workaround" = true ] &&
     echo "workaround" >>"$HERDR_WRAPPER_TRACE"
   fi
   (
-    sleep 1
+    "$HERDR_SLEEP_BIN" 1
     printf '\033[?1004l' >/dev/tty 2>/dev/null || true
-  ) &
+  ) </dev/null >/dev/null 2>&1 &
 fi
 
 exec "$HERDR_BIN" "$@"
