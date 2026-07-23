@@ -171,6 +171,7 @@ mod tests {
                 "nix/pins/agent-browser.json",
                 "nix/pins/watchexec.json",
                 "nix/pins/shellfirm.json",
+                "nix/packages/shellfirm/Cargo.lock",
                 "nix/pins/herdr.json",
                 "nix/pins/difit.json",
                 "nix/packages/difit/package-lock.json",

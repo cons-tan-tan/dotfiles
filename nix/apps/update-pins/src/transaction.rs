@@ -9,10 +9,11 @@ use tempfile::Builder;
 use crate::command::{CommandRunner, CommandSpec, require_success, run_checked};
 use crate::error::UpdateError;
 
-const GLOBAL_MANAGED_PATHS: [&str; 4] = [
+const GLOBAL_MANAGED_PATHS: [&str; 5] = [
     ":(glob)nix/pins/*.json",
     "flake.nix",
     "flake.lock",
+    "nix/packages/shellfirm/Cargo.lock",
     "nix/packages/difit/package-lock.json",
 ];
 

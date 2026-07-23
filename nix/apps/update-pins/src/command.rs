@@ -109,6 +109,16 @@ pub trait CommandRunner {
         enforce_output_limits(command, output, stdout_limit, stderr_limit)
     }
 
+    fn run_limited_with_timeout(
+        &self,
+        command: &CommandSpec,
+        stdout_limit: usize,
+        stderr_limit: usize,
+        _timeout: Duration,
+    ) -> Result<CommandOutput, UpdateError> {
+        self.run_limited(command, stdout_limit, stderr_limit)
+    }
+
     fn is_available(&self, program: &Path) -> bool;
 }
 
@@ -136,6 +146,16 @@ impl CommandRunner for SystemCommandRunner {
         stdout_limit: usize,
         stderr_limit: usize,
     ) -> Result<CommandOutput, UpdateError> {
+        self.run_limited_with_timeout(command, stdout_limit, stderr_limit, LIMITED_COMMAND_TIMEOUT)
+    }
+
+    fn run_limited_with_timeout(
+        &self,
+        command: &CommandSpec,
+        stdout_limit: usize,
+        stderr_limit: usize,
+        timeout: Duration,
+    ) -> Result<CommandOutput, UpdateError> {
         let mut process = configured_process(command);
         process.stdout(Stdio::piped()).stderr(Stdio::piped());
         let mut child = process.spawn().map_err(|source| UpdateError::Spawn {
@@ -156,7 +176,7 @@ impl CommandRunner for SystemCommandRunner {
             {
                 break (status, false);
             }
-            if started.elapsed() >= LIMITED_COMMAND_TIMEOUT {
+            if started.elapsed() >= timeout {
                 child
                     .kill()
                     .map_err(|source| process_runtime_error(command, "terminate", source))?;
@@ -172,7 +192,7 @@ impl CommandRunner for SystemCommandRunner {
         if timed_out {
             return Err(UpdateError::CommandTimedOut {
                 program: command.program.to_string_lossy().into_owned(),
-                seconds: LIMITED_COMMAND_TIMEOUT.as_secs(),
+                seconds: timeout.as_secs(),
             });
         }
         enforce_output_limits(

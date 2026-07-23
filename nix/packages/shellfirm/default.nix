@@ -18,7 +18,7 @@ rustPlatform.buildRustPackage rec {
     hash = pin.srcHash;
   };
 
-  cargoHash = if pin.cargoHash == "" then lib.fakeHash else pin.cargoHash;
+  cargoLock.lockFile = ./Cargo.lock;
 
   cargoBuildFlags = [
     "--package"

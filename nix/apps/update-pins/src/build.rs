@@ -1,10 +1,14 @@
 use std::path::Path;
+use std::time::Duration;
 
 use crate::command::{CommandOutput, CommandRunner, CommandSpec};
 use crate::error::UpdateError;
 use crate::pins::PinDocument;
 use crate::transaction::Transaction;
 use crate::validation::validate_sri_hash;
+
+const BUILD_OUTPUT_LIMIT: usize = 1024 * 1024;
+const BUILD_TIMEOUT: Duration = Duration::from_secs(60 * 60);
 
 const LOCAL_PACKAGE_EXPRESSION: &str = r#"
 let
@@ -25,21 +29,43 @@ let
   packageName = builtins.getEnv "UPDATE_PINS_PACKAGE";
   rawPin = builtins.fromJSON (builtins.getEnv "UPDATE_PINS_PIN_JSON");
   pin =
-    if packageName == "shellfirm" then
-      rawPin // { cargoHash = pkgs.lib.fakeHash; }
-    else if packageName == "difit" then
+    if packageName == "difit" then
       rawPin // { npmDepsHash = pkgs.lib.fakeHash; }
     else
       throw "unsupported update-pins candidate package";
   package = pkgs.dotfilesPackages.${packageName};
 in
-if packageName == "shellfirm" then
-  package.override { inherit pin; }
-else if packageName == "difit" then
+if packageName == "difit" then
   package.override { difitPin = pin; }
 else
   throw "unsupported update-pins candidate package"
 "#;
+
+pub fn build_package_once<R: CommandRunner>(
+    label: &str,
+    package: &str,
+    runner: &R,
+    transaction: &Transaction<'_, R>,
+) -> Result<(), UpdateError> {
+    println!("{label}: building candidate package...");
+    let command = local_package_command(transaction.root(), package);
+    let build = runner.run_limited_with_timeout(
+        &command,
+        BUILD_OUTPUT_LIMIT,
+        BUILD_OUTPUT_LIMIT,
+        BUILD_TIMEOUT,
+    )?;
+    if build.success() {
+        return Ok(());
+    }
+    let status = build
+        .status
+        .map_or_else(|| "signal".to_owned(), |status| status.to_string());
+    let diagnostic = output_tail(&build, 10);
+    Err(UpdateError::message(format!(
+        "{label}: candidate package build failed with status {status}:\n{diagnostic}"
+    )))
+}
 
 pub fn compute_hash_via_failed_build<R: CommandRunner>(
     label: &str,
@@ -301,8 +327,8 @@ mod tests {
 
     #[test]
     fn candidate_build_injects_fake_hash_without_interpolating_pin_data() {
-        let pin_json = r#"{"cargoHash":"sha256-private"}"#;
-        let command = candidate_package_command(Path::new("/repo"), "shellfirm", pin_json);
+        let pin_json = r#"{"npmDepsHash":"sha256-private"}"#;
+        let command = candidate_package_command(Path::new("/repo"), "difit", pin_json);
         assert_eq!(
             command,
             CommandSpec::new("nix")
@@ -313,12 +339,11 @@ mod tests {
                     CANDIDATE_PACKAGE_EXPRESSION,
                     "--no-link",
                 ])
-                .env("UPDATE_PINS_PACKAGE", "shellfirm")
+                .env("UPDATE_PINS_PACKAGE", "difit")
                 .env("UPDATE_PINS_PIN_JSON", pin_json)
                 .current_dir(PathBuf::from("/repo"))
         );
         assert!(CANDIDATE_PACKAGE_EXPRESSION.contains("pkgs.lib.fakeHash"));
-        assert!(CANDIDATE_PACKAGE_EXPRESSION.contains("package.override { inherit pin; }"));
         assert!(CANDIDATE_PACKAGE_EXPRESSION.contains("package.override { difitPin = pin; }"));
         assert!(!CANDIDATE_PACKAGE_EXPRESSION.contains("sha256-private"));
     }

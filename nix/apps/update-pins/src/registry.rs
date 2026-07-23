@@ -49,6 +49,7 @@ pub enum TargetKind {
     Shellfirm {
         repository: &'static str,
         pin: &'static str,
+        lock: &'static str,
         package: &'static str,
     },
     Difit {
@@ -127,9 +128,13 @@ pub static TARGET_SPECS: &[TargetSpec] = &[
         kind: TargetKind::Shellfirm {
             repository: "kaplanelad/shellfirm",
             pin: "nix/pins/shellfirm.json",
+            lock: "nix/packages/shellfirm/Cargo.lock",
             package: "shellfirm",
         },
-        managed_paths: &["nix/pins/shellfirm.json"],
+        managed_paths: &[
+            "nix/pins/shellfirm.json",
+            "nix/packages/shellfirm/Cargo.lock",
+        ],
     },
     TargetSpec {
         target: Target::Herdr,
@@ -290,6 +295,9 @@ mod tests {
                     assert!(spec.managed_paths.contains(&lock));
                     assert!(spec.managed_paths.contains(&"flake.nix"));
                     assert!(spec.managed_paths.contains(&"flake.lock"));
+                }
+                super::TargetKind::Shellfirm { lock, .. } => {
+                    assert!(spec.managed_paths.contains(&lock));
                 }
                 _ => {}
             }

@@ -26,7 +26,6 @@ pub enum ChangeKind {
     Version,
     Url,
     SourceHash,
-    CargoHash,
     NpmDepsHash,
     SchemaHash,
     AppHash,
@@ -129,7 +128,6 @@ impl ChangeKind {
             Self::Version => "version".to_owned(),
             Self::Url => "URL".to_owned(),
             Self::SourceHash => "source hash".to_owned(),
-            Self::CargoHash => "Cargo dependency hash".to_owned(),
             Self::NpmDepsHash => "npm dependency hash".to_owned(),
             Self::SchemaHash => "schema hash".to_owned(),
             Self::AppHash => "app hash".to_owned(),
@@ -148,21 +146,20 @@ impl ChangeKind {
             Self::Version => (0, 0, ""),
             Self::Url => (1, 0, ""),
             Self::SourceHash => (2, 0, ""),
-            Self::CargoHash => (3, 0, ""),
-            Self::NpmDepsHash => (4, 0, ""),
-            Self::SchemaHash => (5, 0, ""),
-            Self::AppHash => (6, 0, ""),
+            Self::NpmDepsHash => (3, 0, ""),
+            Self::SchemaHash => (4, 0, ""),
+            Self::AppHash => (5, 0, ""),
             Self::AssetHash(system) => (
-                7,
+                6,
                 CANONICAL_SYSTEMS
                     .iter()
                     .position(|candidate| candidate == system)
                     .unwrap_or(usize::MAX),
                 system,
             ),
-            Self::Lockfile(path) => (8, 0, path),
-            Self::FlakeInput(input) => (9, 0, input),
-            Self::ManagedFile(path) => (10, 0, path),
+            Self::Lockfile(path) => (7, 0, path),
+            Self::FlakeInput(input) => (8, 0, input),
+            Self::ManagedFile(path) => (9, 0, path),
         }
     }
 }
@@ -235,13 +232,22 @@ pub fn diff_target(spec: &TargetSpec, before: &[FileState], after: &[FileState])
                 &mut changes,
             );
         }
-        TargetKind::Shellfirm { pin, .. } => {
+        TargetKind::Shellfirm { pin, lock, .. } => {
             record_pin_changes(
                 spec,
                 pin,
                 before,
                 after,
                 PinFields::Shellfirm,
+                &mut represented,
+                &mut changes,
+            );
+            record_changed_file(
+                spec,
+                lock,
+                ChangeKind::Lockfile(lock.to_owned()),
+                before,
+                after,
                 &mut represented,
                 &mut changes,
             );
@@ -389,14 +395,6 @@ fn record_pin_changes(
                 &old,
                 &new,
                 "srcHash",
-                changes,
-            );
-            record_redacted_field(
-                spec.target,
-                ChangeKind::CargoHash,
-                &old,
-                &new,
-                "cargoHash",
                 changes,
             );
         }
@@ -661,7 +659,6 @@ mod tests {
             change(Target::Difit, ChangeKind::AppHash),
             change(Target::Difit, ChangeKind::SchemaHash),
             change(Target::Difit, ChangeKind::NpmDepsHash),
-            change(Target::Difit, ChangeKind::CargoHash),
             change(Target::Difit, ChangeKind::SourceHash),
             change(Target::Difit, ChangeKind::Url),
             change(Target::Difit, ChangeKind::Version),
@@ -677,7 +674,6 @@ mod tests {
                 ChangeKind::Version,
                 ChangeKind::Url,
                 ChangeKind::SourceHash,
-                ChangeKind::CargoHash,
                 ChangeKind::NpmDepsHash,
                 ChangeKind::SchemaHash,
                 ChangeKind::AppHash,
@@ -768,14 +764,20 @@ mod tests {
         );
 
         let shellfirm = target_spec(Target::Shellfirm).expect("shellfirm spec");
-        let shellfirm_before = [state(
-            "nix/pins/shellfirm.json",
-            br#"{"version":"1.0.0","srcHash":"sha256-old","cargoHash":"sha256-old"}"#,
-        )];
-        let shellfirm_after = [state(
-            "nix/pins/shellfirm.json",
-            br#"{"version":"2.0.0","srcHash":"sha256-new","cargoHash":"sha256-new"}"#,
-        )];
+        let shellfirm_before = [
+            state(
+                "nix/pins/shellfirm.json",
+                br#"{"version":"1.0.0","srcHash":"sha256-old"}"#,
+            ),
+            state("nix/packages/shellfirm/Cargo.lock", b"old lock"),
+        ];
+        let shellfirm_after = [
+            state(
+                "nix/pins/shellfirm.json",
+                br#"{"version":"2.0.0","srcHash":"sha256-new"}"#,
+            ),
+            state("nix/packages/shellfirm/Cargo.lock", b"new lock"),
+        ];
         assert_eq!(
             diff_target(shellfirm, &shellfirm_before, &shellfirm_after)
                 .into_iter()
@@ -784,7 +786,7 @@ mod tests {
             [
                 ChangeKind::Version,
                 ChangeKind::SourceHash,
-                ChangeKind::CargoHash,
+                ChangeKind::Lockfile("nix/packages/shellfirm/Cargo.lock".to_owned()),
             ]
         );
 

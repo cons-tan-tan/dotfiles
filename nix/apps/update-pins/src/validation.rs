@@ -66,11 +66,16 @@ pub fn validate_target_input<R: CommandRunner>(
             validate_https_field(spec, pin, &document, &["url"])?;
             validate_hash_field(spec, pin, &document, &["hash"])
         }
-        TargetKind::Shellfirm { pin, .. } => {
+        TargetKind::Shellfirm { pin, lock, .. } => {
             let document = load_pin(transaction, pin)?;
             validate_version_field(spec, pin, &document)?;
             validate_hash_field(spec, pin, &document, &["srcHash"])?;
-            validate_hash_field(spec, pin, &document, &["cargoHash"])
+            crate::shellfirm::validate_cargo_lock(
+                spec.name,
+                lock,
+                &transaction.read(lock)?,
+                document.string(&["version"])?,
+            )
         }
         TargetKind::Difit {
             repository,

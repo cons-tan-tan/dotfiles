@@ -13,9 +13,10 @@ setup() {
   REPO_ROOT="$(git rev-parse --show-toplevel)"
   BASH_BIN="$(command -v bash)"
   WORK="$(mktemp -d)"
-  mkdir -p "$WORK/nix/pins" "$WORK/nix/packages/difit"
+  mkdir -p "$WORK/nix/pins" "$WORK/nix/packages/difit" "$WORK/nix/packages/shellfirm"
   cp "$REPO_ROOT"/nix/pins/*.json "$WORK/nix/pins/"
   cp "$REPO_ROOT/nix/packages/difit/package-lock.json" "$WORK/nix/packages/difit/package-lock.json"
+  cp "$REPO_ROOT/nix/packages/shellfirm/Cargo.lock" "$WORK/nix/packages/shellfirm/Cargo.lock"
   cp "$REPO_ROOT/flake.nix" "$WORK/flake.nix"
   cp "$REPO_ROOT/flake.lock" "$WORK/flake.lock"
 
@@ -25,7 +26,7 @@ setup() {
     git config user.email update-pins-test@example.invalid
     git config user.name "update-pins test"
     git config commit.gpgsign false
-    git add flake.nix flake.lock nix/packages/difit/package-lock.json nix/pins/*.json
+    git add flake.nix flake.lock nix/packages/difit/package-lock.json nix/packages/shellfirm/Cargo.lock nix/pins/*.json
     git commit -q -m "initial managed files"
   )
 
@@ -216,6 +217,10 @@ PY
 https://json.schemastore.org/claude-code-settings.json)
   printf '{}\n' >"$output_path"
   ;;
+https://github.com/kaplanelad/shellfirm/archive/refs/tags/*.tar.gz)
+  printf 'shellfirm source fixture\n' >"$output_path"
+  printf '%s\n' "$output_path" >"$UPDATE_PINS_FAKE_ROOT/shellfirm-download-path"
+  ;;
 https://github.com/*)
   printf 'artifact fixture\n' >"$output_path"
   ;;
@@ -305,6 +310,58 @@ if { [ "$#" -eq 6 ] || [ "$#" -eq 7 ]; } \
     echo "nix prefetch local download is missing: $local_path" >&2
     exit 1
   fi
+  if [ -f "$UPDATE_PINS_FAKE_ROOT/shellfirm-download-path" ] \
+    && [ "$(cat "$UPDATE_PINS_FAKE_ROOT/shellfirm-download-path")" = "$local_path" ]; then
+    store="$UPDATE_PINS_FAKE_ROOT/shellfirm-store"
+    mkdir -p "$store/shellfirm"
+    version=${UPDATE_PINS_SHELLFIRM_TAG:-v$(jq -r .version "$UPDATE_PINS_FAKE_ROOT/nix/pins/shellfirm.json")}
+    version=${version#v}
+    printf '[workspace]\nmembers = ["shellfirm"]\n' >"$store/Cargo.toml"
+    printf '[package]\nname = "shellfirm"\nversion = "%s"\n' "$version" >"$store/shellfirm/Cargo.toml"
+    if [ "${UPDATE_PINS_SHELLFIRM_LOCK_MODE:-}" != "missing" ]; then
+      if [ "${UPDATE_PINS_SHELLFIRM_REUSE_LOCK:-}" = "1" ]; then
+        cp "$UPDATE_PINS_FAKE_ROOT/nix/packages/shellfirm/Cargo.lock" "$store/Cargo.lock"
+      else
+        lock_version=$version
+        registry_source=registry+https://github.com/rust-lang/crates.io-index
+        if [ "${UPDATE_PINS_SHELLFIRM_LOCK_MODE:-}" = "version-mismatch" ]; then
+          lock_version=0.0.0
+        fi
+        if [ "${UPDATE_PINS_SHELLFIRM_LOCK_MODE:-}" = "alternate-registry" ]; then
+          registry_source=registry+https://example.invalid/index
+        fi
+        cat >"$store/Cargo.lock" <<LOCK
+version = 4
+
+[[package]]
+name = "fixture-dependency"
+version = "1.0.0"
+source = "$registry_source"
+checksum = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[package]]
+name = "shellfirm"
+version = "$lock_version"
+LOCK
+        if [ "${UPDATE_PINS_SHELLFIRM_LOCK_MODE:-}" = "git-dependency" ]; then
+          cat >>"$store/Cargo.lock" <<'LOCK'
+
+[[package]]
+name = "git-fixture"
+version = "1.0.0"
+source = "git+https://example.invalid/repository"
+LOCK
+        fi
+      fi
+    fi
+    if [ "${UPDATE_PINS_SHELLFIRM_LOCK_MODE:-}" = "ambiguous" ]; then
+      mkdir -p "$store/nested"
+      printf '[workspace]\n' >"$store/nested/Cargo.toml"
+      printf 'version = 4\n' >"$store/nested/Cargo.lock"
+    fi
+    printf '{"hash":"%s","storePath":"%s"}\n' "${UPDATE_PINS_SOURCE_HASH:-sha256-JaZjQmPBsfb8RpegTiuZBOpLBCqJr1nck+wfXUSEiiY=}" "$store"
+    exit 0
+  fi
   case "$local_path" in
   *.zip)
     zip_path="$UPDATE_PINS_FAKE_ROOT/codex-app.zip"
@@ -346,47 +403,11 @@ if [ "$1" = "build" ] && [ "${2:-}" = "--impure" ] && [ "${3:-}" = "--expr" ] &&
   printf '%s\n' "$count" >"$UPDATE_PINS_SHELLFIRM_BUILD_COUNT"
 
   case "${UPDATE_PINS_SHELLFIRM_BUILD_MODE:-}" in
-  no-hash)
-    echo "builder failed before printing a hash" >&2
-    exit 1
-    ;;
   success)
-    if [ "$count" -eq 1 ]; then
-      echo "error: hash mismatch" >&2
-      echo "got: sha256-MyJTLYWJ+VyRKnyVauzVsNiEcmO5AhQ4xyoSYEH2Eug=" >&2
-      exit 1
-    fi
     exit 0
     ;;
-  verify-fails)
-    if [ "$count" -eq 1 ]; then
-      echo "error: hash mismatch" >&2
-      echo "got: sha256-MyJTLYWJ+VyRKnyVauzVsNiEcmO5AhQ4xyoSYEH2Eug=" >&2
-      exit 1
-    fi
-    echo "verification build failed" >&2
-    exit 1
-    ;;
-  verify-existing)
-    if [ "$count" -eq 1 ]; then
-      [[ "${4:-}" == *"pkgs.lib.fakeHash"* ]]
-      [ -n "${UPDATE_PINS_PIN_JSON:-}" ]
-      echo "error: hash mismatch" >&2
-      echo "got: ${UPDATE_PINS_REFRESHED_CARGO_HASH:?}" >&2
-      exit 1
-    fi
-    exit 0
-    ;;
-  refresh-existing)
-    if [ "$count" -eq 1 ]; then
-      echo "error: hash mismatch" >&2
-      echo "got: ${UPDATE_PINS_REFRESHED_CARGO_HASH:?}" >&2
-      exit 1
-    fi
-    exit 0
-    ;;
-  verify-existing-fails)
-    echo "existing cargoHash verification failed" >&2
+  fails)
+    echo "candidate package build failed" >&2
     exit 1
     ;;
   *)
@@ -516,11 +537,12 @@ run_update_pins() {
 
 save_managed() {
   local dst=$1
-  mkdir -p "$dst/nix/pins" "$dst/nix/packages/difit"
+  mkdir -p "$dst/nix/pins" "$dst/nix/packages/difit" "$dst/nix/packages/shellfirm"
   cp -p "$WORK/flake.nix" "$dst/flake.nix"
   cp -p "$WORK/flake.lock" "$dst/flake.lock"
   cp -p "$WORK"/nix/pins/*.json "$dst/nix/pins/"
   cp -p "$WORK/nix/packages/difit/package-lock.json" "$dst/nix/packages/difit/package-lock.json"
+  cp -p "$WORK/nix/packages/shellfirm/Cargo.lock" "$dst/nix/packages/shellfirm/Cargo.lock"
 }
 
 assert_managed_matches() {
@@ -531,6 +553,8 @@ assert_managed_matches() {
   assert_same_mode "$WORK/flake.lock" "$expected/flake.lock" || return 1
   cmp -s "$WORK/nix/packages/difit/package-lock.json" "$expected/nix/packages/difit/package-lock.json" || return 1
   assert_same_mode "$WORK/nix/packages/difit/package-lock.json" "$expected/nix/packages/difit/package-lock.json" || return 1
+  cmp -s "$WORK/nix/packages/shellfirm/Cargo.lock" "$expected/nix/packages/shellfirm/Cargo.lock" || return 1
+  assert_same_mode "$WORK/nix/packages/shellfirm/Cargo.lock" "$expected/nix/packages/shellfirm/Cargo.lock" || return 1
   for pin in "$expected"/nix/pins/*.json; do
     name=$(basename "$pin")
     cmp -s "$WORK/nix/pins/$name" "$pin" || return 1
@@ -675,7 +699,7 @@ make_unrelated_updates_noop() {
   [ "$(grep -c '^curl ' "$UPDATE_PINS_COMMAND_LOG")" -eq 2 ]
   grep -Fq "https://persistent.oaistatic.com/codex-app-prod/appcast.xml" "$UPDATE_PINS_COMMAND_LOG"
   grep -Fq "$(jq -r .url "$WORK/nix/pins/codex-app.json")" "$UPDATE_PINS_COMMAND_LOG"
-  grep -Eq '^nix store prefetch-file --json --name update-pins-.+\.zip file:///tmp/update-pins-fetch-.+\.zip$' "$UPDATE_PINS_COMMAND_LOG"
+  grep -Eq '^nix store prefetch-file --json --name update-pins-.+\.zip file:///.*/update-pins-fetch-.+\.zip$' "$UPDATE_PINS_COMMAND_LOG"
   [ ! -e "$UPDATE_PINS_FLAKE_UPDATE_LOG" ]
   cp "$WORK/nix/pins/codex-app.json" "$original/nix/pins/codex-app.json"
   assert_managed_matches "$original"
@@ -709,21 +733,22 @@ make_unrelated_updates_noop() {
 @test "same-version shellfirm force validates without writing" {
   original="$WORK/original"
   save_managed "$original"
-  before=$(file_identity "$WORK/nix/pins/shellfirm.json")
+  pin_before=$(file_identity "$WORK/nix/pins/shellfirm.json")
+  lock_before=$(file_identity "$WORK/nix/packages/shellfirm/Cargo.lock")
   export UPDATE_PINS_SOURCE_HASH
   UPDATE_PINS_SOURCE_HASH=$(jq -r .srcHash "$WORK/nix/pins/shellfirm.json")
-  export UPDATE_PINS_REFRESHED_CARGO_HASH
-  UPDATE_PINS_REFRESHED_CARGO_HASH=$(jq -r .cargoHash "$WORK/nix/pins/shellfirm.json")
-  export UPDATE_PINS_SHELLFIRM_BUILD_MODE=verify-existing
+  export UPDATE_PINS_SHELLFIRM_REUSE_LOCK=1
+  export UPDATE_PINS_SHELLFIRM_BUILD_MODE=success
 
   run_update_pins --force shellfirm
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"shellfirm: candidate source is unchanged"* ]]
+  [[ "$output" == *"shellfirm: candidate source and lockfile are unchanged"* ]]
   [[ "$output" == *"shellfirm is up to date."* ]]
   [[ "$output" != *"Applied changes:"* ]]
-  [ "$(cat "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT")" -eq 2 ]
-  [ "$(file_identity "$WORK/nix/pins/shellfirm.json")" = "$before" ]
+  [ "$(cat "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT")" -eq 1 ]
+  [ "$(file_identity "$WORK/nix/pins/shellfirm.json")" = "$pin_before" ]
+  [ "$(file_identity "$WORK/nix/packages/shellfirm/Cargo.lock")" = "$lock_before" ]
   assert_managed_matches "$original"
 }
 
@@ -752,30 +777,22 @@ make_unrelated_updates_noop() {
   assert_managed_matches "$original"
 }
 
-@test "same-version shellfirm force re-pins a stale derived hash without source churn" {
-  refreshed=$(jq -r .cargoHash "$WORK/nix/pins/shellfirm.json")
-  replacement=sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
-  jq --arg hash "$replacement" '.cargoHash = $hash' "$WORK/nix/pins/shellfirm.json" >"$WORK/shellfirm.json"
-  mv "$WORK/shellfirm.json" "$WORK/nix/pins/shellfirm.json"
-  git -C "$WORK" add nix/pins/shellfirm.json
-  git -C "$WORK" commit -q -m "stale shellfirm hash fixture"
+@test "same-version shellfirm force updates only a changed upstream lockfile" {
   original="$WORK/original"
   save_managed "$original"
   export UPDATE_PINS_SOURCE_HASH
   UPDATE_PINS_SOURCE_HASH=$(jq -r .srcHash "$WORK/nix/pins/shellfirm.json")
-  export UPDATE_PINS_SHELLFIRM_BUILD_MODE=refresh-existing
-  export UPDATE_PINS_REFRESHED_CARGO_HASH="$refreshed"
+  export UPDATE_PINS_SHELLFIRM_BUILD_MODE=success
 
   run_update_pins --force shellfirm
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"shellfirm updated."* ]]
-  [ "$(jq -r .cargoHash "$WORK/nix/pins/shellfirm.json")" = "$refreshed" ]
+  grep -Fq 'name = "shellfirm"' "$WORK/nix/packages/shellfirm/Cargo.lock"
   section=$(report_section "Applied changes:")
-  [ "$section" = $'  shellfirm:\n    - Cargo dependency hash: changed' ]
-  [[ "$output" != *"$refreshed"* ]]
-  [ "$(cat "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT")" -eq 2 ]
-  cp "$WORK/nix/pins/shellfirm.json" "$original/nix/pins/shellfirm.json"
+  [ "$section" = $'  shellfirm:\n    - lockfile [nix/packages/shellfirm/Cargo.lock]: changed' ]
+  [ "$(cat "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT")" -eq 1 ]
+  cp "$WORK/nix/packages/shellfirm/Cargo.lock" "$original/nix/packages/shellfirm/Cargo.lock"
   assert_managed_matches "$original"
 }
 
@@ -791,7 +808,7 @@ make_unrelated_updates_noop() {
   [[ "$output" != *"Applied changes:"* ]]
   [[ "$output" != *"Rolled back candidate changes:"* ]]
   [ "$(grep -c '^curl ' "$UPDATE_PINS_COMMAND_LOG")" -eq 1 ]
-  grep -Eq '^nix store prefetch-file --json --name update-pins-.+\.json file:///tmp/update-pins-fetch-.+\.json$' "$UPDATE_PINS_COMMAND_LOG"
+  grep -Eq '^nix store prefetch-file --json --name update-pins-.+\.json file:///.*/update-pins-fetch-.+\.json$' "$UPDATE_PINS_COMMAND_LOG"
   assert_managed_matches "$original"
 }
 
@@ -909,9 +926,13 @@ make_unrelated_updates_noop() {
   [ "$status" -eq 0 ]
   [ "$(jq -r .version "$WORK/nix/pins/shellfirm.json")" = "9.9.9" ]
   [ "$(jq -r .srcHash "$WORK/nix/pins/shellfirm.json")" = "sha256-JaZjQmPBsfb8RpegTiuZBOpLBCqJr1nck+wfXUSEiiY=" ]
-  [ "$(jq -r .cargoHash "$WORK/nix/pins/shellfirm.json")" = "sha256-MyJTLYWJ+VyRKnyVauzVsNiEcmO5AhQ4xyoSYEH2Eug=" ]
-  [ "$(cat "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT")" -eq 2 ]
+  jq -e 'keys == ["srcHash", "version"]' "$WORK/nix/pins/shellfirm.json"
+  grep -Fq 'version = "9.9.9"' "$WORK/nix/packages/shellfirm/Cargo.lock"
+  [ "$(cat "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT")" -eq 1 ]
+  section=$(report_section "Applied changes:")
+  [ "$section" = $'  shellfirm:\n    - version: 0.3.10 -> 9.9.9\n    - source hash: changed\n    - lockfile [nix/packages/shellfirm/Cargo.lock]: changed' ]
   cp "$WORK/nix/pins/shellfirm.json" "$original/nix/pins/shellfirm.json"
+  cp "$WORK/nix/packages/shellfirm/Cargo.lock" "$original/nix/packages/shellfirm/Cargo.lock"
   assert_managed_matches "$original"
 }
 
@@ -1491,37 +1512,77 @@ make_unrelated_updates_noop() {
   assert_no_staging_files
 }
 
-@test "shellfirm cargoHash extraction failure restores all managed files" {
+@test "shellfirm rejects a missing upstream lockfile before mutation" {
   original="$WORK/original"
   save_managed "$original"
-  export UPDATE_PINS_HCOM_TAG=v1.2.3
-  export UPDATE_PINS_AGENT_SLACK_TAG=v4.5.6
   export UPDATE_PINS_SHELLFIRM_TAG=v8.8.8
-  export UPDATE_PINS_SHELLFIRM_BUILD_MODE=no-hash
+  export UPDATE_PINS_SHELLFIRM_LOCK_MODE=missing
 
   run_update_pins shellfirm
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"shellfirm: failed to extract cargoHash"* ]]
-  [ "$(cat "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT")" -eq 1 ]
+  [[ "$output" == *"expected exactly one directory containing regular Cargo.toml and Cargo.lock files, found 0"* ]]
+  [ ! -e "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT" ]
   assert_managed_matches "$original"
 }
 
-@test "shellfirm verification build failure restores all managed files" {
+@test "shellfirm rejects a mismatched lockfile root version before mutation" {
   original="$WORK/original"
   save_managed "$original"
   export UPDATE_PINS_SHELLFIRM_TAG=v8.8.8
-  export UPDATE_PINS_SHELLFIRM_BUILD_MODE=verify-fails
+  export UPDATE_PINS_SHELLFIRM_LOCK_MODE=version-mismatch
+
+  run_update_pins shellfirm
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"expected exactly one source-free shellfirm 8.8.8 package, found 1 shellfirm roots"* ]]
+  [ ! -e "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT" ]
+  assert_managed_matches "$original"
+}
+
+@test "shellfirm rejects a git dependency before mutation" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_SHELLFIRM_TAG=v8.8.8
+  export UPDATE_PINS_SHELLFIRM_LOCK_MODE=git-dependency
+
+  run_update_pins shellfirm
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"git dependency is unsupported: git-fixture 1.0.0"* ]]
+  [ ! -e "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT" ]
+  assert_managed_matches "$original"
+}
+
+@test "shellfirm rejects an unsupported registry before mutation" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_SHELLFIRM_TAG=v8.8.8
+  export UPDATE_PINS_SHELLFIRM_LOCK_MODE=alternate-registry
+
+  run_update_pins shellfirm
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"unsupported dependency source for fixture-dependency 1.0.0"* ]]
+  [ ! -e "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT" ]
+  assert_managed_matches "$original"
+}
+
+@test "shellfirm late package build failure restores its pin and lockfile" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_SHELLFIRM_TAG=v8.8.8
+  export UPDATE_PINS_SHELLFIRM_BUILD_MODE=fails
 
   run_update_pins --retry 5 shellfirm
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"shellfirm: verification build failed"* ]]
-  [ "$(cat "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT")" -eq 2 ]
+  [[ "$output" == *"shellfirm: candidate package build failed with status 1"* ]]
+  [ "$(cat "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT")" -eq 1 ]
   [[ "$output" != *"retrying attempt"* ]]
   [[ "$output" != *"Applied changes:"* ]]
   section=$(report_section "Rolled back candidate changes:")
-  [ "$(printf '%s\n' "$section" | sed -n 's/^  \([^ ].*\):$/\1/p')" = "shellfirm" ]
+  [ "$section" = $'  shellfirm:\n    - version: 0.3.10 -> 8.8.8\n    - source hash: changed\n    - lockfile [nix/packages/shellfirm/Cargo.lock]: changed' ]
   assert_managed_matches "$original"
 }
 
@@ -1558,7 +1619,9 @@ make_unrelated_updates_noop() {
   grep -Fq 'url = "github:stablyai/agent-slack/v4.5.6";' "$WORK/flake.nix"
   [ "$(jq -r .version "$WORK/nix/pins/shellfirm.json")" = "8.8.8" ]
   [ "$(jq -r .srcHash "$WORK/nix/pins/shellfirm.json")" = "sha256-JaZjQmPBsfb8RpegTiuZBOpLBCqJr1nck+wfXUSEiiY=" ]
-  [ "$(jq -r .cargoHash "$WORK/nix/pins/shellfirm.json")" = "sha256-MyJTLYWJ+VyRKnyVauzVsNiEcmO5AhQ4xyoSYEH2Eug=" ]
+  jq -e 'keys == ["srcHash", "version"]' "$WORK/nix/pins/shellfirm.json"
+  grep -Fq 'version = "8.8.8"' "$WORK/nix/packages/shellfirm/Cargo.lock"
+  [ "$(cat "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT")" -eq 1 ]
   [ "$(jq -r .version "$WORK/nix/pins/herdr.json")" = "9.9.9" ]
   [ "$(jq -r .srcHash "$WORK/nix/pins/herdr.json")" = "sha256-JaZjQmPBsfb8RpegTiuZBOpLBCqJr1nck+wfXUSEiiY=" ]
   [ "$(jq -r '.assets["x86_64-linux"].hash' "$WORK/nix/pins/herdr.json")" = "sha256-1ZOG4K5DXikvvg6825VLde1fs5IgkSd8sZ95j8XVBxg=" ]
@@ -1590,7 +1653,7 @@ make_unrelated_updates_noop() {
   [ "$status" -eq 0 ]
   after_first="$WORK/after-first"
   save_managed "$after_first"
-  git -C "$WORK" add flake.nix flake.lock nix/packages/difit/package-lock.json nix/pins/*.json
+  git -C "$WORK" add flake.nix flake.lock nix/packages/difit/package-lock.json nix/packages/shellfirm/Cargo.lock nix/pins/*.json
   git -C "$WORK" commit -q -m "apply first update"
 
   run_update_pins

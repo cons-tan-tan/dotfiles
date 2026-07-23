@@ -31,6 +31,28 @@ let
   defaultCodexPin = lib.importJSON ../pins/codex-app.json;
   defaultCodexPackage = mkCodexPackage { };
 
+  shellfirmPin = {
+    version = "99.88.77";
+    srcHash = "sha256-shellfirm-marker";
+  };
+
+  mkShellfirmPackage =
+    args:
+    import ./shellfirm (
+      {
+        inherit lib;
+        rustPlatform.buildRustPackage = attrs: attrs;
+        fetchFromGitHub = attrs: attrs;
+        pkg-config = "pkg-config";
+        openssl = "openssl";
+      }
+      // args
+    );
+
+  injectedShellfirmPackage = mkShellfirmPackage { pin = shellfirmPin; };
+  defaultShellfirmPin = lib.importJSON ../pins/shellfirm.json;
+  defaultShellfirmPackage = mkShellfirmPackage { };
+
   schemaPin = {
     url = "https://example.invalid/schema.json";
     hash = "sha256-schema-marker";
@@ -82,6 +104,24 @@ in
 
   testShellfirmPinInjectable = {
     expr = hasInjectablePin ./shellfirm/default.nix "pin";
+    expected = true;
+  };
+
+  testShellfirmInjectedPinPropagates = {
+    expr =
+      injectedShellfirmPackage.version == shellfirmPin.version
+      && injectedShellfirmPackage.src.rev == "v${shellfirmPin.version}"
+      && injectedShellfirmPackage.src.hash == shellfirmPin.srcHash
+      && injectedShellfirmPackage.cargoLock.lockFile == ./shellfirm/Cargo.lock;
+    expected = true;
+  };
+
+  testShellfirmDefaultPinPropagates = {
+    expr =
+      defaultShellfirmPackage.version == defaultShellfirmPin.version
+      && defaultShellfirmPackage.src.rev == "v${defaultShellfirmPin.version}"
+      && defaultShellfirmPackage.src.hash == defaultShellfirmPin.srcHash
+      && defaultShellfirmPackage.cargoLock.lockFile == ./shellfirm/Cargo.lock;
     expected = true;
   };
 

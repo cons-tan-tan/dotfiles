@@ -10,6 +10,7 @@ pub mod pins;
 pub mod policy;
 pub mod prefetch;
 pub mod registry;
+pub mod shellfirm;
 pub mod targets;
 pub mod transaction;
 pub mod validation;

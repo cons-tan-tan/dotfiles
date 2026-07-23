@@ -72,8 +72,18 @@ pub fn run_target<R: CommandRunner>(
         TargetKind::Shellfirm {
             repository,
             pin,
+            lock,
             package,
-        } => update_shellfirm(spec, repository, pin, package, policy, runner, transaction),
+        } => crate::shellfirm::update(
+            spec,
+            repository,
+            pin,
+            lock,
+            package,
+            policy,
+            runner,
+            transaction,
+        ),
         TargetKind::Difit {
             repository,
             npm_package,
@@ -260,69 +270,6 @@ fn update_url_hash<R: CommandRunner>(
     pin.set_string(&["hash"], hash)?;
     write_pin(transaction, pin_path, &pin)?;
     println!("{}: candidate schema hash differs", spec.name);
-    Ok(true)
-}
-
-fn update_shellfirm<R: CommandRunner>(
-    spec: &TargetSpec,
-    repository: &str,
-    pin_path: &str,
-    package: &str,
-    policy: RunPolicy,
-    runner: &R,
-    transaction: &mut Transaction<'_, R>,
-) -> Result<bool, UpdateError> {
-    let tag = latest_tag(policy, runner, transaction.root(), repository)?;
-    let version = tag.strip_prefix('v').unwrap_or(&tag);
-    validate_release_version(spec.name, version)?;
-
-    let mut pin = load_pin(transaction, pin_path)?;
-    let current = pin.string(&["version"])?.to_owned();
-    let current_source_hash = pin.string(&["srcHash"])?.to_owned();
-    if version == current && !policy.force {
-        println!("{}: {current} (up to date)", spec.name);
-        return Ok(false);
-    }
-
-    println!(
-        "{}: prefetching candidate {version} (current {current})...",
-        spec.name
-    );
-    let source_url = format!("https://github.com/{repository}/archive/refs/tags/{tag}.tar.gz");
-    let source_hash = prefetch(
-        &format!("{}: {pin_path}: srcHash", spec.name),
-        policy,
-        runner,
-        transaction.root(),
-        &source_url,
-        true,
-    )?;
-    if version == current && source_hash == current_source_hash {
-        let changed = refresh_existing_hash_via_build(
-            spec.name,
-            package,
-            pin_path,
-            "cargoHash",
-            &mut pin,
-            runner,
-            transaction,
-        )?;
-        println!("{}: candidate source is unchanged", spec.name);
-        return Ok(changed);
-    }
-    pin.set_string(&["version"], version)?;
-    pin.set_string(&["srcHash"], source_hash)?;
-    pin.set_string(&["cargoHash"], "")?;
-    write_pin(transaction, pin_path, &pin)?;
-    compute_hash_via_failed_build(
-        spec.name,
-        package,
-        pin_path,
-        "cargoHash",
-        &mut pin,
-        runner,
-        transaction,
-    )?;
     Ok(true)
 }
 
@@ -687,7 +634,7 @@ fn refresh_assets<R: CommandRunner>(
     Ok(())
 }
 
-fn latest_tag<R: CommandRunner>(
+pub(crate) fn latest_tag<R: CommandRunner>(
     policy: RunPolicy,
     runner: &R,
     root: &Path,
@@ -733,14 +680,14 @@ fn latest_tag<R: CommandRunner>(
     Ok(tag)
 }
 
-fn load_pin<R: CommandRunner>(
+pub(crate) fn load_pin<R: CommandRunner>(
     transaction: &Transaction<'_, R>,
     path: &str,
 ) -> Result<PinDocument, UpdateError> {
     PinDocument::parse(path, transaction.read(path)?)
 }
 
-fn write_pin<R: CommandRunner>(
+pub(crate) fn write_pin<R: CommandRunner>(
     transaction: &mut Transaction<'_, R>,
     path: &str,
     pin: &PinDocument,
