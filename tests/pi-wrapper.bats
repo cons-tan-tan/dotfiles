@@ -32,3 +32,19 @@ teardown() {
   grep -Fx "arg:--model" "$TEST_TMPDIR/result"
   grep -Fx "arg:test" "$TEST_TMPDIR/result"
 }
+
+@test "Nix package pins the Pi child and managed package directory" {
+  if [[ -z ${PI_WRAPPER_TEST_PACKAGE:-} ]]; then
+    skip "PI_WRAPPER_TEST_PACKAGE is only available in the Nix check"
+  fi
+
+  run env TEST_TMPDIR="$TEST_TMPDIR" \
+    "$PI_WRAPPER_TEST_PACKAGE/bin/pi" --model package-test
+
+  [ "$status" -eq 0 ]
+  grep -E '^package:/nix/store/.+-pi-managed-package-fixture$' "$TEST_TMPDIR/result"
+  grep -Fx "skip:1" "$TEST_TMPDIR/result"
+  grep -Fx "telemetry:0" "$TEST_TMPDIR/result"
+  grep -Fx "arg:--model" "$TEST_TMPDIR/result"
+  grep -Fx "arg:package-test" "$TEST_TMPDIR/result"
+}

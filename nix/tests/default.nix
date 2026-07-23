@@ -1,6 +1,7 @@
 {
   lib,
   pkgs,
+  publicApps,
   username,
   reservedCheckNames ? [ ],
 }:
@@ -102,6 +103,109 @@ let
     }
   ];
 
+  claudeFixture = pkgs.writeShellApplication {
+    name = "claude";
+    text = ''
+      : "''${TEST_TMPDIR:?}"
+      printf 'path:%s\n' "$PATH" >"$TEST_TMPDIR/result"
+      printf 'arg:%s\n' "$@" >>"$TEST_TMPDIR/result"
+    '';
+  };
+  herdrPluginFixture = pkgs.runCommand "herdr-plugin-fixture" { } ''
+    mkdir -p "$out"
+    touch "$out/plugin.json"
+  '';
+  claudeWrapperTestPackage = pkgs.callPackage ../packages/claude-code/wrapped-package.nix {
+    claudeCode = claudeFixture;
+    herdrPlugin = herdrPluginFixture;
+  };
+
+  codexFixture = pkgs.writeShellApplication {
+    name = "codex";
+    text = ''
+      : "''${TEST_TMPDIR:?}"
+      printf 'arg:%s\n' "$@" >"$TEST_TMPDIR/result"
+    '';
+  };
+  herdrSkillFixture = pkgs.runCommand "herdr-skill-fixture" { } ''
+    mkdir -p "$out"
+    touch "$out/SKILL.md"
+  '';
+  codexWrapperTestPackage = pkgs.callPackage ../packages/codex/wrapped-package.nix {
+    codex = codexFixture;
+    herdrSkillPath = "${herdrSkillFixture}/SKILL.md";
+  };
+
+  piFixture = pkgs.writeShellApplication {
+    name = "pi";
+    text = ''
+      : "''${TEST_TMPDIR:?}"
+      printf 'package:%s\nskip:%s\ntelemetry:%s\n' \
+        "$PI_PACKAGE_DIR" "$PI_SKIP_VERSION_CHECK" "$PI_TELEMETRY" >"$TEST_TMPDIR/result"
+      printf 'arg:%s\n' "$@" >>"$TEST_TMPDIR/result"
+    '';
+  };
+  piManagedPackageFixture = pkgs.runCommand "pi-managed-package-fixture" { } ''
+    mkdir -p "$out"
+  '';
+  piWrapperTestPackage = pkgs.callPackage ../packages/pi/wrapped-package.nix {
+    packageDir = piManagedPackageFixture;
+    pi = piFixture;
+  };
+
+  herdrFixture = pkgs.writeShellApplication {
+    name = "herdr";
+    text = ''
+      : "''${TEST_TMPDIR:?}"
+      printf '%s\n' "$@" >"$TEST_TMPDIR/package-args"
+    '';
+  };
+  herdrSleepFixture = pkgs.writeShellApplication {
+    name = "herdr-sleep-fixture";
+    text = "exit 0";
+  };
+  herdrWrapperTestPackage = pkgs.callPackage ../packages/herdr/wrapped-package.nix {
+    herdr = herdrFixture;
+    sleepBin = lib.getExe herdrSleepFixture;
+  };
+
+  drawioFixture = pkgs.writeShellApplication {
+    name = "drawio";
+    text = "exit 99";
+  };
+  drawioWrapperTestPackage = pkgs.callPackage ../packages/drawio-headless {
+    drawio = drawioFixture;
+  };
+
+  wslRealpathFixture = pkgs.writeShellApplication {
+    name = "realpath";
+    text = ''
+      : "''${TEST_TMPDIR:?}"
+      printf '%s\n' "$#" "$@" >"$TEST_TMPDIR/package-realpath.args"
+      printf '%s\n' "/package/resolved path"
+    '';
+  };
+  wslpathFixture = pkgs.writeShellApplication {
+    name = "wslpath";
+    text = ''
+      : "''${TEST_TMPDIR:?}"
+      printf '%s\n' "$#" "$@" >"$TEST_TMPDIR/package-wslpath.args"
+      printf '%s\n' 'Z:\package\resolved path'
+    '';
+  };
+  wslHandlerFixture = pkgs.writeShellApplication {
+    name = "rundll32.exe";
+    text = ''
+      : "''${TEST_TMPDIR:?}"
+      printf '%s\n' "$#" "$@" >"$TEST_TMPDIR/package-handler.args"
+    '';
+  };
+  wslOpenTestPackage = pkgs.callPackage ../modules/wsl/wsl-open-package.nix {
+    realpathBin = lib.getExe wslRealpathFixture;
+    rundll32Bin = lib.getExe wslHandlerFixture;
+    wslpathBin = lib.getExe wslpathFixture;
+  };
+
   ghqFetchAllSmokePackage =
     let
       fakeGhq = pkgs.writeShellApplication {
@@ -186,12 +290,24 @@ let
           ];
           APPLY_SECRETS_TEST_BIN = lib.getExe applySecretsCore;
           APPLY_NIX_SETTINGS_TEST_BIN = lib.getExe applyNixSettingsCore;
+          APPLY_NIX_SETTINGS_PUBLIC_BIN = publicApps.apply-nix-settings.program;
+          APPLY_SECRETS_PUBLIC_BIN = publicApps.apply-secrets.program;
           CURL_FETCH_PUBLIC_BIN = lib.getExe curlFetch;
           CURL_FETCH_TEST_BIN = "${safeFetch.core}/bin/curl-fetch";
           GH_API_GET_EXTENSION_ROOT = ghApiGet;
           GH_API_GET_PUBLIC_BIN = lib.getExe ghApiGet;
           GH_API_GET_TEST_BIN = "${safeFetch.core}/bin/gh-api-get";
+          CLAUDE_WRAPPER_TEST_PACKAGE = claudeWrapperTestPackage;
+          CODEX_WRAPPER_TEST_PACKAGE = codexWrapperTestPackage;
+          DRAWIO_WRAPPER_TEST_PACKAGE =
+            if pkgs.stdenv.hostPlatform.isLinux then drawioWrapperTestPackage else "";
+          HERDR_WRAPPER_TEST_PACKAGE = herdrWrapperTestPackage;
+          HOST_APP_KIND = if pkgs.stdenv.hostPlatform.isDarwin then "darwin" else "home-manager";
+          HOST_BUILD_PUBLIC_BIN = publicApps.build.program;
+          HOST_SWITCH_PUBLIC_BIN = publicApps.switch.program;
+          PI_WRAPPER_TEST_PACKAGE = piWrapperTestPackage;
           UPDATE_PINS_TEST_BIN = lib.getExe updatePinsCore;
+          WSL_OPEN_TEST_PACKAGE = wslOpenTestPackage;
         }
         ''
           cp -R ${repoRoot} repo

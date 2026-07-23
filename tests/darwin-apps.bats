@@ -104,3 +104,18 @@ teardown() {
   [[ "$output" == *"DARWIN_REBUILD_BIN"* ]]
   [ ! -e "$SUDO_ARGS_FILE" ]
 }
+
+@test "Nix public host apps pin the Darwin hostname and rebuild executable" {
+  if [[ ${HOST_APP_KIND:-} != darwin ]]; then
+    skip "Darwin public apps are only available in Darwin Nix checks"
+  fi
+
+  local build_script switch_script
+  build_script="$(readlink -f "$HOST_BUILD_PUBLIC_BIN")"
+  switch_script="$(readlink -f "$HOST_SWITCH_PUBLIC_BIN")"
+
+  grep -Fx "export DARWIN_HOSTNAME=constantan" "$build_script"
+  grep -Fx "export DARWIN_HOSTNAME=constantan" "$switch_script"
+  grep -E '^export DARWIN_REBUILD_BIN=/nix/store/.+-darwin-rebuild/bin/darwin-rebuild$' \
+    "$switch_script"
+}

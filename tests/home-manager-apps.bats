@@ -107,3 +107,17 @@ run_home_manager_build() {
   [[ "$output" == *"HM_TARGET_WSL"* ]]
   [ ! -e "$NIX_ARGS_FILE" ]
 }
+
+@test "Nix public host apps pin Home Manager and generated target names" {
+  if [[ ${HOST_APP_KIND:-} != home-manager ]]; then
+    skip "Home Manager public apps are only available in Linux Nix checks"
+  fi
+
+  local build_script switch_script
+  build_script="$(readlink -f "$HOST_BUILD_PUBLIC_BIN")"
+  switch_script="$(readlink -f "$HOST_SWITCH_PUBLIC_BIN")"
+
+  grep -E '^export HM_TARGET_WSL=constantan@wsl-(x86_64|aarch64)$' "$build_script"
+  grep -E '^export HM_TARGET_LINUX=constantan@linux-(x86_64|aarch64)$' "$build_script"
+  grep -E '^export HM_BIN=/nix/store/.+-home-manager/bin/home-manager$' "$switch_script"
+}

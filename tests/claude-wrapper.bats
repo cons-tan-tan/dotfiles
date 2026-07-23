@@ -45,3 +45,20 @@ run_wrapper() {
   grep -Fx "arg:--plugin-dir" "$TEST_TMPDIR/result"
   grep -Fx "arg:/nix/store/herdr-plugin" "$TEST_TMPDIR/result"
 }
+
+@test "Nix package pins the Claude child Node path and Herdr plugin" {
+  if [[ -z ${CLAUDE_WRAPPER_TEST_PACKAGE:-} ]]; then
+    skip "CLAUDE_WRAPPER_TEST_PACKAGE is only available in the Nix check"
+  fi
+
+  run env TEST_TMPDIR="$TEST_TMPDIR" HERDR_ENV=1 \
+    "$CLAUDE_WRAPPER_TEST_PACKAGE/bin/claude" package-arg
+
+  [ "$status" -eq 0 ]
+  grep -E '^path:/nix/store/.+-nodejs-.+/bin:' "$TEST_TMPDIR/result"
+  grep -Fx "arg:--effort" "$TEST_TMPDIR/result"
+  grep -Fx "arg:xhigh" "$TEST_TMPDIR/result"
+  grep -Fx "arg:--plugin-dir" "$TEST_TMPDIR/result"
+  grep -E '^arg:/nix/store/.+-herdr-plugin-fixture$' "$TEST_TMPDIR/result"
+  grep -Fx "arg:package-arg" "$TEST_TMPDIR/result"
+}

@@ -75,3 +75,23 @@ run_wrapper() {
   [[ "$output" != *"dbus-daemon[123]"* ]]
   [[ "$output" == *"drawio: renderer warning"* ]]
 }
+
+@test "Nix package embeds the dbus config and preserves the wrapper argv" {
+  if [[ -z ${DRAWIO_WRAPPER_TEST_PACKAGE:-} ]]; then
+    skip "DRAWIO_WRAPPER_TEST_PACKAGE is only available in the Nix check"
+  fi
+
+  run env \
+    TEST_TMPDIR="$TEST_TMPDIR" \
+    DRAWIO_DBUS_RUN_SESSION_BIN="$TEST_TMPDIR/dbus-run-session" \
+    DRAWIO_XVFB_RUN_BIN=xvfb-package-stub \
+    DRAWIO_BIN=drawio-package-stub \
+    "$DRAWIO_WRAPPER_TEST_PACKAGE/bin/drawio" "package input.drawio" --export
+
+  [ "$status" -eq 0 ]
+  grep -E '^arg:--config-file=/nix/store/.+-dbus-.+/share/dbus-1/session.conf$' \
+    "$TEST_TMPDIR/args"
+  grep -Fx "arg:xvfb-package-stub" "$TEST_TMPDIR/args"
+  grep -Fx "arg:drawio-package-stub" "$TEST_TMPDIR/args"
+  grep -Fx "arg:package input.drawio" "$TEST_TMPDIR/args"
+}

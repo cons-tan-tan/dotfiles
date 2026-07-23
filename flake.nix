@@ -396,6 +396,7 @@
           );
           testChecks = import ./nix/tests {
             inherit lib pkgs username;
+            publicApps = appsFor.${system}.apps;
             reservedCheckNames = builtins.attrNames baseChecks;
           };
         in
