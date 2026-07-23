@@ -795,6 +795,33 @@ make_unrelated_updates_noop() {
   assert_managed_matches "$original"
 }
 
+@test "codex app up to date skips prefetch and leaves managed files unchanged" {
+  original="$WORK/original"
+  save_managed "$original"
+
+  run_update_pins codex-app
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"codex-app: $(jq -r .version "$WORK/nix/pins/codex-app.json") (up to date)"* ]]
+  grep -Fxq "curl -fsSL https://persistent.oaistatic.com/codex-app-prod/appcast.xml" "$UPDATE_PINS_COMMAND_LOG"
+  ! grep -q '^nix ' "$UPDATE_PINS_COMMAND_LOG"
+  assert_managed_matches "$original"
+}
+
+@test "codex app update rejects an appcast and bundle version mismatch" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_CODEX_APP_VERSION=26.999.10101
+  export UPDATE_PINS_CODEX_APP_URL=https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-arm64-26.999.10101.zip
+  export UPDATE_PINS_CODEX_APP_BUNDLE_VERSION=26.999.10100
+
+  run_update_pins codex-app
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"appcast version 26.999.10101 did not match bundle version 26.999.10100"* ]]
+  assert_managed_matches "$original"
+}
+
 @test "paired update rejects unsafe release versions before rewriting flake source" {
   original="$WORK/original"
   save_managed "$original"

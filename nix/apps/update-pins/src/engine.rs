@@ -12,10 +12,16 @@ pub fn run(target: Target) -> Result<(), UpdateError> {
 pub fn run_with_runner<R: CommandRunner>(target: Target, runner: &R) -> Result<(), UpdateError> {
     if target == Target::All {
         let incomplete = unimplemented_target_names();
-        return Err(UpdateError::message(format!(
-            "update-pins: Rust updater is incomplete; unimplemented targets: {}",
-            incomplete.join(", ")
-        )));
+        return if incomplete.is_empty() {
+            Err(UpdateError::message(
+                "update-pins: Rust all-target execution is disabled until parity cutover",
+            ))
+        } else {
+            Err(UpdateError::message(format!(
+                "update-pins: Rust updater is incomplete; unimplemented targets: {}",
+                incomplete.join(", ")
+            )))
+        };
     }
     if !is_implemented(target) {
         return Err(UpdateError::message(format!(
@@ -73,11 +79,11 @@ mod tests {
     }
 
     #[test]
-    fn all_preflight_names_only_the_remaining_target() {
-        let error = run_with_runner(Target::All, &NoCommands).expect_err("all remains incomplete");
+    fn all_preflight_stays_disabled_until_parity_cutover() {
+        let error = run_with_runner(Target::All, &NoCommands).expect_err("all remains disabled");
         assert_eq!(
             error.to_string(),
-            "update-pins: Rust updater is incomplete; unimplemented targets: codex-app"
+            "update-pins: Rust all-target execution is disabled until parity cutover"
         );
     }
 }

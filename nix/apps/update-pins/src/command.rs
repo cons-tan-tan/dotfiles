@@ -1,9 +1,13 @@
 use std::collections::BTreeMap;
 use std::ffi::OsString;
+use std::io::Read as _;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
 
 use crate::error::UpdateError;
+
+const LIMITED_COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CommandSpec {
@@ -94,6 +98,17 @@ impl CommandOutput {
 
 pub trait CommandRunner {
     fn run(&self, command: &CommandSpec) -> Result<CommandOutput, UpdateError>;
+
+    fn run_limited(
+        &self,
+        command: &CommandSpec,
+        stdout_limit: usize,
+        stderr_limit: usize,
+    ) -> Result<CommandOutput, UpdateError> {
+        let output = self.run(command)?;
+        enforce_output_limits(command, output, stdout_limit, stderr_limit)
+    }
+
     fn is_available(&self, program: &Path) -> bool;
 }
 
@@ -102,21 +117,77 @@ pub struct SystemCommandRunner;
 
 impl CommandRunner for SystemCommandRunner {
     fn run(&self, command: &CommandSpec) -> Result<CommandOutput, UpdateError> {
-        let mut process = Command::new(&command.program);
-        process.args(&command.args).envs(&command.env);
-        if let Some(cwd) = &command.cwd {
-            process.current_dir(cwd);
-        }
-
-        let output = process.output().map_err(|source| UpdateError::Spawn {
-            program: command.program.to_string_lossy().into_owned(),
-            source,
-        })?;
+        let output = configured_process(command)
+            .output()
+            .map_err(|source| UpdateError::Spawn {
+                program: command.program.to_string_lossy().into_owned(),
+                source,
+            })?;
         Ok(CommandOutput {
             status: output.status.code(),
             stdout: output.stdout,
             stderr: output.stderr,
         })
+    }
+
+    fn run_limited(
+        &self,
+        command: &CommandSpec,
+        stdout_limit: usize,
+        stderr_limit: usize,
+    ) -> Result<CommandOutput, UpdateError> {
+        let mut process = configured_process(command);
+        process.stdout(Stdio::piped()).stderr(Stdio::piped());
+        let mut child = process.spawn().map_err(|source| UpdateError::Spawn {
+            program: command.program.to_string_lossy().into_owned(),
+            source,
+        })?;
+        let stdout = child.stdout.take().expect("stdout requested as a pipe");
+        let stderr = child.stderr.take().expect("stderr requested as a pipe");
+        let stdout_reader =
+            std::thread::spawn(move || read_at_most(stdout, stdout_limit.saturating_add(1)));
+        let stderr_reader =
+            std::thread::spawn(move || read_at_most(stderr, stderr_limit.saturating_add(1)));
+        let started = Instant::now();
+        let (status, timed_out) = loop {
+            if let Some(status) = child.try_wait().map_err(|source| UpdateError::Spawn {
+                program: command.program.to_string_lossy().into_owned(),
+                source,
+            })? {
+                break (status, false);
+            }
+            if started.elapsed() >= LIMITED_COMMAND_TIMEOUT {
+                child.kill().map_err(|source| UpdateError::Spawn {
+                    program: command.program.to_string_lossy().into_owned(),
+                    source,
+                })?;
+                let status = child.wait().map_err(|source| UpdateError::Spawn {
+                    program: command.program.to_string_lossy().into_owned(),
+                    source,
+                })?;
+                break (status, true);
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        let stdout = join_reader(stdout_reader, command, "stdout")?;
+        let stderr = join_reader(stderr_reader, command, "stderr")?;
+        if timed_out {
+            return Err(UpdateError::message(format!(
+                "{}: exceeded {} second execution limit",
+                command.display(),
+                LIMITED_COMMAND_TIMEOUT.as_secs()
+            )));
+        }
+        enforce_output_limits(
+            command,
+            CommandOutput {
+                status: status.code(),
+                stdout,
+                stderr,
+            },
+            stdout_limit,
+            stderr_limit,
+        )
     }
 
     fn is_available(&self, program: &Path) -> bool {
@@ -134,11 +205,78 @@ impl CommandRunner for SystemCommandRunner {
     }
 }
 
+fn configured_process(command: &CommandSpec) -> Command {
+    let mut process = Command::new(&command.program);
+    process.args(&command.args).envs(&command.env);
+    if let Some(cwd) = &command.cwd {
+        process.current_dir(cwd);
+    }
+    process
+}
+
+fn read_at_most(reader: impl std::io::Read, limit: usize) -> std::io::Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    reader.take(limit as u64).read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+fn join_reader(
+    reader: std::thread::JoinHandle<std::io::Result<Vec<u8>>>,
+    command: &CommandSpec,
+    stream: &str,
+) -> Result<Vec<u8>, UpdateError> {
+    reader
+        .join()
+        .map_err(|_| {
+            UpdateError::message(format!(
+                "{}: {stream} reader thread panicked",
+                command.display()
+            ))
+        })?
+        .map_err(|source| {
+            UpdateError::message(format!(
+                "{}: failed to read {stream}: {source}",
+                command.display()
+            ))
+        })
+}
+
+fn enforce_output_limits(
+    command: &CommandSpec,
+    output: CommandOutput,
+    stdout_limit: usize,
+    stderr_limit: usize,
+) -> Result<CommandOutput, UpdateError> {
+    if output.stdout.len() > stdout_limit {
+        return Err(UpdateError::message(format!(
+            "{}: stdout exceeded {stdout_limit} bytes",
+            command.display()
+        )));
+    }
+    if output.stderr.len() > stderr_limit {
+        return Err(UpdateError::message(format!(
+            "{}: stderr exceeded {stderr_limit} bytes",
+            command.display()
+        )));
+    }
+    Ok(output)
+}
+
 pub fn run_checked<R: CommandRunner>(
     runner: &R,
     command: &CommandSpec,
 ) -> Result<CommandOutput, UpdateError> {
     let output = runner.run(command)?;
+    require_success(command, output)
+}
+
+pub fn run_checked_limited<R: CommandRunner>(
+    runner: &R,
+    command: &CommandSpec,
+    stdout_limit: usize,
+    stderr_limit: usize,
+) -> Result<CommandOutput, UpdateError> {
+    let output = runner.run_limited(command, stdout_limit, stderr_limit)?;
     require_success(command, output)
 }
 
@@ -177,7 +315,22 @@ fn is_executable(path: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{CommandOutput, CommandSpec};
+    use std::path::Path;
+
+    use super::{CommandOutput, CommandRunner, CommandSpec, run_checked_limited};
+    use crate::error::UpdateError;
+
+    struct FixedOutput(CommandOutput);
+
+    impl CommandRunner for FixedOutput {
+        fn run(&self, _command: &CommandSpec) -> Result<CommandOutput, UpdateError> {
+            Ok(self.0.clone())
+        }
+
+        fn is_available(&self, _program: &Path) -> bool {
+            false
+        }
+    }
 
     #[test]
     fn display_quotes_arguments_without_changing_the_stored_argv() {
@@ -206,5 +359,27 @@ mod tests {
             stderr: Vec::new(),
         };
         assert!(!failed.success());
+    }
+
+    #[test]
+    fn limited_execution_rejects_oversized_streams_for_all_runners() {
+        let runner = FixedOutput(CommandOutput {
+            status: Some(0),
+            stdout: b"12345".to_vec(),
+            stderr: b"67890".to_vec(),
+        });
+        let command = CommandSpec::new("example");
+        assert!(
+            run_checked_limited(&runner, &command, 4, 5)
+                .expect_err("oversized stdout")
+                .to_string()
+                .contains("stdout exceeded 4 bytes")
+        );
+        assert!(
+            run_checked_limited(&runner, &command, 5, 4)
+                .expect_err("oversized stderr")
+                .to_string()
+                .contains("stderr exceeded 4 bytes")
+        );
     }
 }

@@ -59,6 +59,9 @@ pub enum TargetKind {
         lock: &'static str,
         package: &'static str,
     },
+    CodexApp {
+        pin: &'static str,
+    },
     Unimplemented,
 }
 
@@ -154,7 +157,9 @@ pub static TARGET_SPECS: &[TargetSpec] = &[
     TargetSpec {
         target: Target::CodexApp,
         name: "codex-app",
-        kind: TargetKind::Unimplemented,
+        kind: TargetKind::CodexApp {
+            pin: "nix/pins/codex-app.json",
+        },
     },
 ];
 
@@ -214,6 +219,6 @@ mod tests {
             assert_eq!(spec.target.name(), spec.name);
         }
         assert_eq!(target_by_name("unknown"), None);
-        assert_eq!(unimplemented_target_names(), ["codex-app"]);
+        assert!(unimplemented_target_names().is_empty());
     }
 }

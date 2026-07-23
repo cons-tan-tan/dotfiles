@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Self-authored regression fixture modeling a newest-first Sparkle feed. -->
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+  <channel>
+    <title>Codex</title>
+    <item>
+      <title>9.9.9</title>
+      <sparkle:shortVersionString>9.9.9</sparkle:shortVersionString>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <enclosure url="https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-arm64-9.9.9.zip" />
+      <sparkle:deltas>
+        <enclosure url="https://example.invalid/Codex99-98-arm64.delta" />
+      </sparkle:deltas>
+    </item>
+    <item>
+      <title>8.8.8</title>
+      <sparkle:shortVersionString>8.8.8</sparkle:shortVersionString>
+      <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+      <enclosure url="https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-arm64-8.8.8.zip" />
+    </item>
+  </channel>
+</rss>

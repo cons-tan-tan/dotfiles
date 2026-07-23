@@ -6,8 +6,11 @@ publish = false
 license = "CC0-1.0"
 
 [dependencies]
-flate2 = "1.1"
+flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
 fs2 = "0.4"
+plist = { version = "=1.10.0", default-features = false, features = ["enable_unstable_features_that_may_break_with_minor_version_bumps"] }
+quick-xml = { version = "0.41", default-features = false }
+rawzip = { version = "0.5.1", default-features = false, features = ["std"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 tar = "0.4.45"
 tempfile = "3.20"

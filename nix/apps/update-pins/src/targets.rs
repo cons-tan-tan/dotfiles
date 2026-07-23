@@ -7,9 +7,11 @@ use serde_json::Value;
 
 use crate::build::compute_hash_via_failed_build;
 use crate::cli::Target;
+use crate::codex_app;
 use crate::command::{CommandRunner, CommandSpec, run_checked};
 use crate::error::UpdateError;
 use crate::pins::PinDocument;
+use crate::prefetch::{prefetch_hash as prefetch, prefetch_result};
 use crate::registry::{AssetNaming, TargetKind, TargetSpec, target_spec};
 use crate::transaction::Transaction;
 
@@ -77,6 +79,7 @@ pub fn run_target<R: CommandRunner>(
             runner,
             transaction,
         )?,
+        TargetKind::CodexApp { pin } => codex_app::update(spec, pin, runner, transaction)?,
         TargetKind::Unimplemented => {
             return Err(UpdateError::message(format!(
                 "update-pins: Rust updater for {} is not yet implemented",
@@ -598,53 +601,6 @@ fn latest_tag<R: CommandRunner>(
     Ok(tag)
 }
 
-fn prefetch<R: CommandRunner>(
-    runner: &R,
-    root: &Path,
-    url: &str,
-    unpack: bool,
-) -> Result<String, UpdateError> {
-    Ok(prefetch_result(runner, root, url, unpack)?.hash)
-}
-
-struct PrefetchResult {
-    hash: String,
-    store_path: Option<std::path::PathBuf>,
-}
-
-fn prefetch_result<R: CommandRunner>(
-    runner: &R,
-    root: &Path,
-    url: &str,
-    unpack: bool,
-) -> Result<PrefetchResult, UpdateError> {
-    let mut command = CommandSpec::new("nix")
-        .args(["store", "prefetch-file", "--json"])
-        .current_dir(root);
-    if unpack {
-        command = command.arg("--unpack");
-    }
-    command = command.arg(url);
-    let output = run_checked(runner, &command)?;
-    let response: Value = serde_json::from_slice(&output.stdout).map_err(|source| {
-        UpdateError::message(format!(
-            "prefetch returned invalid JSON for {url}: {source}"
-        ))
-    })?;
-    let hash = response
-        .get("hash")
-        .and_then(Value::as_str)
-        .filter(|hash| !hash.is_empty())
-        .map(ToOwned::to_owned)
-        .ok_or_else(|| UpdateError::message(format!("prefetch did not return a hash for {url}")))?;
-    let store_path = response
-        .get("storePath")
-        .and_then(Value::as_str)
-        .filter(|path| !path.is_empty())
-        .map(std::path::PathBuf::from);
-    Ok(PrefetchResult { hash, store_path })
-}
-
 fn load_pin<R: CommandRunner>(
     transaction: &Transaction<'_, R>,
     path: &str,
@@ -714,7 +670,7 @@ fn paired_version_matches<'a>(text: &'a str, repository: &str) -> Vec<(usize, us
         .collect()
 }
 
-fn validate_release_version(label: &str, version: &str) -> Result<(), UpdateError> {
+pub(crate) fn validate_release_version(label: &str, version: &str) -> Result<(), UpdateError> {
     if is_release_version(version) {
         Ok(())
     } else {
@@ -725,6 +681,9 @@ fn validate_release_version(label: &str, version: &str) -> Result<(), UpdateErro
 }
 
 fn is_release_version(version: &str) -> bool {
+    if version.len() > 128 {
+        return false;
+    }
     let (without_build, build) = match version.split_once('+') {
         Some((base, build)) if !build.is_empty() && !build.contains('+') => (base, Some(build)),
         Some(_) => return false,
@@ -866,6 +825,7 @@ mod tests {
             Target::Herdr,
             Target::Difit,
             Target::ClaudeCodeSettingsSchema,
+            Target::CodexApp,
         ] {
             assert!(
                 is_implemented(target),
@@ -873,13 +833,10 @@ mod tests {
                 target.name()
             );
         }
-        for target in [Target::All, Target::CodexApp] {
-            assert!(
-                !is_implemented(target),
-                "{} should remain private and incomplete",
-                target.name()
-            );
-        }
+        assert!(
+            !is_implemented(Target::All),
+            "all should remain private and incomplete"
+        );
     }
 
     #[test]

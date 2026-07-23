@@ -1,9 +1,11 @@
 pub mod build;
 pub mod cli;
+pub mod codex_app;
 pub mod command;
 pub mod engine;
 pub mod error;
 pub mod pins;
+pub mod prefetch;
 pub mod registry;
 pub mod targets;
 pub mod transaction;
