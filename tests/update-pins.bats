@@ -530,6 +530,9 @@ if [ "$1" = "flake" ] && [ "${2:-}" = "update" ]; then
   if [ "${UPDATE_PINS_CORRUPT_FLAKE_AFTER_UPDATE:-}" = "$input" ]; then
     printf '\n# url = "github:aannoo/hcom/v0.0.0";\n' >>"$UPDATE_PINS_FAKE_ROOT/flake.nix"
   fi
+  if [ "${UPDATE_PINS_BREAK_CHECK_ROLLBACK:-}" = "$input" ]; then
+    chmod 0555 "$UPDATE_PINS_FAKE_ROOT/nix/pins"
+  fi
   echo "Updated input $input with secret-before-commit" >&2
   exit 0
 fi
@@ -673,6 +676,11 @@ expected_hcom_asset_trace() {
   done < <(jq -r '.assets | to_entries[].value.name' "$WORK/nix/pins/hcom.json")
 }
 
+assert_check_lock_reacquirable() {
+  run_update_pins --check codex-app
+  [ "$status" -eq 0 ]
+}
+
 @test "help lists supported targets without updating pins" {
   original="$WORK/original"
   save_managed "$original"
@@ -680,8 +688,9 @@ expected_hcom_asset_trace() {
   run_update_pins --help
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Usage: update-pins [--jobs <N>] [--retry <MAX_ATTEMPTS>] [--force] [target]"* ]]
-  [[ "$output" == *"--jobs <N>              Maximum parallel jobs for release asset prefetch only (1-4; default 1)"* ]]
+  [[ "$output" == *"Usage: update-pins [--check] [--force] [--jobs N] [--retry N] [target]"* ]]
+  [[ "$output" == *"--check                 Run updates and validation, then restore repository files"* ]]
+  [[ "$output" == *"--jobs N                Maximum parallel jobs for release asset prefetch only (1-4; default 1)"* ]]
   [[ "$output" == *"herdr"* ]]
   [[ "$output" == *"codex-app"* ]]
   assert_managed_matches "$original"
@@ -905,6 +914,31 @@ expected_hcom_asset_trace() {
   assert_managed_matches "$original"
 }
 
+@test "force check difit performs both same-version builds and restores the repository" {
+  chmod 0440 "$WORK/nix/pins/difit.json"
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_DIFIT_SOURCE_HASH
+  UPDATE_PINS_DIFIT_SOURCE_HASH=$(jq -r .srcHash "$WORK/nix/pins/difit.json")
+  export UPDATE_PINS_REFRESHED_PNPM_HASH
+  UPDATE_PINS_REFRESHED_PNPM_HASH=$(jq -r .pnpmDepsHash "$WORK/nix/pins/difit.json")
+  export UPDATE_PINS_DIFIT_BUILD_MODE=verify-existing
+
+  run_update_pins --force --check difit
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"difit check succeeded; no pin changes required."* ]]
+  [[ "$output" != *"Candidate changes:"* ]]
+  [[ "$output" != *"Applied changes:"* ]]
+  [ "$(cat "$UPDATE_PINS_DIFIT_BUILD_COUNT")" -eq 2 ]
+  grep -Fq "candidate-build-env difit difitPin pnpmDepsHash" "$UPDATE_PINS_COMMAND_LOG"
+  ! grep -q '^npm ' "$UPDATE_PINS_COMMAND_LOG"
+  assert_no_difit_package_lock
+  assert_managed_matches "$original"
+  assert_no_staging_files
+  assert_check_lock_reacquirable
+}
+
 @test "same-version shellfirm force updates only a changed upstream lockfile" {
   original="$WORK/original"
   save_managed "$original"
@@ -988,6 +1022,78 @@ expected_hcom_asset_trace() {
   [[ "$output" != *"Applied changes:"* ]]
   [[ "$output" != *"Rolled back candidate changes:"* ]]
   assert_managed_matches "$original"
+}
+
+@test "check reports a changed release candidate and restores every managed byte and mode" {
+  chmod 0440 "$WORK/nix/pins/hcom.json"
+  chmod 0640 "$WORK/flake.nix"
+  chmod 0600 "$WORK/flake.lock"
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_HCOM_TAG=v9.9.9
+
+  run_update_pins --check hcom
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Candidate changes:"* ]]
+  section=$(report_section "Candidate changes:")
+  [ "$(printf '%s\n' "$section" | sed -n 's/^  \([^ ].*\):$/\1/p')" = "hcom" ]
+  [[ "$section" == *"version:"* ]]
+  [[ "$section" == *"flake input [hcom-src]: changed"* ]]
+  [[ "$output" == *"hcom check succeeded; no managed changes were kept."* ]]
+  [[ "$output" != *"Applied changes:"* ]]
+  [[ "$output" != *"Rolled back candidate changes:"* ]]
+  [[ "$output" != *"hcom updated."* ]]
+  assert_managed_matches "$original"
+  assert_no_staging_files
+  assert_check_lock_reacquirable
+}
+
+@test "check reports no required pin changes without rewriting an up-to-date target" {
+  original="$WORK/original"
+  save_managed "$original"
+  pin_before=$(file_identity "$WORK/nix/pins/herdr.json")
+
+  run_update_pins herdr --check
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"herdr check succeeded; no pin changes required."* ]]
+  [[ "$output" != *"Candidate changes:"* ]]
+  [[ "$output" != *"Applied changes:"* ]]
+  [[ "$output" != *"Rolled back candidate changes:"* ]]
+  [ "$(file_identity "$WORK/nix/pins/herdr.json")" = "$pin_before" ]
+  assert_managed_matches "$original"
+  assert_no_staging_files
+  assert_check_lock_reacquirable
+}
+
+@test "all check runs every target in registry order and restores all managed paths" {
+  chmod 0440 "$WORK/nix/pins/hcom.json"
+  chmod 0640 "$WORK/flake.nix"
+  chmod 0600 "$WORK/flake.lock"
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_HCOM_TAG=v1.2.3
+  export UPDATE_PINS_AGENT_SLACK_TAG=v4.5.6
+  export UPDATE_PINS_AGENT_BROWSER_TAG=v5.6.7
+  export UPDATE_PINS_WATCHEXEC_TAG=v6.7.8
+  export UPDATE_PINS_SHELLFIRM_TAG=v8.8.8
+  export UPDATE_PINS_HERDR_TAG=v9.9.9
+  export UPDATE_PINS_SHELLFIRM_BUILD_MODE=success
+
+  run_update_pins --check
+
+  [ "$status" -eq 0 ]
+  headers="$(printf '%s\n' "$output" | sed -n 's/^== //p')"
+  [ "$headers" = $'hcom\nagent-slack\nagent-browser\nwatchexec\nshellfirm\nherdr\ndifit\nclaude-code-settings-schema\ncodex-app' ]
+  [[ "$output" == *"Candidate changes:"* ]]
+  [[ "$output" == *"all check succeeded; no managed changes were kept."* ]]
+  [[ "$output" != *"Applied changes:"* ]]
+  [[ "$output" != *"Rolled back candidate changes:"* ]]
+  [ "$(cat "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT")" -eq 1 ]
+  assert_managed_matches "$original"
+  assert_no_staging_files
+  assert_check_lock_reacquirable
 }
 
 @test "single target updates only herdr" {
@@ -1230,6 +1336,47 @@ expected_hcom_asset_trace() {
   [ ! -e "$WORK/nix/pins/hcom.json" ]
 }
 
+@test "check rejects a dirty selected managed file without restoring user contents" {
+  printf '{"dirty":"check"}\n' >"$WORK/nix/pins/hcom.json"
+  original="$WORK/original"
+  save_managed "$original"
+
+  run_update_pins --check hcom
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"managed files already have unstaged changes"* ]]
+  [[ "$output" != *"check succeeded"* ]]
+  [ ! -e "$UPDATE_PINS_COMMAND_LOG" ]
+  assert_managed_matches "$original"
+}
+
+@test "check rejects a staged selected managed file without restoring user contents" {
+  printf '{"staged":"check"}\n' >"$WORK/nix/pins/hcom.json"
+  git -C "$WORK" add nix/pins/hcom.json
+  original="$WORK/original"
+  save_managed "$original"
+
+  run_update_pins --check hcom
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"managed files already have staged changes"* ]]
+  [[ "$output" != *"check succeeded"* ]]
+  [ ! -e "$UPDATE_PINS_COMMAND_LOG" ]
+  assert_managed_matches "$original"
+}
+
+@test "check rejects a deleted selected managed file without recreating it" {
+  rm "$WORK/nix/pins/hcom.json"
+
+  run_update_pins --check hcom
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"managed files already have unstaged changes"* ]]
+  [[ "$output" != *"check succeeded"* ]]
+  [ ! -e "$UPDATE_PINS_COMMAND_LOG" ]
+  [ ! -e "$WORK/nix/pins/hcom.json" ]
+}
+
 @test "hcom flake update failure restores hcom pin and flake.lock" {
   original="$WORK/original"
   save_managed "$original"
@@ -1295,6 +1442,26 @@ expected_hcom_asset_trace() {
   [[ "$output" != *"Applied changes:"* ]]
   [[ "$output" != *"Rolled back candidate changes:"* ]]
   [ -d "$WORK/flake.lock" ]
+}
+
+@test "successful check rollback failure is nonzero and suppresses every success report" {
+  export UPDATE_PINS_HCOM_TAG=v9.9.9
+  export UPDATE_PINS_BREAK_CHECK_ROLLBACK=hcom-src
+
+  run_update_pins --check hcom
+  check_status=$status
+  check_output=$output
+  chmod 0755 "$WORK/nix/pins"
+
+  [ "$check_status" -ne 0 ]
+  [[ "$check_output" == *"update-pins: check failed while restoring managed files"* ]]
+  [[ "$check_output" == *"rollback failed"* ]]
+  [[ "$check_output" != *"Candidate changes:"* ]]
+  [[ "$check_output" != *"Applied changes:"* ]]
+  [[ "$check_output" != *"Rolled back candidate changes:"* ]]
+  [[ "$check_output" != *"check succeeded"* ]]
+  [[ "$check_output" != *"hcom updated."* ]]
+  assert_check_lock_reacquirable
 }
 
 @test "successful update preserves restrictive managed file modes" {
@@ -1468,6 +1635,30 @@ expected_hcom_asset_trace() {
   assert_no_difit_package_lock
   assert_managed_matches "$original"
   assert_no_staging_files
+}
+
+@test "check candidate build failure is nonzero and reports the rolled-back candidate" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_DIFIT_VERSION=9.9.9
+  export UPDATE_PINS_DIFIT_BUILD_MODE=verify-fails
+  make_difit_tarball "$UPDATE_PINS_DIFIT_VERSION"
+
+  run_update_pins --check difit
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"difit: candidate package build failed"* ]]
+  [[ "$output" == *"update-pins: failed; restoring managed files from backup"* ]]
+  section=$(report_section "Rolled back candidate changes:")
+  [ "$(printf '%s\n' "$section" | sed -n 's/^  \([^ ].*\):$/\1/p')" = "difit" ]
+  [[ "$output" != *"Candidate changes:"* ]]
+  [[ "$output" != *"Applied changes:"* ]]
+  [[ "$output" != *"check succeeded"* ]]
+  [ "$(cat "$UPDATE_PINS_DIFIT_BUILD_COUNT")" -eq 2 ]
+  assert_no_difit_package_lock
+  assert_managed_matches "$original"
+  assert_no_staging_files
+  assert_check_lock_reacquirable
 }
 
 @test "agent-browser version bump updates its assets and paired skill input" {

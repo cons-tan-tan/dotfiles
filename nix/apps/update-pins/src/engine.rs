@@ -1,4 +1,4 @@
-use crate::cli::{Invocation, Target};
+use crate::cli::{Invocation, PublishMode, Target};
 use crate::command::{CommandRunner, SystemCommandRunner};
 use crate::error::UpdateError;
 use crate::ledger::Ledger;
@@ -47,31 +47,80 @@ pub fn run_with_runner<R: CommandRunner + Sync>(
     });
 
     match result {
-        Ok(()) => {
-            let report = ledger.applied().render();
-            if let Err(error) = transaction.commit() {
-                return Err(rollback_after_error(&mut transaction, &ledger, error));
-            }
-            let changed = !ledger.is_empty();
-            println!();
-            if let Some(report) = report {
-                println!("{report}");
-                println!();
-            }
-            match (target, changed) {
-                (Target::All, true) => println!(
-                    "Pins updated. Review with 'git diff', verify with 'nix run .#build', then commit."
-                ),
-                (Target::All, false) => println!("All pins up to date."),
-                (_, true) => println!(
-                    "{} updated. Review with 'git diff', verify with 'nix run .#build', then commit.",
-                    target.name()
-                ),
-                (_, false) => println!("{} is up to date.", target.name()),
-            }
-            Ok(())
-        }
+        Ok(()) => finalize_success(invocation.publish_mode, target, &mut transaction, &ledger),
         Err(error) => Err(rollback_after_error(&mut transaction, &ledger, error)),
+    }
+}
+
+fn finalize_success<R: CommandRunner>(
+    publish_mode: PublishMode,
+    target: Target,
+    transaction: &mut Transaction<'_, R>,
+    ledger: &Ledger,
+) -> Result<(), UpdateError> {
+    match publish_mode {
+        PublishMode::Apply => finalize_apply(target, transaction, ledger),
+        PublishMode::Check => finalize_check(target, transaction, ledger),
+    }
+}
+
+fn finalize_apply<R: CommandRunner>(
+    target: Target,
+    transaction: &mut Transaction<'_, R>,
+    ledger: &Ledger,
+) -> Result<(), UpdateError> {
+    let report = ledger.applied().render();
+    if let Err(error) = transaction.commit() {
+        return Err(rollback_after_error(transaction, ledger, error));
+    }
+    let changed = !ledger.is_empty();
+    print_report(report);
+    match (target, changed) {
+        (Target::All, true) => println!(
+            "Pins updated. Review with 'git diff', verify with 'nix run .#build', then commit."
+        ),
+        (Target::All, false) => println!("All pins up to date."),
+        (_, true) => println!(
+            "{} updated. Review with 'git diff', verify with 'nix run .#build', then commit.",
+            target.name()
+        ),
+        (_, false) => println!("{} is up to date.", target.name()),
+    }
+    Ok(())
+}
+
+fn finalize_check<R: CommandRunner>(
+    target: Target,
+    transaction: &mut Transaction<'_, R>,
+    ledger: &Ledger,
+) -> Result<(), UpdateError> {
+    let report = ledger.candidate().render();
+    let changed = !ledger.is_empty();
+    transaction
+        .rollback()
+        .map_err(|rollback| UpdateError::CheckRollback {
+            rollback: Box::new(rollback),
+        })?;
+    print_report(report);
+    if changed {
+        println!(
+            "{} check succeeded; no managed changes were kept.",
+            target.name()
+        );
+    } else {
+        println!(
+            "{} check succeeded; no pin changes required.",
+            target.name()
+        );
+    }
+    Ok(())
+}
+
+fn print_report(report: Option<String>) {
+    println!();
+    if let Some(report) = report {
+        println!("{report}");
+        println!();
     }
 }
 

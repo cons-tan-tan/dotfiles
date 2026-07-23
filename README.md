@@ -35,6 +35,7 @@ nix run .#apply-secrets
 | `nix run .#update` | flake.lock を更新 |
 | `nix run .#update-pins` | すべての更新対象をupstreamの最新状態へ同期 |
 | `nix run .#update-pins -- <target>` | 指定したtargetのみ同期。target一覧は`nix run .#update-pins -- --help`で表示 |
+| `nix run .#update-pins -- --check <target>` | 更新・build・検証を本番と同じ経路で実行し、管理fileは終了時に復元 |
 | `nix run .#update-pins -- --jobs 4 <target>` | release assetのprefetchを最大4並列で実行 |
 | `nix run .#fmt` | treefmt で整形 |
 | `nix run .#apply-nix-settings` | `/etc/nix/nix.custom.conf` に Nix daemon 設定を同期 |
@@ -45,6 +46,8 @@ nix run .#apply-secrets
 | `nix run .#textlint` | リポジトリ管理の日本語技術文書モードで textlint 実行 |
 
 `--jobs`は、GitHub Releasesにあるassetのprefetch数だけを制御する。値は1〜4で、既定値は1のため、並列化する場合は明示的に指定する。同時に実行するasset prefetchは`--jobs`の指定数までで、retryはassetごとに行う。したがって、1 targetあたりのasset downloadの最大試行数は、asset数×`--retry`の指定回数になる。上流metadataの取得、source hashのprefetch、flake inputの更新、依存hashの計算、package buildは逐次実行する。
+
+`--check`は、更新候補の取得、hash計算、package build、検証までを通常の更新と同じtransactionで実行し、成功後に管理fileを元の内容・mode・存在状態へ戻す。network access、download cache、Nix storeへのbuild結果は発生するため、副作用のないdry-runではない。同じversionも含めて配布物とbuild contractを再検証する場合は、`--force --check <target>`を使う。
 
 ## update-pinsの上流smoke test
 

@@ -45,6 +45,7 @@ pub enum DisplayValue {
 pub enum Outcome {
     Unchanged,
     Applied(Vec<Change>),
+    Candidate(Vec<Change>),
     RolledBack(Vec<Change>),
 }
 
@@ -70,6 +71,14 @@ impl Ledger {
         }
     }
 
+    pub fn candidate(&self) -> Outcome {
+        if self.is_empty() {
+            Outcome::Unchanged
+        } else {
+            Outcome::Candidate(self.ordered())
+        }
+    }
+
     pub fn rolled_back(&self) -> Outcome {
         if self.is_empty() {
             Outcome::Unchanged
@@ -90,6 +99,7 @@ impl Outcome {
         let (heading, changes) = match self {
             Self::Unchanged => return None,
             Self::Applied(changes) => ("Applied changes:", changes),
+            Self::Candidate(changes) => ("Candidate changes:", changes),
             Self::RolledBack(changes) => ("Rolled back candidate changes:", changes),
         };
         let mut rendered = String::from(heading);
@@ -688,7 +698,44 @@ mod tests {
     #[test]
     fn unchanged_ledger_has_no_report() {
         assert_eq!(Ledger::default().applied(), Outcome::Unchanged);
+        assert_eq!(Ledger::default().candidate(), Outcome::Unchanged);
         assert_eq!(Ledger::default().rolled_back().render(), None);
+    }
+
+    #[test]
+    fn candidate_report_is_ordered_and_redacted() {
+        let secret_hash = "sha256-secret-value";
+        let secret_url = "https://user:password@example.invalid/app.zip?token=secret";
+        let mut ledger = Ledger::default();
+        ledger.extend([
+            Change {
+                target: Target::Herdr,
+                kind: ChangeKind::SourceHash,
+                old: DisplayValue::Text(secret_hash.into()),
+                new: DisplayValue::Redacted,
+            },
+            Change {
+                target: Target::Hcom,
+                kind: ChangeKind::Url,
+                old: DisplayValue::Text(secret_url.into()),
+                new: DisplayValue::Redacted,
+            },
+            Change {
+                target: Target::Hcom,
+                kind: ChangeKind::Version,
+                old: DisplayValue::Text("1.0.0".into()),
+                new: DisplayValue::Text("2.0.0".into()),
+            },
+        ]);
+
+        let rendered = ledger.candidate().render().expect("candidate report");
+        assert_eq!(
+            rendered,
+            "Candidate changes:\n  hcom:\n    - version: 1.0.0 -> 2.0.0\n    - URL: \
+             changed\n  herdr:\n    - source hash: changed"
+        );
+        assert!(!rendered.contains(secret_hash));
+        assert!(!rendered.contains(secret_url));
     }
 
     #[test]

@@ -96,6 +96,9 @@ pub enum UpdateError {
         rollback: Box<UpdateError>,
     },
 
+    #[error("update-pins: check failed while restoring managed files: {rollback}")]
+    CheckRollback { rollback: Box<UpdateError> },
+
     #[error("{0}")]
     Message(String),
 }

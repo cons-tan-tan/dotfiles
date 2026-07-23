@@ -11,6 +11,14 @@ use crate::registry::{TARGET_SPECS, target_by_name};
 pub struct Invocation {
     pub target: Target,
     pub policy: RunPolicy,
+    pub publish_mode: PublishMode,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum PublishMode {
+    #[default]
+    Apply,
+    Check,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -67,6 +75,7 @@ where
     let _program = arguments.next();
     let mut target = None;
     let mut force = false;
+    let mut publish_mode = PublishMode::default();
     let mut max_asset_jobs = DEFAULT_ASSET_JOBS;
     let mut max_attempts = DEFAULT_MAX_ATTEMPTS;
     while let Some(argument) = arguments.next() {
@@ -74,6 +83,7 @@ where
         match argument.as_ref() {
             "--help" | "-h" => return Ok(ParseAction::Help),
             "--force" => force = true,
+            "--check" => publish_mode = PublishMode::Check,
             "--jobs" => {
                 let value = arguments
                     .next()
@@ -117,6 +127,7 @@ where
             asset_jobs: AssetJobsPolicy::new(max_asset_jobs)
                 .expect("CLI asset job bounds must produce a valid asset jobs policy"),
         },
+        publish_mode,
     }))
 }
 
@@ -138,10 +149,11 @@ fn parse_retry_value(value: &str) -> Result<u8, UsageError> {
 
 pub fn usage() -> String {
     let mut usage = String::from(
-        "Usage: update-pins [--jobs <N>] [--retry <MAX_ATTEMPTS>] [--force] [target]\n\n\
-         Options:\n  --retry <MAX_ATTEMPTS>  Fetch attempts, including the first (1-5; default 3)\n  \
-         --jobs <N>              Maximum parallel jobs for release asset prefetch only (1-4; default 1)\n  \
-         --force                 Refresh and validate artifacts even at the same version\n\n\
+        "Usage: update-pins [--check] [--force] [--jobs N] [--retry N] [target]\n\n\
+         Options:\n  --check                 Run updates and validation, then restore repository files\n  \
+         --force                 Refresh and validate artifacts even at the same version\n  \
+         --jobs N                Maximum parallel jobs for release asset prefetch only (1-4; default 1)\n  \
+         --retry N               Fetch attempts, including the first (1-5; default 3)\n\n\
          Targets:\n  all (default)\n",
     );
     for spec in TARGET_SPECS {
@@ -155,7 +167,8 @@ pub fn usage() -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        Invocation, ParseAction, TARGET_SPECS, Target, UsageError, parse_compatible_from, usage,
+        Invocation, ParseAction, PublishMode, TARGET_SPECS, Target, UsageError,
+        parse_compatible_from, usage,
     };
     use crate::policy::{AssetJobsPolicy, RetryPolicy, RunPolicy};
 
@@ -163,6 +176,7 @@ mod tests {
         ParseAction::Run(Invocation {
             target,
             policy: RunPolicy::default(),
+            publish_mode: PublishMode::Apply,
         })
     }
 
@@ -199,6 +213,7 @@ mod tests {
                 retry: RetryPolicy::new(5).expect("valid retry policy"),
                 asset_jobs: AssetJobsPolicy::new(4).expect("valid asset jobs policy"),
             },
+            publish_mode: PublishMode::Apply,
         });
         assert_eq!(
             parse_compatible_from([
@@ -235,6 +250,26 @@ mod tests {
     }
 
     #[test]
+    fn compatible_parser_accepts_check_in_any_order_and_repeatedly() {
+        let expected = ParseAction::Run(Invocation {
+            target: Target::Herdr,
+            policy: RunPolicy {
+                force: true,
+                ..RunPolicy::default()
+            },
+            publish_mode: PublishMode::Check,
+        });
+        assert_eq!(
+            parse_compatible_from(["update-pins", "--check", "--force", "herdr"]),
+            Ok(expected)
+        );
+        assert_eq!(
+            parse_compatible_from(["update-pins", "herdr", "--force", "--check", "--check",]),
+            Ok(expected)
+        );
+    }
+
+    #[test]
     fn compatible_parser_accepts_bounded_jobs_and_rejects_invalid_values() {
         for value in ["1", "4"] {
             let parsed = parse_compatible_from(["update-pins", "--jobs", value])
@@ -267,8 +302,9 @@ mod tests {
     fn compatible_usage_lists_targets_in_execution_order() {
         let rendered = usage();
         assert!(rendered.starts_with(
-            "Usage: update-pins [--jobs <N>] [--retry <MAX_ATTEMPTS>] [--force] [target]\n"
+            "Usage: update-pins [--check] [--force] [--jobs N] [--retry N] [target]\n"
         ));
+        assert!(rendered.contains("--check"));
         assert!(rendered.contains("release asset prefetch only"));
         assert!(rendered.contains("1-4; default 1"));
         let positions: Vec<_> = TARGET_SPECS
