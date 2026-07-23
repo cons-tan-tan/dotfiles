@@ -348,21 +348,43 @@ run_update_pins() {
 save_managed() {
   local dst=$1
   mkdir -p "$dst/nix/pins" "$dst/nix/packages/difit"
-  cp "$WORK/flake.nix" "$dst/flake.nix"
-  cp "$WORK/flake.lock" "$dst/flake.lock"
-  cp "$WORK"/nix/pins/*.json "$dst/nix/pins/"
-  cp "$WORK/nix/packages/difit/package-lock.json" "$dst/nix/packages/difit/package-lock.json"
+  cp -p "$WORK/flake.nix" "$dst/flake.nix"
+  cp -p "$WORK/flake.lock" "$dst/flake.lock"
+  cp -p "$WORK"/nix/pins/*.json "$dst/nix/pins/"
+  cp -p "$WORK/nix/packages/difit/package-lock.json" "$dst/nix/packages/difit/package-lock.json"
 }
 
 assert_managed_matches() {
   local expected=$1 pin name
   cmp -s "$WORK/flake.nix" "$expected/flake.nix" || return 1
+  assert_same_mode "$WORK/flake.nix" "$expected/flake.nix" || return 1
   cmp -s "$WORK/flake.lock" "$expected/flake.lock" || return 1
+  assert_same_mode "$WORK/flake.lock" "$expected/flake.lock" || return 1
   cmp -s "$WORK/nix/packages/difit/package-lock.json" "$expected/nix/packages/difit/package-lock.json" || return 1
+  assert_same_mode "$WORK/nix/packages/difit/package-lock.json" "$expected/nix/packages/difit/package-lock.json" || return 1
   for pin in "$expected"/nix/pins/*.json; do
     name=$(basename "$pin")
     cmp -s "$WORK/nix/pins/$name" "$pin" || return 1
+    assert_same_mode "$WORK/nix/pins/$name" "$pin" || return 1
   done
+}
+
+assert_same_mode() {
+  python3 - "$1" "$2" <<'PY'
+import os
+import stat
+import sys
+
+actual, expected = sys.argv[1:]
+if stat.S_IMODE(os.stat(actual).st_mode) != stat.S_IMODE(os.stat(expected).st_mode):
+    raise SystemExit(1)
+PY
+}
+
+assert_no_staging_files() {
+  local leftover
+  leftover=$(find "$WORK" -name '*.update-pins*' -print -quit)
+  [ -z "$leftover" ]
 }
 
 paired_version() {
@@ -538,6 +560,43 @@ make_unrelated_updates_noop() {
 
   [ "$status" -ne 0 ]
   assert_managed_matches "$original"
+  assert_no_staging_files
+}
+
+@test "successful update preserves restrictive managed file modes" {
+  chmod 0440 "$WORK/nix/pins/hcom.json"
+  chmod 0640 "$WORK/flake.nix"
+  chmod 0600 "$WORK/flake.lock"
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_HCOM_TAG=v9.9.9
+
+  run_update_pins hcom
+
+  [ "$status" -eq 0 ]
+  chmod u+w "$original/nix/pins/hcom.json"
+  cp "$WORK/nix/pins/hcom.json" "$original/nix/pins/hcom.json"
+  chmod 0440 "$original/nix/pins/hcom.json"
+  cp "$WORK/flake.nix" "$original/flake.nix"
+  cp "$WORK/flake.lock" "$original/flake.lock"
+  assert_managed_matches "$original"
+  assert_no_staging_files
+}
+
+@test "failed update restores restrictive managed file modes" {
+  chmod 0440 "$WORK/nix/pins/hcom.json"
+  chmod 0640 "$WORK/flake.nix"
+  chmod 0600 "$WORK/flake.lock"
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_HCOM_TAG=v9.9.9
+  export UPDATE_PINS_FAIL_FLAKE_UPDATE=hcom-src
+
+  run_update_pins hcom
+
+  [ "$status" -ne 0 ]
+  assert_managed_matches "$original"
+  assert_no_staging_files
 }
 
 @test "untracked pin file survives a failed run intact" {
@@ -815,9 +874,10 @@ make_unrelated_updates_noop() {
   [ "$(jq -r .updated "$WORK/flake.lock")" = "agent-slack-skill" ]
   [ "$(cat "$UPDATE_PINS_FLAKE_UPDATE_LOG")" = $'hcom-src\nagent-slack-skill' ]
   ! assert_managed_matches "$original"
+  assert_no_staging_files
 }
 
-@test "repeating a successful update is byte stable" {
+@test "repeating a successful update is byte and mode stable" {
   export UPDATE_PINS_HCOM_TAG=v1.2.3
   export UPDATE_PINS_AGENT_SLACK_TAG=v4.5.6
   export UPDATE_PINS_SHELLFIRM_TAG=v8.8.8

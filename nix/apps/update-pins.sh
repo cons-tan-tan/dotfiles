@@ -66,9 +66,42 @@ managed_files=()
 managed_pathspecs=(':(glob)nix/pins/*.json' flake.nix flake.lock nix/packages/difit/package-lock.json)
 managed_backup_dir=""
 restore_managed_files=false
+staging_file=
+preserve_managed_backup=false
+
+prepare_staging_file() {
+  local target=$1 dir base
+  case $target in
+  */*) dir=${target%/*} ;;
+  *) dir=. ;;
+  esac
+  base=${target##*/}
+  staging_file=$(mktemp "$dir/.${base}.update-pins.XXXXXX")
+  TMPFILES+=("$staging_file")
+  if [ -e "$target" ]; then
+    cp -p "$target" "$staging_file"
+    chmod u+w "$staging_file"
+  fi
+}
+
+commit_staging_file() {
+  local candidate=$1 target=$2
+  if [ -e "$target" ]; then
+    python3 - "$target" "$candidate" <<'PY'
+import os
+import stat
+import sys
+
+target, candidate = sys.argv[1:]
+os.chmod(candidate, stat.S_IMODE(os.stat(target).st_mode))
+PY
+  fi
+  mv -f "$candidate" "$target"
+}
 
 restore_managed_files_now() {
-  local file backup
+  local file backup dir base restore_tmp
+  local restore_failed=false
   if ! $restore_managed_files || [ -z "$managed_backup_dir" ]; then
     return 0
   fi
@@ -77,24 +110,54 @@ restore_managed_files_now() {
     backup="$managed_backup_dir/$file"
     if [ -f "$backup" ]; then
       case $file in
-      */*) mkdir -p "${file%/*}" ;;
+      */*) dir=${file%/*} ;;
+      *) dir=. ;;
       esac
-      cp "$backup" "$file"
+      base=${file##*/}
+      restore_tmp=$(mktemp "$dir/.${base}.update-pins-restore.XXXXXX")
+      if [ -z "$restore_tmp" ]; then
+        echo "update-pins: failed to create rollback staging file for $file" >&2
+        restore_failed=true
+        continue
+      fi
+      TMPFILES+=("$restore_tmp")
+      if ! cp -p "$backup" "$restore_tmp"; then
+        echo "update-pins: failed to stage rollback for $file" >&2
+        restore_failed=true
+        continue
+      fi
+      if ! mv -f "$restore_tmp" "$file"; then
+        echo "update-pins: failed to restore $file" >&2
+        restore_failed=true
+      fi
     else
-      rm -f "$file"
+      if ! rm -f "$file"; then
+        echo "update-pins: failed to remove newly created managed file $file" >&2
+        restore_failed=true
+      fi
     fi
   done
+  if $restore_failed; then
+    preserve_managed_backup=true
+    echo "update-pins: rollback incomplete; backup retained at $managed_backup_dir" >&2
+    return 1
+  fi
   restore_managed_files=false
 }
 
 cleanup() {
-  local status=$?
+  local status=$? dir
   set +e
   if [ "$status" -ne 0 ]; then
-    restore_managed_files_now
+    restore_managed_files_now || true
   fi
   rm -f "${TMPFILES[@]}"
-  rm -rf "${TMPDIRS[@]}"
+  for dir in "${TMPDIRS[@]}"; do
+    if $preserve_managed_backup && [ "$dir" = "$managed_backup_dir" ]; then
+      continue
+    fi
+    rm -rf "$dir"
+  done
   exit "$status"
 }
 trap cleanup EXIT
@@ -133,10 +196,10 @@ compute_hash_via_failed_build() {
     echo "$build_log" | tail -10 >&2
     exit 1
   fi
-  tmp=$(mktemp)
-  TMPFILES+=("$tmp")
+  prepare_staging_file "$pin"
+  tmp=$staging_file
   jq --arg field "$field" --arg hash "$hash" '.[$field] = $hash' "$pin" >"$tmp"
-  mv "$tmp" "$pin"
+  commit_staging_file "$tmp" "$pin"
   echo "$label: verifying build..."
   if ! build_local_package "$package"; then
     echo "$label: verification build failed" >&2
@@ -175,7 +238,7 @@ backup_managed_files() {
   for file in "${managed_files[@]}"; do
     backup="$managed_backup_dir/$file"
     mkdir -p "${backup%/*}"
-    cp "$file" "$backup"
+    cp -p "$file" "$backup"
   done
   restore_managed_files=true
 }
@@ -289,10 +352,10 @@ update_url_pin() {
     echo "$label: up to date"
     return 0
   fi
-  tmp=$(mktemp)
-  TMPFILES+=("$tmp")
+  prepare_staging_file "$pin"
+  tmp=$staging_file
   jq --arg h "$hash" '.hash = $h' "$pin" >"$tmp"
-  mv "$tmp" "$pin"
+  commit_staging_file "$tmp" "$pin"
   echo "$label: hash updated"
 }
 
@@ -305,10 +368,10 @@ refresh_pin_assets() {
   while IFS= read -r system; do
     name=$("$resolver" "$system" "$pin" "$tag")
     hash=$(prefetch "https://github.com/$repo/releases/download/$tag/$name")
-    next=$(mktemp)
-    TMPFILES+=("$next")
+    prepare_staging_file "$tmp"
+    next=$staging_file
     jq --arg system "$system" --arg hash "$hash" '.assets[$system].hash = $hash' "$tmp" >"$next"
-    mv "$next" "$tmp"
+    commit_staging_file "$next" "$tmp"
   done < <(jq -r '.assets | keys[]' "$pin")
 }
 
@@ -339,11 +402,11 @@ update_release_pin() {
     return 0
   fi
   echo "$label: $cur -> $ver (prefetching assets...)"
-  tmp=$(mktemp)
-  TMPFILES+=("$tmp")
+  prepare_staging_file "$pin"
+  tmp=$staging_file
   jq --arg version "$ver" '.version = $version' "$pin" >"$tmp"
   refresh_pin_assets "$pin" "$tmp" "$repo" "$tag" asset_name_from_pin
-  mv "$tmp" "$pin"
+  commit_staging_file "$tmp" "$pin"
 }
 
 validate_release_version() {
@@ -375,8 +438,8 @@ PY
 update_paired_flake_input() {
   local input=$1 repo=$2 version=$3 tmp
   validate_release_version "$input" "$version"
-  tmp=$(mktemp)
-  TMPFILES+=("$tmp")
+  prepare_staging_file flake.nix
+  tmp=$staging_file
   python3 - flake.nix "$repo" "$version" >"$tmp" <<'PY'
 import re
 import sys
@@ -393,7 +456,7 @@ if count != 1:
     )
 sys.stdout.write(updated)
 PY
-  mv "$tmp" flake.nix
+  commit_staging_file "$tmp" flake.nix
   echo "$input: updating flake input to v$version"
   nix flake update "$input"
 }
@@ -415,11 +478,10 @@ update_paired_release_pin() {
   fi
 
   echo "$label: $current -> $version (prefetching assets...)"
-  tmp=$(mktemp)
-  TMPFILES+=("$tmp")
-  cp "$pin" "$tmp"
+  prepare_staging_file "$pin"
+  tmp=$staging_file
   refresh_pin_assets "$pin" "$tmp" "$repo" "$tag" asset_name_from_pin
-  mv "$tmp" "$pin"
+  commit_staging_file "$tmp" "$pin"
   update_paired_flake_input "$input" "$repo" "$version"
 }
 
@@ -435,11 +497,11 @@ update_watchexec_pin() {
   fi
 
   echo "watchexec: $current -> $version (prefetching assets...)"
-  tmp=$(mktemp)
-  TMPFILES+=("$tmp")
+  prepare_staging_file "$pin"
+  tmp=$staging_file
   jq --arg version "$version" '.version = $version' "$pin" >"$tmp"
   refresh_pin_assets "$pin" "$tmp" watchexec/watchexec "$tag" watchexec_asset_name
-  mv "$tmp" "$pin"
+  commit_staging_file "$tmp" "$pin"
 }
 
 update_codex_app_pin() {
@@ -489,8 +551,8 @@ update_codex_app_pin() {
     exit 1
   fi
 
-  tmp=$(mktemp)
-  TMPFILES+=("$tmp")
+  prepare_staging_file "$pin"
+  tmp=$staging_file
   jq \
     --arg version "$latest_version" \
     --arg url "$latest_url" \
@@ -500,7 +562,7 @@ update_codex_app_pin() {
       | .url = $url
       | .hash = $hash
     ' "$pin" >"$tmp"
-  mv "$tmp" "$pin"
+  commit_staging_file "$tmp" "$pin"
 }
 
 update_shellfirm_pin() {
@@ -514,13 +576,13 @@ update_shellfirm_pin() {
   else
     echo "shellfirm: $cur -> $ver (prefetching source...)"
     src_hash=$(prefetch_unpack "https://github.com/kaplanelad/shellfirm/archive/refs/tags/$tag.tar.gz")
-    tmp=$(mktemp)
-    TMPFILES+=("$tmp")
+    prepare_staging_file "$pin"
+    tmp=$staging_file
     # cargoHash は Cargo.lock ベースの vendor tree から決まるため、fake hash
     # で一度ビルドして hash mismatch から実値を取り出す。
     jq --arg v "$ver" --arg s "$src_hash" \
       '.version = $v | .srcHash = $s | .cargoHash = ""' "$pin" >"$tmp"
-    mv "$tmp" "$pin"
+    commit_staging_file "$tmp" "$pin"
     compute_hash_via_failed_build shellfirm shellfirm "$pin" cargoHash
   fi
 }
@@ -534,17 +596,17 @@ update_herdr_pin() {
   if [ "$herdr_after" != "$herdr_before" ]; then
     echo "herdr: updating srcHash"
     src_hash=$(prefetch_unpack "https://github.com/ogulcancelik/herdr/archive/refs/tags/v$herdr_after.tar.gz")
-    tmp=$(mktemp)
-    TMPFILES+=("$tmp")
+    prepare_staging_file "$herdr_pin"
+    tmp=$staging_file
     jq --arg h "$src_hash" '.srcHash = $h' "$herdr_pin" >"$tmp"
-    mv "$tmp" "$herdr_pin"
+    commit_staging_file "$tmp" "$herdr_pin"
   fi
 }
 
 update_difit_pin() {
   local difit_pin=nix/pins/difit.json
   local difit_lock=nix/packages/difit/package-lock.json
-  local difit_cur difit_ver difit_url difit_src_hash difit_tmpdir tmp
+  local difit_cur difit_ver difit_url difit_src_hash difit_tmpdir difit_lock_tmp tmp
   difit_cur=$(current_paired_version yoshiko-pg/difit)
   difit_ver=$(latest_npm_version difit)
   validate_release_version difit "$difit_ver"
@@ -566,15 +628,18 @@ update_difit_pin() {
       cd "$difit_tmpdir/package"
       npm install --package-lock-only --ignore-scripts --no-audit --no-fund
     )
-    cp "$difit_tmpdir/package/package-lock.json" "$difit_lock"
+    prepare_staging_file "$difit_lock"
+    difit_lock_tmp=$staging_file
+    cp "$difit_tmpdir/package/package-lock.json" "$difit_lock_tmp"
+    commit_staging_file "$difit_lock_tmp" "$difit_lock"
 
-    tmp=$(mktemp)
-    TMPFILES+=("$tmp")
+    prepare_staging_file "$difit_pin"
+    tmp=$staging_file
     # npmDepsHash は npm 依存のダウンロード結果から決まるため事前計算できない。
     # 空にして lib.fakeHash でビルドし、hash mismatch エラーから実値を取り出す。
     jq --arg s "$difit_src_hash" \
       '.srcHash = $s | .npmDepsHash = ""' "$difit_pin" >"$tmp"
-    mv "$tmp" "$difit_pin"
+    commit_staging_file "$tmp" "$difit_pin"
     update_paired_flake_input difit-src yoshiko-pg/difit "$difit_ver"
     compute_hash_via_failed_build difit difit "$difit_pin" npmDepsHash
   fi
