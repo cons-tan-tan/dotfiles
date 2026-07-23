@@ -83,6 +83,7 @@ let
   updatePinsSmoke = pkgs.callPackage ../apps/update-pins/smoke.nix { };
   applySecretsCore = pkgs.callPackage ../apps/apply-secrets { };
   applyNixSettingsCore = pkgs.callPackage ../apps/apply-nix-settings { };
+  codexConfigHelper = pkgs.callPackage ../modules/home/programs/codex/helper { };
   safeFetch = pkgs.callPackage ../packages/safe-fetch { };
   curlFetch = pkgs.dotfilesPackages.curl-fetch;
   ghApiGet = pkgs.dotfilesPackages.gh-api-get;
@@ -122,6 +123,7 @@ let
     update-pins-smoke = updatePinsSmoke;
     apply-secrets-rust = applySecretsCore;
     apply-nix-settings-rust = applyNixSettingsCore;
+    codex-config-helper-rust = codexConfigHelper;
     safe-fetch-rust = safeFetchCheck;
 
     workflow-lint-tests =
@@ -160,24 +162,6 @@ let
           # remain available without inheriting the activating user's PATH.
           PATH=/nonexistent ${ghqFetchAllSmokePackage}/bin/ghq-fetch-all
 
-          touch "$out"
-        '';
-
-    merge-py-tests =
-      pkgs.runCommand "merge-py-tests"
-        {
-          nativeBuildInputs = [
-            (pkgs.python3.withPackages (ps: [
-              ps.pytest
-              ps.tomlkit
-            ]))
-          ];
-        }
-        ''
-          cp -R ${../modules/home/programs/codex} codex
-          chmod -R u+w codex
-          cd codex
-          pytest -q
           touch "$out"
         '';
 

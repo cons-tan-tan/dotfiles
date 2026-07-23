@@ -26,6 +26,7 @@ let
   codex = pkgs.dotfilesPackages.codex.mkWrappedPackage {
     inherit herdrSkillPath;
   };
+  codexConfigHelper = pkgs.callPackage ./helper { };
 
   baseMergePayloadJson = jsonFormat.generate "codex-config-merge-base.json" (
     settingsLib.mkMergePayload {
@@ -89,7 +90,7 @@ let
   herdrHooksStatePayloadJson =
     pkgs.runCommand "codex-herdr-hooks-state-payload.json"
       {
-        nativeBuildInputs = [ pkgs.python3 ];
+        nativeBuildInputs = [ codexConfigHelper ];
       }
       ''
         home="$NIX_BUILD_TOP/home"
@@ -100,14 +101,14 @@ let
         export HOME="$home"
         export XDG_CONFIG_HOME="$home/.config"
 
-        ${pkgs.python3}/bin/python3 ${./generate_herdr_hook_state.py} \
+        ${lib.getExe codexConfigHelper} generate-herdr-hook-state \
           --codex-bin ${lib.escapeShellArg "${pkgs.codex}/bin/codex"} \
           --hook-command ${lib.escapeShellArg herdrHookCommand} \
           --hooks-json-path ${lib.escapeShellArg hooksJsonPath} \
           > "$out"
       '';
 
-  # merge.py には単一 payload を渡すため、Nix 管理設定と hook 生成設定をここで合成する。
+  # helper には単一 payload を渡すため、Nix 管理設定と hook 生成設定をここで合成する。
   mergePayloadJson =
     pkgs.runCommand "codex-config-merge.json"
       {
@@ -127,8 +128,6 @@ let
   codexSchema = pkgs.runCommand "codex-config-schema.json" { } ''
     cp ${pkgs.codex.src}/codex-rs/core/config.schema.json $out
   '';
-
-  pythonWithTomlkit = pkgs.python3.withPackages (p: [ p.tomlkit ]);
 in
 {
   home.packages = [ codex ];
@@ -154,7 +153,7 @@ in
       set -e
       candidate=$(${pkgs.coreutils}/bin/mktemp "${configPath}.hooks-XXXXXX")
       trap '${pkgs.coreutils}/bin/rm -f "$candidate"' EXIT
-      run ${pythonWithTomlkit}/bin/python3 ${./merge.py} \
+      run ${lib.getExe codexConfigHelper} merge \
         "${configPath}" "${mergePayloadJson}" "$candidate"
       run ${pkgs.taplo}/bin/taplo check "$candidate"
       run ${pkgs.taplo}/bin/taplo check --schema "file://${codexSchema}" "$candidate"
