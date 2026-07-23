@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 use std::ffi::OsString;
-use std::io::Read as _;
+use std::io::{self, Read as _};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
 
 use crate::error::UpdateError;
@@ -156,7 +156,7 @@ impl CommandRunner for SystemCommandRunner {
         stderr_limit: usize,
         timeout: Duration,
     ) -> Result<CommandOutput, UpdateError> {
-        let mut process = configured_process(command);
+        let mut process = configured_limited_process(command);
         process.stdout(Stdio::piped()).stderr(Stdio::piped());
         let mut child = process.spawn().map_err(|source| UpdateError::Spawn {
             program: command.program.to_string_lossy().into_owned(),
@@ -169,24 +169,23 @@ impl CommandRunner for SystemCommandRunner {
         let stderr_reader =
             std::thread::spawn(move || read_at_most(stderr, stderr_limit.saturating_add(1)));
         let started = Instant::now();
-        let (status, timed_out) = loop {
-            if let Some(status) = child
-                .try_wait()
-                .map_err(|source| process_runtime_error(command, "wait for", source))?
-            {
-                break (status, false);
+        let mut status = None;
+        let timed_out = loop {
+            if status.is_none() {
+                status = child
+                    .try_wait()
+                    .map_err(|source| process_runtime_error(command, "wait for", source))?;
+            }
+            if status.is_some() && stdout_reader.is_finished() && stderr_reader.is_finished() {
+                break false;
             }
             if started.elapsed() >= timeout {
-                child
-                    .kill()
-                    .map_err(|source| process_runtime_error(command, "terminate", source))?;
-                let status = child
-                    .wait()
-                    .map_err(|source| process_runtime_error(command, "reap", source))?;
-                break (status, true);
+                status = Some(terminate_and_reap(&mut child, command)?);
+                break true;
             }
             std::thread::sleep(Duration::from_millis(10));
         };
+        let status = status.expect("completed execution always has an exit status");
         let stdout = join_reader(stdout_reader, command, "stdout")?;
         let stderr = join_reader(stderr_reader, command, "stderr")?;
         if timed_out {
@@ -240,6 +239,65 @@ fn configured_process(command: &CommandSpec) -> Command {
         process.current_dir(cwd);
     }
     process
+}
+
+fn configured_limited_process(command: &CommandSpec) -> Command {
+    let mut process = configured_process(command);
+    isolate_process_group(&mut process);
+    process
+}
+
+#[cfg(unix)]
+fn isolate_process_group(process: &mut Command) {
+    use std::os::unix::process::CommandExt as _;
+
+    process.process_group(0);
+}
+
+#[cfg(not(unix))]
+fn isolate_process_group(_process: &mut Command) {}
+
+fn terminate_and_reap(child: &mut Child, command: &CommandSpec) -> Result<ExitStatus, UpdateError> {
+    if let Err(source) = terminate_child_tree(child) {
+        let termination_error = process_runtime_error(command, "terminate", source);
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(termination_error);
+    }
+    child
+        .wait()
+        .map_err(|source| process_runtime_error(command, "reap", source))
+}
+
+#[cfg(unix)]
+fn terminate_child_tree(child: &mut Child) -> io::Result<()> {
+    const ESRCH: i32 = 3;
+    const SIGKILL: i32 = 9;
+
+    unsafe extern "C" {
+        fn kill(pid: i32, signal: i32) -> i32;
+    }
+
+    let process_group = i32::try_from(child.id())
+        .map_err(|_| io::Error::other("child process ID exceeded the Unix pid_t range"))?;
+    // The limited child is its process-group leader, so a negative pid targets
+    // the child and every descendant that inherited its process group.
+    // SAFETY: `process_group` came from a live child PID and the signal does
+    // not dereference memory or outlive any borrowed Rust value.
+    if unsafe { kill(-process_group, SIGKILL) } == 0 {
+        return Ok(());
+    }
+    let source = io::Error::last_os_error();
+    if source.raw_os_error() == Some(ESRCH) {
+        Ok(())
+    } else {
+        Err(source)
+    }
+}
+
+#[cfg(not(unix))]
+fn terminate_child_tree(child: &mut Child) -> io::Result<()> {
+    child.kill()
 }
 
 fn read_at_most(reader: impl std::io::Read, limit: usize) -> std::io::Result<Vec<u8>> {
@@ -308,6 +366,17 @@ pub fn run_checked_limited<R: CommandRunner>(
     require_success(command, output)
 }
 
+pub fn run_checked_limited_with_timeout<R: CommandRunner>(
+    runner: &R,
+    command: &CommandSpec,
+    stdout_limit: usize,
+    stderr_limit: usize,
+    timeout: Duration,
+) -> Result<CommandOutput, UpdateError> {
+    let output = runner.run_limited_with_timeout(command, stdout_limit, stderr_limit, timeout)?;
+    require_success(command, output)
+}
+
 pub fn require_success(
     command: &CommandSpec,
     output: CommandOutput,
@@ -344,7 +413,11 @@ fn is_executable(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use std::path::Path;
+    #[cfg(unix)]
+    use std::time::{Duration, Instant};
 
+    #[cfg(unix)]
+    use super::SystemCommandRunner;
     use super::{CommandOutput, CommandRunner, CommandSpec, run_checked_limited};
     use crate::error::UpdateError;
 
@@ -408,6 +481,23 @@ mod tests {
                 .expect_err("oversized stderr")
                 .to_string()
                 .contains("stderr exceeded 4 bytes")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn timeout_terminates_descendants_that_hold_output_pipes_open() {
+        let command = CommandSpec::new("sh").args(["-c", "sh -c 'sleep 5; printf descendant' &"]);
+        let started = Instant::now();
+
+        let error = SystemCommandRunner
+            .run_limited_with_timeout(&command, 1024, 1024, Duration::from_millis(250))
+            .expect_err("the child process should time out");
+
+        assert!(matches!(error, UpdateError::CommandTimedOut { .. }));
+        assert!(
+            started.elapsed() < Duration::from_secs(2),
+            "a descendant kept an inherited output pipe open after timeout"
         );
     }
 }

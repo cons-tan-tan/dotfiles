@@ -10,13 +10,13 @@ use crate::cli::Target;
 use crate::codex_app;
 use crate::command::{CommandRunner, CommandSpec, run_checked};
 use crate::error::UpdateError;
-use crate::fetch::{download_bytes, gh_api_bytes};
 use crate::ledger::{FileState, Ledger, diff_target};
 use crate::pins::PinDocument;
 use crate::policy::RunPolicy;
 use crate::prefetch::{prefetch_hash as prefetch, prefetch_result};
 use crate::registry::{AssetNaming, TargetKind, TargetSpec, target_spec};
 use crate::transaction::Transaction;
+use crate::upstream::{latest_npm_version, latest_tag, validate_release_version};
 
 pub fn is_implemented(target: Target) -> bool {
     target_spec(target).is_some_and(|spec| spec.kind.is_implemented())
@@ -399,39 +399,6 @@ fn update_difit<R: CommandRunner>(
     Ok(true)
 }
 
-fn latest_npm_version<R: CommandRunner>(
-    policy: RunPolicy,
-    runner: &R,
-    root: &Path,
-    package: &str,
-) -> Result<String, UpdateError> {
-    let url = format!("https://registry.npmjs.org/{package}/latest");
-    let bytes = download_bytes(
-        policy.retry,
-        runner,
-        root,
-        "difit",
-        "npm latest metadata",
-        &url,
-        1024 * 1024,
-    )?;
-    let response: Value = serde_json::from_slice(&bytes).map_err(|source| {
-        UpdateError::message(format!(
-            "latest_npm_version: {package} returned invalid JSON: {source}"
-        ))
-    })?;
-    response
-        .get("version")
-        .and_then(Value::as_str)
-        .filter(|version| !version.is_empty() && *version != "null")
-        .map(ToOwned::to_owned)
-        .ok_or_else(|| {
-            UpdateError::message(format!(
-                "latest_npm_version: {package} の latest version を取得できなかった"
-            ))
-        })
-}
-
 fn read_npm_package_json(archive_path: &Path, label: &str) -> Result<Vec<u8>, UpdateError> {
     const MAX_PACKAGE_JSON_BYTES: u64 = 4 * 1024 * 1024;
 
@@ -634,52 +601,6 @@ fn refresh_assets<R: CommandRunner>(
     Ok(())
 }
 
-pub(crate) fn latest_tag<R: CommandRunner>(
-    policy: RunPolicy,
-    runner: &R,
-    root: &Path,
-    repository: &str,
-) -> Result<String, UpdateError> {
-    let bytes = if runner.is_available(Path::new("gh")) {
-        gh_api_bytes(
-            policy.retry,
-            runner,
-            root,
-            repository,
-            "GitHub latest release",
-            &format!("repos/{repository}/releases/latest"),
-            4 * 1024 * 1024,
-        )?
-    } else {
-        let url = format!("https://api.github.com/repos/{repository}/releases/latest");
-        download_bytes(
-            policy.retry,
-            runner,
-            root,
-            repository,
-            "GitHub latest release",
-            &url,
-            4 * 1024 * 1024,
-        )?
-    };
-    let response: Value = serde_json::from_slice(&bytes).map_err(|source| {
-        UpdateError::message(format!(
-            "latest_tag: {repository} returned invalid JSON: {source}"
-        ))
-    })?;
-    let tag = response
-        .get("tag_name")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_owned();
-    if tag.is_empty() || tag == "null" {
-        return Err(UpdateError::message(format!(
-            "latest_tag: {repository} の latest release tag を取得できなかった"
-        )));
-    }
-    Ok(tag)
-}
-
 pub(crate) fn load_pin<R: CommandRunner>(
     transaction: &Transaction<'_, R>,
     path: &str,
@@ -749,46 +670,6 @@ fn paired_version_matches<'a>(text: &'a str, repository: &str) -> Vec<(usize, us
         .collect()
 }
 
-pub(crate) fn validate_release_version(label: &str, version: &str) -> Result<(), UpdateError> {
-    if is_release_version(version) {
-        Ok(())
-    } else {
-        Err(UpdateError::message(format!(
-            "{label}: unsupported release version '{version}'"
-        )))
-    }
-}
-
-fn is_release_version(version: &str) -> bool {
-    if version.len() > 128 {
-        return false;
-    }
-    let (without_build, build) = match version.split_once('+') {
-        Some((base, build)) if !build.is_empty() && !build.contains('+') => (base, Some(build)),
-        Some(_) => return false,
-        None => (version, None),
-    };
-    let (core, prerelease) = match without_build.split_once('-') {
-        Some((core, prerelease)) if !prerelease.is_empty() => (core, Some(prerelease)),
-        Some(_) => return false,
-        None => (without_build, None),
-    };
-    let mut components = core.split('.');
-    let valid_core = components.by_ref().all(|component| {
-        !component.is_empty() && component.bytes().all(|byte| byte.is_ascii_digit())
-    });
-    let component_count = core.split('.').count();
-    let valid_suffix = |suffix: &str| {
-        suffix
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-'))
-    };
-    valid_core
-        && component_count >= 2
-        && prerelease.is_none_or(valid_suffix)
-        && build.is_none_or(valid_suffix)
-}
-
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
@@ -799,13 +680,14 @@ mod tests {
     use flate2::write::GzEncoder;
 
     use super::{
-        is_implemented, is_release_version, latest_tag, paired_version, read_npm_package_json,
-        replace_paired_version, validate_npm_identity, validate_npm_lock,
+        is_implemented, paired_version, read_npm_package_json, replace_paired_version,
+        validate_npm_identity, validate_npm_lock,
     };
     use crate::cli::Target;
     use crate::command::{CommandOutput, CommandRunner, CommandSpec};
     use crate::error::UpdateError;
     use crate::policy::RunPolicy;
+    use crate::upstream::latest_tag;
 
     struct RecordingRunner {
         available: bool,
@@ -836,23 +718,6 @@ mod tests {
 
         fn is_available(&self, _program: &Path) -> bool {
             self.available
-        }
-    }
-
-    #[test]
-    fn validates_only_safe_release_versions() {
-        for version in ["1.2", "1.2.3", "1.2.3-rc.1", "1.2.3+build.4"] {
-            assert!(is_release_version(version), "{version} should be valid");
-        }
-        for version in [
-            "1",
-            "v1.2.3",
-            "1.2.3${builtins.readFile ./flake.nix}",
-            "1.2.3/",
-            "1..3",
-            "1.2.3+",
-        ] {
-            assert!(!is_release_version(version), "{version} should be invalid");
         }
     }
 

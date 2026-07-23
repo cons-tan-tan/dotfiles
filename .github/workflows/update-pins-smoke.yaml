@@ -1,0 +1,51 @@
+name: Update pins upstream smoke
+
+on:
+  schedule:
+    - cron: "37 4 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: update-pins-upstream-smoke
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
+        with:
+          enable_kvm: false
+      - uses: Mic92/hestia@fb239a2f72d4b6e26eec5425f289dea23b27a527 # v2.0.0
+        with:
+          version: v2.0.0
+          upstream-cache-filter: true
+          upstream-cache-key-names: cache.nixos.org-1 niks3.numtide.com-1
+      - name: Build private smoke executable
+        id: build
+        run: |
+          smoke_path="$(
+            nix build \
+              .#checks.x86_64-linux.update-pins-smoke \
+              --no-link \
+              --no-write-lock-file \
+              --print-out-paths \
+              --print-build-logs
+          )"
+          printf 'path=%s\n' "$smoke_path" >> "$GITHUB_OUTPUT"
+      - name: Check live upstream contracts
+        run: |
+          cd "$RUNNER_TEMP"
+          "${{ steps.build.outputs.path }}/bin/update-pins-smoke"
+      - name: Verify repository remained unchanged
+        if: always()
+        run: |
+          git diff --exit-code
+          test -z "$(git status --short)"

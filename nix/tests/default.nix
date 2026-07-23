@@ -80,6 +80,7 @@ let
 
   evalChecks = lib.listToAttrs (map mkEvalCheck testFiles);
   updatePinsCore = pkgs.callPackage ../apps/update-pins { };
+  updatePinsSmoke = pkgs.callPackage ../apps/update-pins/smoke.nix { };
 
   ghqFetchAllSmokePackage =
     let
@@ -99,6 +100,20 @@ let
 
   fixedChecks = {
     update-pins-rust = updatePinsCore;
+    update-pins-smoke = updatePinsSmoke;
+
+    workflow-lint-tests =
+      pkgs.runCommand "workflow-lint-tests"
+        {
+          nativeBuildInputs = [
+            pkgs.actionlint
+            pkgs.shellcheck
+          ];
+        }
+        ''
+          actionlint ${repoRoot}/.github/workflows/*.yaml
+          touch "$out"
+        '';
 
     package-smoke-tests =
       pkgs.runCommand "package-smoke-tests"
@@ -151,6 +166,7 @@ let
             pkgs.gzip
             pkgs.jq
             pkgs.python3
+            pkgs.yq-go
             updatePinsCore
           ];
           UPDATE_PINS_TEST_BIN = lib.getExe updatePinsCore;

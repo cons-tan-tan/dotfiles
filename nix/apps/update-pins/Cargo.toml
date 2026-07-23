@@ -4,11 +4,27 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 license = "CC0-1.0"
+autobins = false
+
+[features]
+default = ["mutating"]
+mutating = ["dep:fs2"]
+smoke = []
+
+[[bin]]
+name = "update-pins"
+path = "src/main.rs"
+required-features = ["mutating"]
+
+[[bin]]
+name = "update-pins-smoke"
+path = "src/bin/update-pins-smoke.rs"
+required-features = ["smoke"]
 
 [dependencies]
 base64 = "0.22"
 flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
-fs2 = "0.4"
+fs2 = { version = "0.4", optional = true }
 plist = { version = "=1.10.0", default-features = false, features = ["enable_unstable_features_that_may_break_with_minor_version_bumps"] }
 quick-xml = { version = "0.41", default-features = false }
 rawzip = { version = "0.5.1", default-features = false, features = ["std"] }

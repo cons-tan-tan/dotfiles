@@ -5,7 +5,7 @@ use crate::command::{CommandOutput, CommandRunner, CommandSpec};
 use crate::error::UpdateError;
 use crate::pins::PinDocument;
 use crate::transaction::Transaction;
-use crate::validation::validate_sri_hash;
+use crate::value_validation::validate_sri_hash;
 
 const BUILD_OUTPUT_LIMIT: usize = 1024 * 1024;
 const BUILD_TIMEOUT: Duration = Duration::from_secs(60 * 60);
@@ -78,7 +78,7 @@ pub fn compute_hash_via_failed_build<R: CommandRunner>(
 ) -> Result<(), UpdateError> {
     println!("{label}: computing {field} (expect one failing build)...");
     let command = local_package_command(transaction.root(), package);
-    let failed_build = runner.run(&command)?;
+    let failed_build = run_build(runner, &command)?;
     match failed_build.status {
         Some(0) => {
             return Err(UpdateError::message(format!(
@@ -126,7 +126,7 @@ pub fn refresh_existing_hash_via_build<R: CommandRunner>(
         ))
     })?;
     let command = candidate_package_command(transaction.root(), package, &pin_json);
-    let build = runner.run(&command)?;
+    let build = run_build(runner, &command)?;
     match build.status {
         Some(0) => {
             return Err(UpdateError::message(format!(
@@ -168,7 +168,7 @@ fn verify_package_build<R: CommandRunner>(
     transaction: &Transaction<'_, R>,
 ) -> Result<(), UpdateError> {
     let command = local_package_command(transaction.root(), package);
-    let verification = runner.run(&command)?;
+    let verification = run_build(runner, &command)?;
     if !verification.success() {
         let status = verification
             .status
@@ -179,6 +179,18 @@ fn verify_package_build<R: CommandRunner>(
         )));
     }
     Ok(())
+}
+
+fn run_build<R: CommandRunner>(
+    runner: &R,
+    command: &CommandSpec,
+) -> Result<CommandOutput, UpdateError> {
+    runner.run_limited_with_timeout(
+        command,
+        BUILD_OUTPUT_LIMIT,
+        BUILD_OUTPUT_LIMIT,
+        BUILD_TIMEOUT,
+    )
 }
 
 fn local_package_command(root: &Path, package: &str) -> CommandSpec {
@@ -212,7 +224,9 @@ fn parse_mismatch_hash(output: &CommandOutput) -> Result<String, &'static str> {
     let stderr = String::from_utf8_lossy(&output.stderr);
     let got_lines: Vec<_> = stderr
         .lines()
-        .filter_map(|line| line.trim().strip_prefix("got:").map(str::trim))
+        .map(str::trim)
+        .map(|line| line.strip_prefix('>').map_or(line, str::trim))
+        .filter_map(|line| line.strip_prefix("got:").map(str::trim))
         .collect();
     let candidate = match got_lines.as_slice() {
         [candidate] => *candidate,
@@ -233,6 +247,8 @@ fn parse_mismatch_hash(output: &CommandOutput) -> Result<String, &'static str> {
     {
         return Err("the 'got:' line did not contain one valid sha256 SRI hash");
     }
+    validate_sri_hash("Nix hash mismatch", hash)
+        .map_err(|_| "the 'got:' line did not contain one valid sha256 SRI hash")?;
     Ok(hash.to_owned())
 }
 
@@ -273,12 +289,16 @@ mod tests {
     }
 
     #[test]
-    fn parses_one_hash_from_nix_stderr() {
-        let fixture = include_bytes!("fixtures/nix-hash-mismatch.stderr");
-        assert_eq!(
-            parse_mismatch_hash(&output(b"", fixture)),
-            Ok("sha256-4comrrEpnH4q9U7NNmk7Pr7Fmfh7EVSMSYQojwv5UcM=".to_owned())
-        );
+    fn parses_current_and_nested_nix_hash_mismatch_diagnostics() {
+        for fixture in [
+            include_bytes!("fixtures/nix-hash-mismatch.stderr").as_slice(),
+            include_bytes!("fixtures/nix-hash-mismatch-nested.stderr").as_slice(),
+        ] {
+            assert_eq!(
+                parse_mismatch_hash(&output(b"", fixture)),
+                Ok("sha256-4comrrEpnH4q9U7NNmk7Pr7Fmfh7EVSMSYQojwv5UcM=".to_owned())
+            );
+        }
     }
 
     #[test]
@@ -286,6 +306,7 @@ mod tests {
         assert!(parse_mismatch_hash(&output(b"", b"builder failed")).is_err());
         assert!(parse_mismatch_hash(&output(b"got: sha256-stdout", b"builder failed")).is_err());
         assert!(parse_mismatch_hash(&output(b"", b"got: sha512-wrong")).is_err());
+        assert!(parse_mismatch_hash(&output(b"", b"got: sha256-valid")).is_err());
         assert!(parse_mismatch_hash(&output(b"", b"got: sha256-good trailing")).is_err());
         assert!(
             parse_mismatch_hash(&output(b"", b"got: sha256-first\ngot: sha256-second\n")).is_err()
@@ -299,6 +320,20 @@ mod tests {
         );
         assert!(
             parse_mismatch_hash(&output(b"", b"got: sha256-valid\ngot: sha512-other\n")).is_err()
+        );
+        assert!(
+            parse_mismatch_hash(&output(
+                b"",
+                include_bytes!("fixtures/nix-hash-mismatch-legacy-wanted.stderr")
+            ))
+            .is_err()
+        );
+        assert!(
+            parse_mismatch_hash(&output(
+                b"",
+                include_bytes!("fixtures/nix-hash-mismatch-multiple.stderr")
+            ))
+            .is_err()
         );
     }
 

@@ -5,14 +5,23 @@ use std::path::{Component, Path, PathBuf};
 
 use toml::Value;
 
+#[cfg(feature = "mutating")]
 use crate::build::build_package_once;
+#[cfg(feature = "mutating")]
 use crate::command::CommandRunner;
 use crate::error::UpdateError;
+#[cfg(feature = "mutating")]
 use crate::policy::RunPolicy;
+#[cfg(feature = "mutating")]
 use crate::prefetch::prefetch_result;
+#[cfg(feature = "mutating")]
 use crate::registry::TargetSpec;
-use crate::targets::{latest_tag, load_pin, validate_release_version, write_pin};
+#[cfg(feature = "mutating")]
+use crate::targets::{load_pin, write_pin};
+#[cfg(feature = "mutating")]
 use crate::transaction::Transaction;
+#[cfg(feature = "mutating")]
+use crate::upstream::{latest_tag, validate_release_version};
 
 const MAX_SOURCE_ROOT_ENTRIES: usize = 4_096;
 const MAX_WORKSPACE_MEMBERS: usize = 1_024;
@@ -22,7 +31,8 @@ const MAX_LOCK_BYTES: usize = 16 * 1024 * 1024;
 const CRATES_IO_REGISTRY: &str = "registry+https://github.com/rust-lang/crates.io-index";
 
 #[allow(clippy::too_many_arguments)]
-pub fn update<R: CommandRunner>(
+#[cfg(feature = "mutating")]
+pub(crate) fn update<R: CommandRunner>(
     spec: &TargetSpec,
     repository: &str,
     pin_path: &str,
@@ -194,7 +204,7 @@ pub fn validate_cargo_lock(
     Ok(())
 }
 
-fn read_lock_from_source(
+pub(crate) fn read_lock_from_source(
     label: &str,
     store_path: &Path,
     expected_version: &str,

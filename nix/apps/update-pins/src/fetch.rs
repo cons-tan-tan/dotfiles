@@ -5,14 +5,53 @@ use std::time::Duration;
 use tempfile::{Builder, NamedTempFile};
 
 use crate::command::{CommandOutput, CommandRunner, CommandSpec};
-use crate::error::UpdateError;
+use crate::error::{FetchFailureKind, UpdateError};
 use crate::policy::RetryPolicy;
 
 const FETCH_STDOUT_LIMIT: usize = 64;
 const FETCH_STDERR_LIMIT: usize = 64 * 1024;
-const CURL_CONNECT_TIMEOUT_SECONDS: &str = "15";
-const CURL_MAX_TIME_SECONDS: &str = "110";
-const MAX_ARTIFACT_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+const DEFAULT_TRANSFER_TIMEOUT: Duration = Duration::from_secs(110);
+const DEFAULT_PROCESS_TIMEOUT: Duration = Duration::from_secs(120);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct FetchLimits {
+    connect_timeout: Duration,
+    transfer_timeout: Duration,
+    process_timeout: Duration,
+    github_rate_limit_header: bool,
+}
+
+impl Default for FetchLimits {
+    fn default() -> Self {
+        Self {
+            connect_timeout: DEFAULT_CONNECT_TIMEOUT,
+            transfer_timeout: DEFAULT_TRANSFER_TIMEOUT,
+            process_timeout: DEFAULT_PROCESS_TIMEOUT,
+            github_rate_limit_header: false,
+        }
+    }
+}
+
+impl FetchLimits {
+    pub(crate) const fn new(
+        connect_timeout: Duration,
+        transfer_timeout: Duration,
+        process_timeout: Duration,
+    ) -> Self {
+        Self {
+            connect_timeout,
+            transfer_timeout,
+            process_timeout,
+            github_rate_limit_header: false,
+        }
+    }
+
+    pub(crate) const fn with_github_rate_limit_header(mut self) -> Self {
+        self.github_rate_limit_header = true;
+        self
+    }
+}
 
 pub trait Sleeper {
     fn sleep(&self, duration: Duration);
@@ -89,15 +128,19 @@ struct DownloadRequest<'a> {
     operation: &'a str,
     url: &'a str,
     max_bytes: u64,
+    limits: FetchLimits,
 }
 
-pub fn download<R: CommandRunner>(
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn download_bounded_with_limits<R: CommandRunner>(
     policy: RetryPolicy,
     runner: &R,
     root: &Path,
     target: &str,
     operation: &str,
     url: &str,
+    max_bytes: u64,
+    limits: FetchLimits,
 ) -> Result<DownloadedFile, UpdateError> {
     download_with_sleeper(
         policy,
@@ -108,7 +151,8 @@ pub fn download<R: CommandRunner>(
             target,
             operation,
             url,
-            max_bytes: MAX_ARTIFACT_BYTES,
+            max_bytes,
+            limits,
         },
     )
 }
@@ -125,6 +169,7 @@ fn download_with_sleeper<R: CommandRunner, S: Sleeper>(
         operation,
         url,
         max_bytes,
+        limits,
     } = request;
     retry_fetch(policy, sleeper, target, operation, || {
         let suffix = safe_download_suffix(url);
@@ -135,11 +180,17 @@ fn download_with_sleeper<R: CommandRunner, S: Sleeper>(
             .map_err(|source| {
                 RetryableError::Permanent(UpdateError::io("<fetch temporary file>", source))
             })?;
-        let command = curl_download_command(url, temporary.path(), max_bytes).current_dir(root);
+        let command =
+            curl_download_command(url, temporary.path(), max_bytes, limits).current_dir(root);
         let output = runner
-            .run_limited(&command, FETCH_STDOUT_LIMIT, FETCH_STDERR_LIMIT)
+            .run_limited_with_timeout(
+                &command,
+                FETCH_STDOUT_LIMIT,
+                FETCH_STDERR_LIMIT,
+                limits.process_timeout,
+            )
             .map_err(|error| classify_runner_error(target, operation, error))?;
-        classify_curl_output(target, operation, &output)?;
+        classify_curl_output(target, operation, &output, limits.github_rate_limit_header)?;
         Ok(DownloadedFile { file: temporary })
     })
 }
@@ -153,6 +204,29 @@ pub fn download_bytes<R: CommandRunner>(
     url: &str,
     limit: usize,
 ) -> Result<Vec<u8>, UpdateError> {
+    download_bytes_with_limits(
+        policy,
+        runner,
+        root,
+        target,
+        operation,
+        url,
+        limit,
+        FetchLimits::default(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn download_bytes_with_limits<R: CommandRunner>(
+    policy: RetryPolicy,
+    runner: &R,
+    root: &Path,
+    target: &str,
+    operation: &str,
+    url: &str,
+    limit: usize,
+    limits: FetchLimits,
+) -> Result<Vec<u8>, UpdateError> {
     let downloaded = download_with_sleeper(
         policy,
         runner,
@@ -163,6 +237,7 @@ pub fn download_bytes<R: CommandRunner>(
             operation,
             url,
             max_bytes: limit as u64,
+            limits,
         },
     )?;
     let file = std::fs::File::open(downloaded.path())
@@ -172,9 +247,12 @@ pub fn download_bytes<R: CommandRunner>(
         .read_to_end(&mut bytes)
         .map_err(|source| UpdateError::io(downloaded.path(), source))?;
     if bytes.len() > limit {
-        return Err(UpdateError::message(format!(
-            "{target}: {operation}: response exceeded {limit} bytes"
-        )));
+        return Err(UpdateError::fetch(
+            target,
+            operation,
+            FetchFailureKind::UpstreamDrift,
+            format!("response exceeded {limit} bytes"),
+        ));
     }
     Ok(bytes)
 }
@@ -199,8 +277,20 @@ pub fn gh_api_bytes<R: CommandRunner>(
     })
 }
 
-fn curl_download_command(url: &str, output: &Path, max_bytes: u64) -> CommandSpec {
+fn curl_download_command(
+    url: &str,
+    output: &Path,
+    max_bytes: u64,
+    limits: FetchLimits,
+) -> CommandSpec {
     let max_bytes = max_bytes.to_string();
+    let connect_timeout = limits.connect_timeout.as_secs().to_string();
+    let transfer_timeout = limits.transfer_timeout.as_secs().to_string();
+    let write_out = if limits.github_rate_limit_header {
+        "%{http_code}\n%header{x-ratelimit-remaining}"
+    } else {
+        "%{http_code}"
+    };
     CommandSpec::new("curl")
         .args([
             "-sS",
@@ -210,15 +300,15 @@ fn curl_download_command(url: &str, output: &Path, max_bytes: u64) -> CommandSpe
             "--proto-redir",
             "=https",
             "--connect-timeout",
-            CURL_CONNECT_TIMEOUT_SECONDS,
+            &connect_timeout,
             "--max-time",
-            CURL_MAX_TIME_SECONDS,
+            &transfer_timeout,
             "--max-filesize",
             &max_bytes,
             "--output",
         ])
         .arg(output.as_os_str())
-        .args(["--write-out", "%{http_code}", url])
+        .args(["--write-out", write_out, url])
 }
 
 fn classify_runner_error(target: &str, operation: &str, error: UpdateError) -> RetryableError {
@@ -232,13 +322,20 @@ fn classify_runner_error(target: &str, operation: &str, error: UpdateError) -> R
                     | std::io::ErrorKind::TimedOut
             )
     ) || matches!(&error, UpdateError::CommandTimedOut { .. });
+    let kind = if transient {
+        FetchFailureKind::TransientNetwork
+    } else {
+        FetchFailureKind::Environment
+    };
+    let detail = match &error {
+        UpdateError::Spawn { .. } | UpdateError::CommandTimedOut { .. } => error.to_string(),
+        _ => "fetch process failed".to_owned(),
+    };
+    let error = UpdateError::fetch(target, operation, kind, detail);
     if transient {
         RetryableError::Transient(error)
     } else {
-        RetryableError::Permanent(match error {
-            error @ UpdateError::Spawn { .. } => error,
-            _ => UpdateError::message(format!("{target}: {operation}: fetch process failed")),
-        })
+        RetryableError::Permanent(error)
     }
 }
 
@@ -246,38 +343,50 @@ fn classify_curl_output(
     target: &str,
     operation: &str,
     output: &CommandOutput,
+    github_rate_limit_header: bool,
 ) -> Result<(), RetryableError> {
     if !output.success() {
         let status = output.status;
-        let error = UpdateError::message(format!(
-            "{target}: {operation}: curl failed with status {}",
-            status.map_or_else(|| "signal".to_owned(), |code| code.to_string())
-        ));
-        return if status.is_some_and(is_transient_curl_exit) {
+        let kind = match status {
+            Some(status) if is_transient_curl_exit(status) => FetchFailureKind::TransientNetwork,
+            Some(63) => FetchFailureKind::UpstreamDrift,
+            _ => FetchFailureKind::Environment,
+        };
+        let error = UpdateError::fetch(
+            target,
+            operation,
+            kind,
+            format!(
+                "curl failed with status {}",
+                status.map_or_else(|| "signal".to_owned(), |code| code.to_string())
+            ),
+        );
+        return if kind == FetchFailureKind::TransientNetwork {
             Err(RetryableError::Transient(error))
         } else {
             Err(RetryableError::Permanent(error))
         };
     }
 
-    let status = std::str::from_utf8(&output.stdout)
-        .ok()
-        .and_then(|value| value.trim().parse::<u16>().ok())
-        .filter(|status| (100..=599).contains(status))
-        .ok_or_else(|| {
-            RetryableError::Permanent(UpdateError::message(format!(
-                "{target}: {operation}: curl returned an invalid HTTP status"
-            )))
+    let metadata =
+        parse_curl_metadata(&output.stdout, github_rate_limit_header).ok_or_else(|| {
+            RetryableError::Permanent(UpdateError::fetch(
+                target,
+                operation,
+                FetchFailureKind::Environment,
+                "curl returned invalid bounded response metadata",
+            ))
         })?;
-    if (200..=299).contains(&status) {
+    if (200..=299).contains(&metadata.status) {
         return Ok(());
     }
-    let error = UpdateError::message(format!("{target}: {operation}: HTTP {status}"));
-    if status == 408 || status == 429 || status >= 500 {
-        Err(RetryableError::Transient(error))
-    } else {
-        Err(RetryableError::Permanent(error))
-    }
+    Err(classify_http_status(
+        target,
+        operation,
+        metadata.status,
+        github_rate_limit_header,
+        metadata.rate_limit_remaining,
+    ))
 }
 
 fn classify_gh_output(
@@ -287,35 +396,71 @@ fn classify_gh_output(
 ) -> Result<Vec<u8>, RetryableError> {
     let parsed = parse_gh_response(&output.stdout);
     if output.success() {
-        let (status, body) = parsed.ok_or_else(|| {
-            RetryableError::Permanent(UpdateError::message(format!(
-                "{target}: {operation}: gh returned an invalid HTTP response"
-            )))
+        let response = parsed.ok_or_else(|| {
+            RetryableError::Permanent(UpdateError::fetch(
+                target,
+                operation,
+                FetchFailureKind::Environment,
+                "gh returned an invalid bounded HTTP response",
+            ))
         })?;
-        if (200..=299).contains(&status) {
-            return Ok(body.to_vec());
+        if (200..=299).contains(&response.status) {
+            return Ok(response.body.to_vec());
         }
-        return Err(classify_http_status(target, operation, status));
+        return Err(classify_http_status(
+            target,
+            operation,
+            response.status,
+            true,
+            response.rate_limit_remaining,
+        ));
     }
 
     if output.status == Some(4) {
-        return Err(RetryableError::Permanent(UpdateError::message(format!(
-            "{target}: {operation}: gh authentication failed"
-        ))));
+        return Err(RetryableError::Permanent(UpdateError::fetch(
+            target,
+            operation,
+            FetchFailureKind::Environment,
+            "gh authentication failed",
+        )));
     }
-    if let Some((status, _)) = parsed {
-        return Err(classify_http_status(target, operation, status));
+    if let Some(response) = parsed {
+        return Err(classify_http_status(
+            target,
+            operation,
+            response.status,
+            true,
+            response.rate_limit_remaining,
+        ));
     }
-    Err(RetryableError::Permanent(UpdateError::message(format!(
-        "{target}: {operation}: gh failed with status {}",
-        output
-            .status
-            .map_or_else(|| "signal".to_owned(), |code| code.to_string())
-    ))))
+    Err(RetryableError::Permanent(UpdateError::fetch(
+        target,
+        operation,
+        FetchFailureKind::Environment,
+        format!(
+            "gh failed with status {}",
+            output
+                .status
+                .map_or_else(|| "signal".to_owned(), |code| code.to_string())
+        ),
+    )))
 }
 
-fn classify_http_status(target: &str, operation: &str, status: u16) -> RetryableError {
-    let error = UpdateError::message(format!("{target}: {operation}: HTTP {status}"));
+fn classify_http_status(
+    target: &str,
+    operation: &str,
+    status: u16,
+    github: bool,
+    rate_limit_remaining: Option<u64>,
+) -> RetryableError {
+    let kind = if status == 429 || (github && status == 403 && rate_limit_remaining == Some(0)) {
+        FetchFailureKind::RateLimit
+    } else if status == 408 || status >= 500 {
+        FetchFailureKind::TransientNetwork
+    } else {
+        FetchFailureKind::UpstreamDrift
+    };
+    let error = UpdateError::fetch(target, operation, kind, format!("HTTP {status}"));
     if status == 408 || status == 429 || status >= 500 {
         RetryableError::Transient(error)
     } else {
@@ -323,7 +468,47 @@ fn classify_http_status(target: &str, operation: &str, status: u16) -> Retryable
     }
 }
 
-fn parse_gh_response(bytes: &[u8]) -> Option<(u16, &[u8])> {
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct CurlMetadata {
+    status: u16,
+    rate_limit_remaining: Option<u64>,
+}
+
+fn parse_curl_metadata(bytes: &[u8], github_rate_limit_header: bool) -> Option<CurlMetadata> {
+    let text = std::str::from_utf8(bytes).ok()?;
+    let mut lines = text.lines();
+    let status = lines
+        .next()?
+        .trim()
+        .parse::<u16>()
+        .ok()
+        .filter(|status| (100..=599).contains(status))?;
+    let rate_limit_remaining = if github_rate_limit_header {
+        lines
+            .next()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .and_then(|value| value.parse::<u64>().ok())
+    } else {
+        None
+    };
+    if lines.any(|line| !line.trim().is_empty()) {
+        return None;
+    }
+    Some(CurlMetadata {
+        status,
+        rate_limit_remaining,
+    })
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct GhResponse<'a> {
+    status: u16,
+    rate_limit_remaining: Option<u64>,
+    body: &'a [u8],
+}
+
+fn parse_gh_response(bytes: &[u8]) -> Option<GhResponse<'_>> {
     let separator = bytes
         .windows(4)
         .position(|window| window == b"\r\n\r\n")
@@ -348,7 +533,25 @@ fn parse_gh_response(bytes: &[u8]) -> Option<(u16, &[u8])> {
     if !protocol.starts_with("HTTP/") || !(100..=599).contains(&status) {
         return None;
     }
-    Some((status, &bytes[separator.0 + separator.1..]))
+    Some(GhResponse {
+        status,
+        rate_limit_remaining: parse_rate_limit_remaining(headers),
+        body: &bytes[separator.0 + separator.1..],
+    })
+}
+
+fn parse_rate_limit_remaining(headers: &[u8]) -> Option<u64> {
+    let headers = std::str::from_utf8(headers).ok()?;
+    let mut values = headers.lines().skip(1).filter_map(|line| {
+        let (name, value) = line.trim_end_matches('\r').split_once(':')?;
+        name.eq_ignore_ascii_case("x-ratelimit-remaining")
+            .then(|| value.trim())
+    });
+    let value = values.next()?;
+    if values.next().is_some() {
+        return None;
+    }
+    value.parse().ok()
 }
 
 fn is_transient_curl_exit(status: i32) -> bool {
@@ -372,11 +575,12 @@ mod tests {
     use std::time::Duration;
 
     use super::{
-        Sleeper, classify_curl_output, classify_gh_output, classify_runner_error,
-        download_with_sleeper, parse_gh_response, retry_fetch,
+        CurlMetadata, GhResponse, RetryableError, Sleeper, classify_curl_output,
+        classify_gh_output, classify_runner_error, download_with_sleeper, parse_curl_metadata,
+        parse_gh_response, retry_fetch,
     };
     use crate::command::{CommandOutput, CommandRunner, CommandSpec};
-    use crate::error::UpdateError;
+    use crate::error::{FetchFailureKind, UpdateError};
     use crate::policy::RetryPolicy;
 
     #[derive(Default)]
@@ -438,7 +642,8 @@ mod tests {
                 target: "demo",
                 operation: "asset download",
                 url: "https://example.com/archive.tar.gz",
-                max_bytes: super::MAX_ARTIFACT_BYTES,
+                max_bytes: 2 * 1024 * 1024 * 1024,
+                limits: super::FetchLimits::default(),
             },
         )
         .expect("third attempt succeeds");
@@ -460,7 +665,7 @@ mod tests {
         let sleeper = RecordingSleeper::default();
         let result = retry_fetch(RetryPolicy::default(), &sleeper, "demo", "metadata", || {
             attempts.set(attempts.get() + 1);
-            classify_curl_output("demo", "metadata", &output(0, "404"))
+            classify_curl_output("demo", "metadata", &output(0, "404"), false)
         });
         assert!(result.is_err());
         assert_eq!(attempts.get(), 1);
@@ -473,7 +678,7 @@ mod tests {
         let sleeper = RecordingSleeper::default();
         let result = retry_fetch(RetryPolicy::default(), &sleeper, "demo", "metadata", || {
             attempts.set(attempts.get() + 1);
-            classify_curl_output("demo", "metadata", &output(0, "503"))
+            classify_curl_output("demo", "metadata", &output(0, "503"), false)
         });
         assert!(result.is_err());
         assert_eq!(attempts.get(), 3);
@@ -589,10 +794,115 @@ mod tests {
     fn gh_response_parser_separates_status_headers_and_body() {
         assert_eq!(
             parse_gh_response(
-                b"HTTP/2.0 200 OK\r\ncontent-type: application/json\r\n\r\n{\"tag_name\":\"v1\"}"
+                b"HTTP/2.0 200 OK\r\ncontent-type: application/json\r\nx-ratelimit-remaining: 0\r\n\r\n{\"tag_name\":\"v1\"}"
             ),
-            Some((200, b"{\"tag_name\":\"v1\"}".as_slice()))
+            Some(GhResponse {
+                status: 200,
+                rate_limit_remaining: Some(0),
+                body: b"{\"tag_name\":\"v1\"}",
+            })
         );
         assert_eq!(parse_gh_response(b"{\"tag_name\":\"v1\"}"), None);
+    }
+
+    #[test]
+    fn curl_exit_codes_have_exact_typed_classification() {
+        let tls = classify_curl_output("demo", "metadata", &output(35, "000"), false);
+        assert_retryable_kind(
+            tls,
+            true,
+            FetchFailureKind::TransientNetwork,
+            "curl status 35",
+        );
+
+        let oversized = classify_curl_output("demo", "metadata", &output(63, "000"), false);
+        assert_retryable_kind(
+            oversized,
+            false,
+            FetchFailureKind::UpstreamDrift,
+            "curl status 63",
+        );
+    }
+
+    #[test]
+    fn github_403_is_rate_limit_only_with_an_exact_zero_remaining_header() {
+        for (metadata, expected) in [
+            ("403\n0", FetchFailureKind::RateLimit),
+            ("403\n1", FetchFailureKind::UpstreamDrift),
+            ("403\n", FetchFailureKind::UpstreamDrift),
+            ("403\ninvalid", FetchFailureKind::UpstreamDrift),
+        ] {
+            assert_retryable_kind(
+                classify_curl_output("demo", "metadata", &output(0, metadata), true),
+                false,
+                expected,
+                metadata,
+            );
+        }
+        assert_retryable_kind(
+            classify_curl_output("demo", "metadata", &output(0, "403"), false),
+            false,
+            FetchFailureKind::UpstreamDrift,
+            "non-GitHub 403",
+        );
+
+        for (remaining, expected) in [
+            ("0", FetchFailureKind::RateLimit),
+            ("1", FetchFailureKind::UpstreamDrift),
+        ] {
+            let response = CommandOutput {
+                status: Some(1),
+                stdout: format!(
+                    "HTTP/2.0 403 Forbidden\r\nx-ratelimit-remaining: {remaining}\r\n\r\n{{}}"
+                )
+                .into_bytes(),
+                stderr: Vec::new(),
+            };
+            assert_retryable_kind(
+                classify_gh_output("demo", "metadata", response).map(|_| ()),
+                false,
+                expected,
+                remaining,
+            );
+        }
+    }
+
+    #[test]
+    fn curl_metadata_parser_bounds_the_selected_rate_limit_value() {
+        assert_eq!(
+            parse_curl_metadata(b"403\n0", true),
+            Some(CurlMetadata {
+                status: 403,
+                rate_limit_remaining: Some(0),
+            })
+        );
+        assert_eq!(
+            parse_curl_metadata(b"403\nnot-a-number", true),
+            Some(CurlMetadata {
+                status: 403,
+                rate_limit_remaining: None,
+            })
+        );
+        assert_eq!(parse_curl_metadata(b"403\n0\nunexpected", true), None);
+        assert_eq!(parse_curl_metadata(b"403\n0", false), None);
+    }
+
+    fn assert_retryable_kind<T>(
+        result: Result<T, RetryableError>,
+        transient: bool,
+        expected: FetchFailureKind,
+        context: &str,
+    ) {
+        let (actual_transient, error) = match result {
+            Err(RetryableError::Transient(error)) => (true, error),
+            Err(RetryableError::Permanent(error)) => (false, error),
+            Ok(_) => panic!("{context}: expected a classified fetch failure"),
+        };
+        assert_eq!(actual_transient, transient, "{context}: retryability");
+        assert_eq!(
+            error.fetch_kind(),
+            Some(expected),
+            "{context}: failure kind"
+        );
     }
 }

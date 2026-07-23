@@ -43,6 +43,25 @@ nix run .#apply-secrets
 | `nix run .#markdownlint` | リポジトリ管理の技術文書モードで markdownlint 実行 |
 | `nix run .#textlint` | リポジトリ管理の日本語技術文書モードで textlint 実行 |
 
+## update-pinsの上流smoke test
+
+`.github/workflows/update-pins-smoke.yaml`は、GitHub Releases、npm、Codex appcast、shellfirmの配布形式を週1回検査する。手動実行にも対応するが、pushやpull requestでは実行しない。通常のflake checkはprivateなsmoke binaryとmock testだけをビルドし、外部networkへ接続しない。
+
+手元でlive smokeを実行する場合は、publicなflake appやpackageを追加せず、private checkの出力を直接起動する。
+
+```sh
+update_pins_smoke=$(
+  nix build \
+    .#checks.$(nix eval --impure --raw --expr builtins.currentSystem).update-pins-smoke \
+    --no-link \
+    --print-out-paths
+)
+"$update_pins_smoke/bin/update-pins-smoke"
+git status --short
+```
+
+失敗時の診断は、上流形式の変更、一時的なnetwork障害、rate limit、実行環境の問題を区別する。smoke binaryは一時ディレクトリとNix storeだけを使い、pinやlockfileを更新しない。
+
 ## 構成
 
 ```text

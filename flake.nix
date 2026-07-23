@@ -327,6 +327,7 @@
               sops
               reuse
               updatePinsCore
+              yq-go
               (python3.withPackages (ps: [
                 ps.pytest
                 ps.tomlkit

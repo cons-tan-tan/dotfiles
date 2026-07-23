@@ -11,15 +11,22 @@ use quick_xml::name::ResolveResult;
 use quick_xml::reader::NsReader;
 use rawzip::{CompressionMethod, RECOMMENDED_BUFFER_SIZE, ZipArchive, ZipArchiveEntryWayfinder};
 
+#[cfg(feature = "mutating")]
 use crate::command::CommandRunner;
 use crate::error::UpdateError;
+#[cfg(feature = "mutating")]
 use crate::fetch::download_bytes;
+#[cfg(feature = "mutating")]
 use crate::pins::PinDocument;
+#[cfg(feature = "mutating")]
 use crate::policy::RunPolicy;
+#[cfg(feature = "mutating")]
 use crate::prefetch::prefetch_result;
+#[cfg(feature = "mutating")]
 use crate::registry::TargetSpec;
-use crate::targets::validate_release_version;
+#[cfg(feature = "mutating")]
 use crate::transaction::Transaction;
+use crate::upstream::validate_release_version;
 
 const MAX_APPCAST_BYTES: usize = 4 * 1024 * 1024;
 const MAX_APPCAST_DEPTH: usize = 128;
@@ -31,13 +38,13 @@ const MAX_ZIP_BYTES: u64 = 1024 * 1024 * 1024;
 const MAX_ZIP_ENTRIES: u64 = 100_000;
 const MAX_ZIP_PATH_BYTES: usize = 4_096;
 const MAX_TOTAL_ZIP_PATH_BYTES: usize = 16 * 1024 * 1024;
-const APPCAST_URL: &str = "https://persistent.oaistatic.com/codex-app-prod/appcast.xml";
+pub(crate) const APPCAST_URL: &str = "https://persistent.oaistatic.com/codex-app-prod/appcast.xml";
 const SPARKLE_NAMESPACE: &[u8] = b"http://www.andymatuschak.org/xml-namespaces/sparkle";
 
 #[derive(Debug, Eq, PartialEq)]
-struct AppcastCandidate {
-    version: String,
-    url: String,
+pub(crate) struct AppcastCandidate {
+    pub(crate) version: String,
+    pub(crate) url: String,
 }
 
 #[derive(Default)]
@@ -109,7 +116,8 @@ enum ElementKind {
     Other,
 }
 
-pub fn update<R: CommandRunner>(
+#[cfg(feature = "mutating")]
+pub(crate) fn update<R: CommandRunner>(
     spec: &TargetSpec,
     pin_path: &str,
     policy: RunPolicy,
@@ -129,16 +137,7 @@ pub fn update<R: CommandRunner>(
         )));
     }
 
-    let appcast = download_bytes(
-        policy.retry,
-        runner,
-        transaction.root(),
-        spec.name,
-        "appcast download",
-        &appcast_url,
-        MAX_APPCAST_BYTES,
-    )?;
-    let latest = parse_appcast(&appcast, pin_path)?;
+    let latest = latest_candidate(policy, runner, transaction.root(), spec.name, pin_path)?;
     if latest.version == current_version && latest.url == current_url && !policy.force {
         println!("{}: {current_version} (up to date)", spec.name);
         return Ok(false);
@@ -201,7 +200,27 @@ pub fn update<R: CommandRunner>(
     Ok(true)
 }
 
-fn parse_appcast(bytes: &[u8], pin_path: &str) -> Result<AppcastCandidate, UpdateError> {
+#[cfg(feature = "mutating")]
+pub(crate) fn latest_candidate<R: CommandRunner>(
+    policy: RunPolicy,
+    runner: &R,
+    root: &Path,
+    label: &str,
+    pin_path: &str,
+) -> Result<AppcastCandidate, UpdateError> {
+    let appcast = download_bytes(
+        policy.retry,
+        runner,
+        root,
+        label,
+        "appcast download",
+        APPCAST_URL,
+        MAX_APPCAST_BYTES,
+    )?;
+    parse_appcast(&appcast, pin_path)
+}
+
+pub(crate) fn parse_appcast(bytes: &[u8], pin_path: &str) -> Result<AppcastCandidate, UpdateError> {
     if bytes.len() > MAX_APPCAST_BYTES {
         return Err(UpdateError::message(format!(
             "{pin_path}: appcast exceeded {MAX_APPCAST_BYTES} bytes"

@@ -3,6 +3,14 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FetchFailureKind {
+    TransientNetwork,
+    RateLimit,
+    UpstreamDrift,
+    Environment,
+}
+
 #[derive(Debug, Error)]
 pub enum UpdateError {
     #[error("failed to execute {program}: {source}")]
@@ -24,6 +32,14 @@ pub enum UpdateError {
 
     #[error("{command} returned non-UTF-8 output")]
     NonUtf8Output { command: String },
+
+    #[error("{target}: {operation}: {detail}")]
+    Fetch {
+        target: String,
+        operation: String,
+        kind: FetchFailureKind,
+        detail: String,
+    },
 
     #[error("failed to access {path}: {source}")]
     Io {
@@ -94,5 +110,26 @@ impl UpdateError {
 
     pub fn message(message: impl Into<String>) -> Self {
         Self::Message(message.into())
+    }
+
+    pub fn fetch(
+        target: impl Into<String>,
+        operation: impl Into<String>,
+        kind: FetchFailureKind,
+        detail: impl Into<String>,
+    ) -> Self {
+        Self::Fetch {
+            target: target.into(),
+            operation: operation.into(),
+            kind,
+            detail: detail.into(),
+        }
+    }
+
+    pub const fn fetch_kind(&self) -> Option<FetchFailureKind> {
+        match self {
+            Self::Fetch { kind, .. } => Some(*kind),
+            _ => None,
+        }
     }
 }

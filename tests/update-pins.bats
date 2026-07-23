@@ -9,6 +9,13 @@ make_difit_tarball() {
   export UPDATE_PINS_DIFIT_TARBALL="$WORK/difit.tgz"
 }
 
+make_source_tarball() {
+  mkdir -p "$WORK/source-tar/source"
+  printf 'source fixture\n' >"$WORK/source-tar/source/README"
+  tar -czf "$WORK/source.tar.gz" -C "$WORK/source-tar" source
+  export UPDATE_PINS_SOURCE_TARBALL="$WORK/source.tar.gz"
+}
+
 setup() {
   REPO_ROOT="$(git rev-parse --show-toplevel)"
   BASH_BIN="$(command -v bash)"
@@ -56,6 +63,7 @@ setup() {
   export UPDATE_PINS_TEST_BIN
 
   make_difit_tarball "$(sed -n 's|.*github:yoshiko-pg/difit/v\([^"]*\)";|\1|p' "$WORK/flake.nix")"
+  make_source_tarball
 
   printf '#!%s\n' "$BASH_BIN" >"$STUB_DIR/gh"
   cat >>"$STUB_DIR/gh" <<'EOS'
@@ -218,8 +226,11 @@ https://json.schemastore.org/claude-code-settings.json)
   printf '{}\n' >"$output_path"
   ;;
 https://github.com/kaplanelad/shellfirm/archive/refs/tags/*.tar.gz)
-  printf 'shellfirm source fixture\n' >"$output_path"
+  cp "$UPDATE_PINS_SOURCE_TARBALL" "$output_path"
   printf '%s\n' "$output_path" >"$UPDATE_PINS_FAKE_ROOT/shellfirm-download-path"
+  ;;
+https://github.com/ogulcancelik/herdr/archive/refs/tags/*.tar.gz)
+  cp "$UPDATE_PINS_SOURCE_TARBALL" "$output_path"
   ;;
 https://github.com/*)
   printf 'artifact fixture\n' >"$output_path"

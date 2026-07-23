@@ -1,0 +1,6 @@
+error: builder for '/nix/store/00000000000000000000000000000000-package.drv' failed with exit code 1;
+       last 4 log lines:
+       > error: hash mismatch in fixed-output derivation '/nix/store/11111111111111111111111111111111-source.drv':
+       >          specified: sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+       >             got:    sha256-4comrrEpnH4q9U7NNmk7Pr7Fmfh7EVSMSYQojwv5UcM=
+       For full logs, run a Nix log command with the redacted derivation path.
