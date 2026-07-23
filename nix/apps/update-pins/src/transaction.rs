@@ -1,9 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs::{File, OpenOptions, Permissions};
+use std::fs::{File, OpenOptions, Permissions, TryLockError};
 use std::io::Write as _;
 use std::path::{Component, Path, PathBuf};
 
-use fs2::FileExt as _;
 use tempfile::Builder;
 
 use crate::command::{CommandRunner, CommandSpec, require_success, run_checked};
@@ -131,13 +130,13 @@ impl<'a, R: CommandRunner> Transaction<'a, R> {
             .truncate(false)
             .open(&lock_path)
             .map_err(|source| UpdateError::io(&lock_path, source))?;
-        lock.try_lock_exclusive().map_err(|source| {
-            if source.kind() == std::io::ErrorKind::WouldBlock {
-                UpdateError::AlreadyRunning
-            } else {
-                UpdateError::io(&lock_path, source)
+        match lock.try_lock() {
+            Ok(()) => {}
+            Err(TryLockError::WouldBlock) => return Err(UpdateError::AlreadyRunning),
+            Err(TryLockError::Error(source)) => {
+                return Err(UpdateError::io(&lock_path, source));
             }
-        })?;
+        }
 
         let global_pathspecs = GLOBAL_MANAGED_PATHS.map(PathBuf::from);
         let pathspecs = managed_paths
@@ -251,7 +250,7 @@ impl<'a, R: CommandRunner> Transaction<'a, R> {
     }
 
     pub fn rollback(&mut self) -> Result<(), UpdateError> {
-        self.rollback_with_unlock(fs2::FileExt::unlock)
+        self.rollback_with_unlock(File::unlock)
     }
 
     fn rollback_with_unlock(
@@ -328,7 +327,7 @@ impl<'a, R: CommandRunner> Transaction<'a, R> {
     }
 
     pub fn commit(&mut self) -> Result<(), UpdateError> {
-        self.commit_with_unlock(fs2::FileExt::unlock)
+        self.commit_with_unlock(File::unlock)
     }
 
     fn commit_with_unlock(
@@ -365,7 +364,7 @@ impl<'a, R: CommandRunner> Transaction<'a, R> {
     }
 
     fn unlock(&self) -> Result<(), UpdateError> {
-        fs2::FileExt::unlock(&self._lock).map_err(|source| {
+        self._lock.unlock().map_err(|source| {
             UpdateError::io(self.repository.git_dir.join("update-pins.lock"), source)
         })
     }

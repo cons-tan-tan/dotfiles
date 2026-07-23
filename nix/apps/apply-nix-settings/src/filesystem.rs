@@ -3,8 +3,6 @@ use std::io::{self, Write};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
-use fs2::FileExt;
-
 use crate::error::{AppError, Result};
 
 pub struct TargetLock {
@@ -55,7 +53,7 @@ impl TargetLock {
             .map_err(|error| AppError::io("open lock file", &lock_path, error))?;
         lock.set_permissions(fs::Permissions::from_mode(0o600))
             .map_err(|error| AppError::io("set lock mode on", &lock_path, error))?;
-        lock.lock_exclusive()
+        lock.lock()
             .map_err(|error| AppError::io("lock", &lock_path, error))?;
         validate_target(&target)?;
 
@@ -275,7 +273,7 @@ mod tests {
             .truncate(false)
             .open(&lock_path)
             .unwrap();
-        FileExt::lock_exclusive(&holder).unwrap();
+        holder.lock().unwrap();
 
         let waiting_target = target.clone();
         let waiting = thread::spawn(move || {
@@ -284,7 +282,7 @@ mod tests {
         });
         thread::yield_now();
         fs::write(&target, b"new").unwrap();
-        FileExt::unlock(&holder).unwrap();
+        holder.unlock().unwrap();
 
         assert_eq!(waiting.join().unwrap(), b"new");
     }

@@ -160,7 +160,6 @@ fn print_restart_guidance() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fs2::FileExt;
     use std::fs::{self, OpenOptions};
     use std::sync::mpsc;
     use std::thread;
@@ -182,7 +181,7 @@ mod tests {
             .truncate(false)
             .open(lock_path)
             .unwrap();
-        FileExt::lock_exclusive(&holder).unwrap();
+        holder.lock().unwrap();
 
         let config = Config {
             target: target.clone(),
@@ -204,7 +203,7 @@ mod tests {
         wait_for_preflight.recv().unwrap();
         fs::write(&target, b"before = keep\nwhile-waiting = preserve\n").unwrap();
         allow_lock.send(()).unwrap();
-        FileExt::unlock(&holder).unwrap();
+        holder.unlock().unwrap();
 
         assert_eq!(writer.join().unwrap().unwrap(), 0);
         let content = fs::read(&target).unwrap();
