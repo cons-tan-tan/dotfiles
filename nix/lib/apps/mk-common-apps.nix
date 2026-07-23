@@ -16,6 +16,7 @@ let
   nixCustomSettingsFile = pkgs.writeText "dotfiles-nix-custom.conf" nixCustomSettings.text;
   updatePinsCore = pkgs.callPackage ../../apps/update-pins { };
   applySecretsCore = pkgs.callPackage ../../apps/apply-secrets { };
+  applyNixSettingsCore = pkgs.callPackage ../../apps/apply-nix-settings { };
 
   updateScript = mkScript "flake-update" {
     text = ''
@@ -68,15 +69,9 @@ let
   };
 
   applyNixSettingsScript = mkScript "apply-nix-settings" {
-    runtimeInputs = [
-      pkgs.coreutils
-      pkgs.diffutils
-      pkgs.gawk
-      pkgs.gnugrep
-    ];
     text = ''
       export APPLY_NIX_SETTINGS_SNIPPET=${nixCustomSettingsFile}
-      ${builtins.readFile ../../apps/apply-nix-settings.sh}
+      exec ${lib.getExe applyNixSettingsCore} "$@"
     '';
   };
 in

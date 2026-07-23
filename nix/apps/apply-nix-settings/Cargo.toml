@@ -1,0 +1,17 @@
+[package]
+name = "apply-nix-settings"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "CC0-1.0"
+autobins = false
+
+[[bin]]
+name = "apply-nix-settings"
+path = "src/main.rs"
+
+[dependencies]
+fs2 = "0.4"
+libc = "0.2"
+similar = "2.7"
+tempfile = "3.23"
