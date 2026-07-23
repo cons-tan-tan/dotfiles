@@ -81,6 +81,7 @@ let
   evalChecks = lib.listToAttrs (map mkEvalCheck testFiles);
   updatePinsCore = pkgs.callPackage ../apps/update-pins { };
   updatePinsSmoke = pkgs.callPackage ../apps/update-pins/smoke.nix { };
+  applySecretsCore = pkgs.callPackage ../apps/apply-secrets { };
 
   ghqFetchAllSmokePackage =
     let
@@ -101,6 +102,7 @@ let
   fixedChecks = {
     update-pins-rust = updatePinsCore;
     update-pins-smoke = updatePinsSmoke;
+    apply-secrets-rust = applySecretsCore;
 
     workflow-lint-tests =
       pkgs.runCommand "workflow-lint-tests"
@@ -171,8 +173,10 @@ let
             pkgs.jq
             pkgs.python3
             pkgs.yq-go
+            applySecretsCore
             updatePinsCore
           ];
+          APPLY_SECRETS_TEST_BIN = lib.getExe applySecretsCore;
           UPDATE_PINS_TEST_BIN = lib.getExe updatePinsCore;
         }
         ''

@@ -312,11 +312,14 @@
         let
           pkgs = pkgsFor.${system};
           updatePinsCore = pkgs.callPackage ./nix/apps/update-pins { };
+          applySecretsCore = pkgs.callPackage ./nix/apps/apply-secrets { };
         in
         {
           default = pkgs.mkShell {
+            APPLY_SECRETS_TEST_BIN = lib.getExe applySecretsCore;
             UPDATE_PINS_TEST_BIN = lib.getExe updatePinsCore;
             packages = with pkgs; [
+              applySecretsCore
               bats
               cargo
               clippy
