@@ -219,6 +219,28 @@ mod tests {
     }
 
     #[test]
+    fn creates_missing_target_directories_with_stable_permissions() {
+        let work = tempdir().unwrap();
+        let directory = work.path().join("new/nix");
+        let target = directory.join("nix.custom.conf");
+
+        let lock = TargetLock::acquire(&target).unwrap();
+        lock.replace(b"new").unwrap();
+
+        assert_eq!(fs::metadata(&directory).unwrap().mode() & 0o777, 0o755);
+        assert_eq!(fs::metadata(&target).unwrap().mode() & 0o777, 0o644);
+    }
+
+    #[test]
+    fn rejects_non_file_snippets_before_creating_a_target() {
+        let work = tempdir().unwrap();
+        let snippet = work.path().join("snippet");
+        fs::create_dir(&snippet).unwrap();
+
+        assert!(read_snippet(&snippet).is_err());
+    }
+
+    #[test]
     fn rejects_target_symlink_and_non_regular_file() {
         let work = tempdir().unwrap();
         let real = work.path().join("real");

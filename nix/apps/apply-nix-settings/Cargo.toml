@@ -11,6 +11,14 @@ autobins = false
 name = "apply-nix-settings"
 path = "src/main.rs"
 
+[[bin]]
+name = "apply-nix-settings-test-fixture"
+path = "src/bin/apply-nix-settings-test-fixture.rs"
+required-features = ["test-fixture"]
+
+[features]
+test-fixture = []
+
 [dependencies]
 libc = "0.2"
 similar = "2.7"
