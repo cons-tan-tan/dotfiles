@@ -1,6 +1,14 @@
 #!/usr/bin/env bats
 # update-pins の全体 transaction を fake repo とスタブだけで検査する。
 
+make_difit_tarball() {
+  local version=$1
+  mkdir -p "$WORK/difit-tar/package"
+  printf '{"name":"difit","version":"%s"}\n' "$version" >"$WORK/difit-tar/package/package.json"
+  tar -czf "$WORK/difit.tgz" -C "$WORK/difit-tar" package
+  export UPDATE_PINS_DIFIT_TARBALL="$WORK/difit.tgz"
+}
+
 setup() {
   REPO_ROOT="$(git rev-parse --show-toplevel)"
   BASH_BIN="$(command -v bash)"
@@ -49,12 +57,7 @@ setup() {
   fi
   export UPDATE_PINS_TEST_BIN
 
-  mkdir -p "$WORK/difit-tar/package"
-  cat >"$WORK/difit-tar/package/package.json" <<'EOS'
-{"name":"difit","version":"0.0.0"}
-EOS
-  tar -czf "$WORK/difit.tgz" -C "$WORK/difit-tar" package
-  export UPDATE_PINS_DIFIT_TARBALL="$WORK/difit.tgz"
+  make_difit_tarball "$(sed -n 's|.*github:yoshiko-pg/difit/v\\([^"]*\\)";|\\1|p' "$WORK/flake.nix")"
 
   printf '#!%s\n' "$BASH_BIN" >"$STUB_DIR/gh"
   cat >>"$STUB_DIR/gh" <<'EOS'
@@ -156,9 +159,15 @@ set -euo pipefail
   printf 'npm'
   printf ' %q' "$@"
   printf '\n'
+  printf 'npm-cwd %q\n' "$PWD"
 } >>"$UPDATE_PINS_COMMAND_LOG"
 
-if [ "$1" = "install" ] && [[ " $* " == *" --package-lock-only "* ]]; then
+if [ "$#" -eq 5 ] \
+  && [ "$1" = "install" ] \
+  && [ "$2" = "--package-lock-only" ] \
+  && [ "$3" = "--ignore-scripts" ] \
+  && [ "$4" = "--no-audit" ] \
+  && [ "$5" = "--no-fund" ]; then
   cat >package-lock.json <<JSON
 {
   "name": "difit",
@@ -228,7 +237,7 @@ PY
     exit 0
   fi
   if [[ " $* " == *"registry.npmjs.org/difit/-/difit-"* ]]; then
-    printf '{"hash":"sha256-difit-src-for-test"}\n'
+    printf '{"hash":"sha256-difit-src-for-test","storePath":"%s"}\n' "$UPDATE_PINS_DIFIT_TARBALL"
     exit 0
   fi
   if [[ " $* " == *" --unpack "* ]]; then
@@ -259,16 +268,16 @@ if [ "$1" = "build" ] && [ "${2:-}" = "--impure" ] && [ "${3:-}" = "--expr" ] &&
     ;;
   success)
     if [ "$count" -eq 1 ]; then
-      echo "error: hash mismatch"
-      echo "got: sha256-cargo-for-test"
+      echo "error: hash mismatch" >&2
+      echo "got: sha256-cargo-for-test" >&2
       exit 1
     fi
     exit 0
     ;;
   verify-fails)
     if [ "$count" -eq 1 ]; then
-      echo "error: hash mismatch"
-      echo "got: sha256-cargo-for-test"
+      echo "error: hash mismatch" >&2
+      echo "got: sha256-cargo-for-test" >&2
       exit 1
     fi
     echo "verification build failed" >&2
@@ -296,16 +305,16 @@ if [ "$1" = "build" ] && [ "${2:-}" = "--impure" ] && [ "${3:-}" = "--expr" ] &&
     ;;
   success)
     if [ "$count" -eq 1 ]; then
-      echo "error: hash mismatch"
-      echo "got: sha256-npmdeps-for-test"
+      echo "error: hash mismatch" >&2
+      echo "got: sha256-npmdeps-for-test" >&2
       exit 1
     fi
     exit 0
     ;;
   verify-fails)
     if [ "$count" -eq 1 ]; then
-      echo "error: hash mismatch"
-      echo "got: sha256-npmdeps-for-test"
+      echo "error: hash mismatch" >&2
+      echo "got: sha256-npmdeps-for-test" >&2
       exit 1
     fi
     echo "verification build failed" >&2
@@ -498,7 +507,20 @@ make_unrelated_updates_noop() {
   [ "$(jq -r .version "$WORK/nix/pins/shellfirm.json")" = "9.9.9" ]
   [ "$(jq -r .srcHash "$WORK/nix/pins/shellfirm.json")" = "sha256-src-for-test" ]
   [ "$(jq -r .cargoHash "$WORK/nix/pins/shellfirm.json")" = "sha256-cargo-for-test" ]
+  [ "$(cat "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT")" -eq 2 ]
   cp "$WORK/nix/pins/shellfirm.json" "$original/nix/pins/shellfirm.json"
+  assert_managed_matches "$original"
+}
+
+@test "shellfirm up to date does not build" {
+  original="$WORK/original"
+  save_managed "$original"
+
+  run_update_pins shellfirm
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"shellfirm: $(jq -r .version "$WORK/nix/pins/shellfirm.json") (up to date)"* ]]
+  [ ! -e "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT" ]
   assert_managed_matches "$original"
 }
 
@@ -642,6 +664,7 @@ make_unrelated_updates_noop() {
   save_managed "$original"
   export UPDATE_PINS_DIFIT_VERSION=9.9.9
   export UPDATE_PINS_DIFIT_BUILD_MODE=success
+  make_difit_tarball "$UPDATE_PINS_DIFIT_VERSION"
 
   run_update_pins difit
 
@@ -652,6 +675,10 @@ make_unrelated_updates_noop() {
   [ "$(jq -r '.packages[""].version' "$WORK/nix/packages/difit/package-lock.json")" = "9.9.9" ]
   grep -Fq 'url = "github:yoshiko-pg/difit/v9.9.9";' "$WORK/flake.nix"
   [ "$(jq -r .updated "$WORK/flake.lock")" = "difit-src" ]
+  [ "$(cat "$UPDATE_PINS_DIFIT_BUILD_COUNT")" -eq 2 ]
+  npm_cwd=$(sed -n 's/^npm-cwd //p' "$UPDATE_PINS_COMMAND_LOG")
+  [[ "$npm_cwd" == */package ]]
+  [ "$npm_cwd" != "$WORK" ]
   cp "$WORK/nix/pins/difit.json" "$original/nix/pins/difit.json"
   cp "$WORK/nix/packages/difit/package-lock.json" "$original/nix/packages/difit/package-lock.json"
   cp "$WORK/flake.nix" "$original/flake.nix"
@@ -664,11 +691,27 @@ make_unrelated_updates_noop() {
   save_managed "$original"
   export UPDATE_PINS_DIFIT_VERSION=9.9.9
   export UPDATE_PINS_DIFIT_BUILD_MODE=no-hash
+  make_difit_tarball "$UPDATE_PINS_DIFIT_VERSION"
 
   run_update_pins difit
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"difit: failed to extract npmDepsHash"* ]]
+  assert_managed_matches "$original"
+}
+
+@test "difit verification build failure restores everything" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_DIFIT_VERSION=9.9.9
+  export UPDATE_PINS_DIFIT_BUILD_MODE=verify-fails
+  make_difit_tarball "$UPDATE_PINS_DIFIT_VERSION"
+
+  run_update_pins difit
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"difit: verification build failed"* ]]
+  [ "$(cat "$UPDATE_PINS_DIFIT_BUILD_COUNT")" -eq 2 ]
   assert_managed_matches "$original"
 }
 
@@ -827,10 +870,25 @@ make_unrelated_updates_noop() {
   export UPDATE_PINS_SHELLFIRM_TAG=v8.8.8
   export UPDATE_PINS_SHELLFIRM_BUILD_MODE=no-hash
 
-  run_update_pins
+  run_update_pins shellfirm
 
   [ "$status" -ne 0 ]
   [[ "$output" == *"shellfirm: failed to extract cargoHash"* ]]
+  [ "$(cat "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT")" -eq 1 ]
+  assert_managed_matches "$original"
+}
+
+@test "shellfirm verification build failure restores all managed files" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_SHELLFIRM_TAG=v8.8.8
+  export UPDATE_PINS_SHELLFIRM_BUILD_MODE=verify-fails
+
+  run_update_pins shellfirm
+
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"shellfirm: verification build failed"* ]]
+  [ "$(cat "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT")" -eq 2 ]
   assert_managed_matches "$original"
 }
 

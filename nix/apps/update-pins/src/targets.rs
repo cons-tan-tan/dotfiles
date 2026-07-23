@@ -1,8 +1,11 @@
-use std::io::Write as _;
-use std::path::Path;
+use std::fs::File;
+use std::io::{Read as _, Write as _};
+use std::path::{Component, Path};
 
+use flate2::read::GzDecoder;
 use serde_json::Value;
 
+use crate::build::compute_hash_via_failed_build;
 use crate::cli::Target;
 use crate::command::{CommandRunner, CommandSpec, run_checked};
 use crate::error::UpdateError;
@@ -51,6 +54,29 @@ pub fn run_target<R: CommandRunner>(
             transaction,
         )?,
         TargetKind::UrlHash { pin } => update_url_hash(spec, pin, runner, transaction)?,
+        TargetKind::Shellfirm {
+            repository,
+            pin,
+            package,
+        } => update_shellfirm(spec, repository, pin, package, runner, transaction)?,
+        TargetKind::Difit {
+            repository,
+            npm_package,
+            pin,
+            input,
+            lock,
+            package,
+        } => update_difit(
+            spec,
+            repository,
+            npm_package,
+            pin,
+            input,
+            lock,
+            package,
+            runner,
+            transaction,
+        )?,
         TargetKind::Unimplemented => {
             return Err(UpdateError::message(format!(
                 "update-pins: Rust updater for {} is not yet implemented",
@@ -101,14 +127,7 @@ fn update_paired_release<R: CommandRunner>(
     )?;
     write_pin(transaction, pin_path, &pin)?;
 
-    let updated_flake = replace_paired_version(&flake, repository, version)?;
-    transaction.replace("flake.nix", &updated_flake)?;
-    println!("{input}: updating flake input to v{version}");
-    let command = CommandSpec::new("nix")
-        .args(["flake", "update", input])
-        .current_dir(transaction.root());
-    let output = run_checked(runner, &command)?;
-    forward_output(&output.stdout, &output.stderr)?;
+    update_paired_flake_input(input, repository, version, &flake, runner, transaction)?;
     Ok(true)
 }
 
@@ -174,6 +193,344 @@ fn update_url_hash<R: CommandRunner>(
     write_pin(transaction, pin_path, &pin)?;
     println!("{}: hash updated", spec.name);
     Ok(true)
+}
+
+fn update_shellfirm<R: CommandRunner>(
+    spec: &TargetSpec,
+    repository: &str,
+    pin_path: &str,
+    package: &str,
+    runner: &R,
+    transaction: &mut Transaction<'_, R>,
+) -> Result<bool, UpdateError> {
+    let tag = latest_tag(runner, transaction.root(), repository)?;
+    let version = tag.strip_prefix('v').unwrap_or(&tag);
+    validate_release_version(spec.name, version)?;
+
+    let mut pin = load_pin(transaction, pin_path)?;
+    let current = pin.string(&["version"])?.to_owned();
+    if version == current {
+        println!("{}: {current} (up to date)", spec.name);
+        return Ok(false);
+    }
+
+    println!(
+        "{}: {current} -> {version} (prefetching source...)",
+        spec.name
+    );
+    let source_url = format!("https://github.com/{repository}/archive/refs/tags/{tag}.tar.gz");
+    let source_hash = prefetch(runner, transaction.root(), &source_url, true)?;
+    pin.set_string(&["version"], version)?;
+    pin.set_string(&["srcHash"], source_hash)?;
+    pin.set_string(&["cargoHash"], "")?;
+    write_pin(transaction, pin_path, &pin)?;
+    compute_hash_via_failed_build(
+        spec.name,
+        package,
+        pin_path,
+        "cargoHash",
+        &mut pin,
+        runner,
+        transaction,
+    )?;
+    Ok(true)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn update_difit<R: CommandRunner>(
+    spec: &TargetSpec,
+    repository: &str,
+    npm_package: &str,
+    pin_path: &str,
+    input: &str,
+    lock_path: &str,
+    package: &str,
+    runner: &R,
+    transaction: &mut Transaction<'_, R>,
+) -> Result<bool, UpdateError> {
+    let flake = transaction.read("flake.nix")?;
+    let current = paired_version(&flake, repository)?;
+    let version = latest_npm_version(runner, transaction.root(), npm_package)?;
+    validate_release_version(spec.name, &version)?;
+    if version == current {
+        println!("{}: {current} (up to date)", spec.name);
+        return Ok(false);
+    }
+
+    println!(
+        "{}: {current} -> {version} (prefetching source...)",
+        spec.name
+    );
+    let source_url =
+        format!("https://registry.npmjs.org/{npm_package}/-/{npm_package}-{version}.tgz");
+    let source = prefetch_result(runner, transaction.root(), &source_url, false)?;
+    let archive_path = source.store_path.ok_or_else(|| {
+        UpdateError::message(format!(
+            "{}: prefetch did not return a store path for {source_url}",
+            spec.name
+        ))
+    })?;
+    if !archive_path.is_absolute() {
+        return Err(UpdateError::message(format!(
+            "{}: prefetch returned a non-absolute store path {}",
+            spec.name,
+            archive_path.display()
+        )));
+    }
+    require_regular_file(
+        &archive_path,
+        &format!(
+            "{}: prefetch store path is not a regular file: {}",
+            spec.name,
+            archive_path.display()
+        ),
+    )?;
+    let temporary = tempfile::tempdir()
+        .map_err(|source| UpdateError::io("<difit temporary directory>", source))?;
+    let package_dir = temporary.path().join("package");
+    std::fs::create_dir(&package_dir).map_err(|source| UpdateError::io(&package_dir, source))?;
+    let package_json = read_npm_package_json(&archive_path, spec.name)?;
+    validate_npm_identity(
+        &package_json,
+        npm_package,
+        &version,
+        &format!("{} package.json", spec.name),
+    )?;
+    let package_json_path = package_dir.join("package.json");
+    std::fs::write(&package_json_path, package_json)
+        .map_err(|source| UpdateError::io(&package_json_path, source))?;
+    let npm = CommandSpec::new("npm")
+        .args([
+            "install",
+            "--package-lock-only",
+            "--ignore-scripts",
+            "--no-audit",
+            "--no-fund",
+        ])
+        .current_dir(&package_dir);
+    let npm_output = run_checked(runner, &npm)?;
+    forward_output(&npm_output.stdout, &npm_output.stderr)?;
+
+    let generated_lock = package_dir.join("package-lock.json");
+    require_regular_file(
+        &generated_lock,
+        &format!("{}: npm did not generate package-lock.json", spec.name),
+    )?;
+    let lock_bytes = std::fs::read(&generated_lock)
+        .map_err(|source| UpdateError::io(&generated_lock, source))?;
+    validate_npm_lock(&lock_bytes, npm_package, &version, spec.name)?;
+    transaction.replace(lock_path, &lock_bytes)?;
+
+    let mut pin = load_pin(transaction, pin_path)?;
+    pin.set_string(&["srcHash"], source.hash)?;
+    pin.set_string(&["npmDepsHash"], "")?;
+    write_pin(transaction, pin_path, &pin)?;
+    update_paired_flake_input(input, repository, &version, &flake, runner, transaction)?;
+    compute_hash_via_failed_build(
+        spec.name,
+        package,
+        pin_path,
+        "npmDepsHash",
+        &mut pin,
+        runner,
+        transaction,
+    )?;
+    Ok(true)
+}
+
+fn latest_npm_version<R: CommandRunner>(
+    runner: &R,
+    root: &Path,
+    package: &str,
+) -> Result<String, UpdateError> {
+    let url = format!("https://registry.npmjs.org/{package}/latest");
+    let command = CommandSpec::new("curl")
+        .args(["-fsSL", &url])
+        .current_dir(root);
+    let output = run_checked(runner, &command)?;
+    let response: Value = serde_json::from_slice(&output.stdout).map_err(|source| {
+        UpdateError::message(format!(
+            "latest_npm_version: {package} returned invalid JSON: {source}"
+        ))
+    })?;
+    response
+        .get("version")
+        .and_then(Value::as_str)
+        .filter(|version| !version.is_empty() && *version != "null")
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| {
+            UpdateError::message(format!(
+                "latest_npm_version: {package} の latest version を取得できなかった"
+            ))
+        })
+}
+
+fn read_npm_package_json(archive_path: &Path, label: &str) -> Result<Vec<u8>, UpdateError> {
+    const MAX_PACKAGE_JSON_BYTES: u64 = 4 * 1024 * 1024;
+
+    let archive_file =
+        File::open(archive_path).map_err(|source| UpdateError::io(archive_path, source))?;
+    let decoder = GzDecoder::new(archive_file);
+    let mut archive = tar::Archive::new(decoder);
+    let entries = archive.entries().map_err(|source| {
+        UpdateError::message(format!("{label}: failed to read npm tarball: {source}"))
+    })?;
+    let mut package_json = None;
+    for entry in entries {
+        let mut entry = entry.map_err(|source| {
+            UpdateError::message(format!(
+                "{label}: failed to read npm tarball entry: {source}"
+            ))
+        })?;
+        let path = entry
+            .path()
+            .map_err(|source| {
+                UpdateError::message(format!(
+                    "{label}: failed to read npm tarball entry path: {source}"
+                ))
+            })?
+            .into_owned();
+        if path.as_os_str().is_empty()
+            || path.is_absolute()
+            || path
+                .components()
+                .any(|component| !matches!(component, Component::Normal(_)))
+        {
+            return Err(UpdateError::message(format!(
+                "{label}: npm tarball contained unsafe path {}",
+                path.display()
+            )));
+        }
+        let entry_type = entry.header().entry_type();
+        if entry_type.is_symlink() || entry_type.is_hard_link() {
+            return Err(UpdateError::message(format!(
+                "{label}: npm tarball contained unsupported link {}",
+                path.display()
+            )));
+        }
+        if !entry_type.is_file() && !entry_type.is_dir() {
+            return Err(UpdateError::message(format!(
+                "{label}: npm tarball contained unsupported entry {}",
+                path.display()
+            )));
+        }
+        if path == Path::new("package/package.json") {
+            if package_json.is_some() {
+                return Err(UpdateError::message(format!(
+                    "{label}: npm tarball contained duplicate package/package.json entries"
+                )));
+            }
+            let size = entry.size();
+            if size > MAX_PACKAGE_JSON_BYTES {
+                return Err(UpdateError::message(format!(
+                    "{label}: package/package.json exceeded {MAX_PACKAGE_JSON_BYTES} bytes"
+                )));
+            }
+            let mut bytes = Vec::new();
+            entry.read_to_end(&mut bytes).map_err(|source| {
+                UpdateError::message(format!(
+                    "{label}: failed to read package/package.json: {source}"
+                ))
+            })?;
+            package_json = Some(bytes);
+        }
+    }
+    package_json.ok_or_else(|| {
+        UpdateError::message(format!(
+            "{label}: npm tarball did not contain package/package.json"
+        ))
+    })
+}
+
+fn require_regular_file(path: &Path, message: &str) -> Result<(), UpdateError> {
+    let metadata =
+        std::fs::symlink_metadata(path).map_err(|_| UpdateError::message(message.to_owned()))?;
+    if metadata.is_file() && !metadata.file_type().is_symlink() {
+        Ok(())
+    } else {
+        Err(UpdateError::message(message.to_owned()))
+    }
+}
+
+fn validate_npm_identity(
+    bytes: &[u8],
+    expected_name: &str,
+    expected_version: &str,
+    label: &str,
+) -> Result<(), UpdateError> {
+    let document: Value = serde_json::from_slice(bytes)
+        .map_err(|source| UpdateError::message(format!("{label}: invalid JSON: {source}")))?;
+    let name = document
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let version = document
+        .get("version")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if name != expected_name || version != expected_version {
+        return Err(UpdateError::message(format!(
+            "{label}: expected {expected_name}@{expected_version}, found {name}@{version}"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_npm_lock(
+    bytes: &[u8],
+    expected_name: &str,
+    expected_version: &str,
+    label: &str,
+) -> Result<(), UpdateError> {
+    validate_npm_identity(
+        bytes,
+        expected_name,
+        expected_version,
+        &format!("{label} package-lock.json"),
+    )?;
+    let document: Value = serde_json::from_slice(bytes).map_err(|source| {
+        UpdateError::message(format!("{label} package-lock.json: invalid JSON: {source}"))
+    })?;
+    let root = document
+        .get("packages")
+        .and_then(Value::as_object)
+        .and_then(|packages| packages.get(""))
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            UpdateError::message(format!(
+                "{label} package-lock.json: missing packages[\"\"] object"
+            ))
+        })?;
+    let name = root.get("name").and_then(Value::as_str).unwrap_or_default();
+    let version = root
+        .get("version")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if name != expected_name || version != expected_version {
+        return Err(UpdateError::message(format!(
+            "{label} package-lock.json root: expected {expected_name}@{expected_version}, found {name}@{version}"
+        )));
+    }
+    Ok(())
+}
+
+fn update_paired_flake_input<R: CommandRunner>(
+    input: &str,
+    repository: &str,
+    version: &str,
+    flake: &[u8],
+    runner: &R,
+    transaction: &mut Transaction<'_, R>,
+) -> Result<(), UpdateError> {
+    let updated_flake = replace_paired_version(flake, repository, version)?;
+    transaction.replace("flake.nix", &updated_flake)?;
+    println!("{input}: updating flake input to v{version}");
+    // Mutating commands are deliberately single-shot; bounded retry applies only to reads.
+    let command = CommandSpec::new("nix")
+        .args(["flake", "update", input])
+        .current_dir(transaction.root());
+    let output = run_checked(runner, &command)?;
+    forward_output(&output.stdout, &output.stderr)
 }
 
 fn refresh_assets<R: CommandRunner>(
@@ -247,6 +604,20 @@ fn prefetch<R: CommandRunner>(
     url: &str,
     unpack: bool,
 ) -> Result<String, UpdateError> {
+    Ok(prefetch_result(runner, root, url, unpack)?.hash)
+}
+
+struct PrefetchResult {
+    hash: String,
+    store_path: Option<std::path::PathBuf>,
+}
+
+fn prefetch_result<R: CommandRunner>(
+    runner: &R,
+    root: &Path,
+    url: &str,
+    unpack: bool,
+) -> Result<PrefetchResult, UpdateError> {
     let mut command = CommandSpec::new("nix")
         .args(["store", "prefetch-file", "--json"])
         .current_dir(root);
@@ -260,12 +631,18 @@ fn prefetch<R: CommandRunner>(
             "prefetch returned invalid JSON for {url}: {source}"
         ))
     })?;
-    response
+    let hash = response
         .get("hash")
         .and_then(Value::as_str)
         .filter(|hash| !hash.is_empty())
         .map(ToOwned::to_owned)
-        .ok_or_else(|| UpdateError::message(format!("prefetch did not return a hash for {url}")))
+        .ok_or_else(|| UpdateError::message(format!("prefetch did not return a hash for {url}")))?;
+    let store_path = response
+        .get("storePath")
+        .and_then(Value::as_str)
+        .filter(|path| !path.is_empty())
+        .map(std::path::PathBuf::from);
+    Ok(PrefetchResult { hash, store_path })
 }
 
 fn load_pin<R: CommandRunner>(
@@ -386,10 +763,15 @@ fn forward_output(stdout: &[u8], stderr: &[u8]) -> Result<(), UpdateError> {
 #[cfg(test)]
 mod tests {
     use std::cell::RefCell;
+    use std::fs::File;
     use std::path::{Path, PathBuf};
 
+    use flate2::Compression;
+    use flate2::write::GzEncoder;
+
     use super::{
-        is_implemented, is_release_version, latest_tag, paired_version, replace_paired_version,
+        is_implemented, is_release_version, latest_tag, paired_version, read_npm_package_json,
+        replace_paired_version, validate_npm_identity, validate_npm_lock,
     };
     use crate::cli::Target;
     use crate::command::{CommandOutput, CommandRunner, CommandSpec};
@@ -480,7 +862,9 @@ mod tests {
             Target::AgentSlack,
             Target::AgentBrowser,
             Target::Watchexec,
+            Target::Shellfirm,
             Target::Herdr,
+            Target::Difit,
             Target::ClaudeCodeSettingsSchema,
         ] {
             assert!(
@@ -489,17 +873,201 @@ mod tests {
                 target.name()
             );
         }
-        for target in [
-            Target::All,
-            Target::Shellfirm,
-            Target::Difit,
-            Target::CodexApp,
-        ] {
+        for target in [Target::All, Target::CodexApp] {
             assert!(
                 !is_implemented(target),
                 "{} should remain private and incomplete",
                 target.name()
             );
         }
+    }
+
+    #[test]
+    fn reads_only_the_exact_npm_package_manifest() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let archive = directory.path().join("package.tgz");
+        write_test_archive(
+            &archive,
+            &[
+                ("package/", b"", false),
+                (
+                    "package/package.json",
+                    br#"{"name":"difit","version":"1.2.3"}"#,
+                    false,
+                ),
+                ("package/README.md", b"ignored", false),
+            ],
+        );
+
+        assert_eq!(
+            read_npm_package_json(&archive, "difit").expect("package manifest"),
+            br#"{"name":"difit","version":"1.2.3"}"#
+        );
+    }
+
+    #[test]
+    fn rejects_unsafe_and_duplicate_npm_archive_entries_without_extracting() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let outside = directory.path().join("outside");
+        std::fs::write(&outside, b"sentinel").expect("outside sentinel");
+        let unsafe_archive = directory.path().join("unsafe.tgz");
+        write_test_archive(
+            &unsafe_archive,
+            &[
+                ("package/package.json", br#"{"name":"difit"}"#, false),
+                ("../outside", b"overwritten", true),
+            ],
+        );
+        assert!(read_npm_package_json(&unsafe_archive, "difit").is_err());
+        assert_eq!(
+            std::fs::read(&outside).expect("outside sentinel"),
+            b"sentinel"
+        );
+
+        let duplicate_archive = directory.path().join("duplicate.tgz");
+        write_test_archive(
+            &duplicate_archive,
+            &[
+                ("package/package.json", b"first", false),
+                ("package/package.json", b"second", false),
+            ],
+        );
+        assert!(read_npm_package_json(&duplicate_archive, "difit").is_err());
+
+        let link_archive = directory.path().join("link.tgz");
+        write_link_archive(&link_archive);
+        assert!(read_npm_package_json(&link_archive, "difit").is_err());
+    }
+
+    #[test]
+    fn rejects_missing_corrupt_and_oversized_npm_manifests() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let missing = directory.path().join("missing.tgz");
+        write_test_archive(&missing, &[("package/README.md", b"missing", false)]);
+        assert!(read_npm_package_json(&missing, "difit").is_err());
+
+        let corrupt = directory.path().join("corrupt.tgz");
+        std::fs::write(&corrupt, b"not a gzip archive").expect("corrupt archive");
+        assert!(read_npm_package_json(&corrupt, "difit").is_err());
+
+        let oversized = directory.path().join("oversized-pax.tgz");
+        write_pax_size_archive(&oversized);
+        let error =
+            read_npm_package_json(&oversized, "difit").expect_err("PAX size must be enforced");
+        assert!(error.to_string().contains("exceeded 4194304 bytes"));
+
+        let special = directory.path().join("special.tgz");
+        write_special_archive(&special);
+        let error =
+            read_npm_package_json(&special, "difit").expect_err("FIFO entry must be rejected");
+        assert!(error.to_string().contains("unsupported entry package/fifo"));
+    }
+
+    #[test]
+    fn validates_npm_manifest_and_lock_identity() {
+        let manifest = br#"{"name":"difit","version":"1.2.3"}"#;
+        assert!(validate_npm_identity(manifest, "difit", "1.2.3", "manifest").is_ok());
+        assert!(validate_npm_identity(manifest, "other", "1.2.3", "manifest").is_err());
+        assert!(validate_npm_identity(manifest, "difit", "9.9.9", "manifest").is_err());
+
+        let lock = br#"{
+            "name":"difit",
+            "version":"1.2.3",
+            "packages":{"":{"name":"difit","version":"1.2.3"}}
+        }"#;
+        assert!(validate_npm_lock(lock, "difit", "1.2.3", "difit").is_ok());
+        let wrong_root = br#"{
+            "name":"difit",
+            "version":"1.2.3",
+            "packages":{"":{"name":"difit","version":"9.9.9"}}
+        }"#;
+        assert!(validate_npm_lock(wrong_root, "difit", "1.2.3", "difit").is_err());
+    }
+
+    fn write_test_archive(path: &Path, entries: &[(&str, &[u8], bool)]) {
+        let file = File::create(path).expect("test archive");
+        let encoder = GzEncoder::new(file, Compression::default());
+        let mut archive = tar::Builder::new(encoder);
+        for (path, contents, raw_path) in entries {
+            let mut header = tar::Header::new_gnu();
+            header.set_mode(0o644);
+            header.set_size(contents.len() as u64);
+            if path.ends_with('/') {
+                header.set_entry_type(tar::EntryType::Directory);
+            } else {
+                header.set_entry_type(tar::EntryType::Regular);
+            }
+            if *raw_path {
+                let bytes = path.as_bytes();
+                assert!(bytes.len() < 100);
+                header.as_mut_bytes()[..100].fill(0);
+                header.as_mut_bytes()[..bytes.len()].copy_from_slice(bytes);
+            } else {
+                header.set_path(path).expect("safe test path");
+            }
+            header.set_cksum();
+            archive
+                .append(&header, *contents)
+                .expect("append archive entry");
+        }
+        let encoder = archive.into_inner().expect("finish tar archive");
+        encoder.finish().expect("finish gzip stream");
+    }
+
+    fn write_link_archive(path: &Path) {
+        let file = File::create(path).expect("test archive");
+        let encoder = GzEncoder::new(file, Compression::default());
+        let mut archive = tar::Builder::new(encoder);
+        let mut header = tar::Header::new_gnu();
+        header.set_mode(0o777);
+        header.set_size(0);
+        header.set_entry_type(tar::EntryType::Symlink);
+        header.set_path("package/link").expect("link path");
+        header.set_link_name("../../outside").expect("link target");
+        header.set_cksum();
+        archive
+            .append(&header, std::io::empty())
+            .expect("append symlink");
+        let encoder = archive.into_inner().expect("finish tar archive");
+        encoder.finish().expect("finish gzip stream");
+    }
+
+    fn write_pax_size_archive(path: &Path) {
+        let file = File::create(path).expect("test archive");
+        let encoder = GzEncoder::new(file, Compression::default());
+        let mut archive = tar::Builder::new(encoder);
+        archive
+            .append_pax_extensions([("size", b"4194305".as_slice())])
+            .expect("PAX size extension");
+        let mut header = tar::Header::new_ustar();
+        header.set_mode(0o644);
+        header.set_size(2);
+        header.set_entry_type(tar::EntryType::Regular);
+        header
+            .set_path("package/package.json")
+            .expect("manifest path");
+        header.set_cksum();
+        archive
+            .append(&header, b"{}".as_slice())
+            .expect("append manifest");
+        let encoder = archive.into_inner().expect("finish tar archive");
+        encoder.finish().expect("finish gzip stream");
+    }
+
+    fn write_special_archive(path: &Path) {
+        let file = File::create(path).expect("test archive");
+        let encoder = GzEncoder::new(file, Compression::default());
+        let mut archive = tar::Builder::new(encoder);
+        let mut header = tar::Header::new_gnu();
+        header.set_mode(0o644);
+        header.set_size(0);
+        header.set_entry_type(tar::EntryType::fifo());
+        header.set_path("package/fifo").expect("FIFO path");
+        header.set_cksum();
+        archive
+            .append(&header, std::io::empty())
+            .expect("append FIFO");
+        let encoder = archive.into_inner().expect("finish tar archive");
+        encoder.finish().expect("finish gzip stream");
     }
 }

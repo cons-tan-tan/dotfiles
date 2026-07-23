@@ -46,6 +46,19 @@ pub enum TargetKind {
     UrlHash {
         pin: &'static str,
     },
+    Shellfirm {
+        repository: &'static str,
+        pin: &'static str,
+        package: &'static str,
+    },
+    Difit {
+        repository: &'static str,
+        npm_package: &'static str,
+        pin: &'static str,
+        input: &'static str,
+        lock: &'static str,
+        package: &'static str,
+    },
     Unimplemented,
 }
 
@@ -103,7 +116,11 @@ pub static TARGET_SPECS: &[TargetSpec] = &[
     TargetSpec {
         target: Target::Shellfirm,
         name: "shellfirm",
-        kind: TargetKind::Unimplemented,
+        kind: TargetKind::Shellfirm {
+            repository: "kaplanelad/shellfirm",
+            pin: "nix/pins/shellfirm.json",
+            package: "shellfirm",
+        },
     },
     TargetSpec {
         target: Target::Herdr,
@@ -118,7 +135,14 @@ pub static TARGET_SPECS: &[TargetSpec] = &[
     TargetSpec {
         target: Target::Difit,
         name: "difit",
-        kind: TargetKind::Unimplemented,
+        kind: TargetKind::Difit {
+            repository: "yoshiko-pg/difit",
+            npm_package: "difit",
+            pin: "nix/pins/difit.json",
+            input: "difit-src",
+            lock: "nix/packages/difit/package-lock.json",
+            package: "difit",
+        },
     },
     TargetSpec {
         target: Target::ClaudeCodeSettingsSchema,
@@ -149,11 +173,19 @@ pub fn target_by_name(name: &str) -> Option<Target> {
     }
 }
 
+pub fn unimplemented_target_names() -> Vec<&'static str> {
+    TARGET_SPECS
+        .iter()
+        .filter(|spec| !spec.kind.is_implemented())
+        .map(|spec| spec.name)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
 
-    use super::{TARGET_SPECS, Target, target_by_name, target_spec};
+    use super::{TARGET_SPECS, Target, target_by_name, target_spec, unimplemented_target_names};
 
     #[test]
     fn registry_contains_each_concrete_target_exactly_once() {
@@ -182,5 +214,6 @@ mod tests {
             assert_eq!(spec.target.name(), spec.name);
         }
         assert_eq!(target_by_name("unknown"), None);
+        assert_eq!(unimplemented_target_names(), ["codex-app"]);
     }
 }

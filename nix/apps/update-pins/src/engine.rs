@@ -1,6 +1,7 @@
 use crate::cli::Target;
 use crate::command::{CommandRunner, SystemCommandRunner};
 use crate::error::UpdateError;
+use crate::registry::unimplemented_target_names;
 use crate::targets::{is_implemented, run_target};
 use crate::transaction::{Repository, Transaction};
 
@@ -9,6 +10,13 @@ pub fn run(target: Target) -> Result<(), UpdateError> {
 }
 
 pub fn run_with_runner<R: CommandRunner>(target: Target, runner: &R) -> Result<(), UpdateError> {
+    if target == Target::All {
+        let incomplete = unimplemented_target_names();
+        return Err(UpdateError::message(format!(
+            "update-pins: Rust updater is incomplete; unimplemented targets: {}",
+            incomplete.join(", ")
+        )));
+    }
     if !is_implemented(target) {
         return Err(UpdateError::message(format!(
             "update-pins: Rust updater for {} is not yet implemented",
@@ -40,5 +48,36 @@ pub fn run_with_runner<R: CommandRunner>(target: Target, runner: &R) -> Result<(
                 Err(rollback) => Err(UpdateError::message(format!("{error}; {rollback}"))),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::run_with_runner;
+    use crate::cli::Target;
+    use crate::command::{CommandOutput, CommandRunner, CommandSpec};
+    use crate::error::UpdateError;
+
+    struct NoCommands;
+
+    impl CommandRunner for NoCommands {
+        fn run(&self, _command: &CommandSpec) -> Result<CommandOutput, UpdateError> {
+            panic!("all-target preflight must not execute commands")
+        }
+
+        fn is_available(&self, _program: &Path) -> bool {
+            false
+        }
+    }
+
+    #[test]
+    fn all_preflight_names_only_the_remaining_target() {
+        let error = run_with_runner(Target::All, &NoCommands).expect_err("all remains incomplete");
+        assert_eq!(
+            error.to_string(),
+            "update-pins: Rust updater is incomplete; unimplemented targets: codex-app"
+        );
     }
 }
