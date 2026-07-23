@@ -28,6 +28,26 @@ setup() {
   export UPDATE_PINS_SHELLFIRM_BUILD_COUNT="$WORK/shellfirm-build-count"
   export UPDATE_PINS_DIFIT_BUILD_COUNT="$WORK/difit-build-count"
   export UPDATE_PINS_FLAKE_UPDATE_LOG="$WORK/flake-update.log"
+  export UPDATE_PINS_COMMAND_LOG="$WORK/command.log"
+
+  if [ -z "${UPDATE_PINS_TEST_BIN:-}" ]; then
+    UPDATE_PINS_TEST_BIN="$WORK/update-pins-under-test"
+    printf '#!%s\n' "$BASH_BIN" >"$UPDATE_PINS_TEST_BIN"
+    printf 'set -euo pipefail\nexec "%s" -eu -o pipefail "$UPDATE_PINS_FAKE_ROOT/nix/apps/update-pins.sh" "$@"\n' "$BASH_BIN" >>"$UPDATE_PINS_TEST_BIN"
+    chmod +x "$UPDATE_PINS_TEST_BIN"
+  fi
+  case "$UPDATE_PINS_TEST_BIN" in
+  /*) ;;
+  *)
+    echo "UPDATE_PINS_TEST_BIN must be an absolute path" >&2
+    return 1
+    ;;
+  esac
+  if [ ! -x "$UPDATE_PINS_TEST_BIN" ]; then
+    echo "UPDATE_PINS_TEST_BIN is not executable: $UPDATE_PINS_TEST_BIN" >&2
+    return 1
+  fi
+  export UPDATE_PINS_TEST_BIN
 
   mkdir -p "$WORK/difit-tar/package"
   cat >"$WORK/difit-tar/package/package.json" <<'EOS'
@@ -39,6 +59,12 @@ EOS
   printf '#!%s\n' "$BASH_BIN" >"$STUB_DIR/gh"
   cat >>"$STUB_DIR/gh" <<'EOS'
 set -euo pipefail
+
+{
+  printf 'gh'
+  printf ' %q' "$@"
+  printf '\n'
+} >>"$UPDATE_PINS_COMMAND_LOG"
 
 flake_version() {
   local repo=$1
@@ -74,6 +100,12 @@ EOS
   printf '#!%s\n' "$BASH_BIN" >"$STUB_DIR/curl"
   cat >>"$STUB_DIR/curl" <<'EOS'
 set -euo pipefail
+
+{
+  printf 'curl'
+  printf ' %q' "$@"
+  printf '\n'
+} >>"$UPDATE_PINS_COMMAND_LOG"
 
 flake_version() {
   local repo=$1
@@ -120,6 +152,12 @@ EOS
   cat >>"$STUB_DIR/npm" <<'EOS'
 set -euo pipefail
 
+{
+  printf 'npm'
+  printf ' %q' "$@"
+  printf '\n'
+} >>"$UPDATE_PINS_COMMAND_LOG"
+
 if [ "$1" = "install" ] && [[ " $* " == *" --package-lock-only "* ]]; then
   cat >package-lock.json <<JSON
 {
@@ -144,6 +182,12 @@ EOS
   printf '#!%s\n' "$BASH_BIN" >"$STUB_DIR/nix"
   cat >>"$STUB_DIR/nix" <<'EOS'
 set -euo pipefail
+
+{
+  printf 'nix'
+  printf ' %q' "$@"
+  printf '\n'
+} >>"$UPDATE_PINS_COMMAND_LOG"
 
 if [ "$1" = "store" ] && [ "${2:-}" = "prefetch-file" ]; then
   if [[ " $* " == *"github.com/ogulcancelik/herdr/archive/refs/tags/"* ]] && [ "${UPDATE_PINS_FAIL_HERDR_PREFETCH:-}" = "source" ]; then
@@ -298,7 +342,7 @@ teardown() {
 }
 
 run_update_pins() {
-  run bash -eu -o pipefail -c 'cd "$UPDATE_PINS_FAKE_ROOT"; bash -eu -o pipefail nix/apps/update-pins.sh "$@" 2>&1' update-pins-test "$@"
+  run bash -eu -o pipefail -c 'cd "$UPDATE_PINS_FAKE_ROOT"; exec "$UPDATE_PINS_TEST_BIN" "$@" 2>&1' update-pins-test "$@"
 }
 
 save_managed() {
@@ -395,6 +439,8 @@ make_unrelated_updates_noop() {
   [ "$(jq -r '.assets["x86_64-linux"].hash' "$WORK/nix/pins/hcom.json")" = "sha256-asset-for-test" ]
   grep -Fq 'url = "github:aannoo/hcom/v9.9.9";' "$WORK/flake.nix"
   [ "$(jq -r .updated "$WORK/flake.lock")" = "hcom-src" ]
+  grep -Fq "gh api repos/aannoo/hcom/releases/latest --jq .tag_name" "$UPDATE_PINS_COMMAND_LOG"
+  grep -Fq "nix flake update hcom-src" "$UPDATE_PINS_COMMAND_LOG"
   cp "$WORK/nix/pins/hcom.json" "$original/nix/pins/hcom.json"
   cp "$WORK/flake.nix" "$original/flake.nix"
   cp "$WORK/flake.lock" "$original/flake.lock"
@@ -769,4 +815,26 @@ make_unrelated_updates_noop() {
   [ "$(jq -r .updated "$WORK/flake.lock")" = "agent-slack-skill" ]
   [ "$(cat "$UPDATE_PINS_FLAKE_UPDATE_LOG")" = $'hcom-src\nagent-slack-skill' ]
   ! assert_managed_matches "$original"
+}
+
+@test "repeating a successful update is byte stable" {
+  export UPDATE_PINS_HCOM_TAG=v1.2.3
+  export UPDATE_PINS_AGENT_SLACK_TAG=v4.5.6
+  export UPDATE_PINS_SHELLFIRM_TAG=v8.8.8
+  export UPDATE_PINS_HERDR_TAG=v9.9.9
+  export UPDATE_PINS_SHELLFIRM_BUILD_MODE=success
+
+  run_update_pins
+
+  [ "$status" -eq 0 ]
+  after_first="$WORK/after-first"
+  save_managed "$after_first"
+  git -C "$WORK" add flake.nix flake.lock nix/packages/difit/package-lock.json nix/pins/*.json
+  git -C "$WORK" commit -q -m "apply first update"
+
+  run_update_pins
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"All pins up to date."* ]]
+  assert_managed_matches "$after_first"
 }
