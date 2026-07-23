@@ -15,33 +15,59 @@ pub fn run_with_runner<R: CommandRunner + Sync>(
     invocation: Invocation,
     runner: &R,
 ) -> Result<(), UpdateError> {
+    // Keep target/registry errors ahead of repository discovery just as the
+    // public execution path did before orchestration became test-injectable.
+    selected_targets(invocation.target)?;
+    let repository = Repository::discover(runner)?;
+    run_in_repository(
+        invocation,
+        runner,
+        repository,
+        |selected, transaction| {
+            let spec =
+                target_spec(selected).expect("selected targets are concrete registry entries");
+            validate_target_input(spec, transaction)
+        },
+        |target, policy, transaction, ledger| {
+            run_target(target, policy, runner, transaction, ledger)
+        },
+    )
+}
+
+fn run_in_repository<'runner, R, V, U>(
+    invocation: Invocation,
+    runner: &'runner R,
+    repository: Repository,
+    mut validate: V,
+    mut update: U,
+) -> Result<(), UpdateError>
+where
+    R: CommandRunner + Sync,
+    V: FnMut(Target, &Transaction<'runner, R>) -> Result<(), UpdateError>,
+    U: FnMut(
+        Target,
+        crate::policy::RunPolicy,
+        &mut Transaction<'runner, R>,
+        &mut Ledger,
+    ) -> Result<(), UpdateError>,
+{
     let target = invocation.target;
     let targets = selected_targets(target)?;
     let managed_paths = selected_managed_paths(&targets);
-    let repository = Repository::discover(runner)?;
     let mut transaction = Transaction::begin_scoped(repository, runner, &managed_paths)?;
     for selected in &targets {
-        let spec = target_spec(*selected).expect("selected targets are concrete registry entries");
-        validate_target_input(spec, &transaction)?;
+        validate(*selected, &transaction)?;
     }
     let mut ledger = Ledger::default();
 
     let result = targets.iter().copied().try_for_each(|target| {
         println!("== {}", target.name());
-        run_target(
-            target,
-            invocation.policy,
-            runner,
-            &mut transaction,
-            &mut ledger,
-        )?;
+        update(target, invocation.policy, &mut transaction, &mut ledger)?;
         Ok::<(), UpdateError>(())
     });
     let result = result.and_then(|()| {
         for selected in &targets {
-            let spec =
-                target_spec(*selected).expect("selected targets are concrete registry entries");
-            validate_target_input(spec, &transaction)?;
+            validate(*selected, &transaction)?;
         }
         Ok(())
     });
@@ -180,9 +206,135 @@ fn selected_managed_paths(targets: &[Target]) -> Vec<&'static str> {
 
 #[cfg(test)]
 mod tests {
-    use super::{selected_managed_paths, selected_targets};
-    use crate::cli::Target;
-    use crate::registry::TARGET_SPECS;
+    use std::cell::{Cell, RefCell};
+    use std::fs::Permissions;
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+
+    use tempfile::TempDir;
+
+    use super::{run_in_repository, selected_managed_paths, selected_targets};
+    use crate::cli::{Invocation, PublishMode, Target};
+    use crate::command::SystemCommandRunner;
+    use crate::error::UpdateError;
+    use crate::ledger::{Change, ChangeKind, DisplayValue};
+    use crate::policy::RunPolicy;
+    use crate::registry::{TARGET_SPECS, target_spec};
+    use crate::transaction::{Repository, Transaction};
+
+    struct TestRepository {
+        directory: TempDir,
+        originals: Vec<(PathBuf, Vec<u8>, Permissions)>,
+    }
+
+    impl TestRepository {
+        fn new() -> Self {
+            let directory = tempfile::tempdir().expect("temporary repository");
+            run_git(directory.path(), ["init", "-q"]);
+            run_git(
+                directory.path(),
+                ["config", "user.email", "test@example.invalid"],
+            );
+            run_git(
+                directory.path(),
+                ["config", "user.name", "update-pins engine test"],
+            );
+            run_git(directory.path(), ["config", "commit.gpgsign", "false"]);
+
+            let targets = selected_targets(Target::All).expect("all targets");
+            let mut originals = Vec::new();
+            for relative in selected_managed_paths(&targets) {
+                let path = directory.path().join(relative);
+                std::fs::create_dir_all(path.parent().expect("managed path parent"))
+                    .expect("managed path directory");
+                let bytes = format!("original {relative}\n").into_bytes();
+                std::fs::write(&path, &bytes).expect("managed fixture");
+                let permissions = std::fs::metadata(&path)
+                    .expect("managed fixture metadata")
+                    .permissions();
+                originals.push((PathBuf::from(relative), bytes, permissions));
+            }
+            run_git(directory.path(), ["add", "."]);
+            run_git(directory.path(), ["commit", "-q", "-m", "initial"]);
+            Self {
+                directory,
+                originals,
+            }
+        }
+
+        fn path(&self) -> &Path {
+            self.directory.path()
+        }
+
+        fn repository(&self) -> Repository {
+            Repository::discover_in(&SystemCommandRunner, self.path())
+                .expect("discover test repository")
+        }
+
+        fn assert_originals(&self) {
+            for (relative, bytes, permissions) in &self.originals {
+                let path = self.path().join(relative);
+                assert_eq!(
+                    std::fs::read(&path).expect("restored managed fixture"),
+                    *bytes,
+                    "{} bytes were not restored",
+                    relative.display()
+                );
+                assert_eq!(
+                    std::fs::metadata(&path)
+                        .expect("restored managed fixture metadata")
+                        .permissions(),
+                    *permissions,
+                    "{} mode was not restored",
+                    relative.display()
+                );
+            }
+        }
+
+        fn commit_changes(&self) {
+            run_git(self.path(), ["add", "."]);
+            run_git(self.path(), ["commit", "-q", "-m", "updated"]);
+        }
+
+        fn assert_lock_reacquirable(&self) {
+            let runner = SystemCommandRunner;
+            let targets = selected_targets(Target::All).expect("all targets");
+            let paths = selected_managed_paths(&targets);
+            let mut transaction =
+                Transaction::begin_scoped(self.repository(), &runner, paths).expect("reacquire");
+            transaction.rollback().expect("release reacquired lock");
+        }
+    }
+
+    fn invocation(target: Target, publish_mode: PublishMode) -> Invocation {
+        Invocation {
+            target,
+            policy: RunPolicy::default(),
+            publish_mode,
+        }
+    }
+
+    fn record_change(target: Target, ledger: &mut crate::ledger::Ledger) {
+        ledger.extend([Change {
+            target,
+            kind: ChangeKind::Version,
+            old: DisplayValue::Text("old".to_owned()),
+            new: DisplayValue::Text("new".to_owned()),
+        }]);
+    }
+
+    fn run_git<I, S>(directory: &Path, arguments: I)
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<std::ffi::OsStr>,
+    {
+        let status = Command::new("git")
+            .args(arguments)
+            .current_dir(directory)
+            .status()
+            .expect("run git");
+        assert!(status.success(), "git fixture command failed");
+    }
 
     #[test]
     fn all_runs_every_target_in_registry_order() {
@@ -227,5 +379,265 @@ mod tests {
                 "nix/pins/codex-app.json",
             ]
         );
+    }
+
+    #[test]
+    fn all_preflights_before_updates_then_commits_in_registry_order() {
+        let repository = TestRepository::new();
+        let runner = SystemCommandRunner;
+        let events = RefCell::new(Vec::new());
+        let validation_count = Cell::new(0);
+        let target_count = TARGET_SPECS.len();
+
+        run_in_repository(
+            invocation(Target::All, PublishMode::Apply),
+            &runner,
+            repository.repository(),
+            |target, _transaction| {
+                events
+                    .borrow_mut()
+                    .push(format!("validate:{}", target.name()));
+                validation_count.set(validation_count.get() + 1);
+                Ok(())
+            },
+            |target, _policy, transaction, ledger| {
+                assert_eq!(
+                    validation_count.get(),
+                    target_count,
+                    "every target must pass preflight before the first update"
+                );
+                events
+                    .borrow_mut()
+                    .push(format!("update:{}", target.name()));
+                let path = target_spec(target)
+                    .expect("target spec")
+                    .managed_paths
+                    .first()
+                    .expect("target managed path");
+                let changed = transaction
+                    .replace(path, format!("updated {}\n", target.name()).as_bytes())
+                    .expect("replace target pin");
+                if target == Target::Hcom {
+                    transaction
+                        .replace("flake.nix", b"updated shared flake\n")
+                        .expect("replace shared flake");
+                    transaction
+                        .replace("flake.lock", b"updated shared lock\n")
+                        .expect("replace shared lock");
+                }
+                if changed {
+                    record_change(target, ledger);
+                }
+                Ok(())
+            },
+        )
+        .expect("all-target apply");
+
+        let target_names = TARGET_SPECS
+            .iter()
+            .map(|spec| spec.name)
+            .collect::<Vec<_>>();
+        let expected = target_names
+            .iter()
+            .map(|name| format!("validate:{name}"))
+            .chain(target_names.iter().map(|name| format!("update:{name}")))
+            .chain(target_names.iter().map(|name| format!("validate:{name}")))
+            .collect::<Vec<_>>();
+        assert_eq!(*events.borrow(), expected);
+        assert_eq!(
+            std::fs::read(repository.path().join("flake.lock")).expect("committed lock"),
+            b"updated shared lock\n"
+        );
+        repository.commit_changes();
+        let stable_pin = repository.path().join("nix/pins/hcom.json");
+        let stable_bytes = std::fs::read(&stable_pin).expect("stable pin bytes");
+        let stable_metadata = std::fs::metadata(&stable_pin).expect("stable pin metadata");
+
+        run_in_repository(
+            invocation(Target::All, PublishMode::Apply),
+            &runner,
+            repository.repository(),
+            |_target, _transaction| Ok(()),
+            |target, _policy, transaction, ledger| {
+                let path = target_spec(target)
+                    .expect("target spec")
+                    .managed_paths
+                    .first()
+                    .expect("target managed path");
+                let changed = transaction
+                    .replace(path, format!("updated {}\n", target.name()).as_bytes())
+                    .expect("idempotent target pin");
+                if target == Target::Hcom {
+                    assert!(
+                        !transaction
+                            .replace("flake.nix", b"updated shared flake\n")
+                            .expect("idempotent shared flake")
+                    );
+                    assert!(
+                        !transaction
+                            .replace("flake.lock", b"updated shared lock\n")
+                            .expect("idempotent shared lock")
+                    );
+                }
+                if changed {
+                    record_change(target, ledger);
+                }
+                Ok(())
+            },
+        )
+        .expect("second all-target apply");
+
+        assert_eq!(
+            std::fs::read(&stable_pin).expect("idempotent pin bytes"),
+            stable_bytes
+        );
+        let idempotent_metadata = std::fs::metadata(&stable_pin).expect("idempotent pin metadata");
+        assert_eq!(
+            idempotent_metadata.permissions(),
+            stable_metadata.permissions()
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt as _;
+
+            assert_eq!(idempotent_metadata.ino(), stable_metadata.ino());
+            assert_eq!(idempotent_metadata.mtime(), stable_metadata.mtime());
+            assert_eq!(
+                idempotent_metadata.mtime_nsec(),
+                stable_metadata.mtime_nsec()
+            );
+        }
+        repository.assert_lock_reacquirable();
+    }
+
+    #[test]
+    fn failed_all_target_preflight_runs_no_update_or_child_boundary() {
+        let repository = TestRepository::new();
+        let runner = SystemCommandRunner;
+        let updates = Cell::new(0);
+
+        let error = run_in_repository(
+            invocation(Target::All, PublishMode::Apply),
+            &runner,
+            repository.repository(),
+            |target, _transaction| {
+                if target == Target::Shellfirm {
+                    Err(UpdateError::message("synthetic preflight failure"))
+                } else {
+                    Ok(())
+                }
+            },
+            |_target, _policy, _transaction, _ledger| {
+                updates.set(updates.get() + 1);
+                Ok(())
+            },
+        )
+        .expect_err("preflight must fail");
+
+        assert_eq!(error.to_string(), "synthetic preflight failure");
+        assert_eq!(updates.get(), 0);
+        repository.assert_originals();
+        repository.assert_lock_reacquirable();
+    }
+
+    #[test]
+    fn check_restores_candidate_bytes_modes_and_transaction_lock() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let repository = TestRepository::new();
+        let runner = SystemCommandRunner;
+        for relative in target_spec(Target::Hcom).expect("hcom spec").managed_paths {
+            std::fs::set_permissions(
+                repository.path().join(relative),
+                Permissions::from_mode(0o440),
+            )
+            .expect("restrict managed fixture");
+        }
+        let expected = target_spec(Target::Hcom)
+            .expect("hcom spec")
+            .managed_paths
+            .iter()
+            .map(|relative| {
+                (
+                    *relative,
+                    std::fs::read(repository.path().join(relative)).expect("fixture bytes"),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        run_in_repository(
+            invocation(Target::Hcom, PublishMode::Check),
+            &runner,
+            repository.repository(),
+            |_target, _transaction| Ok(()),
+            |target, _policy, transaction, ledger| {
+                for relative in target_spec(target).expect("target spec").managed_paths {
+                    transaction
+                        .replace(relative, b"candidate\n")
+                        .expect("candidate write");
+                    std::fs::set_permissions(
+                        repository.path().join(relative),
+                        Permissions::from_mode(0o777),
+                    )
+                    .expect("candidate mode");
+                }
+                record_change(target, ledger);
+                Ok(())
+            },
+        )
+        .expect("check mode");
+
+        for (relative, bytes) in expected {
+            let path = repository.path().join(relative);
+            assert_eq!(std::fs::read(&path).expect("restored bytes"), bytes);
+            assert_eq!(
+                std::fs::metadata(path)
+                    .expect("restored metadata")
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o440
+            );
+        }
+        repository.assert_lock_reacquirable();
+    }
+
+    #[test]
+    fn late_target_failure_restores_prior_pins_and_shared_flake_lock() {
+        let repository = TestRepository::new();
+        let runner = SystemCommandRunner;
+
+        let error = run_in_repository(
+            invocation(Target::All, PublishMode::Apply),
+            &runner,
+            repository.repository(),
+            |_target, _transaction| Ok(()),
+            |target, _policy, transaction, ledger| {
+                let path = target_spec(target)
+                    .expect("target spec")
+                    .managed_paths
+                    .first()
+                    .expect("target managed path");
+                transaction
+                    .replace(path, format!("candidate {}\n", target.name()).as_bytes())
+                    .expect("candidate pin");
+                if target == Target::Hcom {
+                    transaction
+                        .replace("flake.lock", b"candidate shared lock\n")
+                        .expect("candidate shared lock");
+                }
+                record_change(target, ledger);
+                if target == Target::CodexApp {
+                    Err(UpdateError::message("synthetic late target failure"))
+                } else {
+                    Ok(())
+                }
+            },
+        )
+        .expect_err("late target must fail");
+
+        assert_eq!(error.to_string(), "synthetic late target failure");
+        repository.assert_originals();
+        repository.assert_lock_reacquirable();
     }
 }
