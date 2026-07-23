@@ -120,6 +120,8 @@ fn update_paired_release<R: CommandRunner>(
     );
     let mut pin = load_pin(transaction, pin_path)?;
     refresh_assets(
+        spec,
+        pin_path,
         &mut pin,
         repository,
         &tag,
@@ -147,6 +149,7 @@ fn update_release<R: CommandRunner>(
     let current = pin.string(&["version"])?.to_owned();
     let tag = latest_tag(runner, transaction.root(), repository)?;
     let version = tag.strip_prefix('v').unwrap_or(&tag);
+    validate_release_version(spec.name, version)?;
     if version == current {
         println!("{}: {current} (up to date)", spec.name);
         return Ok(false);
@@ -158,6 +161,8 @@ fn update_release<R: CommandRunner>(
     );
     pin.set_string(&["version"], version)?;
     refresh_assets(
+        spec,
+        pin_path,
         &mut pin,
         repository,
         &tag,
@@ -170,7 +175,13 @@ fn update_release<R: CommandRunner>(
         println!("{}: updating srcHash", spec.name);
         let source_url =
             format!("https://github.com/{repository}/archive/refs/tags/v{version}.tar.gz");
-        let hash = prefetch(runner, transaction.root(), &source_url, true)?;
+        let hash = prefetch(
+            &format!("{}: {pin_path}: srcHash", spec.name),
+            runner,
+            transaction.root(),
+            &source_url,
+            true,
+        )?;
         pin.set_string(&["srcHash"], hash)?;
     }
     write_pin(transaction, pin_path, &pin)?;
@@ -187,7 +198,13 @@ fn update_url_hash<R: CommandRunner>(
     let url = pin.string(&["url"])?.to_owned();
     let current = pin.string(&["hash"])?.to_owned();
     println!("{}: checking schema hash...", spec.name);
-    let hash = prefetch(runner, transaction.root(), &url, false)?;
+    let hash = prefetch(
+        &format!("{}: {pin_path}: hash", spec.name),
+        runner,
+        transaction.root(),
+        &url,
+        false,
+    )?;
     if hash == current {
         println!("{}: up to date", spec.name);
         return Ok(false);
@@ -222,7 +239,13 @@ fn update_shellfirm<R: CommandRunner>(
         spec.name
     );
     let source_url = format!("https://github.com/{repository}/archive/refs/tags/{tag}.tar.gz");
-    let source_hash = prefetch(runner, transaction.root(), &source_url, true)?;
+    let source_hash = prefetch(
+        &format!("{}: {pin_path}: srcHash", spec.name),
+        runner,
+        transaction.root(),
+        &source_url,
+        true,
+    )?;
     pin.set_string(&["version"], version)?;
     pin.set_string(&["srcHash"], source_hash)?;
     pin.set_string(&["cargoHash"], "")?;
@@ -266,7 +289,13 @@ fn update_difit<R: CommandRunner>(
     );
     let source_url =
         format!("https://registry.npmjs.org/{npm_package}/-/{npm_package}-{version}.tgz");
-    let source = prefetch_result(runner, transaction.root(), &source_url, false)?;
+    let source = prefetch_result(
+        &format!("{}: {pin_path}: srcHash", spec.name),
+        runner,
+        transaction.root(),
+        &source_url,
+        false,
+    )?;
     let archive_path = source.store_path.ok_or_else(|| {
         UpdateError::message(format!(
             "{}: prefetch did not return a store path for {source_url}",
@@ -536,7 +565,10 @@ fn update_paired_flake_input<R: CommandRunner>(
     forward_output(&output.stdout, &output.stderr)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn refresh_assets<R: CommandRunner>(
+    spec: &TargetSpec,
+    pin_path: &str,
     pin: &mut PinDocument,
     repository: &str,
     tag: &str,
@@ -554,7 +586,13 @@ fn refresh_assets<R: CommandRunner>(
             }
         };
         let url = format!("https://github.com/{repository}/releases/download/{tag}/{name}");
-        let hash = prefetch(runner, root, &url, false)?;
+        let hash = prefetch(
+            &format!("{}: {pin_path}: assets.{system}.hash", spec.name),
+            runner,
+            root,
+            &url,
+            false,
+        )?;
         pin.set_string(&["assets", &system, "hash"], hash)?;
     }
     Ok(())
@@ -619,7 +657,7 @@ fn write_pin<R: CommandRunner>(
     Ok(())
 }
 
-fn paired_version(bytes: &[u8], repository: &str) -> Result<String, UpdateError> {
+pub(crate) fn paired_version(bytes: &[u8], repository: &str) -> Result<String, UpdateError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|_| UpdateError::message("update-pins: flake.nix is not valid UTF-8"))?;
     let matches = paired_version_matches(text, repository);

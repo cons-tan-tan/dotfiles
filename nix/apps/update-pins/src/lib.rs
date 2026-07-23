@@ -9,3 +9,4 @@ pub mod prefetch;
 pub mod registry;
 pub mod targets;
 pub mod transaction;
+pub mod validation;

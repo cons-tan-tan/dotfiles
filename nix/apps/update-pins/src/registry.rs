@@ -76,6 +76,7 @@ pub struct TargetSpec {
     pub target: Target,
     pub name: &'static str,
     pub kind: TargetKind,
+    pub managed_paths: &'static [&'static str],
 }
 
 pub static TARGET_SPECS: &[TargetSpec] = &[
@@ -87,6 +88,7 @@ pub static TARGET_SPECS: &[TargetSpec] = &[
             pin: "nix/pins/hcom.json",
             input: "hcom-src",
         },
+        managed_paths: &["nix/pins/hcom.json", "flake.nix", "flake.lock"],
     },
     TargetSpec {
         target: Target::AgentSlack,
@@ -96,6 +98,7 @@ pub static TARGET_SPECS: &[TargetSpec] = &[
             pin: "nix/pins/agent-slack.json",
             input: "agent-slack-skill",
         },
+        managed_paths: &["nix/pins/agent-slack.json", "flake.nix", "flake.lock"],
     },
     TargetSpec {
         target: Target::AgentBrowser,
@@ -105,6 +108,7 @@ pub static TARGET_SPECS: &[TargetSpec] = &[
             pin: "nix/pins/agent-browser.json",
             input: "agent-browser-skill",
         },
+        managed_paths: &["nix/pins/agent-browser.json", "flake.nix", "flake.lock"],
     },
     TargetSpec {
         target: Target::Watchexec,
@@ -115,6 +119,7 @@ pub static TARGET_SPECS: &[TargetSpec] = &[
             asset_naming: AssetNaming::WatchexecTarget,
             source_hash: false,
         },
+        managed_paths: &["nix/pins/watchexec.json"],
     },
     TargetSpec {
         target: Target::Shellfirm,
@@ -124,6 +129,7 @@ pub static TARGET_SPECS: &[TargetSpec] = &[
             pin: "nix/pins/shellfirm.json",
             package: "shellfirm",
         },
+        managed_paths: &["nix/pins/shellfirm.json"],
     },
     TargetSpec {
         target: Target::Herdr,
@@ -134,6 +140,7 @@ pub static TARGET_SPECS: &[TargetSpec] = &[
             asset_naming: AssetNaming::NameField,
             source_hash: true,
         },
+        managed_paths: &["nix/pins/herdr.json"],
     },
     TargetSpec {
         target: Target::Difit,
@@ -146,6 +153,12 @@ pub static TARGET_SPECS: &[TargetSpec] = &[
             lock: "nix/packages/difit/package-lock.json",
             package: "difit",
         },
+        managed_paths: &[
+            "nix/pins/difit.json",
+            "nix/packages/difit/package-lock.json",
+            "flake.nix",
+            "flake.lock",
+        ],
     },
     TargetSpec {
         target: Target::ClaudeCodeSettingsSchema,
@@ -153,6 +166,7 @@ pub static TARGET_SPECS: &[TargetSpec] = &[
         kind: TargetKind::UrlHash {
             pin: "nix/pins/claude-code-settings-schema.json",
         },
+        managed_paths: &["nix/pins/claude-code-settings-schema.json"],
     },
     TargetSpec {
         target: Target::CodexApp,
@@ -160,6 +174,7 @@ pub static TARGET_SPECS: &[TargetSpec] = &[
         kind: TargetKind::CodexApp {
             pin: "nix/pins/codex-app.json",
         },
+        managed_paths: &["nix/pins/codex-app.json"],
     },
 ];
 
@@ -189,6 +204,7 @@ pub fn unimplemented_target_names() -> Vec<&'static str> {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
+    use std::path::{Component, Path};
 
     use super::{TARGET_SPECS, Target, target_by_name, target_spec, unimplemented_target_names};
 
@@ -234,6 +250,49 @@ mod tests {
         for spec in TARGET_SPECS {
             assert_eq!(target_by_name(spec.name), Some(spec.target));
             assert_eq!(spec.target.name(), spec.name);
+            let unique = spec.managed_paths.iter().copied().collect::<BTreeSet<_>>();
+            assert_eq!(
+                unique.len(),
+                spec.managed_paths.len(),
+                "{} has duplicate managed paths",
+                spec.name
+            );
+            for managed in spec.managed_paths {
+                let path = Path::new(managed);
+                assert!(!path.is_absolute() && !path.as_os_str().is_empty());
+                assert!(
+                    path.components()
+                        .all(|component| matches!(component, Component::Normal(_))),
+                    "{} has unsafe managed path {managed}",
+                    spec.name
+                );
+            }
+            let pin = match spec.kind {
+                super::TargetKind::PairedRelease { pin, .. }
+                | super::TargetKind::Release { pin, .. }
+                | super::TargetKind::UrlHash { pin }
+                | super::TargetKind::Shellfirm { pin, .. }
+                | super::TargetKind::Difit { pin, .. }
+                | super::TargetKind::CodexApp { pin } => pin,
+                super::TargetKind::Unimplemented => continue,
+            };
+            assert!(
+                spec.managed_paths.contains(&pin),
+                "{} does not own its pin {pin}",
+                spec.name
+            );
+            match spec.kind {
+                super::TargetKind::PairedRelease { .. } => {
+                    assert!(spec.managed_paths.contains(&"flake.nix"));
+                    assert!(spec.managed_paths.contains(&"flake.lock"));
+                }
+                super::TargetKind::Difit { lock, .. } => {
+                    assert!(spec.managed_paths.contains(&lock));
+                    assert!(spec.managed_paths.contains(&"flake.nix"));
+                    assert!(spec.managed_paths.contains(&"flake.lock"));
+                }
+                _ => {}
+            }
         }
         assert_eq!(target_by_name("unknown"), None);
         assert!(unimplemented_target_names().is_empty());

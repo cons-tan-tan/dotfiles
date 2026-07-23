@@ -4,6 +4,7 @@ use crate::command::{CommandOutput, CommandRunner, CommandSpec};
 use crate::error::UpdateError;
 use crate::pins::PinDocument;
 use crate::transaction::Transaction;
+use crate::validation::validate_sri_hash;
 
 const LOCAL_PACKAGE_EXPRESSION: &str = r#"
 let
@@ -47,6 +48,7 @@ pub fn compute_hash_via_failed_build<R: CommandRunner>(
             "{label}: failed to extract {field} from build output ({reason}):\n{diagnostic}"
         ))
     })?;
+    validate_sri_hash(&format!("{label}: {field}"), &hash)?;
     pin.set_string(&[field], &hash)?;
     if let Some(rendered) = pin.rendered()? {
         transaction.replace(pin_path, &rendered)?;

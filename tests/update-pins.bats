@@ -226,21 +226,21 @@ plist = {
 with zipfile.ZipFile(zip_path, "w") as archive:
     archive.writestr(f"{app_name}/Contents/Info.plist", plistlib.dumps(plist))
 PY
-    printf '{"hash":"sha256-codex-app-for-test","storePath":"%s"}\n' "$zip_path"
+    printf '{"hash":"sha256-V95M9AFEvffQABDy9VV6fWQsK5cFMJv63hZ90xPiypM=","storePath":"%s"}\n' "$zip_path"
     exit 0
   fi
   if [ "${3:-}" = "--json" ] && [ "${4:-}" = "https://json.schemastore.org/claude-code-settings.json" ]; then
-    printf '{"hash":"%s"}\n' "${UPDATE_PINS_SCHEMA_HASH:-sha256-schema-for-test}"
+    printf '{"hash":"%s"}\n' "${UPDATE_PINS_SCHEMA_HASH:-sha256-3wrW5DiA8JyQ6/lfGREBeKumiQ3wAQ69p0hQKeK1Q7Q=}"
     exit 0
   fi
   if [[ " $* " == *"registry.npmjs.org/difit/-/difit-"* ]]; then
-    printf '{"hash":"sha256-difit-src-for-test","storePath":"%s"}\n' "$UPDATE_PINS_DIFIT_TARBALL"
+    printf '{"hash":"sha256-gmer9Ei3Jq/YwFQ13VuGqxjSZiafe7wWoJnabLgSrKE=","storePath":"%s"}\n' "$UPDATE_PINS_DIFIT_TARBALL"
     exit 0
   fi
   if [[ " $* " == *" --unpack "* ]]; then
-    printf '{"hash":"sha256-src-for-test"}\n'
+    printf '{"hash":"%s"}\n' "${UPDATE_PINS_SOURCE_HASH:-sha256-JaZjQmPBsfb8RpegTiuZBOpLBCqJr1nck+wfXUSEiiY=}"
   else
-    printf '{"hash":"sha256-asset-for-test"}\n'
+    printf '{"hash":"%s"}\n' "${UPDATE_PINS_ASSET_HASH:-sha256-1ZOG4K5DXikvvg6825VLde1fs5IgkSd8sZ95j8XVBxg=}"
   fi
   exit 0
 fi
@@ -266,7 +266,7 @@ if [ "$1" = "build" ] && [ "${2:-}" = "--impure" ] && [ "${3:-}" = "--expr" ] &&
   success)
     if [ "$count" -eq 1 ]; then
       echo "error: hash mismatch" >&2
-      echo "got: sha256-cargo-for-test" >&2
+      echo "got: sha256-MyJTLYWJ+VyRKnyVauzVsNiEcmO5AhQ4xyoSYEH2Eug=" >&2
       exit 1
     fi
     exit 0
@@ -274,7 +274,7 @@ if [ "$1" = "build" ] && [ "${2:-}" = "--impure" ] && [ "${3:-}" = "--expr" ] &&
   verify-fails)
     if [ "$count" -eq 1 ]; then
       echo "error: hash mismatch" >&2
-      echo "got: sha256-cargo-for-test" >&2
+      echo "got: sha256-MyJTLYWJ+VyRKnyVauzVsNiEcmO5AhQ4xyoSYEH2Eug=" >&2
       exit 1
     fi
     echo "verification build failed" >&2
@@ -303,7 +303,7 @@ if [ "$1" = "build" ] && [ "${2:-}" = "--impure" ] && [ "${3:-}" = "--expr" ] &&
   success)
     if [ "$count" -eq 1 ]; then
       echo "error: hash mismatch" >&2
-      echo "got: sha256-npmdeps-for-test" >&2
+      echo "got: sha256-32X0K6wkLW2x9cJJJ6J+cu5HOM2+oTZe5AEqLRHvpPM=" >&2
       exit 1
     fi
     exit 0
@@ -311,7 +311,7 @@ if [ "$1" = "build" ] && [ "${2:-}" = "--impure" ] && [ "${3:-}" = "--expr" ] &&
   verify-fails)
     if [ "$count" -eq 1 ]; then
       echo "error: hash mismatch" >&2
-      echo "got: sha256-npmdeps-for-test" >&2
+      echo "got: sha256-32X0K6wkLW2x9cJJJ6J+cu5HOM2+oTZe5AEqLRHvpPM=" >&2
       exit 1
     fi
     echo "verification build failed" >&2
@@ -331,6 +331,9 @@ if [ "$1" = "flake" ] && [ "${2:-}" = "update" ]; then
   if [ "${UPDATE_PINS_FAIL_FLAKE_UPDATE:-}" = "$input" ]; then
     echo "flake update failed for $input" >&2
     exit 1
+  fi
+  if [ "${UPDATE_PINS_CORRUPT_FLAKE_AFTER_UPDATE:-}" = "$input" ]; then
+    printf '\n# url = "github:aannoo/hcom/v0.0.0";\n' >>"$UPDATE_PINS_FAKE_ROOT/flake.nix"
   fi
   exit 0
 fi
@@ -464,7 +467,7 @@ make_unrelated_updates_noop() {
   [[ "$output" == *"== herdr"* ]]
   [[ "$output" != *"== hcom"* ]]
   [ "$(jq -r .version "$WORK/nix/pins/herdr.json")" = "9.9.9" ]
-  [ "$(jq -r .srcHash "$WORK/nix/pins/herdr.json")" = "sha256-src-for-test" ]
+  [ "$(jq -r .srcHash "$WORK/nix/pins/herdr.json")" = "sha256-JaZjQmPBsfb8RpegTiuZBOpLBCqJr1nck+wfXUSEiiY=" ]
   [[ "$output" == *"herdr updated."* ]]
   cp "$WORK/nix/pins/herdr.json" "$original/nix/pins/herdr.json"
   assert_managed_matches "$original"
@@ -478,7 +481,7 @@ make_unrelated_updates_noop() {
   run_update_pins hcom
 
   [ "$status" -eq 0 ]
-  [ "$(jq -r '.assets["x86_64-linux"].hash' "$WORK/nix/pins/hcom.json")" = "sha256-asset-for-test" ]
+  [ "$(jq -r '.assets["x86_64-linux"].hash' "$WORK/nix/pins/hcom.json")" = "sha256-1ZOG4K5DXikvvg6825VLde1fs5IgkSd8sZ95j8XVBxg=" ]
   grep -Fq 'url = "github:aannoo/hcom/v9.9.9";' "$WORK/flake.nix"
   [ "$(jq -r .updated "$WORK/flake.lock")" = "hcom-src" ]
   grep -Fq "gh api repos/aannoo/hcom/releases/latest --jq .tag_name" "$UPDATE_PINS_COMMAND_LOG"
@@ -497,7 +500,7 @@ make_unrelated_updates_noop() {
   run_update_pins agent-slack
 
   [ "$status" -eq 0 ]
-  [ "$(jq -r '.assets["x86_64-linux"].hash' "$WORK/nix/pins/agent-slack.json")" = "sha256-asset-for-test" ]
+  [ "$(jq -r '.assets["x86_64-linux"].hash' "$WORK/nix/pins/agent-slack.json")" = "sha256-1ZOG4K5DXikvvg6825VLde1fs5IgkSd8sZ95j8XVBxg=" ]
   grep -Fq 'url = "github:stablyai/agent-slack/v9.9.9";' "$WORK/flake.nix"
   [ "$(jq -r .updated "$WORK/flake.lock")" = "agent-slack-skill" ]
   cp "$WORK/nix/pins/agent-slack.json" "$original/nix/pins/agent-slack.json"
@@ -516,8 +519,8 @@ make_unrelated_updates_noop() {
 
   [ "$status" -eq 0 ]
   [ "$(jq -r .version "$WORK/nix/pins/shellfirm.json")" = "9.9.9" ]
-  [ "$(jq -r .srcHash "$WORK/nix/pins/shellfirm.json")" = "sha256-src-for-test" ]
-  [ "$(jq -r .cargoHash "$WORK/nix/pins/shellfirm.json")" = "sha256-cargo-for-test" ]
+  [ "$(jq -r .srcHash "$WORK/nix/pins/shellfirm.json")" = "sha256-JaZjQmPBsfb8RpegTiuZBOpLBCqJr1nck+wfXUSEiiY=" ]
+  [ "$(jq -r .cargoHash "$WORK/nix/pins/shellfirm.json")" = "sha256-MyJTLYWJ+VyRKnyVauzVsNiEcmO5AhQ4xyoSYEH2Eug=" ]
   [ "$(cat "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT")" -eq 2 ]
   cp "$WORK/nix/pins/shellfirm.json" "$original/nix/pins/shellfirm.json"
   assert_managed_matches "$original"
@@ -538,12 +541,12 @@ make_unrelated_updates_noop() {
 @test "single target updates only the Claude Code settings schema" {
   original="$WORK/original"
   save_managed "$original"
-  export UPDATE_PINS_SCHEMA_HASH=sha256-schema-only-for-test
+  export UPDATE_PINS_SCHEMA_HASH=sha256-3wrW5DiA8JyQ6/lfGREBeKumiQ3wAQ69p0hQKeK1Q7Q=
 
   run_update_pins claude-code-settings-schema
 
   [ "$status" -eq 0 ]
-  [ "$(jq -r .hash "$WORK/nix/pins/claude-code-settings-schema.json")" = "sha256-schema-only-for-test" ]
+  [ "$(jq -r .hash "$WORK/nix/pins/claude-code-settings-schema.json")" = "sha256-3wrW5DiA8JyQ6/lfGREBeKumiQ3wAQ69p0hQKeK1Q7Q=" ]
   cp "$WORK/nix/pins/claude-code-settings-schema.json" "$original/nix/pins/claude-code-settings-schema.json"
   assert_managed_matches "$original"
 }
@@ -557,6 +560,109 @@ make_unrelated_updates_noop() {
 
   [ "$status" -ne 0 ]
   assert_managed_matches "$original"
+}
+
+@test "single target ignores an unrelated dirty pin" {
+  printf '{"dirty":true}\n' >"$WORK/nix/pins/hcom.json"
+  original="$WORK/original"
+  save_managed "$original"
+
+  run_update_pins herdr
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"herdr is up to date."* ]]
+  assert_managed_matches "$original"
+}
+
+@test "all validates every pin before the first upstream command" {
+  jq '.hash = "invalid"' "$WORK/nix/pins/codex-app.json" >"$WORK/codex-app.json"
+  mv "$WORK/codex-app.json" "$WORK/nix/pins/codex-app.json"
+  git -C "$WORK" add nix/pins/codex-app.json
+  git -C "$WORK" commit -q -m "malformed codex pin fixture"
+  original="$WORK/original"
+  save_managed "$original"
+
+  run_update_pins
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"codex-app: nix/pins/codex-app.json: hash"* ]]
+  [ ! -e "$UPDATE_PINS_COMMAND_LOG" ]
+  assert_managed_matches "$original"
+}
+
+@test "same-version malformed release pin fails before discovery" {
+  jq '.assets["x86_64-linux"].hash = null' "$WORK/nix/pins/herdr.json" >"$WORK/herdr.json"
+  mv "$WORK/herdr.json" "$WORK/nix/pins/herdr.json"
+  git -C "$WORK" add nix/pins/herdr.json
+  git -C "$WORK" commit -q -m "malformed herdr pin fixture"
+  original="$WORK/original"
+  save_managed "$original"
+
+  run_update_pins herdr
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"herdr: nix/pins/herdr.json: assets.x86_64-linux.hash"* ]]
+  [ ! -e "$UPDATE_PINS_COMMAND_LOG" ]
+  assert_managed_matches "$original"
+}
+
+@test "invalid fetched asset hash rolls back without publishing a candidate" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_HERDR_TAG=v9.9.9
+  export UPDATE_PINS_ASSET_HASH=invalid
+
+  run_update_pins herdr
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"herdr: nix/pins/herdr.json: assets."*".hash: expected a sha256 SRI hash"* ]]
+  assert_managed_matches "$original"
+  assert_no_staging_files
+}
+
+@test "release pin rejects missing and extra asset platforms before discovery" {
+  for mutation in 'del(.assets["x86_64-linux"])' '.assets.extra = .assets["aarch64-linux"]'; do
+    jq "$mutation" "$WORK/nix/pins/herdr.json" >"$WORK/herdr.json"
+    mv "$WORK/herdr.json" "$WORK/nix/pins/herdr.json"
+    git -C "$WORK" add nix/pins/herdr.json
+    git -C "$WORK" commit -q -m "malformed herdr platform fixture"
+
+    run_update_pins herdr
+
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"herdr: nix/pins/herdr.json: assets: expected systems"* ]]
+    [ ! -e "$UPDATE_PINS_COMMAND_LOG" ]
+
+    git -C "$WORK" reset -q --hard HEAD^
+  done
+}
+
+@test "ordinary release rejects an unsafe candidate version before prefetch" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_HERDR_TAG='v9.9.9"; builtins.abort "unsafe'
+
+  run_update_pins herdr
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"herdr: unsupported release version"* ]]
+  ! grep -Fq "nix store prefetch-file" "$UPDATE_PINS_COMMAND_LOG"
+  assert_managed_matches "$original"
+}
+
+@test "postflight validation failure rolls back the completed target" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_HCOM_TAG=v9.9.9
+  export UPDATE_PINS_CORRUPT_FLAKE_AFTER_UPDATE=hcom-src
+
+  run_update_pins hcom
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"expected one tagged flake input URL"* ]]
+  [[ "$output" == *"update-pins: failed; restoring managed files from backup"* ]]
+  assert_managed_matches "$original"
+  assert_no_staging_files
 }
 
 @test "managed staged dirty files are rejected without changing contents" {
@@ -680,8 +786,8 @@ make_unrelated_updates_noop() {
   run_update_pins difit
 
   [ "$status" -eq 0 ]
-  [ "$(jq -r .srcHash "$WORK/nix/pins/difit.json")" = "sha256-difit-src-for-test" ]
-  [ "$(jq -r .npmDepsHash "$WORK/nix/pins/difit.json")" = "sha256-npmdeps-for-test" ]
+  [ "$(jq -r .srcHash "$WORK/nix/pins/difit.json")" = "sha256-gmer9Ei3Jq/YwFQ13VuGqxjSZiafe7wWoJnabLgSrKE=" ]
+  [ "$(jq -r .npmDepsHash "$WORK/nix/pins/difit.json")" = "sha256-32X0K6wkLW2x9cJJJ6J+cu5HOM2+oTZe5AEqLRHvpPM=" ]
   [ "$(jq -r .version "$WORK/nix/packages/difit/package-lock.json")" = "9.9.9" ]
   [ "$(jq -r '.packages[""].version' "$WORK/nix/packages/difit/package-lock.json")" = "9.9.9" ]
   grep -Fq 'url = "github:yoshiko-pg/difit/v9.9.9";' "$WORK/flake.nix"
@@ -734,7 +840,7 @@ make_unrelated_updates_noop() {
   run_update_pins agent-browser
 
   [ "$status" -eq 0 ]
-  [ "$(jq -r '.assets["x86_64-linux"].hash' "$WORK/nix/pins/agent-browser.json")" = "sha256-asset-for-test" ]
+  [ "$(jq -r '.assets["x86_64-linux"].hash' "$WORK/nix/pins/agent-browser.json")" = "sha256-1ZOG4K5DXikvvg6825VLde1fs5IgkSd8sZ95j8XVBxg=" ]
   grep -Fq 'url = "github:vercel-labs/agent-browser/v9.9.9";' "$WORK/flake.nix"
   [ "$(jq -r .updated "$WORK/flake.lock")" = "agent-browser-skill" ]
   [ "$(cat "$UPDATE_PINS_FLAKE_UPDATE_LOG")" = "agent-browser-skill" ]
@@ -767,8 +873,8 @@ make_unrelated_updates_noop() {
   [ "$(jq -r .version "$WORK/nix/pins/watchexec.json")" = "9.9.9" ]
   [ "$(jq -r '.assets["aarch64-darwin"].target' "$WORK/nix/pins/watchexec.json")" = "aarch64-apple-darwin" ]
   [ "$(jq -r '.assets["x86_64-darwin"].target' "$WORK/nix/pins/watchexec.json")" = "x86_64-apple-darwin" ]
-  [ "$(jq -r '.assets["aarch64-darwin"].hash' "$WORK/nix/pins/watchexec.json")" = "sha256-asset-for-test" ]
-  [ "$(jq -r '.assets["x86_64-darwin"].hash' "$WORK/nix/pins/watchexec.json")" = "sha256-asset-for-test" ]
+  [ "$(jq -r '.assets["aarch64-darwin"].hash' "$WORK/nix/pins/watchexec.json")" = "sha256-1ZOG4K5DXikvvg6825VLde1fs5IgkSd8sZ95j8XVBxg=" ]
+  [ "$(jq -r '.assets["x86_64-darwin"].hash' "$WORK/nix/pins/watchexec.json")" = "sha256-1ZOG4K5DXikvvg6825VLde1fs5IgkSd8sZ95j8XVBxg=" ]
   cp "$WORK/nix/pins/watchexec.json" "$original/nix/pins/watchexec.json"
   assert_managed_matches "$original"
 }
@@ -798,7 +904,7 @@ make_unrelated_updates_noop() {
   [ "$status" -eq 0 ]
   [ "$(jq -r .version "$WORK/nix/pins/codex-app.json")" = "26.999.10101" ]
   [ "$(jq -r .url "$WORK/nix/pins/codex-app.json")" = "$UPDATE_PINS_CODEX_APP_URL" ]
-  [ "$(jq -r .hash "$WORK/nix/pins/codex-app.json")" = "sha256-codex-app-for-test" ]
+  [ "$(jq -r .hash "$WORK/nix/pins/codex-app.json")" = "sha256-V95M9AFEvffQABDy9VV6fWQsK5cFMJv63hZ90xPiypM=" ]
   [ "$(jq -r .appName "$WORK/nix/pins/codex-app.json")" = "ChatGPT.app" ]
   [ "$(jq -r .bundleIdentifier "$WORK/nix/pins/codex-app.json")" = "com.openai.codex" ]
   [ "$(jq -r .displayName "$WORK/nix/pins/codex-app.json")" = "ChatGPT" ]
@@ -978,15 +1084,15 @@ make_unrelated_updates_noop() {
 
   [ "$status" -eq 0 ]
   grep -Fq 'url = "github:aannoo/hcom/v1.2.3";' "$WORK/flake.nix"
-  [ "$(jq -r '.assets["aarch64-darwin"].hash' "$WORK/nix/pins/hcom.json")" = "sha256-asset-for-test" ]
+  [ "$(jq -r '.assets["aarch64-darwin"].hash' "$WORK/nix/pins/hcom.json")" = "sha256-1ZOG4K5DXikvvg6825VLde1fs5IgkSd8sZ95j8XVBxg=" ]
   grep -Fq 'url = "github:stablyai/agent-slack/v4.5.6";' "$WORK/flake.nix"
   [ "$(jq -r .version "$WORK/nix/pins/shellfirm.json")" = "8.8.8" ]
-  [ "$(jq -r .srcHash "$WORK/nix/pins/shellfirm.json")" = "sha256-src-for-test" ]
-  [ "$(jq -r .cargoHash "$WORK/nix/pins/shellfirm.json")" = "sha256-cargo-for-test" ]
+  [ "$(jq -r .srcHash "$WORK/nix/pins/shellfirm.json")" = "sha256-JaZjQmPBsfb8RpegTiuZBOpLBCqJr1nck+wfXUSEiiY=" ]
+  [ "$(jq -r .cargoHash "$WORK/nix/pins/shellfirm.json")" = "sha256-MyJTLYWJ+VyRKnyVauzVsNiEcmO5AhQ4xyoSYEH2Eug=" ]
   [ "$(jq -r .version "$WORK/nix/pins/herdr.json")" = "9.9.9" ]
-  [ "$(jq -r .srcHash "$WORK/nix/pins/herdr.json")" = "sha256-src-for-test" ]
-  [ "$(jq -r '.assets["x86_64-linux"].hash' "$WORK/nix/pins/herdr.json")" = "sha256-asset-for-test" ]
-  [ "$(jq -r .hash "$WORK/nix/pins/claude-code-settings-schema.json")" = "sha256-schema-for-test" ]
+  [ "$(jq -r .srcHash "$WORK/nix/pins/herdr.json")" = "sha256-JaZjQmPBsfb8RpegTiuZBOpLBCqJr1nck+wfXUSEiiY=" ]
+  [ "$(jq -r '.assets["x86_64-linux"].hash' "$WORK/nix/pins/herdr.json")" = "sha256-1ZOG4K5DXikvvg6825VLde1fs5IgkSd8sZ95j8XVBxg=" ]
+  [ "$(jq -r .hash "$WORK/nix/pins/claude-code-settings-schema.json")" = "sha256-3wrW5DiA8JyQ6/lfGREBeKumiQ3wAQ69p0hQKeK1Q7Q=" ]
   [ "$(jq -r .updated "$WORK/flake.lock")" = "agent-slack-skill" ]
   [ "$(cat "$UPDATE_PINS_FLAKE_UPDATE_LOG")" = $'hcom-src\nagent-slack-skill' ]
   [ "$(printf '%s\n' "$output" | tail -n 1)" = "Pins updated. Review with 'git diff', verify with 'nix run .#build', then commit." ]

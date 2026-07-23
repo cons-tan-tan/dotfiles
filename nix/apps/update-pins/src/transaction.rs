@@ -9,7 +9,7 @@ use tempfile::Builder;
 use crate::command::{CommandRunner, CommandSpec, require_success, run_checked};
 use crate::error::UpdateError;
 
-const MANAGED_PATHS: [&str; 4] = [
+const GLOBAL_MANAGED_PATHS: [&str; 4] = [
     ":(glob)nix/pins/*.json",
     "flake.nix",
     "flake.lock",
@@ -77,11 +77,44 @@ pub struct Transaction<'a, R: CommandRunner> {
     runner: &'a R,
     _lock: File,
     snapshots: BTreeMap<PathBuf, FileSnapshot>,
+    managed_paths: Option<BTreeSet<PathBuf>>,
     finalized: bool,
 }
 
 impl<'a, R: CommandRunner> Transaction<'a, R> {
     pub fn begin(repository: Repository, runner: &'a R) -> Result<Self, UpdateError> {
+        Self::begin_inner(repository, runner, None)
+    }
+
+    pub fn begin_scoped<I, P>(
+        repository: Repository,
+        runner: &'a R,
+        managed_paths: I,
+    ) -> Result<Self, UpdateError>
+    where
+        I: IntoIterator<Item = P>,
+        P: AsRef<Path>,
+    {
+        let managed_paths = managed_paths
+            .into_iter()
+            .map(|path| path.as_ref().to_owned())
+            .collect::<BTreeSet<_>>();
+        if managed_paths.is_empty() {
+            return Err(UpdateError::message(
+                "update-pins: target scope did not declare any managed paths",
+            ));
+        }
+        for path in &managed_paths {
+            validate_relative_path(path)?;
+        }
+        Self::begin_inner(repository, runner, Some(managed_paths))
+    }
+
+    fn begin_inner(
+        repository: Repository,
+        runner: &'a R,
+        managed_paths: Option<BTreeSet<PathBuf>>,
+    ) -> Result<Self, UpdateError> {
         let lock_path = repository.git_dir.join("update-pins.lock");
         let lock = OpenOptions::new()
             .create(true)
@@ -98,18 +131,36 @@ impl<'a, R: CommandRunner> Transaction<'a, R> {
             }
         })?;
 
-        check_managed_files_clean(&repository.root, runner)?;
-        let managed = load_managed_files(&repository.root, runner)?;
+        let global_pathspecs = GLOBAL_MANAGED_PATHS.map(PathBuf::from);
+        let pathspecs = managed_paths
+            .as_ref()
+            .map(|paths| paths.iter().cloned().collect::<Vec<_>>())
+            .unwrap_or_else(|| global_pathspecs.to_vec());
+        check_managed_files_clean(&repository.root, runner, &pathspecs)?;
+        let managed = match &managed_paths {
+            Some(paths) => paths.clone(),
+            None => load_managed_files(&repository.root, runner, &pathspecs)?,
+        };
         let mut snapshots = BTreeMap::new();
         for relative in managed {
-            ensure_managed_path(&relative)?;
+            if managed_paths.is_some() {
+                validate_relative_path(&relative)?;
+            } else {
+                ensure_managed_path(&relative)?;
+            }
             ensure_safe_repository_path(&repository.root, &relative)?;
             let path = repository.root.join(&relative);
-            let bytes = std::fs::read(&path).map_err(|source| UpdateError::io(&path, source))?;
-            let permissions = std::fs::metadata(&path)
-                .map_err(|source| UpdateError::io(&path, source))?
-                .permissions();
-            snapshots.insert(relative, FileSnapshot::Present { bytes, permissions });
+            let snapshot = match std::fs::read(&path) {
+                Ok(bytes) => {
+                    let permissions = std::fs::metadata(&path)
+                        .map_err(|source| UpdateError::io(&path, source))?
+                        .permissions();
+                    FileSnapshot::Present { bytes, permissions }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => FileSnapshot::Absent,
+                Err(error) => return Err(UpdateError::io(&path, error)),
+            };
+            snapshots.insert(relative, snapshot);
         }
 
         Ok(Self {
@@ -117,6 +168,7 @@ impl<'a, R: CommandRunner> Transaction<'a, R> {
             runner,
             _lock: lock,
             snapshots,
+            managed_paths,
             finalized: false,
         })
     }
@@ -131,7 +183,7 @@ impl<'a, R: CommandRunner> Transaction<'a, R> {
 
     pub fn read(&self, relative: impl AsRef<Path>) -> Result<Vec<u8>, UpdateError> {
         let relative = relative.as_ref();
-        ensure_managed_path(relative)?;
+        self.ensure_authorized_path(relative)?;
         ensure_safe_repository_path(&self.repository.root, relative)?;
         let path = self.repository.root.join(relative);
         std::fs::read(&path).map_err(|source| UpdateError::io(path, source))
@@ -143,6 +195,7 @@ impl<'a, R: CommandRunner> Transaction<'a, R> {
         contents: &[u8],
     ) -> Result<bool, UpdateError> {
         let relative = relative.as_ref();
+        self.ensure_authorized_path(relative)?;
         self.snapshot_if_needed(relative)?;
         let path = self.repository.root.join(relative);
         let current = match std::fs::read(&path) {
@@ -168,6 +221,7 @@ impl<'a, R: CommandRunner> Transaction<'a, R> {
 
     pub fn remove(&mut self, relative: impl AsRef<Path>) -> Result<bool, UpdateError> {
         let relative = relative.as_ref();
+        self.ensure_authorized_path(relative)?;
         self.snapshot_if_needed(relative)?;
         let path = self.repository.root.join(relative);
         match std::fs::remove_file(&path) {
@@ -239,7 +293,7 @@ impl<'a, R: CommandRunner> Transaction<'a, R> {
     }
 
     fn snapshot_if_needed(&mut self, relative: &Path) -> Result<(), UpdateError> {
-        ensure_managed_path(relative)?;
+        self.ensure_authorized_path(relative)?;
         ensure_safe_repository_path(&self.repository.root, relative)?;
         if self.snapshots.contains_key(relative) {
             return Ok(());
@@ -259,6 +313,19 @@ impl<'a, R: CommandRunner> Transaction<'a, R> {
         self.snapshots.insert(relative.to_owned(), snapshot);
         Ok(())
     }
+
+    fn ensure_authorized_path(&self, path: &Path) -> Result<(), UpdateError> {
+        match &self.managed_paths {
+            Some(managed) => {
+                validate_relative_path(path)?;
+                if !managed.contains(path) {
+                    return Err(UpdateError::UnmanagedPath(path.to_owned()));
+                }
+            }
+            None => ensure_managed_path(path)?,
+        }
+        Ok(())
+    }
 }
 
 impl<R: CommandRunner> Drop for Transaction<'_, R> {
@@ -271,12 +338,16 @@ impl<R: CommandRunner> Drop for Transaction<'_, R> {
     }
 }
 
-fn check_managed_files_clean<R: CommandRunner>(root: &Path, runner: &R) -> Result<(), UpdateError> {
+fn check_managed_files_clean<R: CommandRunner>(
+    root: &Path,
+    runner: &R,
+    pathspecs: &[PathBuf],
+) -> Result<(), UpdateError> {
     let unstaged = CommandSpec::new("git")
         .arg("diff")
         .arg("--quiet")
         .arg("--")
-        .args(MANAGED_PATHS)
+        .args(pathspecs.iter().map(|path| path.as_os_str()))
         .current_dir(root);
     let output = runner.run(&unstaged)?;
     match output.status {
@@ -292,7 +363,7 @@ fn check_managed_files_clean<R: CommandRunner>(root: &Path, runner: &R) -> Resul
         .arg("--cached")
         .arg("--quiet")
         .arg("--")
-        .args(MANAGED_PATHS)
+        .args(pathspecs.iter().map(|path| path.as_os_str()))
         .current_dir(root);
     let output = runner.run(&staged)?;
     match output.status {
@@ -308,12 +379,13 @@ fn check_managed_files_clean<R: CommandRunner>(root: &Path, runner: &R) -> Resul
 fn load_managed_files<R: CommandRunner>(
     root: &Path,
     runner: &R,
+    pathspecs: &[PathBuf],
 ) -> Result<BTreeSet<PathBuf>, UpdateError> {
     let tracked = CommandSpec::new("git")
         .arg("ls-files")
         .arg("-z")
         .arg("--")
-        .args(MANAGED_PATHS)
+        .args(pathspecs.iter().map(|path| path.as_os_str()))
         .current_dir(root);
     let untracked = CommandSpec::new("git")
         .arg("ls-files")
@@ -321,7 +393,7 @@ fn load_managed_files<R: CommandRunner>(
         .arg("--others")
         .arg("--exclude-standard")
         .arg("--")
-        .args(MANAGED_PATHS)
+        .args(pathspecs.iter().map(|path| path.as_os_str()))
         .current_dir(root);
 
     let mut files = BTreeSet::new();
@@ -473,7 +545,7 @@ fn parse_path_output(command: &CommandSpec, output: &[u8]) -> Result<PathBuf, Up
 #[cfg(test)]
 mod tests {
     use std::fs::Permissions;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
     use std::process::Command;
 
     use tempfile::TempDir;
@@ -703,6 +775,31 @@ mod tests {
     }
 
     #[test]
+    fn scoped_transaction_ignores_unrelated_dirty_files_and_enforces_ownership() {
+        let repository = TestRepository::new();
+        std::fs::write(repository.path().join("flake.nix"), b"{ dirty = true; }\n")
+            .expect("dirty unrelated file");
+        let runner = SystemCommandRunner;
+
+        let mut transaction =
+            Transaction::begin_scoped(repository.repository(), &runner, ["nix/pins/example.json"])
+                .expect("unrelated dirty file is outside the selected scope");
+        assert!(matches!(
+            transaction.replace("flake.nix", b"{}\n"),
+            Err(UpdateError::UnmanagedPath(path)) if path == Path::new("flake.nix")
+        ));
+        transaction.commit().expect("commit scoped transaction");
+
+        let error = Transaction::begin_scoped(repository.repository(), &runner, ["flake.nix"])
+            .err()
+            .expect("selected dirty file must be rejected");
+        assert!(matches!(
+            error,
+            UpdateError::DirtyManagedFiles { kind: "unstaged" }
+        ));
+    }
+
+    #[test]
     fn staged_managed_files_are_rejected_and_failed_begin_releases_lock() {
         let repository = TestRepository::new();
         let pin = repository.path().join("nix/pins/example.json");
@@ -732,8 +829,12 @@ mod tests {
 
     #[test]
     fn git_diff_execution_failure_is_not_reported_as_dirty() {
-        let error = check_managed_files_clean(Path::new("/unused"), &FailingDiffRunner)
-            .expect_err("git failure should propagate");
+        let error = check_managed_files_clean(
+            Path::new("/unused"),
+            &FailingDiffRunner,
+            &[PathBuf::from("nix/pins/example.json")],
+        )
+        .expect_err("git failure should propagate");
 
         assert!(matches!(
             error,

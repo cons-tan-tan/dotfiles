@@ -146,7 +146,13 @@ pub fn update<R: CommandRunner>(
         "{}: {current_version} -> {} (prefetching app...)",
         spec.name, latest.version
     );
-    let prefetched = prefetch_result(runner, transaction.root(), &latest.url, false)?;
+    let prefetched = prefetch_result(
+        &format!("{}: {pin_path}: hash", spec.name),
+        runner,
+        transaction.root(),
+        &latest.url,
+        false,
+    )?;
     let store_path = prefetched.store_path.ok_or_else(|| {
         UpdateError::message(format!(
             "{pin_path}: prefetch did not return storePath for {}",
