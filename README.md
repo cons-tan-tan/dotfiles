@@ -44,7 +44,7 @@ nix run .#apply-secrets
 | `nix run .#markdownlint` | リポジトリ管理の技術文書モードで markdownlint 実行 |
 | `nix run .#textlint` | リポジトリ管理の日本語技術文書モードで textlint 実行 |
 
-`--jobs`は、GitHub Releasesにあるassetのprefetch数だけを制御する。値は1〜4で、既定値は1のため、並列化する場合は明示的に指定する。同時に実行するasset prefetchは`--jobs`の指定数までで、retryはassetごとに行う。したがって、1 targetあたりのasset downloadの最大試行数は、asset数×`--retry`の指定回数になる。上流metadataの取得、source hashのprefetch、flake inputの更新、npm、buildは逐次実行する。
+`--jobs`は、GitHub Releasesにあるassetのprefetch数だけを制御する。値は1〜4で、既定値は1のため、並列化する場合は明示的に指定する。同時に実行するasset prefetchは`--jobs`の指定数までで、retryはassetごとに行う。したがって、1 targetあたりのasset downloadの最大試行数は、asset数×`--retry`の指定回数になる。上流metadataの取得、source hashのprefetch、flake inputの更新、依存hashの計算、package buildは逐次実行する。
 
 ## update-pinsの上流smoke test
 

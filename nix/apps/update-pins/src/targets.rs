@@ -6,7 +6,7 @@ use std::time::Duration;
 use flate2::read::MultiGzDecoder;
 use serde_json::Value;
 
-use crate::build::{compute_hash_via_failed_build, refresh_existing_hash_via_build};
+use crate::build::{build_package_once, compute_candidate_dependency_hash};
 use crate::cli::Target;
 use crate::codex_app;
 use crate::command::{CommandRunner, CommandSpec, run_checked_limited_with_timeout};
@@ -18,14 +18,15 @@ use crate::prefetch::{
     ExpandedLimitReader, TarPreflightLimits, prefetch_hash as prefetch, prefetch_result,
     tar_preflight_limits,
 };
-use crate::registry::{AssetNaming, TargetKind, TargetSpec, target_spec};
+use crate::registry::{
+    AssetNaming, PublishedArtifact, PublishedNodePackageSpec, TargetKind, TargetSpec, target_spec,
+};
 use crate::transaction::Transaction;
 use crate::upstream::{latest_npm_version, latest_tag, validate_release_version};
 
 const MUTATING_COMMAND_OUTPUT_LIMIT: usize = 1024 * 1024;
 const MUTATING_COMMAND_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 const MAX_PACKAGE_JSON_BYTES: u64 = 4 * 1024 * 1024;
-const MAX_NPM_LOCK_BYTES: usize = 16 * 1024 * 1024;
 
 pub fn is_implemented(target: Target) -> bool {
     target_spec(target).is_some_and(|spec| spec.kind.is_implemented())
@@ -93,25 +94,9 @@ pub fn run_target<R: CommandRunner + Sync>(
             runner,
             transaction,
         ),
-        TargetKind::Difit {
-            repository,
-            npm_package,
-            pin,
-            input,
-            lock,
-            package,
-        } => update_difit(
-            spec,
-            repository,
-            npm_package,
-            pin,
-            input,
-            lock,
-            package,
-            policy,
-            runner,
-            transaction,
-        ),
+        TargetKind::PublishedNodePackage(package) => {
+            update_published_node_package(spec, package, policy, runner, transaction)
+        }
         TargetKind::CodexApp { pin } => codex_app::update(spec, pin, policy, runner, transaction),
         TargetKind::Unimplemented => Err(UpdateError::message(format!(
             "update-pins: Rust updater for {} is not yet implemented",
@@ -282,24 +267,23 @@ fn update_url_hash<R: CommandRunner>(
     Ok(true)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn update_difit<R: CommandRunner>(
+fn update_published_node_package<R: CommandRunner>(
     spec: &TargetSpec,
-    repository: &str,
-    npm_package: &str,
-    pin_path: &str,
-    input: &str,
-    lock_path: &str,
-    package: &str,
+    package: PublishedNodePackageSpec,
     policy: RunPolicy,
     runner: &R,
     transaction: &mut Transaction<'_, R>,
 ) -> Result<bool, UpdateError> {
+    let PublishedArtifact::NpmRegistryTarball {
+        package: npm_package,
+        source_hash_field,
+    } = package.artifact;
+    validate_unscoped_npm_package_name(spec.name, npm_package)?;
+    let paired = package.dependencies.source();
+    let pin_path = package.pin;
     let flake = transaction.read("flake.nix")?;
-    let current_lock = transaction.read(lock_path)?;
     let mut pin = load_pin(transaction, pin_path)?;
-    let current_source_hash = pin.string(&["srcHash"])?.to_owned();
-    let current = paired_version(&flake, repository)?;
+    let current = paired_version(&flake, paired.repository)?;
     let version = latest_npm_version(policy, runner, transaction.root(), npm_package)?;
     validate_release_version(spec.name, &version)?;
     if version == current && !policy.force {
@@ -314,7 +298,7 @@ fn update_difit<R: CommandRunner>(
     let source_url =
         format!("https://registry.npmjs.org/{npm_package}/-/{npm_package}-{version}.tgz");
     let source = prefetch_result(
-        &format!("{}: {pin_path}: srcHash", spec.name),
+        &format!("{}: {pin_path}: {source_hash_field}", spec.name),
         policy,
         runner,
         transaction.root(),
@@ -342,10 +326,6 @@ fn update_difit<R: CommandRunner>(
             archive_path.display()
         ),
     )?;
-    let temporary = tempfile::tempdir()
-        .map_err(|source| UpdateError::io("<difit temporary directory>", source))?;
-    let package_dir = temporary.path().join("package");
-    std::fs::create_dir(&package_dir).map_err(|source| UpdateError::io(&package_dir, source))?;
     let package_json = read_npm_package_json(&archive_path, spec.name)?;
     validate_npm_identity(
         &package_json,
@@ -353,61 +333,28 @@ fn update_difit<R: CommandRunner>(
         &version,
         &format!("{} package.json", spec.name),
     )?;
-    let package_json_path = package_dir.join("package.json");
-    std::fs::write(&package_json_path, package_json)
-        .map_err(|source| UpdateError::io(&package_json_path, source))?;
-    let npm = CommandSpec::new("npm")
-        .args([
-            "install",
-            "--package-lock-only",
-            "--ignore-scripts",
-            "--no-audit",
-            "--no-fund",
-        ])
-        .current_dir(&package_dir);
-    run_mutating_command_once(runner, &npm)?;
-
-    let generated_lock = package_dir.join("package-lock.json");
-    require_regular_file(
-        &generated_lock,
-        &format!("{}: npm did not generate package-lock.json", spec.name),
-    )?;
-    let lock_bytes = read_bounded_file(
-        &generated_lock,
-        &format!("{}: generated package-lock.json", spec.name),
-        MAX_NPM_LOCK_BYTES,
-    )?;
-    validate_npm_lock(&lock_bytes, npm_package, &version, spec.name)?;
-    if version == current && source.hash == current_source_hash && lock_bytes == current_lock {
-        let changed = refresh_existing_hash_via_build(
-            spec.name,
-            package,
-            pin_path,
-            "npmDepsHash",
-            &mut pin,
+    pin.set_string(&[source_hash_field], source.hash)?;
+    if version != current {
+        update_paired_flake_input(
+            paired.input,
+            paired.repository,
+            &version,
+            &flake,
             runner,
             transaction,
         )?;
-        println!("{}: candidate source and lockfile are unchanged", spec.name);
-        return Ok(changed);
     }
-    transaction.write_if_changed(lock_path, &lock_bytes)?;
-
-    pin.set_string(&["srcHash"], source.hash)?;
-    pin.set_string(&["npmDepsHash"], "")?;
-    write_pin(transaction, pin_path, &pin)?;
-    if version != current {
-        update_paired_flake_input(input, repository, &version, &flake, runner, transaction)?;
-    }
-    compute_hash_via_failed_build(
+    let dependency_hash = compute_candidate_dependency_hash(
         spec.name,
-        package,
-        pin_path,
-        "npmDepsHash",
-        &mut pin,
+        package.build,
+        package.dependencies,
+        &pin,
         runner,
         transaction,
     )?;
+    pin.set_string(&[package.build.dependency_hash_field], &dependency_hash)?;
+    write_pin(transaction, pin_path, &pin)?;
+    build_package_once(spec.name, package.build.package_attr, runner, transaction)?;
     Ok(true)
 }
 
@@ -547,20 +494,6 @@ fn require_regular_file(path: &Path, message: &str) -> Result<(), UpdateError> {
     }
 }
 
-fn read_bounded_file(path: &Path, label: &str, limit: usize) -> Result<Vec<u8>, UpdateError> {
-    let file = File::open(path).map_err(|source| UpdateError::io(path, source))?;
-    let mut bytes = Vec::new();
-    file.take(limit.saturating_add(1) as u64)
-        .read_to_end(&mut bytes)
-        .map_err(|source| UpdateError::io(path, source))?;
-    if bytes.len() > limit {
-        return Err(UpdateError::message(format!(
-            "{label} exceeded {limit} bytes"
-        )));
-    }
-    Ok(bytes)
-}
-
 fn validate_npm_identity(
     bytes: &[u8],
     expected_name: &str,
@@ -585,39 +518,16 @@ fn validate_npm_identity(
     Ok(())
 }
 
-fn validate_npm_lock(
-    bytes: &[u8],
-    expected_name: &str,
-    expected_version: &str,
-    label: &str,
-) -> Result<(), UpdateError> {
-    validate_npm_identity(
-        bytes,
-        expected_name,
-        expected_version,
-        &format!("{label} package-lock.json"),
-    )?;
-    let document: Value = serde_json::from_slice(bytes).map_err(|source| {
-        UpdateError::message(format!("{label} package-lock.json: invalid JSON: {source}"))
-    })?;
-    let root = document
-        .get("packages")
-        .and_then(Value::as_object)
-        .and_then(|packages| packages.get(""))
-        .and_then(Value::as_object)
-        .ok_or_else(|| {
-            UpdateError::message(format!(
-                "{label} package-lock.json: missing packages[\"\"] object"
-            ))
-        })?;
-    let name = root.get("name").and_then(Value::as_str).unwrap_or_default();
-    let version = root
-        .get("version")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    if name != expected_name || version != expected_version {
+fn validate_unscoped_npm_package_name(label: &str, package: &str) -> Result<(), UpdateError> {
+    if package.is_empty()
+        || package.len() > 214
+        || package.starts_with(['.', '_'])
+        || !package.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'_' | b'.')
+        })
+    {
         return Err(UpdateError::message(format!(
-            "{label} package-lock.json root: expected {expected_name}@{expected_version}, found {name}@{version}"
+            "{label}: registry contains an unsafe or unsupported unscoped npm package name"
         )));
     }
     Ok(())
@@ -885,9 +795,9 @@ mod tests {
 
     use super::{
         MUTATING_COMMAND_OUTPUT_LIMIT, MUTATING_COMMAND_TIMEOUT, is_implemented, paired_version,
-        read_bounded_file, read_npm_package_json, read_npm_package_json_with_limits,
-        refresh_assets_with, replace_paired_version, run_mutating_command_once,
-        validate_npm_identity, validate_npm_lock,
+        read_npm_package_json, read_npm_package_json_with_limits, refresh_assets_with,
+        replace_paired_version, run_mutating_command_once, validate_npm_identity,
+        validate_unscoped_npm_package_name,
     };
     use crate::cli::Target;
     use crate::command::{CommandOutput, CommandRunner, CommandSpec};
@@ -1437,17 +1347,6 @@ mod tests {
         assert!(error.to_string().contains("unsafe path"));
     }
 
-    #[test]
-    fn generated_lock_read_is_bounded() {
-        let file = tempfile::NamedTempFile::new().expect("temporary lock");
-        std::fs::write(file.path(), b"12345").expect("write lock fixture");
-
-        let error =
-            read_bounded_file(file.path(), "difit lock", 4).expect_err("lock must be bounded");
-
-        assert!(error.to_string().contains("difit lock exceeded 4 bytes"));
-    }
-
     fn asset_test_pin() -> crate::pins::PinDocument {
         crate::pins::PinDocument::parse(
             "pin.json",
@@ -1489,24 +1388,22 @@ mod tests {
     }
 
     #[test]
-    fn validates_npm_manifest_and_lock_identity() {
+    fn validates_npm_manifest_identity_and_registry_package_name() {
         let manifest = br#"{"name":"difit","version":"1.2.3"}"#;
         assert!(validate_npm_identity(manifest, "difit", "1.2.3", "manifest").is_ok());
         assert!(validate_npm_identity(manifest, "other", "1.2.3", "manifest").is_err());
         assert!(validate_npm_identity(manifest, "difit", "9.9.9", "manifest").is_err());
-
-        let lock = br#"{
-            "name":"difit",
-            "version":"1.2.3",
-            "packages":{"":{"name":"difit","version":"1.2.3"}}
-        }"#;
-        assert!(validate_npm_lock(lock, "difit", "1.2.3", "difit").is_ok());
-        let wrong_root = br#"{
-            "name":"difit",
-            "version":"1.2.3",
-            "packages":{"":{"name":"difit","version":"9.9.9"}}
-        }"#;
-        assert!(validate_npm_lock(wrong_root, "difit", "1.2.3", "difit").is_err());
+        assert!(validate_unscoped_npm_package_name("difit", "difit").is_ok());
+        for invalid in [
+            "",
+            ".hidden",
+            "_private",
+            "@scope/difit",
+            "Difit",
+            "difit;bad",
+        ] {
+            assert!(validate_unscoped_npm_package_name("difit", invalid).is_err());
+        }
     }
 
     fn write_test_archive(path: &Path, entries: &[(&str, &[u8], bool)]) {

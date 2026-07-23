@@ -1,7 +1,5 @@
 use std::collections::BTreeSet;
 
-use serde_json::Value;
-
 use crate::cli::Target;
 use crate::command::CommandRunner;
 use crate::error::UpdateError;
@@ -77,20 +75,22 @@ pub fn validate_target_input<R: CommandRunner>(
                 document.string(&["version"])?,
             )
         }
-        TargetKind::Difit {
-            repository,
-            pin,
-            input,
-            lock,
-            ..
-        } => {
-            let document = load_pin(transaction, pin)?;
-            validate_hash_field(spec, pin, &document, &["srcHash"])?;
-            validate_hash_field(spec, pin, &document, &["npmDepsHash"])?;
+        TargetKind::PublishedNodePackage(package) => {
+            let document = load_pin(transaction, package.pin)?;
+            let crate::registry::PublishedArtifact::NpmRegistryTarball {
+                source_hash_field, ..
+            } = package.artifact;
+            validate_hash_field(spec, package.pin, &document, &[source_hash_field])?;
+            validate_hash_field(
+                spec,
+                package.pin,
+                &document,
+                &[package.build.dependency_hash_field],
+            )?;
+            let paired = package.dependencies.source();
             let flake = transaction.read("flake.nix")?;
-            let version = paired_input_version(&flake, input, repository)?;
-            validate_release_version(spec.name, &version)?;
-            validate_difit_lock(spec, lock, &transaction.read(lock)?, &version)
+            let version = paired_input_version(&flake, paired.input, paired.repository)?;
+            validate_release_version(spec.name, &version)
         }
         TargetKind::CodexApp { pin } => {
             let document = load_pin(transaction, pin)?;
@@ -298,52 +298,6 @@ fn paired_input_version(
         )));
     }
     Ok(block_version)
-}
-
-fn validate_difit_lock(
-    spec: &TargetSpec,
-    path: &str,
-    bytes: &[u8],
-    expected_version: &str,
-) -> Result<(), UpdateError> {
-    let document: Value = serde_json::from_slice(bytes).map_err(|source| {
-        UpdateError::message(format!("{}: {path}: invalid JSON: {source}", spec.name))
-    })?;
-    let top_name = document
-        .get("name")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    let top_version = document
-        .get("version")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    let root = document
-        .get("packages")
-        .and_then(Value::as_object)
-        .and_then(|packages| packages.get(""))
-        .and_then(Value::as_object)
-        .ok_or_else(|| {
-            UpdateError::message(format!(
-                "{}: {path}: packages[\"\"]: missing root package",
-                spec.name
-            ))
-        })?;
-    let name = root.get("name").and_then(Value::as_str).unwrap_or_default();
-    let version = root
-        .get("version")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    if top_name != "difit"
-        || top_version != expected_version
-        || name != "difit"
-        || version != expected_version
-    {
-        return Err(UpdateError::message(format!(
-            "{}: {path}: expected difit@{expected_version}, found {top_name}@{top_version} and root {name}@{version}",
-            spec.name,
-        )));
-    }
-    Ok(())
 }
 
 #[cfg(test)]

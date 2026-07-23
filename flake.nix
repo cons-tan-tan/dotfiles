@@ -119,7 +119,7 @@
     # バイナリ側の pin (nix/pins/difit.json) とは `nix run .#update-pins` が
     # この input ごと同期する。
     difit-src = {
-      url = "github:yoshiko-pg/difit/v5.0.4";
+      url = "github:yoshiko-pg/difit/v5.0.8";
       flake = false;
     };
 

@@ -221,16 +221,16 @@
     "difit-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1782742298,
-        "narHash": "sha256-klHLeoLqgQJrYtm4ytS2jCOAoPkhqog2k6p9vSfdHBM=",
+        "lastModified": 1783761453,
+        "narHash": "sha256-AT2dUT14+yfMLxcJdJC/CI28RfyElsoa97vxUIMjUo0=",
         "owner": "yoshiko-pg",
         "repo": "difit",
-        "rev": "59df3692ff4aa8f96df84b98e17171fa452a0b04",
+        "rev": "baf4772bdf5e682d0fdb0581c0edee01863a26f5",
         "type": "github"
       },
       "original": {
         "owner": "yoshiko-pg",
-        "ref": "v5.0.4",
+        "ref": "v5.0.8",
         "repo": "difit",
         "type": "github"
       }

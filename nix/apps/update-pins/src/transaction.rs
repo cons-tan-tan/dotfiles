@@ -9,12 +9,11 @@ use tempfile::Builder;
 use crate::command::{CommandRunner, CommandSpec, require_success, run_checked};
 use crate::error::UpdateError;
 
-const GLOBAL_MANAGED_PATHS: [&str; 5] = [
+const GLOBAL_MANAGED_PATHS: [&str; 4] = [
     ":(glob)nix/pins/*.json",
     "flake.nix",
     "flake.lock",
     "nix/packages/shellfirm/Cargo.lock",
-    "nix/packages/difit/package-lock.json",
 ];
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -520,12 +519,7 @@ fn ensure_managed_path(path: &Path) -> Result<(), UpdateError> {
         && path
             .extension()
             .is_some_and(|extension| extension == "json");
-    let is_fixed = [
-        Path::new("flake.nix"),
-        Path::new("flake.lock"),
-        Path::new("nix/packages/difit/package-lock.json"),
-    ]
-    .contains(&path);
+    let is_fixed = [Path::new("flake.nix"), Path::new("flake.lock")].contains(&path);
     if is_pin || is_fixed {
         Ok(())
     } else {

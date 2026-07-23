@@ -35,7 +35,6 @@ let
       pkgs.curl
       pkgs.gitMinimal
       pkgs.nix
-      pkgs.nodejs
     ];
     text = ''
       exec ${lib.getExe updatePinsCore} "$@"

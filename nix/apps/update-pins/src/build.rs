@@ -4,6 +4,7 @@ use std::time::Duration;
 use crate::command::{CommandOutput, CommandRunner, CommandSpec};
 use crate::error::UpdateError;
 use crate::pins::PinDocument;
+use crate::registry::{DependencyProvenance, PackageBuildSpec};
 use crate::transaction::Transaction;
 use crate::value_validation::validate_sri_hash;
 
@@ -27,18 +28,22 @@ let
     inputs = flake.inputs;
   } builtins.currentSystem;
   packageName = builtins.getEnv "UPDATE_PINS_PACKAGE";
+  pinOverride = builtins.getEnv "UPDATE_PINS_PIN_OVERRIDE";
+  dependencyHashField = builtins.getEnv "UPDATE_PINS_DEPENDENCY_HASH_FIELD";
+  expectedDependencyProvenance =
+    builtins.fromJSON (builtins.getEnv "UPDATE_PINS_DEPENDENCY_PROVENANCE_JSON");
   rawPin = builtins.fromJSON (builtins.getEnv "UPDATE_PINS_PIN_JSON");
-  pin =
-    if packageName == "difit" then
-      rawPin // { npmDepsHash = pkgs.lib.fakeHash; }
-    else
-      throw "unsupported update-pins candidate package";
-  package = pkgs.dotfilesPackages.${packageName};
 in
-if packageName == "difit" then
-  package.override { difitPin = pin; }
-else
-  throw "unsupported update-pins candidate package"
+import ./nix/apps/update-pins/candidate-package.nix {
+  inherit
+    pkgs
+    packageName
+    pinOverride
+    dependencyHashField
+    expectedDependencyProvenance
+    rawPin
+    ;
+}
 "#;
 
 pub fn build_package_once<R: CommandRunner>(
@@ -67,65 +72,22 @@ pub fn build_package_once<R: CommandRunner>(
     )))
 }
 
-pub fn compute_hash_via_failed_build<R: CommandRunner>(
+pub fn compute_candidate_dependency_hash<R: CommandRunner>(
     label: &str,
-    package: &str,
-    pin_path: &str,
-    field: &str,
-    pin: &mut PinDocument,
+    build: PackageBuildSpec,
+    dependencies: DependencyProvenance,
+    pin: &PinDocument,
     runner: &R,
-    transaction: &mut Transaction<'_, R>,
-) -> Result<(), UpdateError> {
+    transaction: &Transaction<'_, R>,
+) -> Result<String, UpdateError> {
+    let field = build.dependency_hash_field;
     println!("{label}: computing {field} (expect one failing build)...");
-    let command = local_package_command(transaction.root(), package);
-    let failed_build = run_build(runner, &command)?;
-    match failed_build.status {
-        Some(0) => {
-            return Err(UpdateError::message(format!(
-                "{label}: expected the first build for {field} to fail with a hash mismatch"
-            )));
-        }
-        Some(_) => {}
-        None => {
-            return Err(UpdateError::message(format!(
-                "{label}: first build for {field} was terminated before reporting a hash mismatch"
-            )));
-        }
-    }
-
-    let hash = parse_mismatch_hash(&failed_build).map_err(|reason| {
-        let diagnostic = output_tail(&failed_build, 10);
-        UpdateError::message(format!(
-            "{label}: failed to extract {field} from build output ({reason}):\n{diagnostic}"
-        ))
-    })?;
-    validate_sri_hash(&format!("{label}: {field}"), &hash)?;
-    pin.set_string(&[field], &hash)?;
-    if let Some(rendered) = pin.rendered()? {
-        transaction.write_if_changed(pin_path, &rendered)?;
-    }
-
-    println!("{label}: verifying build...");
-    verify_package_build(label, package, field, runner, transaction)
-}
-
-pub fn refresh_existing_hash_via_build<R: CommandRunner>(
-    label: &str,
-    package: &str,
-    pin_path: &str,
-    field: &str,
-    pin: &mut PinDocument,
-    runner: &R,
-    transaction: &mut Transaction<'_, R>,
-) -> Result<bool, UpdateError> {
-    println!("{label}: recomputing candidate {field}...");
-    let current = pin.string(&[field])?.to_owned();
     let pin_json = serde_json::to_string(pin.object()).map_err(|source| {
         UpdateError::message(format!(
             "{label}: failed to serialize candidate pin for {field}: {source}"
         ))
     })?;
-    let command = candidate_package_command(transaction.root(), package, &pin_json);
+    let command = candidate_package_command(transaction.root(), build, dependencies, &pin_json)?;
     let build = run_build(runner, &command)?;
     match build.status {
         Some(0) => {
@@ -147,38 +109,7 @@ pub fn refresh_existing_hash_via_build<R: CommandRunner>(
         ))
     })?;
     validate_sri_hash(&format!("{label}: {field}"), &hash)?;
-    let changed = hash != current;
-    if changed {
-        pin.set_string(&[field], &hash)?;
-        if let Some(rendered) = pin.rendered()? {
-            transaction.write_if_changed(pin_path, &rendered)?;
-        }
-    }
-
-    println!("{label}: verifying candidate {field}...");
-    verify_package_build(label, package, field, runner, transaction)?;
-    Ok(changed)
-}
-
-fn verify_package_build<R: CommandRunner>(
-    label: &str,
-    package: &str,
-    field: &str,
-    runner: &R,
-    transaction: &Transaction<'_, R>,
-) -> Result<(), UpdateError> {
-    let command = local_package_command(transaction.root(), package);
-    let verification = run_build(runner, &command)?;
-    if !verification.success() {
-        let status = verification
-            .status
-            .map_or_else(|| "signal".to_owned(), |status| status.to_string());
-        let diagnostic = output_tail(&verification, 10);
-        return Err(UpdateError::message(format!(
-            "{label}: verification build failed for {field} with status {status}:\n{diagnostic}"
-        )));
-    }
-    Ok(())
+    Ok(hash)
 }
 
 fn run_build<R: CommandRunner>(
@@ -206,8 +137,20 @@ fn local_package_command(root: &Path, package: &str) -> CommandSpec {
         .current_dir(root)
 }
 
-fn candidate_package_command(root: &Path, package: &str, pin_json: &str) -> CommandSpec {
-    CommandSpec::new("nix")
+fn candidate_package_command(
+    root: &Path,
+    build: PackageBuildSpec,
+    dependencies: DependencyProvenance,
+    pin_json: &str,
+) -> Result<CommandSpec, UpdateError> {
+    validate_build_spec(build)?;
+    let dependency_provenance_json =
+        serde_json::to_string(&dependencies.nix_contract()).map_err(|source| {
+            UpdateError::message(format!(
+                "update-pins: failed to serialize dependency provenance: {source}"
+            ))
+        })?;
+    Ok(CommandSpec::new("nix")
         .args([
             "build",
             "--impure",
@@ -215,9 +158,38 @@ fn candidate_package_command(root: &Path, package: &str, pin_json: &str) -> Comm
             CANDIDATE_PACKAGE_EXPRESSION,
             "--no-link",
         ])
-        .env("UPDATE_PINS_PACKAGE", package)
+        .env("UPDATE_PINS_PACKAGE", build.package_attr)
+        .env("UPDATE_PINS_PIN_OVERRIDE", build.pin_override)
+        .env(
+            "UPDATE_PINS_DEPENDENCY_HASH_FIELD",
+            build.dependency_hash_field,
+        )
+        .env(
+            "UPDATE_PINS_DEPENDENCY_PROVENANCE_JSON",
+            dependency_provenance_json,
+        )
         .env("UPDATE_PINS_PIN_JSON", pin_json)
-        .current_dir(root)
+        .current_dir(root))
+}
+
+fn validate_build_spec(build: PackageBuildSpec) -> Result<(), UpdateError> {
+    for (field, value) in [
+        ("package attribute", build.package_attr),
+        ("pin override", build.pin_override),
+        ("dependency hash field", build.dependency_hash_field),
+    ] {
+        if value.is_empty()
+            || value.len() > 128
+            || !value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        {
+            return Err(UpdateError::message(format!(
+                "update-pins: unsafe {field} selector in package build specification"
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn parse_mismatch_hash(output: &CommandOutput) -> Result<String, &'static str> {
@@ -279,6 +251,23 @@ mod tests {
         local_package_command, output_tail, parse_mismatch_hash,
     };
     use crate::command::{CommandOutput, CommandSpec};
+    use crate::registry::{
+        DependencyProvenance, DependencyScope, PackageBuildSpec, PairedSource, PnpmMajor,
+    };
+
+    fn dependencies() -> DependencyProvenance {
+        DependencyProvenance::UpstreamPnpm {
+            source: PairedSource {
+                repository: "owner/repo",
+                input: "demo-src",
+            },
+            lock_path: "pnpm-lock.yaml",
+            workspace_path: "pnpm-workspace.yaml",
+            workspace: "difit",
+            pnpm: PnpmMajor::V11,
+            scope: DependencyScope::Production,
+        }
+    }
 
     fn output(stdout: &[u8], stderr: &[u8]) -> CommandOutput {
         CommandOutput {
@@ -362,8 +351,15 @@ mod tests {
 
     #[test]
     fn candidate_build_injects_fake_hash_without_interpolating_pin_data() {
-        let pin_json = r#"{"npmDepsHash":"sha256-private"}"#;
-        let command = candidate_package_command(Path::new("/repo"), "difit", pin_json);
+        let pin_json = r#"{"pnpmDepsHash":"sha256-private"}"#;
+        let build = PackageBuildSpec {
+            package_attr: "difit",
+            pin_override: "difitPin",
+            dependency_hash_field: "pnpmDepsHash",
+        };
+        let command =
+            candidate_package_command(Path::new("/repo"), build, dependencies(), pin_json)
+                .expect("valid spec");
         assert_eq!(
             command,
             CommandSpec::new("nix")
@@ -375,12 +371,53 @@ mod tests {
                     "--no-link",
                 ])
                 .env("UPDATE_PINS_PACKAGE", "difit")
+                .env("UPDATE_PINS_PIN_OVERRIDE", "difitPin")
+                .env("UPDATE_PINS_DEPENDENCY_HASH_FIELD", "pnpmDepsHash")
+                .env(
+                    "UPDATE_PINS_DEPENDENCY_PROVENANCE_JSON",
+                    r#"{"kind":"upstream-pnpm","lockPath":"pnpm-lock.yaml","workspacePath":"pnpm-workspace.yaml","workspace":"difit","pnpmMajor":11,"scope":"production"}"#,
+                )
                 .env("UPDATE_PINS_PIN_JSON", pin_json)
                 .current_dir(PathBuf::from("/repo"))
         );
-        assert!(CANDIDATE_PACKAGE_EXPRESSION.contains("pkgs.lib.fakeHash"));
-        assert!(CANDIDATE_PACKAGE_EXPRESSION.contains("package.override { difitPin = pin; }"));
+        assert!(
+            CANDIDATE_PACKAGE_EXPRESSION
+                .contains("import ./nix/apps/update-pins/candidate-package.nix")
+        );
+        assert!(
+            CANDIDATE_PACKAGE_EXPRESSION
+                .contains(r#"builtins.getEnv "UPDATE_PINS_DEPENDENCY_PROVENANCE_JSON""#)
+        );
+        assert!(!CANDIDATE_PACKAGE_EXPRESSION.contains("package.override"));
+        assert!(!CANDIDATE_PACKAGE_EXPRESSION.contains("difit"));
+        assert!(!CANDIDATE_PACKAGE_EXPRESSION.contains("difitPin"));
+        assert!(!CANDIDATE_PACKAGE_EXPRESSION.contains("pnpmDepsHash"));
         assert!(!CANDIDATE_PACKAGE_EXPRESSION.contains("sha256-private"));
+    }
+
+    #[test]
+    fn candidate_build_rejects_unsafe_registry_selectors() {
+        for build in [
+            PackageBuildSpec {
+                package_attr: "",
+                pin_override: "difitPin",
+                dependency_hash_field: "pnpmDepsHash",
+            },
+            PackageBuildSpec {
+                package_attr: "difit;builtins.abort",
+                pin_override: "difitPin",
+                dependency_hash_field: "pnpmDepsHash",
+            },
+            PackageBuildSpec {
+                package_attr: "difit",
+                pin_override: "difitPin",
+                dependency_hash_field: "pnpm deps hash",
+            },
+        ] {
+            assert!(
+                candidate_package_command(Path::new("/repo"), build, dependencies(), "{}").is_err()
+            );
+        }
     }
 
     #[test]

@@ -26,7 +26,7 @@ pub enum ChangeKind {
     Version,
     Url,
     SourceHash,
-    NpmDepsHash,
+    DependencyHash,
     SchemaHash,
     AppHash,
     AssetHash(String),
@@ -128,7 +128,7 @@ impl ChangeKind {
             Self::Version => "version".to_owned(),
             Self::Url => "URL".to_owned(),
             Self::SourceHash => "source hash".to_owned(),
-            Self::NpmDepsHash => "npm dependency hash".to_owned(),
+            Self::DependencyHash => "dependency hash".to_owned(),
             Self::SchemaHash => "schema hash".to_owned(),
             Self::AppHash => "app hash".to_owned(),
             Self::AssetHash(system) if CANONICAL_SYSTEMS.contains(&system.as_str()) => {
@@ -146,7 +146,7 @@ impl ChangeKind {
             Self::Version => (0, 0, ""),
             Self::Url => (1, 0, ""),
             Self::SourceHash => (2, 0, ""),
-            Self::NpmDepsHash => (3, 0, ""),
+            Self::DependencyHash => (3, 0, ""),
             Self::SchemaHash => (4, 0, ""),
             Self::AppHash => (5, 0, ""),
             Self::AssetHash(system) => (
@@ -252,16 +252,14 @@ pub fn diff_target(spec: &TargetSpec, before: &[FileState], after: &[FileState])
                 &mut changes,
             );
         }
-        TargetKind::Difit {
-            repository,
-            pin,
-            input,
-            lock,
-            ..
-        } => {
+        TargetKind::PublishedNodePackage(package) => {
+            let paired = package.dependencies.source();
+            let crate::registry::PublishedArtifact::NpmRegistryTarball {
+                source_hash_field, ..
+            } = package.artifact;
             record_paired_version(
                 spec,
-                repository,
+                paired.repository,
                 before,
                 after,
                 &mut represented,
@@ -269,26 +267,20 @@ pub fn diff_target(spec: &TargetSpec, before: &[FileState], after: &[FileState])
             );
             record_pin_changes(
                 spec,
-                pin,
+                package.pin,
                 before,
                 after,
-                PinFields::Difit,
-                &mut represented,
-                &mut changes,
-            );
-            record_changed_file(
-                spec,
-                lock,
-                ChangeKind::Lockfile(lock.to_owned()),
-                before,
-                after,
+                PinFields::PublishedNodePackage {
+                    source_hash_field,
+                    dependency_hash_field: package.build.dependency_hash_field,
+                },
                 &mut represented,
                 &mut changes,
             );
             record_changed_file(
                 spec,
                 "flake.lock",
-                ChangeKind::FlakeInput(input.to_owned()),
+                ChangeKind::FlakeInput(paired.input.to_owned()),
                 before,
                 after,
                 &mut represented,
@@ -323,10 +315,15 @@ pub fn diff_target(spec: &TargetSpec, before: &[FileState], after: &[FileState])
 #[derive(Clone, Copy)]
 enum PinFields {
     Assets,
-    Release { source_hash: bool },
+    Release {
+        source_hash: bool,
+    },
     Schema,
     Shellfirm,
-    Difit,
+    PublishedNodePackage {
+        source_hash_field: &'static str,
+        dependency_hash_field: &'static str,
+    },
     CodexApp,
 }
 
@@ -398,21 +395,24 @@ fn record_pin_changes(
                 changes,
             );
         }
-        PinFields::Difit => {
+        PinFields::PublishedNodePackage {
+            source_hash_field,
+            dependency_hash_field,
+        } => {
             record_redacted_field(
                 spec.target,
                 ChangeKind::SourceHash,
                 &old,
                 &new,
-                "srcHash",
+                source_hash_field,
                 changes,
             );
             record_redacted_field(
                 spec.target,
-                ChangeKind::NpmDepsHash,
+                ChangeKind::DependencyHash,
                 &old,
                 &new,
-                "npmDepsHash",
+                dependency_hash_field,
                 changes,
             );
         }
@@ -658,7 +658,7 @@ mod tests {
             change(Target::Difit, ChangeKind::AssetHash("x86_64-linux".into())),
             change(Target::Difit, ChangeKind::AppHash),
             change(Target::Difit, ChangeKind::SchemaHash),
-            change(Target::Difit, ChangeKind::NpmDepsHash),
+            change(Target::Difit, ChangeKind::DependencyHash),
             change(Target::Difit, ChangeKind::SourceHash),
             change(Target::Difit, ChangeKind::Url),
             change(Target::Difit, ChangeKind::Version),
@@ -674,7 +674,7 @@ mod tests {
                 ChangeKind::Version,
                 ChangeKind::Url,
                 ChangeKind::SourceHash,
-                ChangeKind::NpmDepsHash,
+                ChangeKind::DependencyHash,
                 ChangeKind::SchemaHash,
                 ChangeKind::AppHash,
                 ChangeKind::AssetHash("x86_64-linux".into()),
@@ -826,16 +826,12 @@ mod tests {
     }
 
     #[test]
-    fn difit_diff_attributes_shared_and_opaque_files_to_difit() {
+    fn published_node_diff_attributes_pin_and_shared_input_to_difit() {
         let difit = target_spec(Target::Difit).expect("difit spec");
         let before = [
             state(
                 "nix/pins/difit.json",
-                br#"{"srcHash":"sha256-old","npmDepsHash":"sha256-old"}"#,
-            ),
-            state(
-                "nix/packages/difit/package-lock.json",
-                br#"{"version":"1.0.0"}"#,
+                br#"{"srcHash":"sha256-old","pnpmDepsHash":"sha256-old"}"#,
             ),
             state("flake.nix", br#"url = "github:yoshiko-pg/difit/v1.0.0";"#),
             state("flake.lock", br#"{"nodes":{"old":{}}}"#),
@@ -843,11 +839,7 @@ mod tests {
         let after = [
             state(
                 "nix/pins/difit.json",
-                br#"{"srcHash":"sha256-new","npmDepsHash":"sha256-new"}"#,
-            ),
-            state(
-                "nix/packages/difit/package-lock.json",
-                br#"{"version":"2.0.0"}"#,
+                br#"{"srcHash":"sha256-new","pnpmDepsHash":"sha256-new"}"#,
             ),
             state("flake.nix", br#"url = "github:yoshiko-pg/difit/v2.0.0";"#),
             state("flake.lock", br#"{"nodes":{"new":{}}}"#),
@@ -862,8 +854,7 @@ mod tests {
             [
                 ChangeKind::Version,
                 ChangeKind::SourceHash,
-                ChangeKind::NpmDepsHash,
-                ChangeKind::Lockfile("nix/packages/difit/package-lock.json".into()),
+                ChangeKind::DependencyHash,
                 ChangeKind::FlakeInput("difit-src".into()),
             ]
         );

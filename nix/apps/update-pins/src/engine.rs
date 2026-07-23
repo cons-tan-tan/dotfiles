@@ -174,7 +174,6 @@ mod tests {
                 "nix/packages/shellfirm/Cargo.lock",
                 "nix/pins/herdr.json",
                 "nix/pins/difit.json",
-                "nix/packages/difit/package-lock.json",
                 "nix/pins/claude-code-settings-schema.json",
                 "nix/pins/codex-app.json",
             ]

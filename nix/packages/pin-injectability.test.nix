@@ -1,7 +1,7 @@
 # pin ? fromJSON (readFile ...) の注入可能 default が誤って外れた時に検知する。
 # 既存の herdr-package.test.nix は引数の存在だけを検査するため、default の
 # 有無はここで全消費者と同じ契約として固定する。
-{ lib }:
+{ lib, pkgs }:
 let
   hasInjectablePin = fn: argName: (builtins.functionArgs (import fn)).${argName} or false;
 
@@ -52,6 +52,31 @@ let
   injectedShellfirmPackage = mkShellfirmPackage { pin = shellfirmPin; };
   defaultShellfirmPin = lib.importJSON ../pins/shellfirm.json;
   defaultShellfirmPackage = mkShellfirmPackage { };
+
+  difitPin = {
+    srcHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+    pnpmDepsHash = "sha256-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=";
+  };
+  injectedDifitPackage = pkgs.dotfilesPackages.difit.override { difitPin = difitPin; };
+  defaultDifitPin = lib.importJSON ../pins/difit.json;
+  defaultDifitPackage = pkgs.dotfilesPackages.difit;
+  difitDependencyProvenance = {
+    kind = "upstream-pnpm";
+    lockPath = "pnpm-lock.yaml";
+    workspacePath = "pnpm-workspace.yaml";
+    workspace = "difit";
+    pnpmMajor = 11;
+    scope = "production";
+  };
+  mkDifitCandidate =
+    expectedDependencyProvenance:
+    import ../apps/update-pins/candidate-package.nix {
+      inherit pkgs expectedDependencyProvenance;
+      packageName = "difit";
+      pinOverride = "difitPin";
+      dependencyHashField = "pnpmDepsHash";
+      rawPin = defaultDifitPin;
+    };
 
   schemaPin = {
     url = "https://example.invalid/schema.json";
@@ -128,6 +153,57 @@ in
   testDifitPinInjectable = {
     expr = hasInjectablePin ./difit/default.nix "difitPin";
     expected = true;
+  };
+
+  testDifitInjectedPinPropagates = {
+    expr =
+      injectedDifitPackage.src.outputHash == difitPin.srcHash
+      && injectedDifitPackage.pnpmDeps.outputHash == difitPin.pnpmDepsHash;
+    expected = true;
+  };
+
+  testDifitDefaultPinPropagates = {
+    expr =
+      defaultDifitPackage.src.outputHash == defaultDifitPin.srcHash
+      && defaultDifitPackage.pnpmDeps.outputHash == defaultDifitPin.pnpmDepsHash;
+    expected = true;
+  };
+
+  testDifitPnpmProductionScopePropagates = {
+    expr =
+      defaultDifitPackage.pnpmInstallFlags == [ "--prod" ]
+      && defaultDifitPackage.pnpmDeps.pnpmInstallFlags == [ "--prod" ]
+      && defaultDifitPackage.pnpmWorkspaces == [ "difit" ]
+      && defaultDifitPackage.pnpmDeps.pnpmWorkspaces == [ "difit" ];
+    expected = true;
+  };
+
+  testDifitPnpmFetcherContractPropagates = {
+    expr =
+      defaultDifitPackage.pnpmDeps.fetcherVersion == 4
+      && lib.hasPrefix "pnpm-11." defaultDifitPackage.pnpmDeps.pnpm.name
+      && defaultDifitPackage.postPatch == defaultDifitPackage.pnpmDeps.postPatch
+      && lib.hasInfix "pnpm-lock.yaml" defaultDifitPackage.postPatch
+      && lib.hasInfix "pnpm-workspace.yaml" defaultDifitPackage.postPatch
+      && defaultDifitPackage.updatePinsDependencyProvenance == difitDependencyProvenance;
+    expected = true;
+  };
+
+  testDifitCandidateAcceptsMatchingProvenance = {
+    expr =
+      let
+        candidate = mkDifitCandidate difitDependencyProvenance;
+      in
+      candidate.src.outputHash == defaultDifitPin.srcHash
+      && candidate.pnpmDeps.outputHash == lib.fakeHash;
+    expected = true;
+  };
+
+  testDifitCandidateRejectsMismatchedProvenance = {
+    expr =
+      (builtins.tryEval ((mkDifitCandidate (difitDependencyProvenance // { pnpmMajor = 10; })).drvPath))
+      .success;
+    expected = false;
   };
 
   testWatchexecPinInjectable = {

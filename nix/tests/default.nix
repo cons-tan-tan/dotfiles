@@ -121,6 +121,7 @@ let
           nativeBuildInputs = [
             pkgs.dotfilesPackages.agent-browser
             pkgs.dotfilesPackages.agent-slack
+            pkgs.dotfilesPackages.difit
           ];
         }
         ''
@@ -129,6 +130,9 @@ let
 
           agent_slack_version="$(agent-slack --version 2>&1)"
           test -n "$agent_slack_version"
+
+          test "$(difit --version)" = "${pkgs.dotfilesPackages.difit.version}"
+          difit --help >/dev/null
 
           # The service starts the package directly, so every subprocess must
           # remain available without inheriting the activating user's PATH.

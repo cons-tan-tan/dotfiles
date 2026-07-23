@@ -31,6 +31,89 @@ pub enum AssetNaming {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PublishedArtifact {
+    NpmRegistryTarball {
+        package: &'static str,
+        source_hash_field: &'static str,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PairedSource {
+    pub repository: &'static str,
+    pub input: &'static str,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PnpmMajor {
+    V11,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DependencyScope {
+    Production,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DependencyProvenance {
+    UpstreamPnpm {
+        source: PairedSource,
+        lock_path: &'static str,
+        workspace_path: &'static str,
+        workspace: &'static str,
+        pnpm: PnpmMajor,
+        scope: DependencyScope,
+    },
+}
+
+impl DependencyProvenance {
+    pub fn source(self) -> PairedSource {
+        match self {
+            Self::UpstreamPnpm { source, .. } => source,
+        }
+    }
+
+    pub fn nix_contract(self) -> serde_json::Value {
+        match self {
+            Self::UpstreamPnpm {
+                lock_path,
+                workspace_path,
+                workspace,
+                pnpm,
+                scope,
+                ..
+            } => serde_json::json!({
+                "kind": "upstream-pnpm",
+                "lockPath": lock_path,
+                "workspacePath": workspace_path,
+                "workspace": workspace,
+                "pnpmMajor": match pnpm {
+                    PnpmMajor::V11 => 11,
+                },
+                "scope": match scope {
+                    DependencyScope::Production => "production",
+                },
+            }),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PackageBuildSpec {
+    pub package_attr: &'static str,
+    pub pin_override: &'static str,
+    pub dependency_hash_field: &'static str,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PublishedNodePackageSpec {
+    pub pin: &'static str,
+    pub artifact: PublishedArtifact,
+    pub dependencies: DependencyProvenance,
+    pub build: PackageBuildSpec,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TargetKind {
     PairedRelease {
         repository: &'static str,
@@ -52,14 +135,7 @@ pub enum TargetKind {
         lock: &'static str,
         package: &'static str,
     },
-    Difit {
-        repository: &'static str,
-        npm_package: &'static str,
-        pin: &'static str,
-        input: &'static str,
-        lock: &'static str,
-        package: &'static str,
-    },
+    PublishedNodePackage(PublishedNodePackageSpec),
     CodexApp {
         pin: &'static str,
     },
@@ -150,20 +226,30 @@ pub static TARGET_SPECS: &[TargetSpec] = &[
     TargetSpec {
         target: Target::Difit,
         name: "difit",
-        kind: TargetKind::Difit {
-            repository: "yoshiko-pg/difit",
-            npm_package: "difit",
+        kind: TargetKind::PublishedNodePackage(PublishedNodePackageSpec {
             pin: "nix/pins/difit.json",
-            input: "difit-src",
-            lock: "nix/packages/difit/package-lock.json",
-            package: "difit",
-        },
-        managed_paths: &[
-            "nix/pins/difit.json",
-            "nix/packages/difit/package-lock.json",
-            "flake.nix",
-            "flake.lock",
-        ],
+            artifact: PublishedArtifact::NpmRegistryTarball {
+                package: "difit",
+                source_hash_field: "srcHash",
+            },
+            dependencies: DependencyProvenance::UpstreamPnpm {
+                source: PairedSource {
+                    repository: "yoshiko-pg/difit",
+                    input: "difit-src",
+                },
+                lock_path: "pnpm-lock.yaml",
+                workspace_path: "pnpm-workspace.yaml",
+                workspace: "difit",
+                pnpm: PnpmMajor::V11,
+                scope: DependencyScope::Production,
+            },
+            build: PackageBuildSpec {
+                package_attr: "difit",
+                pin_override: "difitPin",
+                dependency_hash_field: "pnpmDepsHash",
+            },
+        }),
+        managed_paths: &["nix/pins/difit.json", "flake.nix", "flake.lock"],
     },
     TargetSpec {
         target: Target::ClaudeCodeSettingsSchema,
@@ -277,7 +363,10 @@ mod tests {
                 | super::TargetKind::Release { pin, .. }
                 | super::TargetKind::UrlHash { pin }
                 | super::TargetKind::Shellfirm { pin, .. }
-                | super::TargetKind::Difit { pin, .. }
+                | super::TargetKind::PublishedNodePackage(super::PublishedNodePackageSpec {
+                    pin,
+                    ..
+                })
                 | super::TargetKind::CodexApp { pin } => pin,
                 super::TargetKind::Unimplemented => continue,
             };
@@ -291,10 +380,51 @@ mod tests {
                     assert!(spec.managed_paths.contains(&"flake.nix"));
                     assert!(spec.managed_paths.contains(&"flake.lock"));
                 }
-                super::TargetKind::Difit { lock, .. } => {
-                    assert!(spec.managed_paths.contains(&lock));
-                    assert!(spec.managed_paths.contains(&"flake.nix"));
-                    assert!(spec.managed_paths.contains(&"flake.lock"));
+                super::TargetKind::PublishedNodePackage(package) => {
+                    assert_eq!(
+                        spec.managed_paths,
+                        &["nix/pins/difit.json", "flake.nix", "flake.lock"]
+                    );
+                    assert_eq!(
+                        package.artifact,
+                        super::PublishedArtifact::NpmRegistryTarball {
+                            package: "difit",
+                            source_hash_field: "srcHash",
+                        }
+                    );
+                    assert_eq!(
+                        package.dependencies,
+                        super::DependencyProvenance::UpstreamPnpm {
+                            source: super::PairedSource {
+                                repository: "yoshiko-pg/difit",
+                                input: "difit-src",
+                            },
+                            lock_path: "pnpm-lock.yaml",
+                            workspace_path: "pnpm-workspace.yaml",
+                            workspace: "difit",
+                            pnpm: super::PnpmMajor::V11,
+                            scope: super::DependencyScope::Production,
+                        }
+                    );
+                    assert_eq!(
+                        package.dependencies.nix_contract(),
+                        serde_json::json!({
+                            "kind": "upstream-pnpm",
+                            "lockPath": "pnpm-lock.yaml",
+                            "workspacePath": "pnpm-workspace.yaml",
+                            "workspace": "difit",
+                            "pnpmMajor": 11,
+                            "scope": "production",
+                        })
+                    );
+                    assert_eq!(
+                        package.build,
+                        super::PackageBuildSpec {
+                            package_attr: "difit",
+                            pin_override: "difitPin",
+                            dependency_hash_field: "pnpmDepsHash",
+                        }
+                    );
                 }
                 super::TargetKind::Shellfirm { lock, .. } => {
                     assert!(spec.managed_paths.contains(&lock));

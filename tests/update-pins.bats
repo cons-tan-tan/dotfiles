@@ -4,7 +4,17 @@
 make_difit_tarball() {
   local version=$1
   mkdir -p "$WORK/difit-tar/package"
-  printf '{"name":"difit","version":"%s"}\n' "$version" >"$WORK/difit-tar/package/package.json"
+  cat >"$WORK/difit-tar/package/package.json" <<JSON
+{
+  "name": "difit",
+  "version": "$version",
+  "packageManager": "pnpm@11.6.0",
+  "devDependencies": {
+    "oxlint": "^1.49.0",
+    "oxlint-tsgolint": "^0.23.0"
+  }
+}
+JSON
   tar -czf "$WORK/difit.tgz" -C "$WORK/difit-tar" package
   export UPDATE_PINS_DIFIT_TARBALL="$WORK/difit.tgz"
 }
@@ -20,9 +30,8 @@ setup() {
   REPO_ROOT="$(git rev-parse --show-toplevel)"
   BASH_BIN="$(command -v bash)"
   WORK="$(mktemp -d)"
-  mkdir -p "$WORK/nix/pins" "$WORK/nix/packages/difit" "$WORK/nix/packages/shellfirm"
+  mkdir -p "$WORK/nix/pins" "$WORK/nix/packages/shellfirm"
   cp "$REPO_ROOT"/nix/pins/*.json "$WORK/nix/pins/"
-  cp "$REPO_ROOT/nix/packages/difit/package-lock.json" "$WORK/nix/packages/difit/package-lock.json"
   cp "$REPO_ROOT/nix/packages/shellfirm/Cargo.lock" "$WORK/nix/packages/shellfirm/Cargo.lock"
   cp "$REPO_ROOT/flake.nix" "$WORK/flake.nix"
   cp "$REPO_ROOT/flake.lock" "$WORK/flake.lock"
@@ -33,7 +42,7 @@ setup() {
     git config user.email update-pins-test@example.invalid
     git config user.name "update-pins test"
     git config commit.gpgsign false
-    git add flake.nix flake.lock nix/packages/difit/package-lock.json nix/packages/shellfirm/Cargo.lock nix/pins/*.json
+    git add flake.nix flake.lock nix/packages/shellfirm/Cargo.lock nix/pins/*.json
     git commit -q -m "initial managed files"
   )
 
@@ -250,47 +259,10 @@ set -euo pipefail
   printf 'npm'
   printf ' %q' "$@"
   printf '\n'
-  printf 'npm-cwd %q\n' "$PWD"
 } >>"$UPDATE_PINS_COMMAND_LOG"
 
-if [ "${UPDATE_PINS_OVERSIZED_NPM_STDOUT:-}" = "1" ]; then
-  head -c 1048577 /dev/zero
-  exit 0
-fi
-
-if [ "${UPDATE_PINS_FAIL_NPM_INSTALL:-}" = "1" ]; then
-  echo "npm install failed" >&2
-  exit 1
-fi
-
-if [ "$#" -eq 5 ] \
-  && [ "$1" = "install" ] \
-  && [ "$2" = "--package-lock-only" ] \
-  && [ "$3" = "--ignore-scripts" ] \
-  && [ "$4" = "--no-audit" ] \
-  && [ "$5" = "--no-fund" ]; then
-  if [ "${UPDATE_PINS_DIFIT_REUSE_LOCK:-}" = "1" ]; then
-    cp "$UPDATE_PINS_FAKE_ROOT/nix/packages/difit/package-lock.json" package-lock.json
-    exit 0
-  fi
-  cat >package-lock.json <<JSON
-{
-  "name": "difit",
-  "version": "${UPDATE_PINS_DIFIT_VERSION:-0.0.0}",
-  "lockfileVersion": 3,
-  "packages": {
-    "": {
-      "name": "difit",
-      "version": "${UPDATE_PINS_DIFIT_VERSION:-0.0.0}"
-    }
-  }
-}
-JSON
-  exit 0
-fi
-
-echo "unexpected npm invocation: $*" >&2
-exit 1
+echo "npm must not be invoked by update-pins: $*" >&2
+exit 97
 EOS
 
   printf '#!%s\n' "$BASH_BIN" >"$STUB_DIR/nix"
@@ -403,9 +375,47 @@ fi
 if [ "$1" = "build" ] \
   && [ "${2:-}" = "--impure" ] \
   && [ "${3:-}" = "--expr" ] \
+  && [[ "${4:-}" != *'builtins.getEnv "UPDATE_PINS_PIN_OVERRIDE"'* ]] \
   && { [[ "${4:-}" != *"pkgs.dotfilesPackages"* ]] || [[ "${4:-}" != *'builtins.getEnv "UPDATE_PINS_PACKAGE"'* ]]; }; then
   echo "local package build did not use pkgs.dotfilesPackages" >&2
   exit 1
+fi
+
+if [ "$1" = "build" ] \
+  && [ "${2:-}" = "--impure" ] \
+  && [ "${3:-}" = "--expr" ] \
+  && [[ "${4:-}" == *'builtins.getEnv "UPDATE_PINS_PIN_OVERRIDE"'* ]]; then
+  if [ "${UPDATE_PINS_PACKAGE:-}" != "difit" ] \
+    || [ "${UPDATE_PINS_PIN_OVERRIDE:-}" != "difitPin" ] \
+    || [ "${UPDATE_PINS_DEPENDENCY_HASH_FIELD:-}" != "pnpmDepsHash" ] \
+    || [ -z "${UPDATE_PINS_DEPENDENCY_PROVENANCE_JSON:-}" ] \
+    || [ -z "${UPDATE_PINS_PIN_JSON:-}" ]; then
+    echo "candidate package build did not receive the typed difit build specification" >&2
+    exit 1
+  fi
+  if [[ "${4:-}" != *'import ./nix/apps/update-pins/candidate-package.nix'* ]] \
+    || [[ "${4:-}" != *'builtins.getEnv "UPDATE_PINS_DEPENDENCY_HASH_FIELD"'* ]] \
+    || [[ "${4:-}" != *'builtins.getEnv "UPDATE_PINS_DEPENDENCY_PROVENANCE_JSON"'* ]] \
+    || [[ "${4:-}" != *'builtins.getEnv "UPDATE_PINS_PIN_JSON"'* ]] \
+    || ! jq -e \
+      '. == {
+        kind: "upstream-pnpm",
+        lockPath: "pnpm-lock.yaml",
+        workspacePath: "pnpm-workspace.yaml",
+        workspace: "difit",
+        pnpmMajor: 11,
+        scope: "production"
+      }' <<<"$UPDATE_PINS_DEPENDENCY_PROVENANCE_JSON" >/dev/null \
+    || ! jq -e \
+      'keys == ["pnpmDepsHash", "srcHash"] and (.srcHash | type == "string") and (.pnpmDepsHash | type == "string")' \
+      <<<"$UPDATE_PINS_PIN_JSON" >/dev/null; then
+    echo "candidate package build did not use the typed pin override expression" >&2
+    exit 1
+  fi
+  printf 'candidate-build-env %s %s %s\n' \
+    "$UPDATE_PINS_PACKAGE" \
+    "$UPDATE_PINS_PIN_OVERRIDE" \
+    "$UPDATE_PINS_DEPENDENCY_HASH_FIELD" >>"$UPDATE_PINS_COMMAND_LOG"
 fi
 
 if [ "$1" = "build" ] && [ "${2:-}" = "--impure" ] && [ "${3:-}" = "--expr" ] && [ "${5:-}" = "--no-link" ] && [ "${UPDATE_PINS_PACKAGE:-}" = "shellfirm" ]; then
@@ -463,25 +473,12 @@ if [ "$1" = "build" ] && [ "${2:-}" = "--impure" ] && [ "${3:-}" = "--expr" ] &&
     ;;
   verify-existing)
     if [ "$count" -eq 1 ]; then
-      [[ "${4:-}" == *"pkgs.lib.fakeHash"* ]]
       [ -n "${UPDATE_PINS_PIN_JSON:-}" ]
       echo "error: hash mismatch" >&2
-      echo "got: ${UPDATE_PINS_REFRESHED_NPM_HASH:?}" >&2
+      echo "got: ${UPDATE_PINS_REFRESHED_PNPM_HASH:?}" >&2
       exit 1
     fi
     exit 0
-    ;;
-  refresh-existing)
-    if [ "$count" -eq 1 ]; then
-      echo "error: hash mismatch" >&2
-      echo "got: ${UPDATE_PINS_REFRESHED_NPM_HASH:?}" >&2
-      exit 1
-    fi
-    exit 0
-    ;;
-  verify-existing-fails)
-    echo "existing npmDepsHash verification failed" >&2
-    exit 1
     ;;
   *)
     echo "UPDATE_PINS_DIFIT_BUILD_MODE is not set" >&2
@@ -555,11 +552,10 @@ run_update_pins() {
 
 save_managed() {
   local dst=$1
-  mkdir -p "$dst/nix/pins" "$dst/nix/packages/difit" "$dst/nix/packages/shellfirm"
+  mkdir -p "$dst/nix/pins" "$dst/nix/packages/shellfirm"
   cp -p "$WORK/flake.nix" "$dst/flake.nix"
   cp -p "$WORK/flake.lock" "$dst/flake.lock"
   cp -p "$WORK"/nix/pins/*.json "$dst/nix/pins/"
-  cp -p "$WORK/nix/packages/difit/package-lock.json" "$dst/nix/packages/difit/package-lock.json"
   cp -p "$WORK/nix/packages/shellfirm/Cargo.lock" "$dst/nix/packages/shellfirm/Cargo.lock"
 }
 
@@ -569,8 +565,6 @@ assert_managed_matches() {
   assert_same_mode "$WORK/flake.nix" "$expected/flake.nix" || return 1
   cmp -s "$WORK/flake.lock" "$expected/flake.lock" || return 1
   assert_same_mode "$WORK/flake.lock" "$expected/flake.lock" || return 1
-  cmp -s "$WORK/nix/packages/difit/package-lock.json" "$expected/nix/packages/difit/package-lock.json" || return 1
-  assert_same_mode "$WORK/nix/packages/difit/package-lock.json" "$expected/nix/packages/difit/package-lock.json" || return 1
   cmp -s "$WORK/nix/packages/shellfirm/Cargo.lock" "$expected/nix/packages/shellfirm/Cargo.lock" || return 1
   assert_same_mode "$WORK/nix/packages/shellfirm/Cargo.lock" "$expected/nix/packages/shellfirm/Cargo.lock" || return 1
   for pin in "$expected"/nix/pins/*.json; do
@@ -607,6 +601,11 @@ assert_no_staging_files() {
   local leftover
   leftover=$(find "$WORK" -name '*.update-pins*' -print -quit)
   [ -z "$leftover" ]
+}
+
+assert_no_difit_package_lock() {
+  [ ! -e "$REPO_ROOT/nix/packages/difit/package-lock.json" ]
+  [ ! -e "$WORK/nix/packages/difit/package-lock.json" ]
 }
 
 paired_version() {
@@ -886,24 +885,23 @@ expected_hcom_asset_trace() {
   original="$WORK/original"
   save_managed "$original"
   pin_before=$(file_identity "$WORK/nix/pins/difit.json")
-  lock_before=$(file_identity "$WORK/nix/packages/difit/package-lock.json")
   export UPDATE_PINS_DIFIT_SOURCE_HASH
   UPDATE_PINS_DIFIT_SOURCE_HASH=$(jq -r .srcHash "$WORK/nix/pins/difit.json")
-  export UPDATE_PINS_DIFIT_REUSE_LOCK=1
-  export UPDATE_PINS_REFRESHED_NPM_HASH
-  UPDATE_PINS_REFRESHED_NPM_HASH=$(jq -r .npmDepsHash "$WORK/nix/pins/difit.json")
+  export UPDATE_PINS_REFRESHED_PNPM_HASH
+  UPDATE_PINS_REFRESHED_PNPM_HASH=$(jq -r .pnpmDepsHash "$WORK/nix/pins/difit.json")
   export UPDATE_PINS_DIFIT_BUILD_MODE=verify-existing
 
   run_update_pins --force difit
 
   [ "$status" -eq 0 ]
-  [[ "$output" == *"difit: candidate source and lockfile are unchanged"* ]]
   [[ "$output" == *"difit is up to date."* ]]
   [[ "$output" != *"Applied changes:"* ]]
   [ "$(cat "$UPDATE_PINS_DIFIT_BUILD_COUNT")" -eq 2 ]
   [ ! -e "$UPDATE_PINS_FLAKE_UPDATE_LOG" ]
   [ "$(file_identity "$WORK/nix/pins/difit.json")" = "$pin_before" ]
-  [ "$(file_identity "$WORK/nix/packages/difit/package-lock.json")" = "$lock_before" ]
+  grep -Fq "candidate-build-env difit difitPin pnpmDepsHash" "$UPDATE_PINS_COMMAND_LOG"
+  ! grep -q '^npm ' "$UPDATE_PINS_COMMAND_LOG"
+  assert_no_difit_package_lock
   assert_managed_matches "$original"
 }
 
@@ -1360,7 +1358,7 @@ expected_hcom_asset_trace() {
   cmp -s "$WORK/nix/pins/newtool.json" "$original_newtool"
 }
 
-@test "difit up to date leaves pin and lockfile unchanged" {
+@test "difit up to date leaves managed files unchanged" {
   original="$WORK/original"
   save_managed "$original"
   run_update_pins difit
@@ -1369,6 +1367,7 @@ expected_hcom_asset_trace() {
   [[ "$output" == *"difit: $(paired_version yoshiko-pg/difit "$original/flake.nix") (up to date)"* ]]
   [[ "$output" == *"difit is up to date."* ]]
   [[ "$output" != *"All pins up to date."* ]]
+  assert_no_difit_package_lock
   assert_managed_matches "$original"
   [ ! -e "$UPDATE_PINS_FLAKE_UPDATE_LOG" ]
 }
@@ -1384,10 +1383,11 @@ expected_hcom_asset_trace() {
   [[ "$output" == *"returned invalid JSON"* ]]
   [ "$(grep -c 'registry.npmjs.org/difit/latest' "$UPDATE_PINS_COMMAND_LOG")" -eq 1 ]
   [[ "$output" != *"retrying attempt"* ]]
+  assert_no_difit_package_lock
   assert_managed_matches "$original"
 }
 
-@test "difit version bump updates pin, lockfile, and flake input" {
+@test "difit version bump updates pin and flake input from upstream pnpm provenance" {
   original="$WORK/original"
   save_managed "$original"
   export UPDATE_PINS_DIFIT_VERSION=9.9.9
@@ -1398,58 +1398,43 @@ expected_hcom_asset_trace() {
 
   [ "$status" -eq 0 ]
   [ "$(jq -r .srcHash "$WORK/nix/pins/difit.json")" = "sha256-gmer9Ei3Jq/YwFQ13VuGqxjSZiafe7wWoJnabLgSrKE=" ]
-  [ "$(jq -r .npmDepsHash "$WORK/nix/pins/difit.json")" = "sha256-32X0K6wkLW2x9cJJJ6J+cu5HOM2+oTZe5AEqLRHvpPM=" ]
-  [ "$(jq -r .version "$WORK/nix/packages/difit/package-lock.json")" = "9.9.9" ]
-  [ "$(jq -r '.packages[""].version' "$WORK/nix/packages/difit/package-lock.json")" = "9.9.9" ]
+  [ "$(jq -r .pnpmDepsHash "$WORK/nix/pins/difit.json")" = "sha256-32X0K6wkLW2x9cJJJ6J+cu5HOM2+oTZe5AEqLRHvpPM=" ]
+  jq -e 'keys == ["pnpmDepsHash", "srcHash"]' "$WORK/nix/pins/difit.json"
   grep -Fq 'url = "github:yoshiko-pg/difit/v9.9.9";' "$WORK/flake.nix"
   [ "$(flake_lock_ref difit-src)" = "v9.9.9" ]
   [ "$(cat "$UPDATE_PINS_DIFIT_BUILD_COUNT")" -eq 2 ]
-  npm_cwd=$(sed -n 's/^npm-cwd //p' "$UPDATE_PINS_COMMAND_LOG")
-  [[ "$npm_cwd" == */package ]]
-  [ "$npm_cwd" != "$WORK" ]
+  flake_update_line=$(grep -n '^nix flake update difit-src$' "$UPDATE_PINS_COMMAND_LOG" | cut -d: -f1)
+  candidate_build_line=$(grep -n '^candidate-build-env difit difitPin pnpmDepsHash$' "$UPDATE_PINS_COMMAND_LOG" | cut -d: -f1)
+  [ "$flake_update_line" -lt "$candidate_build_line" ]
+  ! grep -q '^npm ' "$UPDATE_PINS_COMMAND_LOG"
+  assert_no_difit_package_lock
   cp "$WORK/nix/pins/difit.json" "$original/nix/pins/difit.json"
-  cp "$WORK/nix/packages/difit/package-lock.json" "$original/nix/packages/difit/package-lock.json"
   cp "$WORK/flake.nix" "$original/flake.nix"
   cp "$WORK/flake.lock" "$original/flake.lock"
   assert_managed_matches "$original"
 }
 
-@test "npm install failure is not retried" {
+@test "difit flake update failure precedes candidate build and restores everything" {
   original="$WORK/original"
   save_managed "$original"
   export UPDATE_PINS_DIFIT_VERSION=9.9.9
-  export UPDATE_PINS_FAIL_NPM_INSTALL=1
+  export UPDATE_PINS_FAIL_FLAKE_UPDATE=difit-src
   make_difit_tarball "$UPDATE_PINS_DIFIT_VERSION"
 
-  run_update_pins --jobs 4 --retry 5 difit
+  run_update_pins difit
 
   [ "$status" -eq 1 ]
-  [[ "$output" == *"npm install failed"* ]]
-  [ "$(grep -c '^npm install ' "$UPDATE_PINS_COMMAND_LOG")" -eq 1 ]
-  source_prefetch_line=$(grep -n '^nix store prefetch-file' "$UPDATE_PINS_COMMAND_LOG" | tail -n 1 | cut -d: -f1)
-  npm_line=$(grep -n '^npm install ' "$UPDATE_PINS_COMMAND_LOG" | cut -d: -f1)
-  [ "$source_prefetch_line" -lt "$npm_line" ]
-  [[ "$output" != *"retrying attempt"* ]]
+  [[ "$output" == *"flake update failed for difit-src"* ]]
+  [ "$(cat "$UPDATE_PINS_FLAKE_UPDATE_LOG")" = "difit-src" ]
+  [ ! -e "$UPDATE_PINS_DIFIT_BUILD_COUNT" ]
+  ! grep -q '^candidate-build-env ' "$UPDATE_PINS_COMMAND_LOG"
+  ! grep -q '^npm ' "$UPDATE_PINS_COMMAND_LOG"
+  assert_no_difit_package_lock
   assert_managed_matches "$original"
+  assert_no_staging_files
 }
 
-@test "npm install output is bounded without retrying or changing managed files" {
-  original="$WORK/original"
-  save_managed "$original"
-  export UPDATE_PINS_DIFIT_VERSION=9.9.9
-  export UPDATE_PINS_OVERSIZED_NPM_STDOUT=1
-  make_difit_tarball "$UPDATE_PINS_DIFIT_VERSION"
-
-  run_update_pins --retry 5 difit
-
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"stdout exceeded 1048576 bytes"* ]]
-  [ "$(grep -c '^npm install ' "$UPDATE_PINS_COMMAND_LOG")" -eq 1 ]
-  [[ "$output" != *"retrying attempt"* ]]
-  assert_managed_matches "$original"
-}
-
-@test "difit npmDepsHash extraction failure restores everything" {
+@test "difit pnpmDepsHash extraction failure restores everything" {
   original="$WORK/original"
   save_managed "$original"
   export UPDATE_PINS_DIFIT_VERSION=9.9.9
@@ -1459,8 +1444,12 @@ expected_hcom_asset_trace() {
   run_update_pins difit
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"difit: failed to extract npmDepsHash"* ]]
+  [[ "$output" == *"difit: failed to refresh pnpmDepsHash"* ]]
+  [ "$(cat "$UPDATE_PINS_DIFIT_BUILD_COUNT")" -eq 1 ]
+  ! grep -q '^npm ' "$UPDATE_PINS_COMMAND_LOG"
+  assert_no_difit_package_lock
   assert_managed_matches "$original"
+  assert_no_staging_files
 }
 
 @test "difit verification build failure restores everything" {
@@ -1473,9 +1462,12 @@ expected_hcom_asset_trace() {
   run_update_pins difit
 
   [ "$status" -ne 0 ]
-  [[ "$output" == *"difit: verification build failed"* ]]
+  [[ "$output" == *"difit: candidate package build failed"* ]]
   [ "$(cat "$UPDATE_PINS_DIFIT_BUILD_COUNT")" -eq 2 ]
+  ! grep -q '^npm ' "$UPDATE_PINS_COMMAND_LOG"
+  assert_no_difit_package_lock
   assert_managed_matches "$original"
+  assert_no_staging_files
 }
 
 @test "agent-browser version bump updates its assets and paired skill input" {
@@ -1824,7 +1816,7 @@ expected_hcom_asset_trace() {
   [ "$status" -eq 0 ]
   after_first="$WORK/after-first"
   save_managed "$after_first"
-  git -C "$WORK" add flake.nix flake.lock nix/packages/difit/package-lock.json nix/packages/shellfirm/Cargo.lock nix/pins/*.json
+  git -C "$WORK" add flake.nix flake.lock nix/packages/shellfirm/Cargo.lock nix/pins/*.json
   git -C "$WORK" commit -q -m "apply first update"
 
   run_update_pins
