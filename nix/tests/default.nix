@@ -79,6 +79,7 @@ let
     };
 
   evalChecks = lib.listToAttrs (map mkEvalCheck testFiles);
+  updatePinsCore = pkgs.callPackage ../apps/update-pins { };
 
   ghqFetchAllSmokePackage =
     let
@@ -97,7 +98,7 @@ let
     };
 
   fixedChecks = {
-    update-pins-rust = pkgs.callPackage ../apps/update-pins { };
+    update-pins-rust = updatePinsCore;
 
     package-smoke-tests =
       pkgs.runCommand "package-smoke-tests"
@@ -150,7 +151,9 @@ let
             pkgs.gzip
             pkgs.jq
             pkgs.python3
+            updatePinsCore
           ];
+          UPDATE_PINS_TEST_BIN = lib.getExe updatePinsCore;
         }
         ''
           cp -R ${repoRoot} repo

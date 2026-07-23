@@ -212,6 +212,23 @@ mod tests {
 
         assert_eq!(registered, expected);
         assert_eq!(TARGET_SPECS.len(), expected.len());
+        assert_eq!(
+            TARGET_SPECS
+                .iter()
+                .map(|spec| spec.target)
+                .collect::<Vec<_>>(),
+            vec![
+                Target::Hcom,
+                Target::AgentSlack,
+                Target::AgentBrowser,
+                Target::Watchexec,
+                Target::Shellfirm,
+                Target::Herdr,
+                Target::Difit,
+                Target::ClaudeCodeSettingsSchema,
+                Target::CodexApp,
+            ]
+        );
         assert!(target_spec(Target::All).is_none());
         assert_eq!(target_by_name("all"), Some(Target::All));
         for spec in TARGET_SPECS {

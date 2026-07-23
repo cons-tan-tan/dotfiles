@@ -311,9 +311,11 @@
         system:
         let
           pkgs = pkgsFor.${system};
+          updatePinsCore = pkgs.callPackage ./nix/apps/update-pins { };
         in
         {
           default = pkgs.mkShell {
+            UPDATE_PINS_TEST_BIN = lib.getExe updatePinsCore;
             packages = with pkgs; [
               bats
               cargo
@@ -324,6 +326,7 @@
               rustfmt
               sops
               reuse
+              updatePinsCore
               (python3.withPackages (ps: [
                 ps.pytest
                 ps.tomlkit

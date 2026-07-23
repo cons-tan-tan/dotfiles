@@ -13,8 +13,7 @@ setup() {
   REPO_ROOT="$(git rev-parse --show-toplevel)"
   BASH_BIN="$(command -v bash)"
   WORK="$(mktemp -d)"
-  mkdir -p "$WORK/nix/apps" "$WORK/nix/pins" "$WORK/nix/packages/difit"
-  cp "$REPO_ROOT/nix/apps/update-pins.sh" "$WORK/nix/apps/update-pins.sh"
+  mkdir -p "$WORK/nix/pins" "$WORK/nix/packages/difit"
   cp "$REPO_ROOT"/nix/pins/*.json "$WORK/nix/pins/"
   cp "$REPO_ROOT/nix/packages/difit/package-lock.json" "$WORK/nix/packages/difit/package-lock.json"
   cp "$REPO_ROOT/flake.nix" "$WORK/flake.nix"
@@ -26,7 +25,7 @@ setup() {
     git config user.email update-pins-test@example.invalid
     git config user.name "update-pins test"
     git config commit.gpgsign false
-    git add flake.nix flake.lock nix/apps/update-pins.sh nix/packages/difit/package-lock.json nix/pins/*.json
+    git add flake.nix flake.lock nix/packages/difit/package-lock.json nix/pins/*.json
     git commit -q -m "initial managed files"
   )
 
@@ -39,10 +38,8 @@ setup() {
   export UPDATE_PINS_COMMAND_LOG="$WORK/command.log"
 
   if [ -z "${UPDATE_PINS_TEST_BIN:-}" ]; then
-    UPDATE_PINS_TEST_BIN="$WORK/update-pins-under-test"
-    printf '#!%s\n' "$BASH_BIN" >"$UPDATE_PINS_TEST_BIN"
-    printf 'set -euo pipefail\nexec "%s" -eu -o pipefail "$UPDATE_PINS_FAKE_ROOT/nix/apps/update-pins.sh" "$@"\n' "$BASH_BIN" >>"$UPDATE_PINS_TEST_BIN"
-    chmod +x "$UPDATE_PINS_TEST_BIN"
+    echo "UPDATE_PINS_TEST_BIN must identify the unwrapped update-pins binary" >&2
+    return 1
   fi
   case "$UPDATE_PINS_TEST_BIN" in
   /*) ;;
@@ -439,6 +436,20 @@ make_unrelated_updates_noop() {
 
   [ "$status" -eq 2 ]
   [[ "$output" == *"expected at most one target"* ]]
+  assert_managed_matches "$original"
+}
+
+@test "all runs every target in registry order and reports a no-op" {
+  original="$WORK/original"
+  save_managed "$original"
+  make_unrelated_updates_noop
+
+  run_update_pins
+
+  [ "$status" -eq 0 ]
+  headers="$(printf '%s\n' "$output" | sed -n 's/^== //p')"
+  [ "$headers" = $'hcom\nagent-slack\nagent-browser\nwatchexec\nshellfirm\nherdr\ndifit\nclaude-code-settings-schema\ncodex-app' ]
+  [ "$(printf '%s\n' "$output" | tail -n 1)" = "All pins up to date." ]
   assert_managed_matches "$original"
 }
 
@@ -889,6 +900,26 @@ make_unrelated_updates_noop() {
   assert_managed_matches "$original"
 }
 
+@test "codex app late failure restores a change from an earlier target" {
+  original="$WORK/original"
+  save_managed "$original"
+  make_unrelated_updates_noop
+  export UPDATE_PINS_HCOM_TAG=v1.2.3
+  export UPDATE_PINS_CODEX_APP_VERSION=26.999.10101
+  export UPDATE_PINS_CODEX_APP_URL=https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-arm64-26.999.10101.zip
+  export UPDATE_PINS_CODEX_APP_BUNDLE_VERSION=26.999.10102
+
+  run_update_pins
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"== codex-app"* ]]
+  [[ "$output" == *"update-pins: failed; restoring managed files from backup"* ]]
+  [[ "$output" != *"Pins updated."* ]]
+  [[ "$output" != *"All pins up to date."* ]]
+  assert_managed_matches "$original"
+  assert_no_staging_files
+}
+
 @test "shellfirm cargoHash extraction failure restores all managed files" {
   original="$WORK/original"
   save_managed "$original"
@@ -958,6 +989,7 @@ make_unrelated_updates_noop() {
   [ "$(jq -r .hash "$WORK/nix/pins/claude-code-settings-schema.json")" = "sha256-schema-for-test" ]
   [ "$(jq -r .updated "$WORK/flake.lock")" = "agent-slack-skill" ]
   [ "$(cat "$UPDATE_PINS_FLAKE_UPDATE_LOG")" = $'hcom-src\nagent-slack-skill' ]
+  [ "$(printf '%s\n' "$output" | tail -n 1)" = "Pins updated. Review with 'git diff', verify with 'nix run .#build', then commit." ]
   ! assert_managed_matches "$original"
   assert_no_staging_files
 }

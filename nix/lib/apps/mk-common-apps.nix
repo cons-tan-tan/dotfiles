@@ -14,6 +14,7 @@ let
   nixCustomSettings = import ../nix-custom-settings.nix { inherit lib username; };
 
   nixCustomSettingsFile = pkgs.writeText "dotfiles-nix-custom.conf" nixCustomSettings.text;
+  updatePinsCore = pkgs.callPackage ../../apps/update-pins { };
 
   updateScript = mkScript "flake-update" {
     text = ''
@@ -32,15 +33,13 @@ let
   updatePinsScript = mkScript "update-pins" {
     runtimeInputs = [
       pkgs.curl
-      pkgs.jq
       pkgs.gitMinimal
+      pkgs.nix
       pkgs.nodejs
-      pkgs.python3
-      pkgs.gnutar
-      pkgs.gzip
-      pkgs.unzip
     ];
-    text = builtins.readFile ../../apps/update-pins.sh;
+    text = ''
+      exec ${lib.getExe updatePinsCore} "$@"
+    '';
   };
 
   # 適用する secrets の宣言。追加はここに 1 エントリ足すだけ
@@ -104,8 +103,8 @@ appSet.mkAppSet {
       script = fmtScript;
     };
 
-    # pin を upstream と同期する。hash 計算用の内部 package は root の
-    # packages 出力へ公開せず、update-pins.sh が mk-pkgs.nix から直接評価する。
+    # pin を upstream と同期する。Rust core は root の packages 出力へ公開せず、
+    # 既存の app 名を保つ薄い wrapper からだけ起動する。
     update-pins = {
       description = "Sync nix/pins/*.json to the latest upstream state";
       script = updatePinsScript;

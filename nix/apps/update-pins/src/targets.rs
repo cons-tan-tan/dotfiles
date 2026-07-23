@@ -815,7 +815,7 @@ mod tests {
     }
 
     #[test]
-    fn implementation_boundary_excludes_partial_all_runs() {
+    fn all_is_engine_only_not_a_concrete_target() {
         for target in [
             Target::Hcom,
             Target::AgentSlack,
@@ -835,7 +835,7 @@ mod tests {
         }
         assert!(
             !is_implemented(Target::All),
-            "all should remain private and incomplete"
+            "all should remain outside concrete target dispatch"
         );
     }
 
