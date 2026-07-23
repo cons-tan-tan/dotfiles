@@ -1,7 +1,8 @@
-{ pkgs }:
+{
+  pkgs,
+  schemaPin ? builtins.fromJSON (builtins.readFile ../pins/claude-code-settings-schema.json),
+}:
 let
-  schemaPin = builtins.fromJSON (builtins.readFile ../pins/claude-code-settings-schema.json);
-
   schema = pkgs.fetchurl {
     inherit (schemaPin) url hash;
   };

@@ -3,11 +3,9 @@
   stdenvNoCC,
   fetchurl,
   unzip,
+  pin ? lib.importJSON ../../pins/codex-app.json,
 }:
 
-let
-  pin = lib.importJSON ../../pins/codex-app.json;
-in
 stdenvNoCC.mkDerivation {
   pname = "codex-app";
   version = pin.version;
