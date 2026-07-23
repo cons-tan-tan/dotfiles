@@ -5,6 +5,7 @@
   fetchurl,
   makeWrapper,
   nodejs_24,
+  nodejs-slim_26,
   pnpm_11,
   pnpmConfigHook,
   difitSource,
@@ -20,6 +21,14 @@ let
     cp ${difitSource}/pnpm-lock.yaml pnpm-lock.yaml
     cp ${difitSource}/pnpm-workspace.yaml pnpm-workspace.yaml
   '';
+  # nixpkgsのNode.js 24はDarwinでworker_threadsのfd追跡が壊れるため、
+  # pnpmの実行Nodeだけ影響を受けない版へ差し替える。nixpkgs側の修正が
+  # lock更新で入ったら除去できる: https://github.com/NixOS/nixpkgs/issues/536039
+  pnpmForBuild =
+    if stdenvNoCC.hostPlatform.isDarwin then
+      pnpm_11.override { nodejs-slim = nodejs-slim_26; }
+    else
+      pnpm_11;
 in
 assert lib.assertMsg (
   upstreamManifest.name == "difit"
@@ -44,7 +53,7 @@ stdenvNoCC.mkDerivation (finalAttrs: {
       pnpmInstallFlags
       pnpmWorkspaces
       ;
-    pnpm = pnpm_11;
+    pnpm = pnpmForBuild;
     fetcherVersion = 4;
     hash = pin.pnpmDepsHash;
     postPatch = copyUpstreamPnpmMetadata;
@@ -53,7 +62,7 @@ stdenvNoCC.mkDerivation (finalAttrs: {
   nativeBuildInputs = [
     makeWrapper
     nodejs_24
-    pnpm_11
+    pnpmForBuild
     pnpmConfigHook
   ];
 

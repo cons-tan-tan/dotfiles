@@ -189,6 +189,18 @@ in
     expected = true;
   };
 
+  testDifitPnpmToolchainPropagates = {
+    expr =
+      (
+        !pkgs.stdenv.hostPlatform.isDarwin
+        || lib.versions.major defaultDifitPackage.pnpmDeps.pnpm.nodejs-slim.version == "26"
+      )
+      && lib.any (
+        input: (input.drvPath or null) == defaultDifitPackage.pnpmDeps.pnpm.drvPath
+      ) defaultDifitPackage.nativeBuildInputs;
+    expected = true;
+  };
+
   testDifitCandidateAcceptsMatchingProvenance = {
     expr =
       let
