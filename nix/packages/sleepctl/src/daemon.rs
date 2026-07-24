@@ -724,11 +724,15 @@ impl Manager {
     }
 
     fn status(&self) -> Status {
-        let now_ms = self.now_ms();
         let (sleep_disabled, sentinel) = self.power_snapshot();
         let sleep_disabled = sleep_disabled.ok();
         let sentinel = sentinel.ok();
         let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
+        // Capture time after the state lock: an acquisition may have inserted
+        // a new deadline while the slow diagnostic power snapshot was in
+        // progress, and an earlier timestamp could overstate its remaining
+        // duration.
+        let now_ms = self.now_ms();
         reconcile_foreign_state(&mut state, sleep_disabled, sentinel);
         Status {
             schema_version: PROTOCOL_VERSION,
@@ -2115,6 +2119,40 @@ mod tests {
         ] {
             assert!(json.get(field).is_some(), "missing status field {field}");
         }
+    }
+
+    #[test]
+    fn status_does_not_overstate_a_lease_acquired_during_its_power_snapshot() {
+        let power = Arc::new(FakePower::new(false, false));
+        let clock = Arc::new(ManualClock::default());
+        let manager = Arc::new(manager_with_clock(
+            power.clone(),
+            nominal_thermal(),
+            clock.clone(),
+        ));
+        let (first_sink, _first_client) = sink_pair();
+        manager.acquire(60_000, first_sink).unwrap();
+        power.sleep_read_started.store(false, Ordering::SeqCst);
+        power.block_sleep_read.store(true, Ordering::SeqCst);
+        let status_manager = Arc::clone(&manager);
+        let status = thread::spawn(move || status_manager.status());
+        while !power.sleep_read_started.load(Ordering::SeqCst) {
+            thread::yield_now();
+        }
+
+        clock.set(1_000);
+        let (second_sink, _second_client) = sink_pair();
+        let second_lease = manager.acquire(2_000, second_sink).unwrap();
+        power.block_sleep_read.store(false, Ordering::SeqCst);
+        let status = status.join().unwrap();
+        let remaining_ms = status
+            .active_leases
+            .iter()
+            .find(|lease| lease.id == second_lease)
+            .unwrap()
+            .remaining_ms;
+
+        assert!(remaining_ms <= 2_000);
     }
 
     #[test]
