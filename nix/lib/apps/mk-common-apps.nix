@@ -57,11 +57,18 @@ let
   ];
 
   secretsManifestFile = pkgs.writeText "secrets-manifest.json" (builtins.toJSON secretsManifest);
+  # apply-secrets only resolves the declared manifest sources. Keeping the
+  # runtime root narrow avoids rebuilding the public wrapper for unrelated
+  # repository changes while preserving each repo-relative path under secrets/.
+  secretsSource = lib.fileset.toSource {
+    root = ../../..;
+    fileset = lib.fileset.unions (map (entry: ../../.. + "/${entry.src}") secretsManifest);
+  };
 
   applySecretsScript = mkScript "apply-secrets" {
     runtimeInputs = [ pkgs.gnupg ];
     text = ''
-      export APPLY_SECRETS_ROOT=${inputs.self}
+      export APPLY_SECRETS_ROOT=${secretsSource}
       export APPLY_SECRETS_MANIFEST=${secretsManifestFile}
       export APPLY_SECRETS_SOPS_BIN=${lib.getExe pkgs.sops}
       exec ${lib.getExe applySecretsCore} "$@"
