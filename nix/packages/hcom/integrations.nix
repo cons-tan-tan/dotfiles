@@ -1,7 +1,6 @@
 {
   runCommand,
-  jq,
-  yj,
+  agentConfigHelper,
   codex,
   hcom,
 }:
@@ -13,8 +12,8 @@
     runCommand "hcom-claude-hooks.json"
       {
         nativeBuildInputs = [
+          agentConfigHelper
           hcom
-          jq
         ];
       }
       ''
@@ -25,22 +24,22 @@
           echo "hcom did not generate ~/.claude/settings.json" >&2
           exit 1
         fi
-        jq '{hooks, env, permissions}' "$HOME/.claude/settings.json" > "$out"
+        agent-config-helper claude select-integration \
+          "$HOME/.claude/settings.json" > "$out"
       '';
 
   # trusted_hash is computed by codex's own (undocumented) algorithm, so rather
   # than re-implement it we run hcom+codex and let codex's app-server RPC produce
-  # it. Shaping uses yj/jq to avoid pulling in python. The state key embeds an
-  # absolute path that differs between sandbox and $HOME, so we re-key by event
-  # label here and rebuild the real path in codex/default.nix.
+  # it. The state key embeds an absolute path that differs between sandbox and
+  # $HOME, so we re-key by event label here and rebuild the real path in
+  # codex/default.nix.
   codexHooks =
     runCommand "hcom-codex-hooks"
       {
         nativeBuildInputs = [
+          agentConfigHelper
           hcom
           codex
-          yj
-          jq
         ];
       }
       ''
@@ -50,11 +49,7 @@
         test -f "$HOME/.codex/hooks.json" || { echo "hcom did not generate hooks.json" >&2; exit 1; }
         test -f "$HOME/.codex/config.toml" || { echo "hcom did not generate config.toml" >&2; exit 1; }
         cp "$HOME/.codex/hooks.json" "$out/hooks.json"
-        yj -tj < "$HOME/.codex/config.toml" \
-          | jq '.hooks.state
-                | to_entries
-                | map({ key: (.key | split(":")[-3]), value: .value })
-                | from_entries' \
-          > "$out/hooks-state.json"
+        agent-config-helper codex extract-hook-state \
+          "$HOME/.codex/config.toml" > "$out/hooks-state.json"
       '';
 }
