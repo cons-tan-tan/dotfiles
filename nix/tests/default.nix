@@ -1,4 +1,6 @@
 {
+  advisoryDb,
+  advisoryDbLastModified,
   lib,
   pkgs,
   publicApps,
@@ -102,6 +104,215 @@ let
       path = ghApiGet;
     }
   ];
+
+  mkRustClippyCheck =
+    {
+      name,
+      package,
+      flags,
+    }:
+    pkgs.rustPlatform.buildRustPackage {
+      pname = "${name}-clippy";
+      inherit (package) version src cargoDeps;
+
+      nativeBuildInputs = [ pkgs.clippy ];
+      auditable = false;
+      doCheck = false;
+
+      buildPhase = ''
+        runHook preBuild
+        cargo clippy --offline --locked ${lib.escapeShellArgs flags} -- -D warnings
+        runHook postBuild
+      '';
+
+      installPhase = ''
+        runHook preInstall
+        touch "$out"
+        runHook postInstall
+      '';
+    };
+
+  rustClippyChecks = {
+    apply-secrets = mkRustClippyCheck {
+      name = "apply-secrets";
+      package = applySecretsCore;
+      flags = [
+        "--all-targets"
+        "--all-features"
+      ];
+    };
+    apply-nix-settings = mkRustClippyCheck {
+      name = "apply-nix-settings";
+      package = applyNixSettingsCore;
+      flags = [
+        "--all-targets"
+        "--all-features"
+      ];
+    };
+    safe-fetch = mkRustClippyCheck {
+      name = "safe-fetch";
+      package = safeFetch.core;
+      flags = [
+        "--all-targets"
+        "--all-features"
+      ];
+    };
+    codex-config-helper = mkRustClippyCheck {
+      name = "codex-config-helper";
+      package = codexConfigHelper;
+      flags = [
+        "--all-targets"
+        "--all-features"
+      ];
+    };
+    update-pins = mkRustClippyCheck {
+      name = "update-pins";
+      package = updatePinsCore;
+      flags = [
+        "--all-targets"
+        "--features"
+        "smoke"
+      ];
+    };
+    update-pins-smoke = mkRustClippyCheck {
+      name = "update-pins-smoke";
+      package = updatePinsSmoke;
+      flags = [
+        "--all-targets"
+        "--no-default-features"
+        "--features"
+        "smoke"
+      ];
+    };
+  };
+
+  rustClippy = pkgs.linkFarm "rust-clippy" (
+    lib.mapAttrsToList (name: path: { inherit name path; }) rustClippyChecks
+  );
+
+  rustLockfiles = [
+    {
+      owner = "update-pins";
+      path = ../apps/update-pins/Cargo.lock;
+      ignoredAdvisories = [ ];
+    }
+    {
+      owner = "apply-secrets";
+      path = ../apps/apply-secrets/Cargo.lock;
+      ignoredAdvisories = [ ];
+    }
+    {
+      owner = "apply-nix-settings";
+      path = ../apps/apply-nix-settings/Cargo.lock;
+      ignoredAdvisories = [ ];
+    }
+    {
+      owner = "safe-fetch";
+      path = ../packages/safe-fetch/Cargo.lock;
+      ignoredAdvisories = [ ];
+    }
+    {
+      owner = "codex-config-helper";
+      path = ../modules/home/programs/codex/helper/Cargo.lock;
+      ignoredAdvisories = [ ];
+    }
+    {
+      owner = "shellfirm";
+      path = ../packages/shellfirm/Cargo.lock;
+      ignoredAdvisories = [
+        {
+          id = "RUSTSEC-2026-0002";
+          reviewedAt = "2026-07-24";
+          # 2026-11-01T00:00:00Z. ratatui 0.29 is the only lru consumer and
+          # does not call the affected LruCache::iter_mut API. Remove this
+          # exception when shellfirm upgrades to ratatui with lru >= 0.16.3.
+          expiresAt = 1793491200;
+        }
+      ];
+    }
+  ];
+
+  discoveredRustLockfiles = builtins.filter (path: builtins.baseNameOf path == "Cargo.lock") (
+    lib.filesystem.listFilesRecursive nixRoot
+  );
+  declaredRustLockfiles = map (lock: lock.path) rustLockfiles;
+  rustLockfileInventoryValidation =
+    if
+      lib.sort lib.lessThan (map toString discoveredRustLockfiles)
+      == lib.sort lib.lessThan (map toString declaredRustLockfiles)
+    then
+      null
+    else
+      throw "rust advisory lockfile inventory is incomplete";
+
+  ignoredRustAdvisories = lib.concatMap (
+    lock: map (advisory: advisory // { inherit (lock) owner; }) lock.ignoredAdvisories
+  ) rustLockfiles;
+  rustAdvisoryLabel = advisory: "${advisory.owner}:${advisory.id} (reviewed ${advisory.reviewedAt})";
+  expiredRustAdvisoriesAt =
+    timestamp:
+    map rustAdvisoryLabel (
+      builtins.filter (advisory: timestamp >= advisory.expiresAt) ignoredRustAdvisories
+    );
+  rustAdvisoryExpiryContractValidation =
+    if
+      builtins.all (
+        advisory:
+        !(builtins.elem (rustAdvisoryLabel advisory) (expiredRustAdvisoriesAt (advisory.expiresAt - 1)))
+        && builtins.elem (rustAdvisoryLabel advisory) (expiredRustAdvisoriesAt advisory.expiresAt)
+      ) ignoredRustAdvisories
+    then
+      null
+    else
+      throw "rust advisory expiry boundary validation failed";
+  rustAdvisoryExpiryValidation =
+    let
+      expired = expiredRustAdvisoriesAt advisoryDbLastModified;
+    in
+    if expired == [ ] then
+      null
+    else
+      throw "rust advisory exceptions expired for pinned DB: ${builtins.toJSON expired}";
+
+  rustAdvisories = builtins.seq rustLockfileInventoryValidation (
+    builtins.seq rustAdvisoryExpiryContractValidation (
+      builtins.seq rustAdvisoryExpiryValidation (
+        pkgs.runCommand "rust-advisories"
+          {
+            nativeBuildInputs = [ pkgs.cargo-audit ];
+          }
+          ''
+            export CARGO_HOME="$TMPDIR/cargo-home"
+            export CARGO_NET_OFFLINE=true
+            mkdir -p "$CARGO_HOME"
+
+            ${lib.concatMapStringsSep "\n" (
+              lock:
+              # Yanked status requires a crates.io registry index, which is not
+              # pinned here, so this reproducible gate excludes it. RustSec
+              # vulnerabilities and unsound warnings fail. Unmaintained warnings
+              # remain visible without being denied.
+              ''
+                echo "Auditing ${lock.owner}: ${lock.path}"
+                cargo-audit audit \
+                  --color never \
+                  --db ${advisoryDb} \
+                  --deny unsound \
+                  --no-fetch \
+                  --no-yanked \
+                  ${
+                    lib.concatMapStringsSep " " (
+                      advisory: "--ignore ${lib.escapeShellArg advisory.id}"
+                    ) lock.ignoredAdvisories
+                  } \
+                  --file ${lock.path}
+              '') rustLockfiles}
+
+            touch "$out"
+          ''
+      )
+    )
+  );
 
   claudeFixture = pkgs.writeShellApplication {
     name = "claude";
@@ -492,6 +703,8 @@ let
     apply-nix-settings-rust = applyNixSettingsCore;
     codex-config-helper-rust = codexConfigHelper;
     safe-fetch-rust = safeFetchCheck;
+    rust-clippy = rustClippy;
+    rust-advisories = rustAdvisories;
 
     workflow-lint-tests =
       pkgs.runCommand "workflow-lint-tests"

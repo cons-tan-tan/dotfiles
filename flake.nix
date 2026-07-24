@@ -53,6 +53,11 @@
       flake = false;
     };
 
+    rustsec-advisory-db = {
+      url = "github:RustSec/advisory-db";
+      flake = false;
+    };
+
     treefmt-nix = {
       url = "github:numtide/treefmt-nix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -232,7 +237,6 @@
             nixfmt.enable = true;
             rustfmt.enable = true;
             shfmt.enable = true;
-            ruff-format.enable = true;
           };
           settings = {
             global.excludes = [
@@ -351,6 +355,16 @@
               zip
             ];
           };
+
+          rust = pkgs.mkShell {
+            packages = with pkgs; [
+              cargo
+              clippy
+              git
+              rustc
+              rustfmt
+            ];
+          };
         }
       );
 
@@ -396,6 +410,8 @@
           );
           testChecks = import ./nix/tests {
             inherit lib pkgs username;
+            advisoryDb = inputs.rustsec-advisory-db;
+            advisoryDbLastModified = inputs.rustsec-advisory-db.lastModified;
             publicApps = appsFor.${system}.apps;
             reservedCheckNames = builtins.attrNames baseChecks;
           };

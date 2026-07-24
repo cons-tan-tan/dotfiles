@@ -60,8 +60,14 @@ jobs:
           upstream-cache-filter: true
           upstream-cache-key-names: cache.nixos.org-1 niks3.numtide.com-1
       # 軽量なテストを先に完了させ、後続の全checkでは同じstore pathを再利用する。
-      - name: Build test checks
-        run: nix build .#checks.x86_64-linux.bats-tests .#checks.x86_64-linux.codex-config-helper-rust --print-build-logs
+      - name: Build fast checks
+        run: >-
+          nix build
+          .#checks.x86_64-linux.bats-tests
+          .#checks.x86_64-linux.codex-config-helper-rust
+          .#checks.x86_64-linux.rust-advisories
+          .#checks.x86_64-linux.rust-clippy
+          --print-build-logs
       - run: nix flake check --print-build-logs
 
   # darwin 構成の実ビルド。eval だけでは hash 切れや darwin 専用パッケージの
