@@ -192,11 +192,53 @@ fn sync_directory(directory: &Path) -> Result<()> {
 mod tests {
     use super::*;
     use std::os::unix::fs::{MetadataExt, symlink};
-    use std::sync::{Arc, Barrier};
+    use std::process::{Command, Stdio};
+    use std::sync::{Arc, Barrier, mpsc};
     use std::thread;
+    use std::time::{Duration, Instant};
     use tempfile::tempdir;
 
     use crate::managed_block;
+
+    const LOCK_PATH_ENV: &str = "APPLY_NIX_SETTINGS_TEST_LOCK_PATH";
+    const READY_PATH_ENV: &str = "APPLY_NIX_SETTINGS_TEST_READY_PATH";
+    const RELEASE_PATH_ENV: &str = "APPLY_NIX_SETTINGS_TEST_RELEASE_PATH";
+
+    fn wait_for_path(path: &Path) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !path.exists() {
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting for {}",
+                path.display()
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    #[test]
+    fn child_process_holds_target_lock() {
+        let Some(lock_path) = std::env::var_os(LOCK_PATH_ENV) else {
+            return;
+        };
+        let ready_path = PathBuf::from(
+            std::env::var_os(READY_PATH_ENV).expect("child process ready marker path"),
+        );
+        let release_path = PathBuf::from(
+            std::env::var_os(RELEASE_PATH_ENV).expect("child process release marker path"),
+        );
+        let lock = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .truncate(false)
+            .open(lock_path)
+            .expect("open target lock in child");
+        lock.lock().expect("lock target in child");
+        fs::write(&ready_path, b"ready").expect("publish child ready marker");
+        wait_for_path(&release_path);
+        lock.unlock().expect("unlock target in child");
+    }
 
     #[test]
     fn a_bare_relative_path_uses_the_current_directory() {
@@ -307,6 +349,68 @@ mod tests {
         holder.unlock().unwrap();
 
         assert_eq!(waiting.join().unwrap(), b"new");
+    }
+
+    #[test]
+    fn target_lock_blocks_while_another_process_holds_the_lock() {
+        let work = tempdir().unwrap();
+        let target = work.path().join("nix.custom.conf");
+        fs::write(&target, b"old").unwrap();
+        let lock_path = work.path().join(".apply-nix-settings.lock");
+        let ready_path = work.path().join("lock-ready");
+        let release_path = work.path().join("lock-release");
+        let mut child = Command::new(std::env::current_exe().expect("current test executable"))
+            .args([
+                "--exact",
+                "filesystem::tests::child_process_holds_target_lock",
+                "--nocapture",
+            ])
+            .env(LOCK_PATH_ENV, &lock_path)
+            .env(READY_PATH_ENV, &ready_path)
+            .env(RELEASE_PATH_ENV, &release_path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn lock holder");
+        wait_for_path(&ready_path);
+
+        let waiting_target = target.clone();
+        let (sender, receiver) = mpsc::channel();
+        let (started_sender, started_receiver) = mpsc::channel();
+        let waiter = thread::spawn(move || {
+            started_sender
+                .send(())
+                .expect("signal waiting thread start");
+            sender
+                .send(TargetLock::acquire(&waiting_target))
+                .expect("send lock result");
+        });
+        started_receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("waiting thread should start");
+        let early_result = receiver.recv_timeout(Duration::from_millis(100));
+        let blocked = matches!(early_result, Err(mpsc::RecvTimeoutError::Timeout));
+
+        fs::write(&release_path, b"release").expect("release child lock holder");
+        let acquire_result = match early_result {
+            Ok(result) => result,
+            Err(mpsc::RecvTimeoutError::Timeout) => receiver
+                .recv_timeout(Duration::from_secs(10))
+                .expect("lock acquisition should resume"),
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                Err(AppError::new("waiting lock thread disconnected"))
+            }
+        };
+        let waiter_result = waiter.join();
+        let child_status = child.wait().expect("wait for lock holder");
+
+        assert!(
+            blocked,
+            "target lock did not block behind the child process"
+        );
+        assert!(child_status.success());
+        waiter_result.expect("join waiting thread");
+        drop(acquire_result.expect("acquire target lock"));
     }
 
     #[test]

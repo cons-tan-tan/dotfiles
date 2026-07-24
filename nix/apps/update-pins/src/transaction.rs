@@ -627,7 +627,8 @@ fn parse_path_output(command: &CommandSpec, output: &[u8]) -> Result<PathBuf, Up
 mod tests {
     use std::fs::Permissions;
     use std::path::{Path, PathBuf};
-    use std::process::Command;
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
 
     use tempfile::TempDir;
 
@@ -641,6 +642,10 @@ mod tests {
 
     struct FailingDiffRunner;
 
+    const LOCK_PATH_ENV: &str = "UPDATE_PINS_TEST_LOCK_PATH";
+    const READY_PATH_ENV: &str = "UPDATE_PINS_TEST_READY_PATH";
+    const RELEASE_PATH_ENV: &str = "UPDATE_PINS_TEST_RELEASE_PATH";
+
     impl CommandRunner for FailingDiffRunner {
         fn run(&self, _command: &CommandSpec) -> Result<CommandOutput, UpdateError> {
             Ok(CommandOutput {
@@ -653,6 +658,42 @@ mod tests {
         fn is_available(&self, _program: &Path) -> bool {
             false
         }
+    }
+
+    fn wait_for_path(path: &Path) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !path.exists() {
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting for {}",
+                path.display()
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    #[test]
+    fn child_process_holds_transaction_lock() {
+        let Some(lock_path) = std::env::var_os(LOCK_PATH_ENV) else {
+            return;
+        };
+        let ready_path = PathBuf::from(
+            std::env::var_os(READY_PATH_ENV).expect("child process ready marker path"),
+        );
+        let release_path = PathBuf::from(
+            std::env::var_os(RELEASE_PATH_ENV).expect("child process release marker path"),
+        );
+        let lock = std::fs::OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .truncate(false)
+            .open(lock_path)
+            .expect("open transaction lock in child");
+        lock.lock().expect("lock transaction in child");
+        std::fs::write(&ready_path, b"ready").expect("publish child ready marker");
+        wait_for_path(&release_path);
+        lock.unlock().expect("unlock transaction in child");
     }
 
     impl TestRepository {
@@ -1126,6 +1167,52 @@ mod tests {
         assert!(matches!(
             first.replace(repository.path().join("nix/pins/escape.json"), b"no"),
             Err(UpdateError::UnsafeManagedPath(_))
+        ));
+    }
+
+    #[test]
+    fn transaction_held_by_another_process_is_reported_as_already_running() {
+        let repository = TestRepository::new();
+        let lock_path = repository.path().join(".git/update-pins.lock");
+        let ready_path = repository.path().join("lock-ready");
+        let release_path = repository.path().join("lock-release");
+        let mut child = Command::new(std::env::current_exe().expect("current test executable"))
+            .args([
+                "--exact",
+                "transaction::tests::child_process_holds_transaction_lock",
+                "--nocapture",
+            ])
+            .env(LOCK_PATH_ENV, &lock_path)
+            .env(READY_PATH_ENV, &ready_path)
+            .env(RELEASE_PATH_ENV, &release_path)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn lock holder");
+        wait_for_path(&ready_path);
+
+        let runner = SystemCommandRunner;
+        let result = Transaction::begin(repository.repository(), &runner);
+
+        std::fs::write(&release_path, b"release").expect("release child lock holder");
+        assert!(child.wait().expect("wait for lock holder").success());
+        assert!(matches!(result, Err(UpdateError::AlreadyRunning)));
+    }
+
+    #[test]
+    fn transaction_lock_open_failure_remains_an_io_error() {
+        let repository = TestRepository::new();
+        let lock_path = repository.path().join(".git/update-pins.lock");
+        std::fs::create_dir(&lock_path).expect("replace lock file with a directory");
+
+        let runner = SystemCommandRunner;
+        let error = Transaction::begin(repository.repository(), &runner)
+            .err()
+            .expect("opening a directory as a lock file must fail");
+
+        assert!(matches!(
+            error,
+            UpdateError::Io { path, .. } if path == lock_path
         ));
     }
 
