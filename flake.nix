@@ -412,6 +412,7 @@
             inherit lib pkgs username;
             advisoryDb = inputs.rustsec-advisory-db;
             advisoryDbLastModified = inputs.rustsec-advisory-db.lastModified;
+            homeManager = home-manager;
             publicApps = appsFor.${system}.apps;
             reservedCheckNames = builtins.attrNames baseChecks;
           };

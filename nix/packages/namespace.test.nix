@@ -36,9 +36,16 @@ in
   testPlatformPackagesAreScoped = {
     expr =
       if pkgs.stdenv.hostPlatform.isLinux then
-        local ? drawio-headless && local ? wsl-set-ssh-auth-sock && !(local ? codex-app)
+        local ? drawio-headless
+        && local ? wsl-set-ssh-auth-sock
+        && !(local ? codex-app)
+        && !(local ? sleepctl)
       else
-        local ? codex-app && !(local ? drawio-headless) && !(local ? wsl-set-ssh-auth-sock);
+        local ? codex-app
+        && local ? sleepctl
+        && pkgs.lib.isDerivation local.sleepctl
+        && !(local ? drawio-headless)
+        && !(local ? wsl-set-ssh-auth-sock);
     expected = true;
   };
 }

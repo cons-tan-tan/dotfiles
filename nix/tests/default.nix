@@ -1,6 +1,7 @@
 {
   advisoryDb,
   advisoryDbLastModified,
+  homeManager,
   lib,
   pkgs,
   publicApps,
@@ -27,7 +28,12 @@ let
   ) (lib.unique checkNames);
 
   testContext = {
-    inherit lib pkgs username;
+    inherit
+      homeManager
+      lib
+      pkgs
+      username
+      ;
   };
 
   # *.test.nix は lib.runTests 互換の生テスト attrset、またはそれを返す
@@ -184,6 +190,13 @@ let
         "smoke"
       ];
     };
+  }
+  // lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
+    sleepctl = mkRustClippyCheck {
+      name = "sleepctl";
+      package = pkgs.callPackage ../packages/sleepctl { };
+      flags = [ "--all-targets" ];
+    };
   };
 
   rustClippy = pkgs.linkFarm "rust-clippy" (
@@ -229,6 +242,11 @@ let
           expiresAt = 1793491200;
         }
       ];
+    }
+    {
+      owner = "sleepctl";
+      path = ../packages/sleepctl/Cargo.lock;
+      ignoredAdvisories = [ ];
     }
   ];
 
@@ -523,6 +541,7 @@ let
         "tests/ghq-fetch-all.bats"
         "tests/herdr-wrapper.bats"
         "tests/home-manager-apps.bats"
+        "tests/nh-result-root-pruner.bats"
         "tests/pi-package-manager.bats"
         "tests/pi-wrapper.bats"
         "tests/wsl-open.bats"
@@ -541,6 +560,7 @@ let
         "nix/packages/drawio-headless/drawio-wrapper.sh"
         "nix/packages/ghq-fetch-all/ghq-fetch-all.sh"
         "nix/packages/herdr/herdr-wrapper.sh"
+        "nix/packages/nh-result-root-pruner/nh-prune-result-roots.sh"
         "nix/packages/pi/package-manager.sh"
         "nix/packages/pi/pi-wrapper.sh"
         "nix/packages/wsl-set-ssh-auth-sock/set-ssh-auth-sock.sh"
