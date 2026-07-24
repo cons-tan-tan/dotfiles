@@ -20,6 +20,13 @@ rustPlatform.buildRustPackage rec {
 
   cargoLock.lockFile = ./Cargo.lock;
 
+  # Keep the release source while advancing vulnerable transitive dependencies
+  # in the repository-owned lockfile. cargoSetup validates this copy against
+  # the vendored dependency set before building.
+  postPatch = ''
+    cp ${./Cargo.lock} Cargo.lock
+  '';
+
   cargoBuildFlags = [
     "--package"
     pname
