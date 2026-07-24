@@ -49,6 +49,8 @@ nix run .#apply-secrets
 
 `--check`は、更新候補の取得、hash計算、package build、検証までを通常の更新と同じtransactionで実行し、成功後に管理fileを元の内容・mode・存在状態へ戻す。network access、download cache、Nix storeへのbuild結果は発生するため、副作用のないdry-runではない。同じversionも含めて配布物とbuild contractを再検証する場合は、`--force --check <target>`を使う。
 
+`shellfirm`の`Cargo.lock`には、上流releaseとは別に、このリポジトリで適用するsecurity updateを含める。同じversionに対する`--force`では現在のlockfileを保持し、version更新時に新しい上流lockfileへ切り替える。
+
 ## 構成
 
 ```text

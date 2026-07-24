@@ -151,7 +151,7 @@ pub fn usage() -> String {
     let mut usage = String::from(
         "Usage: update-pins [--check] [--force] [--jobs N] [--retry N] [target]\n\n\
          Options:\n  --check                 Run updates and validation, then restore repository files\n  \
-         --force                 Refresh and validate artifacts even at the same version\n  \
+         --force                 Refresh and validate same-version artifacts; repository lock overrides stay pinned\n  \
          --jobs N                Maximum parallel jobs for release asset prefetch only (1-4; default 1)\n  \
          --retry N               Fetch attempts, including the first (1-5; default 3)\n\n\
          Targets:\n  all (default)\n",

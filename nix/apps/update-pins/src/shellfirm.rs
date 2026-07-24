@@ -30,6 +30,19 @@ const MAX_TOTAL_MANIFEST_BYTES: usize = 8 * 1024 * 1024;
 const MAX_LOCK_BYTES: usize = 16 * 1024 * 1024;
 const CRATES_IO_REGISTRY: &str = "registry+https://github.com/rust-lang/crates.io-index";
 
+fn select_lock_for_release<'a>(
+    current_version: &str,
+    candidate_version: &str,
+    current_lock: &'a [u8],
+    candidate_lock: &'a [u8],
+) -> &'a [u8] {
+    if current_version == candidate_version {
+        current_lock
+    } else {
+        candidate_lock
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 #[cfg(feature = "mutating")]
 pub(crate) fn update<R: CommandRunner>(
@@ -76,18 +89,29 @@ pub(crate) fn update<R: CommandRunner>(
 
     let current_source_hash = pin.string(&["srcHash"])?.to_owned();
     let current_lock = transaction.read(lock_path)?;
+    let selected_lock =
+        select_lock_for_release(&current_version, version, &current_lock, &candidate_lock);
+    if current_version == version && current_lock != candidate_lock {
+        println!(
+            "{}: preserving the repository-owned lockfile for release {version}",
+            spec.name
+        );
+    }
     let changed = current_version != version
         || current_source_hash != source.hash
-        || current_lock != candidate_lock;
+        || current_lock != selected_lock;
 
     pin.set_string(&["version"], version)?;
     pin.set_string(&["srcHash"], source.hash)?;
     write_pin(transaction, pin_path, &pin)?;
-    transaction.write_if_changed(lock_path, &candidate_lock)?;
+    transaction.write_if_changed(lock_path, selected_lock)?;
 
     build_package_once(spec.name, package, runner, transaction)?;
     if !changed {
-        println!("{}: candidate source and lockfile are unchanged", spec.name);
+        println!(
+            "{}: repository source and lockfile are unchanged",
+            spec.name
+        );
     }
     Ok(changed)
 }
@@ -487,11 +511,35 @@ fn validate_manifest_package(
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "mutating")]
+    use std::cell::Cell;
     use std::fs;
+    #[cfg(feature = "mutating")]
+    use std::path::{Path, PathBuf};
+    #[cfg(feature = "mutating")]
+    use std::process::Command;
 
+    #[cfg(feature = "mutating")]
+    use flate2::Compression;
+    #[cfg(feature = "mutating")]
+    use flate2::write::GzEncoder;
     use tempfile::TempDir;
 
-    use super::{CRATES_IO_REGISTRY, read_lock_from_source, validate_cargo_lock};
+    use super::{
+        CRATES_IO_REGISTRY, read_lock_from_source, select_lock_for_release, validate_cargo_lock,
+    };
+    #[cfg(feature = "mutating")]
+    use crate::cli::Target;
+    #[cfg(feature = "mutating")]
+    use crate::command::{CommandOutput, CommandRunner, CommandSpec, SystemCommandRunner};
+    #[cfg(feature = "mutating")]
+    use crate::error::UpdateError;
+    #[cfg(feature = "mutating")]
+    use crate::policy::RunPolicy;
+    #[cfg(feature = "mutating")]
+    use crate::registry::target_spec;
+    #[cfg(feature = "mutating")]
+    use crate::transaction::{Repository, Transaction};
 
     const VALID_LOCK: &str = r#"
 version = 4
@@ -511,6 +559,46 @@ version = "9.9.9"
     fn validates_format_root_and_registry_checksums() {
         validate_cargo_lock("shellfirm", "Cargo.lock", VALID_LOCK.as_bytes(), "9.9.9")
             .expect("valid lock");
+    }
+
+    #[test]
+    fn preserves_repository_lock_for_same_release_and_adopts_new_release_lock() {
+        let repository_lock = b"repository security refresh";
+        let upstream_lock = b"upstream release lock";
+
+        assert_eq!(
+            select_lock_for_release("9.9.9", "9.9.9", repository_lock, upstream_lock),
+            repository_lock
+        );
+        assert_eq!(
+            select_lock_for_release("9.9.9", "10.0.0", repository_lock, upstream_lock),
+            upstream_lock
+        );
+    }
+
+    #[cfg(feature = "mutating")]
+    #[test]
+    fn forced_update_preserves_same_release_lock_and_builds_candidate() {
+        let current_lock = format!("{VALID_LOCK}\n# repository security refresh\n");
+
+        let outcome = run_update_case("9.9.9", current_lock.as_bytes(), VALID_LOCK.as_bytes());
+
+        assert!(!outcome.changed);
+        assert_eq!(outcome.lock, current_lock.as_bytes());
+        assert_eq!(outcome.build_calls, 1);
+    }
+
+    #[cfg(feature = "mutating")]
+    #[test]
+    fn update_adopts_new_release_lock_and_builds_candidate() {
+        let current_lock = format!("{VALID_LOCK}\n# repository security refresh\n");
+        let candidate_lock = VALID_LOCK.replace("9.9.9", "10.0.0");
+
+        let outcome = run_update_case("10.0.0", current_lock.as_bytes(), candidate_lock.as_bytes());
+
+        assert!(outcome.changed);
+        assert_eq!(outcome.lock, candidate_lock.as_bytes());
+        assert_eq!(outcome.build_calls, 1);
     }
 
     #[test]
@@ -653,5 +741,200 @@ version = "9.9.9"
             "[package]\nname = \"shellfirm\"\nversion = \"9.9.9\"\n",
         )
         .expect("package manifest");
+    }
+
+    #[cfg(feature = "mutating")]
+    struct UpdateOutcome {
+        changed: bool,
+        lock: Vec<u8>,
+        build_calls: usize,
+    }
+
+    #[cfg(feature = "mutating")]
+    struct UpdateRunner {
+        version: String,
+        source: PathBuf,
+        archive: Vec<u8>,
+        build_calls: Cell<usize>,
+    }
+
+    #[cfg(feature = "mutating")]
+    impl CommandRunner for UpdateRunner {
+        fn run(&self, command: &CommandSpec) -> Result<CommandOutput, UpdateError> {
+            if command.program == "git" {
+                return SystemCommandRunner.run(command);
+            }
+            if command.program == "curl" {
+                let output_index = command
+                    .args
+                    .iter()
+                    .position(|argument| argument == "--output")
+                    .expect("curl output argument");
+                let output_path = PathBuf::from(&command.args[output_index + 1]);
+                let url = command.args.last().expect("curl URL").to_string_lossy();
+                let bytes = if url.ends_with("/releases/latest") {
+                    format!(r#"{{"tag_name":"v{}"}}"#, self.version).into_bytes()
+                } else {
+                    self.archive.clone()
+                };
+                fs::write(&output_path, bytes)
+                    .map_err(|source| UpdateError::io(&output_path, source))?;
+                return Ok(successful_output(b"200".to_vec()));
+            }
+            if command.program == "nix" && command.args.first().is_some_and(|arg| arg == "store") {
+                let response = serde_json::json!({
+                    "hash": source_hash(),
+                    "storePath": self.source,
+                });
+                return Ok(successful_output(
+                    serde_json::to_vec(&response).expect("prefetch response"),
+                ));
+            }
+            if command.program == "nix" && command.args.first().is_some_and(|arg| arg == "build") {
+                self.build_calls.set(self.build_calls.get() + 1);
+                return Ok(successful_output(Vec::new()));
+            }
+            panic!("unexpected command {}", command.display());
+        }
+
+        fn is_available(&self, _program: &Path) -> bool {
+            false
+        }
+    }
+
+    #[cfg(feature = "mutating")]
+    fn run_update_case(
+        candidate_version: &str,
+        current_lock: &[u8],
+        candidate_lock: &[u8],
+    ) -> UpdateOutcome {
+        let repository = update_repository(current_lock);
+        let candidate_source = TempDir::new().expect("candidate source");
+        populate_candidate_source(candidate_source.path(), candidate_version, candidate_lock);
+        let runner = UpdateRunner {
+            version: candidate_version.to_owned(),
+            source: candidate_source.path().to_owned(),
+            archive: archive_fixture(),
+            build_calls: Cell::new(0),
+        };
+        let repository_handle =
+            Repository::discover_in(&SystemCommandRunner, repository.path()).expect("repository");
+        let spec = target_spec(Target::Shellfirm).expect("shellfirm target");
+        let mut transaction =
+            Transaction::begin_scoped(repository_handle, &runner, spec.managed_paths)
+                .expect("transaction");
+
+        let changed = super::update(
+            spec,
+            "kaplanelad/shellfirm",
+            "nix/pins/shellfirm.json",
+            "nix/packages/shellfirm/Cargo.lock",
+            "shellfirm",
+            RunPolicy {
+                force: true,
+                ..RunPolicy::default()
+            },
+            &runner,
+            &mut transaction,
+        )
+        .expect("shellfirm update");
+        let lock = transaction
+            .read("nix/packages/shellfirm/Cargo.lock")
+            .expect("updated lock");
+        let pin = transaction
+            .read("nix/pins/shellfirm.json")
+            .expect("updated pin");
+        let pin: serde_json::Value = serde_json::from_slice(&pin).expect("pin JSON");
+        assert_eq!(pin["version"], candidate_version);
+        assert_eq!(pin["srcHash"], source_hash());
+        let build_calls = runner.build_calls.get();
+        transaction.rollback().expect("rollback");
+
+        UpdateOutcome {
+            changed,
+            lock,
+            build_calls,
+        }
+    }
+
+    #[cfg(feature = "mutating")]
+    fn update_repository(current_lock: &[u8]) -> TempDir {
+        let repository = TempDir::new().expect("temporary repository");
+        run_git(repository.path(), ["init", "-q"]);
+        run_git(
+            repository.path(),
+            ["config", "user.email", "test@example.invalid"],
+        );
+        run_git(
+            repository.path(),
+            ["config", "user.name", "update-pins shellfirm test"],
+        );
+        run_git(repository.path(), ["config", "commit.gpgsign", "false"]);
+        let pin_directory = repository.path().join("nix/pins");
+        let package_directory = repository.path().join("nix/packages/shellfirm");
+        fs::create_dir_all(&pin_directory).expect("pin directory");
+        fs::create_dir_all(&package_directory).expect("package directory");
+        fs::write(
+            pin_directory.join("shellfirm.json"),
+            format!(
+                "{{\n  \"version\": \"9.9.9\",\n  \"srcHash\": \"{}\"\n}}\n",
+                source_hash()
+            ),
+        )
+        .expect("pin");
+        fs::write(package_directory.join("Cargo.lock"), current_lock).expect("lock");
+        run_git(repository.path(), ["add", "."]);
+        run_git(repository.path(), ["commit", "-q", "-m", "initial"]);
+        repository
+    }
+
+    #[cfg(feature = "mutating")]
+    fn populate_candidate_source(path: &Path, version: &str, lock: &[u8]) {
+        fs::write(
+            path.join("Cargo.toml"),
+            format!("[package]\nname = \"shellfirm\"\nversion = \"{version}\"\n"),
+        )
+        .expect("candidate manifest");
+        fs::write(path.join("Cargo.lock"), lock).expect("candidate lock");
+    }
+
+    #[cfg(feature = "mutating")]
+    fn archive_fixture() -> Vec<u8> {
+        let encoder = GzEncoder::new(Vec::new(), Compression::default());
+        let mut archive = tar::Builder::new(encoder);
+        archive.finish().expect("finish tar");
+        archive
+            .into_inner()
+            .expect("tar encoder")
+            .finish()
+            .expect("finish gzip")
+    }
+
+    #[cfg(feature = "mutating")]
+    fn successful_output(stdout: Vec<u8>) -> CommandOutput {
+        CommandOutput {
+            status: Some(0),
+            stdout,
+            stderr: Vec::new(),
+        }
+    }
+
+    #[cfg(feature = "mutating")]
+    fn source_hash() -> &'static str {
+        "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    }
+
+    #[cfg(feature = "mutating")]
+    fn run_git<I, S>(directory: &Path, arguments: I)
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<std::ffi::OsStr>,
+    {
+        let status = Command::new("git")
+            .args(arguments)
+            .current_dir(directory)
+            .status()
+            .expect("run git");
+        assert!(status.success(), "git fixture command failed");
     }
 }
