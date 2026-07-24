@@ -72,4 +72,5 @@ in
 }
 // lib.optionalAttrs hostPlatform.isDarwin {
   codex-app = pkgs.callPackage ./codex-app { };
+  sleepctl = pkgs.callPackage ./sleepctl { };
 }

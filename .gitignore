@@ -2,3 +2,4 @@
 result
 .envrc
 /nix/apps/update-pins/target/
+/nix/packages/sleepctl/target/

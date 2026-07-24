@@ -1,0 +1,35 @@
+[package]
+name = "sleepctl"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "CC0-1.0"
+autobins = false
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "sleepctl"
+path = "src/bin/sleepctl.rs"
+
+[[bin]]
+name = "sleepctld"
+path = "src/bin/sleepctld.rs"
+
+[dependencies]
+clap = { version = "4.5.41", features = ["derive"] }
+humantime = "2.2.0"
+libc = "0.2.174"
+objc2-foundation = { version = "0.3.2", features = ["NSProcessInfo"] }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.141"
+signal-hook = "0.3.18"
+
+[dev-dependencies]
+tempfile = "3.20.0"
+
+[profile.release]
+# A privileged watchdog must not survive after a safety thread panics.
+# launchd restarts the process, and startup sentinel recovery restores sleep.
+panic = "abort"
