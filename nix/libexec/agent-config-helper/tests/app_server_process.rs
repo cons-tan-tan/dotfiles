@@ -1,8 +1,7 @@
 #![cfg(feature = "test-fixture")]
 
-use std::fs::{self, File, OpenOptions};
-use std::io;
-use std::os::unix::fs::PermissionsExt;
+use std::fs;
+use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
@@ -15,7 +14,7 @@ const NORMAL_TEST_TIMEOUT: Duration = Duration::from_secs(5);
 const STALL_TEST_TIMEOUT: Duration = Duration::from_millis(300);
 
 struct Fixture {
-    _directory: TempDir,
+    directory: TempDir,
     executable: PathBuf,
 }
 
@@ -25,24 +24,11 @@ impl Fixture {
         assert!(source.is_absolute());
         let directory = tempfile::tempdir().unwrap();
         let executable = directory.path().join(mode);
-        let mut source_file = File::open(source).unwrap();
-        let mut destination = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&executable)
-            .unwrap();
-        io::copy(&mut source_file, &mut destination).unwrap();
-        destination
-            .set_permissions(fs::Permissions::from_mode(0o755))
-            .unwrap();
-        destination.sync_all().unwrap();
-        // Linux rejects exec while any writer still has the copied inode
-        // open. Keep the close explicit because these fixtures start in
-        // parallel under the full Cargo test suite.
-        drop(destination);
-        drop(source_file);
+        // Keep the completed Cargo artifact read-only while retaining the
+        // mode in argv[0]; copied executables can race with exec under load.
+        symlink(source, &executable).unwrap();
         Self {
-            _directory: directory,
+            directory,
             executable,
         }
     }
@@ -83,18 +69,9 @@ fn fetch_with_timeout(
     agent_config_helper::error::Result<agent_config_helper::hook_state::HooksListResponse>,
 ) {
     let fixture = Fixture::new(mode);
-    let cwd = fixture._directory.path().to_path_buf();
-    for attempt in 0..10 {
-        let result = fetch_hooks_list_with_timeout(&fixture.executable, &cwd, timeout);
-        let text_busy = result
-            .as_ref()
-            .is_err_and(|error| error.to_string().contains("Text file busy"));
-        if !text_busy || attempt == 9 {
-            return (fixture, result);
-        }
-        thread::sleep(Duration::from_millis(10));
-    }
-    unreachable!()
+    let cwd = fixture.directory.path().to_path_buf();
+    let result = fetch_hooks_list_with_timeout(&fixture.executable, &cwd, timeout);
+    (fixture, result)
 }
 
 fn assert_reaped(pid: u32) {
@@ -216,7 +193,12 @@ fn stderr_is_continuously_drained_and_error_tail_is_bounded() {
 #[test]
 fn child_closing_stdin_during_the_handshake_is_an_error_not_a_panic() {
     let (fixture, result) = fetch("close-after-initialize");
-    assert!(result.is_err());
+    let message = result.unwrap_err().to_string();
+    assert!(
+        message.contains("codex app-server request")
+            || message.contains("reached EOF before response 2"),
+        "{message}"
+    );
     assert_reaped(fixture.pid());
 }
 

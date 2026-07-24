@@ -20,13 +20,18 @@ fn main() {
         process::exit(91);
     }
 
-    let executable = env::current_exe().expect("fixture path");
-    let mode = executable
+    let invoked_path = env::args_os().next().expect("fixture argv[0]");
+    let invoked_path = std::path::PathBuf::from(invoked_path);
+    let mode = invoked_path
         .file_name()
         .and_then(|name| name.to_str())
         .expect("UTF-8 fixture mode")
         .to_string();
-    fs::write(executable.with_extension("pid"), process::id().to_string()).expect("write pid");
+    fs::write(
+        invoked_path.with_extension("pid"),
+        process::id().to_string(),
+    )
+    .expect("write pid");
 
     let stdin = io::stdin();
     let mut input = stdin.lock();
@@ -35,9 +40,10 @@ fn main() {
     require_request(&initialize, "initialize", Some(1));
 
     if mode == "grandchild-pipe-holder" {
+        let executable = env::current_exe().expect("fixture path");
         let grandchild = spawn_pipe_holding_grandchild(&executable);
         fs::write(
-            executable.with_extension("grandchild.pid"),
+            invoked_path.with_extension("grandchild.pid"),
             grandchild.id().to_string(),
         )
         .expect("write grandchild pid");
@@ -81,14 +87,15 @@ fn main() {
             return;
         }
         "close-after-initialize" => {
-            write_json(&mut output, &json!({"id": 1, "result": {}}));
             drop(input);
             // SAFETY: this fixture owns descriptor 0 and intentionally closes
-            // it to force the client-side write-failure path.
+            // it before responding to make the next client write deterministic.
             unsafe {
                 drop(File::from_raw_fd(0));
             }
-            thread::sleep(Duration::from_secs(60));
+            write_json(&mut output, &json!({"id": 1, "result": {}}));
+            // Small client writes can already be buffered when the close is
+            // observed, so exit to make EOF the other valid transport error.
             return;
         }
         "noisy-single-write" => {
