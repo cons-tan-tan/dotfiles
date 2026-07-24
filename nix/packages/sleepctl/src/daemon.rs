@@ -919,6 +919,10 @@ fn send_server_message(sink: &ClientSink, message: ServerMessage) -> io::Result<
 }
 
 fn handle_client(stream: UnixStream, allowed_uid: u32, manager: Arc<Manager>) -> io::Result<()> {
+    // Darwin inherits O_NONBLOCK from the listening socket on accept. Client
+    // handlers use bounded blocking I/O, so normalize the accepted descriptor
+    // before an empty read can be mistaken for a failed connection.
+    stream.set_nonblocking(false)?;
     let peer_uid = peer_uid(&stream)?;
     if peer_uid != allowed_uid {
         return Err(io::Error::new(
@@ -1927,6 +1931,50 @@ mod tests {
         assert!(!power.disabled.load(Ordering::SeqCst));
         drop(client);
         worker.join().unwrap().unwrap();
+    }
+
+    #[test]
+    fn handler_normalizes_a_nonblocking_accepted_socket() {
+        let power = Arc::new(FakePower::new(false, false));
+        let manager = Arc::new(Manager::new(power.clone(), nominal_thermal()).unwrap());
+        let (mut client, server) = UnixStream::pair().unwrap();
+        server.set_nonblocking(true).unwrap();
+        let worker_manager = Arc::clone(&manager);
+        let (started_sender, started_receiver) = std::sync::mpsc::channel();
+        let worker = thread::spawn(move || {
+            started_sender.send(()).unwrap();
+            handle_client(server, effective_uid(), worker_manager)
+        });
+        started_receiver.recv().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while !worker.is_finished() && Instant::now() < deadline {
+            thread::yield_now();
+        }
+        assert!(
+            !worker.is_finished(),
+            "handler exited on EAGAIN before a request arrived"
+        );
+
+        write_frame(
+            &mut client,
+            &Envelope::new(Request::Acquire {
+                duration_ms: 60_000,
+            }),
+        )
+        .unwrap();
+        let ServerMessage::Reply(Reply::LeaseAccepted { lease_id }) =
+            read_server_message(&mut client)
+        else {
+            panic!("expected lease acceptance");
+        };
+        write_frame(&mut client, &Envelope::new(Request::Release { lease_id })).unwrap();
+        assert_eq!(
+            read_server_message(&mut client),
+            ServerMessage::Reply(Reply::Released)
+        );
+        drop(client);
+        worker.join().unwrap().unwrap();
+        assert!(!power.disabled.load(Ordering::SeqCst));
     }
 
     #[test]
