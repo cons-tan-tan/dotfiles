@@ -15,7 +15,7 @@ impl AppError {
 
     pub fn io(operation: &str, path: &Path, error: std::io::Error) -> Self {
         Self::new(format!(
-            "codex-config-helper: cannot {operation} {}: {error}",
+            "agent-config-helper: cannot {operation} {}: {error}",
             path.display()
         ))
     }
@@ -31,7 +31,7 @@ impl std::error::Error for AppError {}
 
 impl From<serde_json::Error> for AppError {
     fn from(error: serde_json::Error) -> Self {
-        Self::new(format!("codex-config-helper: invalid JSON: {error}"))
+        Self::new(format!("agent-config-helper: invalid JSON: {error}"))
     }
 }
 

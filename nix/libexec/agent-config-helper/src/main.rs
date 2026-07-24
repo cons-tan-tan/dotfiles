@@ -3,10 +3,10 @@ use std::ffi::OsString;
 use std::io::{self, Write};
 use std::process::ExitCode;
 
-use codex_config_helper::app_server;
-use codex_config_helper::cli::{self, Action, Command};
-use codex_config_helper::error::{AppError, Result};
-use codex_config_helper::{hook_state, merge};
+use agent_config_helper::app_server;
+use agent_config_helper::cli::{self, Action, Command};
+use agent_config_helper::error::{AppError, Result};
+use agent_config_helper::{hook_state, merge};
 
 fn main() -> ExitCode {
     match run_main() {
@@ -53,17 +53,17 @@ fn run_main() -> Result<u8> {
             let mut output = stdout.lock();
             serde_json::to_writer(&mut output, &payload).map_err(|error| {
                 AppError::new(format!(
-                    "codex-config-helper: cannot write hook state JSON: {error}"
+                    "agent-config-helper: cannot write hook state JSON: {error}"
                 ))
             })?;
             output.write_all(b"\n").map_err(|error| {
                 AppError::new(format!(
-                    "codex-config-helper: cannot finish hook state JSON: {error}"
+                    "agent-config-helper: cannot finish hook state JSON: {error}"
                 ))
             })?;
             output.flush().map_err(|error| {
                 AppError::new(format!(
-                    "codex-config-helper: cannot flush hook state JSON: {error}"
+                    "agent-config-helper: cannot flush hook state JSON: {error}"
                 ))
             })?;
             Ok(0)

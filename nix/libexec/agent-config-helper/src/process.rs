@@ -61,13 +61,13 @@ impl ManagedProcess {
             .map_err(|error| AppError::io("start codex app-server", codex_bin, error))?;
 
         let stdin = child.stdin.take().ok_or_else(|| {
-            AppError::new("codex-config-helper: codex app-server stdin is unavailable")
+            AppError::new("agent-config-helper: codex app-server stdin is unavailable")
         })?;
         let stdout = child.stdout.take().ok_or_else(|| {
-            AppError::new("codex-config-helper: codex app-server stdout is unavailable")
+            AppError::new("agent-config-helper: codex app-server stdout is unavailable")
         })?;
         let stderr = child.stderr.take().ok_or_else(|| {
-            AppError::new("codex-config-helper: codex app-server stderr is unavailable")
+            AppError::new("agent-config-helper: codex app-server stderr is unavailable")
         })?;
 
         let (stdout_tx, stdout_rx) = mpsc::sync_channel(STDOUT_QUEUE_DEPTH);
@@ -91,21 +91,21 @@ impl ManagedProcess {
     pub(crate) fn send(&mut self, message: &impl Serialize) -> Result<()> {
         let bytes = serde_json::to_vec(message)?;
         let stdin = self.stdin.as_mut().ok_or_else(|| {
-            AppError::new("codex-config-helper: codex app-server stdin is unavailable")
+            AppError::new("agent-config-helper: codex app-server stdin is unavailable")
         })?;
         stdin.write_all(&bytes).map_err(|error| {
             AppError::new(format!(
-                "codex-config-helper: cannot write codex app-server request: {error}"
+                "agent-config-helper: cannot write codex app-server request: {error}"
             ))
         })?;
         stdin.write_all(b"\n").map_err(|error| {
             AppError::new(format!(
-                "codex-config-helper: cannot terminate codex app-server request: {error}"
+                "agent-config-helper: cannot terminate codex app-server request: {error}"
             ))
         })?;
         stdin.flush().map_err(|error| {
             AppError::new(format!(
-                "codex-config-helper: cannot flush codex app-server request: {error}"
+                "agent-config-helper: cannot flush codex app-server request: {error}"
             ))
         })
     }
@@ -127,7 +127,7 @@ impl ManagedProcess {
     pub(crate) fn try_status(&mut self) -> Result<Option<ExitStatus>> {
         self.child.try_wait().map_err(|error| {
             AppError::new(format!(
-                "codex-config-helper: cannot inspect codex app-server status: {error}"
+                "agent-config-helper: cannot inspect codex app-server status: {error}"
             ))
         })
     }
@@ -135,7 +135,7 @@ impl ManagedProcess {
     pub(crate) fn shutdown(&mut self) -> Result<ShutdownReport> {
         if self.finished {
             return Err(AppError::new(
-                "codex-config-helper: codex app-server was already reaped",
+                "agent-config-helper: codex app-server was already reaped",
             ));
         }
 
@@ -157,7 +157,7 @@ impl ManagedProcess {
                 (
                     self.child.wait().map_err(|error| {
                         AppError::new(format!(
-                            "codex-config-helper: cannot reap codex app-server: {error}"
+                            "agent-config-helper: cannot reap codex app-server: {error}"
                         ))
                     })?,
                     true,
@@ -169,7 +169,7 @@ impl ManagedProcess {
                 let _ = self.child.kill();
                 let _ = self.child.wait();
                 return Err(AppError::new(format!(
-                    "codex-config-helper: cannot inspect codex app-server status: {error}"
+                    "agent-config-helper: cannot inspect codex app-server status: {error}"
                 )));
             }
         };
@@ -184,7 +184,7 @@ impl ManagedProcess {
         join_reader("stderr", self.stderr_thread.take(), READER_JOIN_TIMEOUT)?;
         if let Some(error) = group_error {
             return Err(AppError::new(format!(
-                "codex-config-helper: cannot terminate codex app-server process group: {error}"
+                "agent-config-helper: cannot terminate codex app-server process group: {error}"
             )));
         }
         let tail = self
@@ -227,12 +227,12 @@ fn join_reader(name: &str, handle: Option<JoinHandle<()>>, timeout: Duration) ->
     if !handle.is_finished() {
         drop(handle);
         return Err(AppError::new(format!(
-            "codex-config-helper: timed out waiting for codex app-server {name} reader"
+            "agent-config-helper: timed out waiting for codex app-server {name} reader"
         )));
     }
     handle.join().map_err(|_| {
         AppError::new(format!(
-            "codex-config-helper: codex app-server {name} reader panicked"
+            "agent-config-helper: codex app-server {name} reader panicked"
         ))
     })
 }

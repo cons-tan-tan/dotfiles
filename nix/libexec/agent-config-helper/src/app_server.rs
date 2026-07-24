@@ -21,7 +21,7 @@ pub fn fetch_hooks_list_with_timeout(
 ) -> Result<HooksListResponse> {
     if !codex_bin.is_absolute() {
         return Err(AppError::new(format!(
-            "codex-config-helper: --codex-bin must be an absolute path: {}",
+            "agent-config-helper: --codex-bin must be an absolute path: {}",
             codex_bin.display()
         )));
     }
@@ -39,7 +39,7 @@ fn run_protocol(
 ) -> Result<HooksListResponse> {
     let cwd = cwd.to_str().ok_or_else(|| {
         AppError::new(format!(
-            "codex-config-helper: cwd is not valid UTF-8: {}",
+            "agent-config-helper: cwd is not valid UTF-8: {}",
             cwd.display()
         ))
     })?;
@@ -80,7 +80,7 @@ fn read_response<T: DeserializeOwned>(
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
             return Err(AppError::new(format!(
-                "codex-config-helper: timed out waiting for codex app-server response {request_id}"
+                "agent-config-helper: timed out waiting for codex app-server response {request_id}"
             )));
         }
 
@@ -88,7 +88,7 @@ fn read_response<T: DeserializeOwned>(
             Ok(event) => event,
             Err(ReceiveError::Timeout) => {
                 return Err(AppError::new(format!(
-                    "codex-config-helper: timed out waiting for codex app-server response {request_id}"
+                    "agent-config-helper: timed out waiting for codex app-server response {request_id}"
                 )));
             }
             Err(ReceiveError::Disconnected) => return eof_error(process, request_id),
@@ -98,13 +98,13 @@ fn read_response<T: DeserializeOwned>(
             OutputEvent::Frame(frame) => frame,
             OutputEvent::FrameTooLarge => {
                 return Err(AppError::new(format!(
-                    "codex-config-helper: codex app-server response exceeded the frame limit while waiting for {request_id}"
+                    "agent-config-helper: codex app-server response exceeded the frame limit while waiting for {request_id}"
                 )));
             }
             OutputEvent::Eof => return eof_error(process, request_id),
             OutputEvent::ReadError(error) => {
                 return Err(AppError::new(format!(
-                    "codex-config-helper: cannot read codex app-server response: {error}"
+                    "agent-config-helper: cannot read codex app-server response: {error}"
                 )));
             }
         };
@@ -115,7 +115,7 @@ fn read_response<T: DeserializeOwned>(
         };
         let object = value.as_object().ok_or_else(|| {
             AppError::new(format!(
-                "codex-config-helper: codex app-server emitted a non-object JSON frame while waiting for {request_id}"
+                "agent-config-helper: codex app-server emitted a non-object JSON frame while waiting for {request_id}"
             ))
         })?;
 
@@ -135,7 +135,7 @@ fn read_response<T: DeserializeOwned>(
         let has_error = object.contains_key("error");
         if has_result == has_error {
             return Err(AppError::new(format!(
-                "codex-config-helper: malformed codex app-server response {request_id}: expected exactly one of result or error"
+                "agent-config-helper: malformed codex app-server response {request_id}: expected exactly one of result or error"
             )));
         }
         if has_error {
@@ -144,7 +144,7 @@ fn read_response<T: DeserializeOwned>(
 
         return serde_json::from_value(object["result"].clone()).map_err(|error| {
             AppError::new(format!(
-                "codex-config-helper: malformed codex app-server result {request_id}: {error}"
+                "agent-config-helper: malformed codex app-server result {request_id}: {error}"
             ))
         });
     }
@@ -155,10 +155,10 @@ fn rpc_error(request_id: u64, value: &Value) -> AppError {
     let message = value.get("message").and_then(Value::as_str);
     match (code, message) {
         (Some(code), Some(message)) => AppError::new(format!(
-            "codex-config-helper: codex app-server response {request_id} failed ({code}): {message}"
+            "agent-config-helper: codex app-server response {request_id} failed ({code}): {message}"
         )),
         _ => AppError::new(format!(
-            "codex-config-helper: malformed error in codex app-server response {request_id}"
+            "agent-config-helper: malformed error in codex app-server response {request_id}"
         )),
     }
 }
@@ -166,10 +166,10 @@ fn rpc_error(request_id: u64, value: &Value) -> AppError {
 fn eof_error<T>(process: &mut ManagedProcess, request_id: u64) -> Result<T> {
     match process.try_status()? {
         Some(status) if !status.success() => Err(AppError::new(format!(
-            "codex-config-helper: codex app-server exited with {status} before response {request_id}"
+            "agent-config-helper: codex app-server exited with {status} before response {request_id}"
         ))),
         _ => Err(AppError::new(format!(
-            "codex-config-helper: codex app-server reached EOF before response {request_id}"
+            "agent-config-helper: codex app-server reached EOF before response {request_id}"
         ))),
     }
 }

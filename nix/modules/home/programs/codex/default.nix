@@ -26,7 +26,7 @@ let
   codex = pkgs.dotfilesPackages.codex.mkWrappedPackage {
     inherit herdrSkillPath;
   };
-  codexConfigHelper = pkgs.callPackage ./helper { };
+  agentConfigHelper = pkgs.callPackage ../../../../libexec/agent-config-helper { };
 
   baseMergePayloadJson = jsonFormat.generate "codex-config-merge-base.json" (
     settingsLib.mkMergePayload {
@@ -90,7 +90,7 @@ let
   herdrHooksStatePayloadJson =
     pkgs.runCommand "codex-herdr-hooks-state-payload.json"
       {
-        nativeBuildInputs = [ codexConfigHelper ];
+        nativeBuildInputs = [ agentConfigHelper ];
       }
       ''
         home="$NIX_BUILD_TOP/home"
@@ -101,7 +101,7 @@ let
         export HOME="$home"
         export XDG_CONFIG_HOME="$home/.config"
 
-        ${lib.getExe codexConfigHelper} generate-herdr-hook-state \
+        ${lib.getExe agentConfigHelper} generate-herdr-hook-state \
           --codex-bin ${lib.escapeShellArg "${pkgs.codex}/bin/codex"} \
           --hook-command ${lib.escapeShellArg herdrHookCommand} \
           --hooks-json-path ${lib.escapeShellArg hooksJsonPath} \
@@ -153,7 +153,7 @@ in
       set -e
       candidate=$(${pkgs.coreutils}/bin/mktemp "${configPath}.hooks-XXXXXX")
       trap '${pkgs.coreutils}/bin/rm -f "$candidate"' EXIT
-      run ${lib.getExe codexConfigHelper} merge \
+      run ${lib.getExe agentConfigHelper} merge \
         "${configPath}" "${mergePayloadJson}" "$candidate"
       run ${pkgs.taplo}/bin/taplo check "$candidate"
       run ${pkgs.taplo}/bin/taplo check --schema "file://${codexSchema}" "$candidate"

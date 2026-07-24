@@ -42,7 +42,7 @@ pub fn build_payload(
 
     if matching.len() != 1 {
         return Err(AppError::new(format!(
-            "codex-config-helper: expected exactly one Herdr Codex hook, found {}",
+            "agent-config-helper: expected exactly one Herdr Codex hook, found {}",
             matching.len()
         )));
     }
@@ -51,7 +51,7 @@ pub fn build_payload(
     let suffix = validated_state_suffix(&hook.key)?;
     let hooks_json_path = hooks_json_path.to_str().ok_or_else(|| {
         AppError::new(format!(
-            "codex-config-helper: hooks.json path is not valid UTF-8: {}",
+            "agent-config-helper: hooks.json path is not valid UTF-8: {}",
             hooks_json_path.display()
         ))
     })?;
@@ -88,7 +88,7 @@ fn validated_state_suffix(key: &str) -> Result<String> {
             Ok(format!("session_start:{group}:{handler}"))
         }
         _ => Err(AppError::new(format!(
-            "codex-config-helper: unexpected Codex hook key: {key}"
+            "agent-config-helper: unexpected Codex hook key: {key}"
         ))),
     }
 }

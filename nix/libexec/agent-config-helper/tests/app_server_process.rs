@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
 
-use codex_config_helper::app_server::fetch_hooks_list_with_timeout;
-use codex_config_helper::hook_state::build_payload;
+use agent_config_helper::app_server::fetch_hooks_list_with_timeout;
+use agent_config_helper::hook_state::build_payload;
 use tempfile::TempDir;
 
 const NORMAL_TEST_TIMEOUT: Duration = Duration::from_secs(5);
@@ -21,7 +21,7 @@ struct Fixture {
 
 impl Fixture {
     fn new(mode: &str) -> Self {
-        let source = Path::new(env!("CARGO_BIN_EXE_codex-config-helper-fixture"));
+        let source = Path::new(env!("CARGO_BIN_EXE_agent-config-helper-fixture"));
         assert!(source.is_absolute());
         let directory = tempfile::tempdir().unwrap();
         let executable = directory.path().join(mode);
@@ -70,7 +70,7 @@ fn fetch(
     mode: &str,
 ) -> (
     Fixture,
-    codex_config_helper::error::Result<codex_config_helper::hook_state::HooksListResponse>,
+    agent_config_helper::error::Result<agent_config_helper::hook_state::HooksListResponse>,
 ) {
     fetch_with_timeout(mode, NORMAL_TEST_TIMEOUT)
 }
@@ -80,7 +80,7 @@ fn fetch_with_timeout(
     timeout: Duration,
 ) -> (
     Fixture,
-    codex_config_helper::error::Result<codex_config_helper::hook_state::HooksListResponse>,
+    agent_config_helper::error::Result<agent_config_helper::hook_state::HooksListResponse>,
 ) {
     let fixture = Fixture::new(mode);
     let cwd = fixture._directory.path().to_path_buf();

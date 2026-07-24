@@ -1,5 +1,5 @@
 [package]
-name = "codex-config-helper"
+name = "agent-config-helper"
 version = "0.1.0"
 edition = "2024"
 publish = false
@@ -13,11 +13,11 @@ test-fixture = []
 path = "src/lib.rs"
 
 [[bin]]
-name = "codex-config-helper"
+name = "agent-config-helper"
 path = "src/main.rs"
 
 [[bin]]
-name = "codex-config-helper-fixture"
+name = "agent-config-helper-fixture"
 path = "tests/fixtures/app_server.rs"
 required-features = ["test-fixture"]
 

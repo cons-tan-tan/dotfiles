@@ -23,7 +23,7 @@ pub struct MergePayload {
 pub fn parse(bytes: &[u8], path: &Path) -> Result<MergePayload> {
     let value: Value = serde_json::from_slice(bytes).map_err(|error| {
         AppError::new(format!(
-            "codex-config-helper: invalid JSON in {} at line {}, column {}",
+            "agent-config-helper: invalid JSON in {} at line {}, column {}",
             path.display(),
             error.line(),
             error.column()
@@ -31,7 +31,7 @@ pub fn parse(bytes: &[u8], path: &Path) -> Result<MergePayload> {
     })?;
     let mut root = value.as_object().cloned().ok_or_else(|| {
         AppError::new(format!(
-            "codex-config-helper: merge payload in {} must be a JSON object",
+            "agent-config-helper: merge payload in {} must be a JSON object",
             path.display()
         ))
     })?;
@@ -179,7 +179,7 @@ fn validate_merge_object(object: &Map<String, Value>, payload_path: &Path) -> Re
 fn validate_toml_value(value: &Value, payload_path: &Path) -> Result<()> {
     match value {
         Value::Null => Err(AppError::new(format!(
-            "codex-config-helper: merge payload in {} contains a value that TOML cannot represent",
+            "agent-config-helper: merge payload in {} contains a value that TOML cannot represent",
             payload_path.display()
         ))),
         Value::Number(number) => {
@@ -192,7 +192,7 @@ fn validate_toml_value(value: &Value, payload_path: &Path) -> Result<()> {
                 Ok(())
             } else {
                 Err(AppError::new(format!(
-                    "codex-config-helper: merge payload in {} contains an integer outside the TOML range",
+                    "agent-config-helper: merge payload in {} contains an integer outside the TOML range",
                     payload_path.display()
                 )))
             }
@@ -219,7 +219,7 @@ pub fn is_control_key(key: &str) -> bool {
 
 fn invalid_control(payload_path: &Path, control: &str, reason: &str) -> AppError {
     AppError::new(format!(
-        "codex-config-helper: invalid {control} control in {}: {reason}",
+        "agent-config-helper: invalid {control} control in {}: {reason}",
         payload_path.display()
     ))
 }

@@ -86,7 +86,7 @@ let
   updatePinsSmoke = pkgs.callPackage ../apps/update-pins/smoke.nix { };
   applySecretsCore = pkgs.callPackage ../apps/apply-secrets { };
   applyNixSettingsCore = pkgs.callPackage ../apps/apply-nix-settings { };
-  codexConfigHelper = pkgs.callPackage ../modules/home/programs/codex/helper { };
+  agentConfigHelper = pkgs.callPackage ../libexec/agent-config-helper { };
   safeFetch = pkgs.callPackage ../packages/safe-fetch { };
   curlFetch = pkgs.dotfilesPackages.curl-fetch;
   ghApiGet = pkgs.dotfilesPackages.gh-api-get;
@@ -157,9 +157,9 @@ let
         "--all-features"
       ];
     };
-    codex-config-helper = mkRustClippyCheck {
-      name = "codex-config-helper";
-      package = codexConfigHelper;
+    agent-config-helper = mkRustClippyCheck {
+      name = "agent-config-helper";
+      package = agentConfigHelper;
       flags = [
         "--all-targets"
         "--all-features"
@@ -212,8 +212,8 @@ let
       ignoredAdvisories = [ ];
     }
     {
-      owner = "codex-config-helper";
-      path = ../modules/home/programs/codex/helper/Cargo.lock;
+      owner = "agent-config-helper";
+      path = ../libexec/agent-config-helper/Cargo.lock;
       ignoredAdvisories = [ ];
     }
     {
@@ -701,7 +701,7 @@ let
     update-pins-smoke = updatePinsSmoke;
     apply-secrets-rust = applySecretsCore;
     apply-nix-settings-rust = applyNixSettingsCore;
-    codex-config-helper-rust = codexConfigHelper;
+    agent-config-helper-rust = agentConfigHelper;
     safe-fetch-rust = safeFetchCheck;
     rust-clippy = rustClippy;
     rust-advisories = rustAdvisories;

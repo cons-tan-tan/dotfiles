@@ -2,7 +2,7 @@ use std::fs;
 use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
 
-use codex_config_helper::merge::merge;
+use agent_config_helper::merge::merge;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 use toml_edit::DocumentMut;

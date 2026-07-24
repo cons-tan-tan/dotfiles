@@ -249,7 +249,7 @@ fn object_to_inline_table(object: &Map<String, JsonValue>) -> Result<InlineTable
 }
 
 fn unrepresentable_value() -> AppError {
-    AppError::new("codex-config-helper: merge payload contains a value that TOML cannot represent")
+    AppError::new("agent-config-helper: merge payload contains a value that TOML cannot represent")
 }
 
 fn safe_toml_error(path: &Path, source: &str, error: &toml_edit::TomlError) -> AppError {
@@ -258,7 +258,7 @@ fn safe_toml_error(path: &Path, source: &str, error: &toml_edit::TomlError) -> A
         .map(|(line, column)| format!(" at line {line}, column {column}"))
         .unwrap_or_default();
     AppError::new(format!(
-        "codex-config-helper: invalid TOML in {}{location}: {}",
+        "agent-config-helper: invalid TOML in {}{location}: {}",
         path.display(),
         error.message()
     ))

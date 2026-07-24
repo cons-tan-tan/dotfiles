@@ -26,15 +26,15 @@ pub enum Action {
 
 pub const USAGE: &str = "\
 Usage:
-  codex-config-helper merge <source.toml> <payload.json> <output.toml>
-  codex-config-helper generate-herdr-hook-state \\
+  agent-config-helper merge <source.toml> <payload.json> <output.toml>
+  agent-config-helper generate-herdr-hook-state \\
     --codex-bin <path> --hook-command <command> --hooks-json-path <path> [--cwd <path>]
 ";
 
 pub fn parse(arguments: &[OsString]) -> Result<Action> {
     let Some(subcommand) = arguments.first() else {
         return Err(AppError::new(
-            "codex-config-helper: a subcommand is required",
+            "agent-config-helper: a subcommand is required",
         ));
     };
     if is_help(subcommand) {
@@ -44,7 +44,7 @@ pub fn parse(arguments: &[OsString]) -> Result<Action> {
         Some("merge") => parse_merge(&arguments[1..]),
         Some("generate-herdr-hook-state") => parse_generate(&arguments[1..]),
         _ => Err(AppError::new(format!(
-            "codex-config-helper: unknown subcommand: {}",
+            "agent-config-helper: unknown subcommand: {}",
             subcommand.to_string_lossy()
         ))),
     }
@@ -56,7 +56,7 @@ fn parse_merge(arguments: &[OsString]) -> Result<Action> {
     }
     let [source, payload, output] = arguments else {
         return Err(AppError::new(
-            "codex-config-helper: merge requires source, payload, and output paths",
+            "agent-config-helper: merge requires source, payload, and output paths",
         ));
     };
     Ok(Action::Run(Command::Merge {
@@ -79,7 +79,7 @@ fn parse_generate(arguments: &[OsString]) -> Result<Action> {
         let option = &arguments[index];
         let value = arguments.get(index + 1).ok_or_else(|| {
             AppError::new(format!(
-                "codex-config-helper: {} requires a value",
+                "agent-config-helper: {} requires a value",
                 option.to_string_lossy()
             ))
         })?;
@@ -87,7 +87,7 @@ fn parse_generate(arguments: &[OsString]) -> Result<Action> {
             Some("--codex-bin") => set_once(&mut codex_bin, PathBuf::from(value), option)?,
             Some("--hook-command") => {
                 let value = value.to_str().ok_or_else(|| {
-                    AppError::new("codex-config-helper: hook command must be valid UTF-8")
+                    AppError::new("agent-config-helper: hook command must be valid UTF-8")
                 })?;
                 set_once(&mut hook_command, value.to_owned(), option)?;
             }
@@ -97,7 +97,7 @@ fn parse_generate(arguments: &[OsString]) -> Result<Action> {
             Some("--cwd") => set_once(&mut cwd, PathBuf::from(value), option)?,
             _ => {
                 return Err(AppError::new(format!(
-                    "codex-config-helper: unknown option: {}",
+                    "agent-config-helper: unknown option: {}",
                     option.to_string_lossy()
                 )));
             }
@@ -111,7 +111,7 @@ fn parse_generate(arguments: &[OsString]) -> Result<Action> {
         hooks_json_path: required(hooks_json_path, "--hooks-json-path")?,
         cwd: cwd.unwrap_or(std::env::current_dir().map_err(|error| {
             AppError::new(format!(
-                "codex-config-helper: cannot resolve current directory: {error}"
+                "agent-config-helper: cannot resolve current directory: {error}"
             ))
         })?),
     }))
@@ -124,7 +124,7 @@ fn is_help(argument: &OsStr) -> bool {
 fn set_once<T>(slot: &mut Option<T>, value: T, option: &OsStr) -> Result<()> {
     if slot.replace(value).is_some() {
         return Err(AppError::new(format!(
-            "codex-config-helper: duplicate option: {}",
+            "agent-config-helper: duplicate option: {}",
             option.to_string_lossy()
         )));
     }
@@ -132,7 +132,7 @@ fn set_once<T>(slot: &mut Option<T>, value: T, option: &OsStr) -> Result<()> {
 }
 
 fn required<T>(value: Option<T>, option: &str) -> Result<T> {
-    value.ok_or_else(|| AppError::new(format!("codex-config-helper: {option} is required")))
+    value.ok_or_else(|| AppError::new(format!("agent-config-helper: {option} is required")))
 }
 
 #[cfg(test)]

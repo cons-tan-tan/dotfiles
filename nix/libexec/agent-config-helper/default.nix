@@ -3,7 +3,7 @@
   rustPlatform,
 }:
 rustPlatform.buildRustPackage {
-  pname = "codex-config-helper";
+  pname = "agent-config-helper";
   version = "0.1.0";
 
   src = lib.fileset.toSource {
@@ -20,8 +20,8 @@ rustPlatform.buildRustPackage {
   cargoTestFlags = [ "--all-features" ];
 
   meta = {
-    description = "Internal helper for merging Codex config and generating hook trust state";
+    description = "Internal helper for transforming agent configuration and hook trust state";
     license = lib.licenses.cc0;
-    mainProgram = "codex-config-helper";
+    mainProgram = "agent-config-helper";
   };
 }
