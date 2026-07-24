@@ -681,8 +681,8 @@ let
   duplicateBatsFiles = builtins.filter (
     file: builtins.length (builtins.filter (other: other == file) declaredBatsFiles) > 1
   ) (lib.unique declaredBatsFiles);
-  missingBatsFiles = lib.subtractLists discoveredBatsFiles declaredBatsFiles;
-  unknownBatsFiles = lib.subtractLists declaredBatsFiles discoveredBatsFiles;
+  missingBatsFiles = lib.subtractLists declaredBatsFiles discoveredBatsFiles;
+  unknownBatsFiles = lib.subtractLists discoveredBatsFiles declaredBatsFiles;
   batsInventoryValidation =
     if duplicateBatsFiles != [ ] then
       throw "Bats files assigned to multiple shards: ${builtins.toJSON duplicateBatsFiles}"
