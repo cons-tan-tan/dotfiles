@@ -3,57 +3,64 @@
 source "$BATS_TEST_DIRNAME/test-helper.bash"
 
 setup() {
-  REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/.." && pwd)"
-  SCRIPT="$REPO_ROOT/nix/packages/aws/aws-login.sh"
+  : "${AWS_LOGIN_TEST_PACKAGE:?}"
   TEST_TMPDIR="$(mktemp -d)"
   export TEST_TMPDIR
-  export PATH="$TEST_TMPDIR/bin:$PATH"
-  mkdir -p "$TEST_TMPDIR/bin"
-  printf '[profile test]\nregion = ap-northeast-1\n' >"$TEST_TMPDIR/base-config"
-
-  write_bash_stub "$TEST_TMPDIR/bin/crudini" <<'SH'
-printf 'arg:%s\n' "$@" >"$TEST_TMPDIR/crudini-args"
-cat >"$TEST_TMPDIR/merged-input"
-SH
+  HOME="$TEST_TMPDIR/home"
+  export HOME
+  mkdir -m 700 -p "$HOME/.aws"
+  TARGET="$HOME/.aws/config"
 }
 
 teardown() {
   rm -rf "$TEST_TMPDIR"
 }
 
+file_mode() {
+  stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"
+}
+
 run_login() {
   run env \
-    AWS_LOGIN_BASE_CONFIG="$TEST_TMPDIR/base-config" \
-    AWS_CONFIG_FILE="$TEST_TMPDIR/config" \
-    "$@" \
-    bash -euo pipefail "$SCRIPT" --profile test
+    AWS_CONFIG_FILE="$TARGET" \
+    AWS_LOGIN_TEST_MODE="${1:-success}" \
+    "$AWS_LOGIN_TEST_PACKAGE/bin/aws-login" --profile test
 }
 
-@test "merges the successful login candidate into the real config" {
-  write_bash_stub "$TEST_TMPDIR/bin/aws" <<'SH'
-printf 'arg:%s\n' "$@" >"$TEST_TMPDIR/aws-args"
-printf '%s\n' "$AWS_CONFIG_FILE" >"$TEST_TMPDIR/candidate-path"
-printf '\nlogin_session = session-id\n' >>"$AWS_CONFIG_FILE"
-SH
+@test "Nix-built aws-login preserves target-only settings and child argv" {
+  printf '%s\n' \
+    '[profile test]' \
+    'credential_process = command' \
+    '# keep' >"$TARGET"
+  chmod 644 "$TARGET"
 
-  run_login
+  run_login success
 
   [ "$status" -eq 0 ]
-  [ "$(cat "$TEST_TMPDIR/aws-args")" = $'arg:login\narg:--profile\narg:test' ]
-  [ "$(cat "$TEST_TMPDIR/crudini-args")" = $'arg:--merge\narg:'"$TEST_TMPDIR/config" ]
-  grep -Fx "login_session = session-id" "$TEST_TMPDIR/merged-input"
-  [ ! -e "$(cat "$TEST_TMPDIR/candidate-path")" ]
+  [ "$(cat "$TEST_TMPDIR/aws-args")" = $'login\n--profile\ntest' ]
+  grep -Fx 'credential_process = command' "$TARGET"
+  grep -Fx '# keep' "$TARGET"
+  grep -Fx 'login_session = fixture-session' "$TARGET"
+  [ "$(file_mode "$TARGET")" = 600 ]
 }
 
-@test "does not merge when aws login fails" {
-  write_bash_stub "$TEST_TMPDIR/bin/aws" <<'SH'
-printf '%s\n' "$AWS_CONFIG_FILE" >"$TEST_TMPDIR/candidate-path"
-exit 7
-SH
+@test "Nix-built aws-login preserves the target when the AWS child fails" {
+  printf '%s\n' '[profile test]' 'credential_process = command' >"$TARGET"
+  cp "$TARGET" "$TEST_TMPDIR/before"
 
-  run_login
+  run_login fail
 
   [ "$status" -eq 7 ]
-  [ ! -e "$TEST_TMPDIR/crudini-args" ]
-  [ ! -e "$(cat "$TEST_TMPDIR/candidate-path")" ]
+  cmp "$TEST_TMPDIR/before" "$TARGET"
+}
+
+@test "Nix-built aws-login rejects malformed targets before invoking AWS" {
+  printf '%s\n' '[profile test]' 'malformed' >"$TARGET"
+  cp "$TARGET" "$TEST_TMPDIR/before"
+
+  run_login success
+
+  [ "$status" -eq 1 ]
+  cmp "$TEST_TMPDIR/before" "$TARGET"
+  [ ! -e "$TEST_TMPDIR/aws-args" ]
 }

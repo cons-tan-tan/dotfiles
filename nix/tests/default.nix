@@ -93,6 +93,7 @@ let
   applySecretsCore = pkgs.callPackage ../apps/apply-secrets { };
   applyNixSettingsCore = pkgs.callPackage ../apps/apply-nix-settings { };
   agentConfigHelper = pkgs.callPackage ../libexec/agent-config-helper { };
+  awsConfigHelper = pkgs.callPackage ../packages/aws/config-helper { };
   safeFetch = pkgs.callPackage ../packages/safe-fetch { };
   curlFetch = pkgs.dotfilesPackages.curl-fetch;
   ghApiGet = pkgs.dotfilesPackages.gh-api-get;
@@ -171,6 +172,14 @@ let
         "--all-features"
       ];
     };
+    aws-config-helper = mkRustClippyCheck {
+      name = "aws-config-helper";
+      package = awsConfigHelper;
+      flags = [
+        "--all-targets"
+        "--all-features"
+      ];
+    };
     update-pins = mkRustClippyCheck {
       name = "update-pins";
       package = updatePinsCore;
@@ -227,6 +236,11 @@ let
     {
       owner = "agent-config-helper";
       path = ../libexec/agent-config-helper/Cargo.lock;
+      ignoredAdvisories = [ ];
+    }
+    {
+      owner = "aws-config-helper";
+      path = ../packages/aws/config-helper/Cargo.lock;
       ignoredAdvisories = [ ];
     }
     {
@@ -363,6 +377,38 @@ let
   codexWrapperTestPackage = pkgs.callPackage ../packages/codex/wrapped-package.nix {
     codex = codexFixture;
     herdrSkillPath = "${herdrSkillFixture}/SKILL.md";
+  };
+
+  awsLoginFixture = pkgs.writeShellApplication {
+    name = "aws";
+    text = ''
+      : "''${TEST_TMPDIR:?}"
+      printf '%s\n' "$@" >"$TEST_TMPDIR/aws-args"
+      if [[ "''${AWS_LOGIN_TEST_MODE:-success}" == fail ]]; then
+        exit 7
+      fi
+      : "''${AWS_CONFIG_FILE:?}"
+      printf '%s\n' 'login_session = fixture-session' >>"$AWS_CONFIG_FILE"
+    '';
+  };
+  awsLoginTestBaseline = pkgs.writeText "aws-login-test-baseline" ''
+    [profile test]
+    output = json
+  '';
+  awsLoginTestPackage = pkgs.callPackage ../packages/aws/login-package.nix {
+    awscli2 = awsLoginFixture;
+    configHelper = awsConfigHelper;
+    loginConfigFile = awsLoginTestBaseline;
+  };
+  awsConfigReconcileTestBaseline = pkgs.writeText "aws-config-reconcile-test-baseline" ''
+    [profile test]
+    region = baseline
+    credential_process = command
+  '';
+  awsConfigReconcileTestPackage = pkgs.callPackage ../packages/aws/reconcile-package.nix {
+    baselineFile = awsConfigReconcileTestBaseline;
+    configHelper = awsConfigHelper;
+    managedSections = [ "profile test" ];
   };
 
   piFixture = pkgs.writeShellApplication {
@@ -533,6 +579,7 @@ let
       name = "shell-wrapper-tests";
       testFiles = [
         "tests/apply-winget.bats"
+        "tests/aws-config-activation.bats"
         "tests/aws-login.bats"
         "tests/claude-wrapper.bats"
         "tests/codex-wrapper.bats"
@@ -555,6 +602,7 @@ let
         "nix/apps/home-manager-switch.sh"
         "nix/modules/wsl/wsl-open.sh"
         "nix/packages/aws/aws-login.sh"
+        "nix/packages/aws/reconcile-package.nix"
         "nix/packages/claude-code/claude-wrapper.sh"
         "nix/packages/codex/codex-wrapper.sh"
         "nix/packages/drawio-headless/drawio-wrapper.sh"
@@ -568,6 +616,8 @@ let
       ];
       nativeBuildInputs = [
         pkgs.git
+        awsConfigReconcileTestPackage
+        awsLoginTestPackage
         claudeWrapperTestPackage
         codexWrapperTestPackage
         herdrWrapperTestPackage
@@ -576,6 +626,8 @@ let
       ]
       ++ lib.optional pkgs.stdenv.hostPlatform.isLinux drawioWrapperTestPackage;
       environment = {
+        AWS_CONFIG_RECONCILE_TEST_PACKAGE = awsConfigReconcileTestPackage;
+        AWS_LOGIN_TEST_PACKAGE = awsLoginTestPackage;
         CLAUDE_WRAPPER_TEST_PACKAGE = claudeWrapperTestPackage;
         CODEX_WRAPPER_TEST_PACKAGE = codexWrapperTestPackage;
         DRAWIO_WRAPPER_TEST_PACKAGE =
@@ -588,6 +640,8 @@ let
         WSL_OPEN_TEST_PACKAGE = wslOpenTestPackage;
       };
       requiredEnvironment = [
+        "AWS_CONFIG_RECONCILE_TEST_PACKAGE"
+        "AWS_LOGIN_TEST_PACKAGE"
         "CLAUDE_WRAPPER_TEST_PACKAGE"
         "CODEX_WRAPPER_TEST_PACKAGE"
         "HERDR_WRAPPER_TEST_PACKAGE"
@@ -722,6 +776,7 @@ let
     apply-secrets-rust = applySecretsCore;
     apply-nix-settings-rust = applyNixSettingsCore;
     agent-config-helper-rust = agentConfigHelper;
+    aws-config-helper-rust = awsConfigHelper;
     safe-fetch-rust = safeFetchCheck;
     rust-clippy = rustClippy;
     rust-advisories = rustAdvisories;
