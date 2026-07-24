@@ -17,6 +17,7 @@ let
 
   settingsLib = import ../../../lib/settings/claude.nix { inherit lib; };
   settingsValidator = import ../../../lib/mk-claude-settings-validator.nix { inherit pkgs; };
+  agentConfigHelper = pkgs.callPackage ../../../libexec/agent-config-helper { };
 
   jsonFormat = pkgs.formats.json { };
 
@@ -39,32 +40,27 @@ let
   herdrSettingsFile =
     pkgs.runCommand "claude-herdr-settings.json"
       {
-        nativeBuildInputs = [ pkgs.jq ];
+        nativeBuildInputs = [ agentConfigHelper ];
       }
       ''
-        jq --arg command ${lib.escapeShellArg herdrHookCommand} '
-          .hooks.SessionStart |= map(.hooks |= map(.command = $command))
-        ' ${herdrClaudeIntegration}/settings.json > $out
+        ${lib.getExe agentConfigHelper} claude rewrite-session-command \
+          --command ${lib.escapeShellArg herdrHookCommand} \
+          ${herdrClaudeIntegration}/settings.json \
+          > "$out"
       '';
 
   # hcom が有効な場合は package が生成した設定を使い、手書きで二重管理しない。
   mergedSettingsRaw =
     pkgs.runCommand "claude-settings.json"
       {
-        nativeBuildInputs = [ pkgs.jq ];
+        nativeBuildInputs = [ agentConfigHelper ];
       }
       ''
-        jq -s '
-          def merge_hooks($first; $second; $third):
-            reduce ((($first | keys_unsorted) + ($second | keys_unsorted) + ($third | keys_unsorted)) | unique[]) as $key
-              ({}; .[$key] = (($first[$key] // []) + ($second[$key] // []) + ($third[$key] // [])));
-
-          .[0] as $base | .[1] as $hcom |
-          .[2] as $herdr |
-          $base
-          | .permissions.allow += $hcom.permissions.allow
-          | .hooks = merge_hooks(($hcom.hooks // {}); ($base.hooks // {}); ($herdr.hooks // {}))
-        ' ${baseSettingsFile} ${hcomSettingsFile} ${herdrSettingsFile} > $out
+        ${lib.getExe agentConfigHelper} claude merge-settings \
+          --base ${baseSettingsFile} \
+          --hcom ${hcomSettingsFile} \
+          --herdr ${herdrSettingsFile} \
+          > "$out"
       '';
 
   mergedSettingsFile = settingsValidator.validate "claude-settings.json" mergedSettingsRaw;

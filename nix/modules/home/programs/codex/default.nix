@@ -44,14 +44,13 @@ let
     if enableHcom then
       pkgs.runCommand "codex-hcom-hooks-payload.json"
         {
-          nativeBuildInputs = [ pkgs.jq ];
+          nativeBuildInputs = [ agentConfigHelper ];
         }
         ''
-          jq --arg hooksJsonPath ${lib.escapeShellArg hooksJsonPath} '
-            { hooks: { state: (to_entries
-                                | map({ key: ($hooksJsonPath + ":" + .key + ":0:0"), value: .value })
-                                | from_entries) } }
-          ' ${hcomCodex}/hooks-state.json > $out
+          ${lib.getExe agentConfigHelper} codex rekey-hook-state \
+            --hooks-path ${lib.escapeShellArg hooksJsonPath} \
+            ${hcomCodex}/hooks-state.json \
+            > "$out"
         ''
     else
       jsonFormat.generate "codex-hcom-hooks-disabled-payload.json" {
@@ -69,22 +68,13 @@ let
   hooksJson =
     pkgs.runCommand "codex-hooks.json"
       {
-        nativeBuildInputs = [ pkgs.jq ];
+        nativeBuildInputs = [ agentConfigHelper ];
       }
       ''
-        jq --arg command ${lib.escapeShellArg herdrHookCommand} '
-          .hooks.SessionStart = ((.hooks.SessionStart // []) + [
-            {
-              hooks: [
-                {
-                  command: $command,
-                  timeout: 10,
-                  type: "command"
-                }
-              ]
-            }
-          ])
-        ' ${hcomHooksJson} > $out
+        ${lib.getExe agentConfigHelper} codex append-session-hook \
+          --command ${lib.escapeShellArg herdrHookCommand} \
+          ${hcomHooksJson} \
+          > "$out"
       '';
 
   herdrHooksStatePayloadJson =
@@ -112,14 +102,14 @@ let
   mergePayloadJson =
     pkgs.runCommand "codex-config-merge.json"
       {
-        nativeBuildInputs = [ pkgs.jq ];
+        nativeBuildInputs = [ agentConfigHelper ];
       }
       ''
-        jq -s '.[0] * .[1] * .[2]' \
+        ${lib.getExe agentConfigHelper} codex merge-payloads \
           ${baseMergePayloadJson} \
           ${hcomHooksPayloadJson} \
           ${herdrHooksStatePayloadJson} \
-          > $out
+          > "$out"
       '';
 
   # 検証に使う schema は、実際に導入する Codex CLI と同じ source tag から取り出す。
