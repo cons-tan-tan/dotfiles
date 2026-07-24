@@ -1,4 +1,5 @@
 {
+  homeManager,
   lib,
   pkgs,
   username,
@@ -24,7 +25,12 @@ let
   ) (lib.unique checkNames);
 
   testContext = {
-    inherit lib pkgs username;
+    inherit
+      homeManager
+      lib
+      pkgs
+      username
+      ;
   };
 
   # *.test.nix は lib.runTests 互換の生テスト attrset、またはそれを返す

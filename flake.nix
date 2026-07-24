@@ -392,6 +392,7 @@
           );
           testChecks = import ./nix/tests {
             inherit lib pkgs username;
+            homeManager = home-manager;
             reservedCheckNames = builtins.attrNames baseChecks;
           };
         in
