@@ -222,6 +222,269 @@ let
       git = fakeGit;
     };
 
+  batsShardSpecs = [
+    {
+      name = "update-pins-e2e";
+      testFiles = [ "tests/update-pins.bats" ];
+      sourceFiles = [
+        "flake.lock"
+        "flake.nix"
+        "nix/packages/shellfirm/Cargo.lock"
+        "nix/pins"
+      ];
+      nativeBuildInputs = [
+        pkgs.git
+        pkgs.gnutar
+        pkgs.gzip
+        pkgs.jq
+        pkgs.zip
+        updatePinsCore
+      ];
+      environment = {
+        UPDATE_PINS_TEST_BIN = lib.getExe updatePinsCore;
+      };
+      requiredEnvironment = [ "UPDATE_PINS_TEST_BIN" ];
+      initializeGit = true;
+      platformPredicate = _platform: true;
+    }
+    {
+      name = "safe-fetch-e2e";
+      testFiles = [
+        "tests/curl-fetch.bats"
+        "tests/gh-api-get.bats"
+      ];
+      sourceFiles = [ ];
+      nativeBuildInputs = [
+        ghApiGet
+        safeFetch.core
+        curlFetch
+      ];
+      environment = {
+        CURL_FETCH_PUBLIC_BIN = lib.getExe curlFetch;
+        CURL_FETCH_TEST_BIN = "${safeFetch.core}/bin/curl-fetch";
+        GH_API_GET_EXTENSION_ROOT = ghApiGet;
+        GH_API_GET_PUBLIC_BIN = lib.getExe ghApiGet;
+        GH_API_GET_TEST_BIN = "${safeFetch.core}/bin/gh-api-get";
+      };
+      requiredEnvironment = [
+        "CURL_FETCH_PUBLIC_BIN"
+        "CURL_FETCH_TEST_BIN"
+        "GH_API_GET_EXTENSION_ROOT"
+        "GH_API_GET_PUBLIC_BIN"
+        "GH_API_GET_TEST_BIN"
+      ];
+      platformPredicate = _platform: true;
+    }
+    {
+      name = "rust-cli-e2e";
+      testFiles = [
+        "tests/apply-nix-settings.bats"
+        "tests/apply-secrets.bats"
+      ];
+      sourceFiles = [ ];
+      nativeBuildInputs = [
+        applyNixSettingsCore
+        applySecretsCore
+      ];
+      environment = {
+        APPLY_NIX_SETTINGS_PUBLIC_BIN = publicApps.apply-nix-settings.program;
+        APPLY_NIX_SETTINGS_TEST_BIN = lib.getExe applyNixSettingsCore;
+        APPLY_SECRETS_PUBLIC_BIN = publicApps.apply-secrets.program;
+        APPLY_SECRETS_TEST_BIN = lib.getExe applySecretsCore;
+      };
+      requiredEnvironment = [
+        "APPLY_NIX_SETTINGS_PUBLIC_BIN"
+        "APPLY_NIX_SETTINGS_TEST_BIN"
+        "APPLY_SECRETS_PUBLIC_BIN"
+        "APPLY_SECRETS_TEST_BIN"
+      ];
+      platformPredicate = _platform: true;
+    }
+    {
+      name = "shell-wrapper-tests";
+      testFiles = [
+        "tests/apply-winget.bats"
+        "tests/aws-login.bats"
+        "tests/claude-wrapper.bats"
+        "tests/codex-wrapper.bats"
+        "tests/darwin-apps.bats"
+        "tests/drawio-headless.bats"
+        "tests/ghq-fetch-all.bats"
+        "tests/herdr-wrapper.bats"
+        "tests/home-manager-apps.bats"
+        "tests/pi-package-manager.bats"
+        "tests/pi-wrapper.bats"
+        "tests/wsl-open.bats"
+        "tests/wsl-set-ssh-auth-sock.bats"
+      ];
+      sourceFiles = [
+        "nix/apps/apply-winget.sh"
+        "nix/apps/darwin-build.sh"
+        "nix/apps/darwin-switch.sh"
+        "nix/apps/home-manager-build.sh"
+        "nix/apps/home-manager-switch.sh"
+        "nix/modules/wsl/wsl-open.sh"
+        "nix/packages/aws/aws-login.sh"
+        "nix/packages/claude-code/claude-wrapper.sh"
+        "nix/packages/codex/codex-wrapper.sh"
+        "nix/packages/drawio-headless/drawio-wrapper.sh"
+        "nix/packages/ghq-fetch-all/ghq-fetch-all.sh"
+        "nix/packages/herdr/herdr-wrapper.sh"
+        "nix/packages/pi/package-manager.sh"
+        "nix/packages/pi/pi-wrapper.sh"
+        "nix/packages/wsl-set-ssh-auth-sock/set-ssh-auth-sock.sh"
+        "tests/test-helper.bash"
+      ];
+      nativeBuildInputs = [
+        pkgs.git
+        claudeWrapperTestPackage
+        codexWrapperTestPackage
+        herdrWrapperTestPackage
+        piWrapperTestPackage
+        wslOpenTestPackage
+      ]
+      ++ lib.optional pkgs.stdenv.hostPlatform.isLinux drawioWrapperTestPackage;
+      environment = {
+        CLAUDE_WRAPPER_TEST_PACKAGE = claudeWrapperTestPackage;
+        CODEX_WRAPPER_TEST_PACKAGE = codexWrapperTestPackage;
+        DRAWIO_WRAPPER_TEST_PACKAGE =
+          if pkgs.stdenv.hostPlatform.isLinux then drawioWrapperTestPackage else "";
+        HERDR_WRAPPER_TEST_PACKAGE = herdrWrapperTestPackage;
+        HOST_APP_KIND = if pkgs.stdenv.hostPlatform.isDarwin then "darwin" else "home-manager";
+        HOST_BUILD_PUBLIC_BIN = publicApps.build.program;
+        HOST_SWITCH_PUBLIC_BIN = publicApps.switch.program;
+        PI_WRAPPER_TEST_PACKAGE = piWrapperTestPackage;
+        WSL_OPEN_TEST_PACKAGE = wslOpenTestPackage;
+      };
+      requiredEnvironment = [
+        "CLAUDE_WRAPPER_TEST_PACKAGE"
+        "CODEX_WRAPPER_TEST_PACKAGE"
+        "HERDR_WRAPPER_TEST_PACKAGE"
+        "HOST_APP_KIND"
+        "HOST_BUILD_PUBLIC_BIN"
+        "HOST_SWITCH_PUBLIC_BIN"
+        "PI_WRAPPER_TEST_PACKAGE"
+        "WSL_OPEN_TEST_PACKAGE"
+      ]
+      ++ lib.optional pkgs.stdenv.hostPlatform.isLinux "DRAWIO_WRAPPER_TEST_PACKAGE";
+      initializeGit = true;
+      platformPredicate = _platform: true;
+    }
+    {
+      name = "workflow-policy-tests";
+      testFiles = [ "tests/update-pins-smoke-workflow.bats" ];
+      sourceFiles = [
+        ".github/workflows/ci.yaml"
+        ".github/workflows/update-pins-smoke.yaml"
+      ];
+      nativeBuildInputs = [ pkgs.yq-go ];
+      environment = { };
+      requiredEnvironment = [ ];
+      platformPredicate = _platform: true;
+    }
+  ];
+
+  batsPath = relative: repoRoot + "/${relative}";
+  discoveredBatsFiles = lib.sort builtins.lessThan (
+    map (path: lib.removePrefix "${toString repoRoot}/" (toString path)) (
+      builtins.filter (path: lib.hasSuffix ".bats" (toString path)) (
+        lib.filesystem.listFilesRecursive (repoRoot + "/tests")
+      )
+    )
+  );
+  declaredBatsFiles = lib.concatMap (shard: shard.testFiles) batsShardSpecs;
+  duplicateBatsFiles = builtins.filter (
+    file: builtins.length (builtins.filter (other: other == file) declaredBatsFiles) > 1
+  ) (lib.unique declaredBatsFiles);
+  missingBatsFiles = lib.subtractLists discoveredBatsFiles declaredBatsFiles;
+  unknownBatsFiles = lib.subtractLists declaredBatsFiles discoveredBatsFiles;
+  batsInventoryValidation =
+    if duplicateBatsFiles != [ ] then
+      throw "Bats files assigned to multiple shards: ${builtins.toJSON duplicateBatsFiles}"
+    else if missingBatsFiles != [ ] then
+      throw "Bats shard manifest references missing files: ${builtins.toJSON missingBatsFiles}"
+    else if unknownBatsFiles != [ ] then
+      throw "Bats files missing from shard manifest: ${builtins.toJSON unknownBatsFiles}"
+    else
+      true;
+
+  mkBatsCheck =
+    {
+      name,
+      testFiles,
+      sourceFiles,
+      nativeBuildInputs,
+      environment,
+      requiredEnvironment,
+      platformPredicate,
+      initializeGit ? false,
+    }:
+    assert platformPredicate pkgs.stdenv.hostPlatform;
+    let
+      shardSource = lib.fileset.toSource {
+        root = repoRoot;
+        fileset = lib.fileset.unions (map batsPath (testFiles ++ sourceFiles));
+      };
+      requiredFiles = testFiles ++ sourceFiles;
+    in
+    pkgs.runCommand name
+      (
+        {
+          nativeBuildInputs = [
+            pkgs.bash
+            pkgs.bats
+          ]
+          ++ nativeBuildInputs;
+          passthru = {
+            inherit testFiles;
+          };
+        }
+        // environment
+      )
+      ''
+        cp -R ${shardSource} repo
+        chmod -R u+w repo
+        cd repo
+
+        for required in ${lib.escapeShellArgs requiredFiles}; do
+          if [[ ! -e "$required" ]]; then
+            echo "${name}: required shard source is missing: $required" >&2
+            exit 1
+          fi
+        done
+
+        ${lib.optionalString (requiredEnvironment != [ ]) ''
+          for variable in ${lib.escapeShellArgs requiredEnvironment}; do
+            if [[ -z "$(printenv "$variable")" ]]; then
+              echo "${name}: required test environment is missing: $variable" >&2
+              exit 1
+            fi
+          done
+        ''}
+
+        ${lib.optionalString initializeGit "git init -q"}
+        bats --print-output-on-failure ${lib.escapeShellArgs testFiles}
+        touch "$out"
+      '';
+
+  applicableBatsShardSpecs = builtins.filter (
+    shard: shard.platformPredicate pkgs.stdenv.hostPlatform
+  ) batsShardSpecs;
+  batsChecks = lib.listToAttrs (
+    map (
+      shard:
+      lib.nameValuePair shard.name (
+        mkBatsCheck (
+          builtins.removeAttrs shard [ "platformPredicate" ]
+          // {
+            inherit (shard) platformPredicate;
+          }
+        )
+      )
+    ) applicableBatsShardSpecs
+  );
+  batsShardNames = map (shard: shard.name) applicableBatsShardSpecs;
+
   fixedChecks = {
     update-pins-rust = updatePinsCore;
     update-pins-smoke = updatePinsSmoke;
@@ -269,59 +532,18 @@ let
           touch "$out"
         '';
 
-    bats-tests =
-      pkgs.runCommand "bats-tests"
-        {
-          nativeBuildInputs = [
-            pkgs.bash
-            pkgs.bats
-            pkgs.git
-            pkgs.gnutar
-            pkgs.gzip
-            pkgs.jq
-            pkgs.zip
-            pkgs.yq-go
-            applySecretsCore
-            applyNixSettingsCore
-            ghApiGet
-            safeFetch.core
-            curlFetch
-            updatePinsCore
-          ];
-          APPLY_SECRETS_TEST_BIN = lib.getExe applySecretsCore;
-          APPLY_NIX_SETTINGS_TEST_BIN = lib.getExe applyNixSettingsCore;
-          APPLY_NIX_SETTINGS_PUBLIC_BIN = publicApps.apply-nix-settings.program;
-          APPLY_SECRETS_PUBLIC_BIN = publicApps.apply-secrets.program;
-          CURL_FETCH_PUBLIC_BIN = lib.getExe curlFetch;
-          CURL_FETCH_TEST_BIN = "${safeFetch.core}/bin/curl-fetch";
-          GH_API_GET_EXTENSION_ROOT = ghApiGet;
-          GH_API_GET_PUBLIC_BIN = lib.getExe ghApiGet;
-          GH_API_GET_TEST_BIN = "${safeFetch.core}/bin/gh-api-get";
-          CLAUDE_WRAPPER_TEST_PACKAGE = claudeWrapperTestPackage;
-          CODEX_WRAPPER_TEST_PACKAGE = codexWrapperTestPackage;
-          DRAWIO_WRAPPER_TEST_PACKAGE =
-            if pkgs.stdenv.hostPlatform.isLinux then drawioWrapperTestPackage else "";
-          HERDR_WRAPPER_TEST_PACKAGE = herdrWrapperTestPackage;
-          HOST_APP_KIND = if pkgs.stdenv.hostPlatform.isDarwin then "darwin" else "home-manager";
-          HOST_BUILD_PUBLIC_BIN = publicApps.build.program;
-          HOST_SWITCH_PUBLIC_BIN = publicApps.switch.program;
-          PI_WRAPPER_TEST_PACKAGE = piWrapperTestPackage;
-          UPDATE_PINS_TEST_BIN = lib.getExe updatePinsCore;
-          WSL_OPEN_TEST_PACKAGE = wslOpenTestPackage;
-        }
-        ''
-          cp -R ${repoRoot} repo
-          chmod -R u+w repo
-          cd repo
-          git init -q
-          bats --print-output-on-failure tests/
-          touch "$out"
-        '';
-  };
+    bats-tests = pkgs.linkFarm "bats-tests" (
+      map (name: {
+        inherit name;
+        path = batsChecks.${name};
+      }) batsShardNames
+    );
+  }
+  // batsChecks;
 in
 # checks は右辺優先で結合されるため、呼び出し元の予約名も含めて検査し、
 # suite や既存 gate が暗黙に上書きされる前に失敗させる。
 if duplicateCheckNames != [ ] then
   throw "duplicate test check names: ${builtins.toJSON duplicateCheckNames}"
 else
-  evalChecks // fixedChecks
+  builtins.seq batsInventoryValidation (evalChecks // fixedChecks)
