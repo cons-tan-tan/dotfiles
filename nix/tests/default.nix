@@ -633,9 +633,9 @@ let
     if duplicateBatsFiles != [ ] then
       throw "Bats files assigned to multiple shards: ${builtins.toJSON duplicateBatsFiles}"
     else if missingBatsFiles != [ ] then
-      throw "Bats shard manifest references missing files: ${builtins.toJSON missingBatsFiles}"
+      throw "Bats files missing from shard manifest: ${builtins.toJSON missingBatsFiles}"
     else if unknownBatsFiles != [ ] then
-      throw "Bats files missing from shard manifest: ${builtins.toJSON unknownBatsFiles}"
+      throw "Bats shard manifest references missing files: ${builtins.toJSON unknownBatsFiles}"
     else
       true;
 
