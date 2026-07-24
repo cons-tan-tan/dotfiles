@@ -1,0 +1,25 @@
+[package]
+name = "aws-config-helper"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+publish = false
+license = "CC0-1.0"
+autobins = false
+
+[[bin]]
+name = "aws-config-helper"
+path = "src/main.rs"
+
+[[bin]]
+name = "aws-config-helper-aws-fixture"
+path = "src/bin/aws-config-helper-aws-fixture.rs"
+required-features = ["test-fixture"]
+
+[features]
+test-fixture = []
+
+[dependencies]
+ini-edit = "=0.3.0"
+libc = "0.2"
+tempfile = "3.23"
