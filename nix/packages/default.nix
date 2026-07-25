@@ -56,7 +56,7 @@ in
   };
   ghq-fetch-all = pkgs.callPackage ./ghq-fetch-all { };
   hunk = import ./hunk {
-    inherit (pkgs) callPackage;
+    inherit (pkgs) callPackage stdenv;
     hunkInput = inputs.hunk;
   };
   shellfirm = pkgs.callPackage ./shellfirm { };

@@ -8,8 +8,6 @@ let
   hunk = pkgs.dotfilesPackages.hunk;
 in
 {
-  # Import the option module without upstream's default package, because the
-  # local package supplies the bun2nix context fix.
   imports = [ inputs.hunk.homeManagerModules.hunk ];
 
   programs.hunk = {

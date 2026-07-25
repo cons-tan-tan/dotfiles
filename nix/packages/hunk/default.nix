@@ -1,11 +1,10 @@
 {
   callPackage,
   hunkInput,
+  stdenv,
 }:
 let
-  package = callPackage ./package.nix {
-    inherit hunkInput;
-  };
+  package = hunkInput.packages.${stdenv.hostPlatform.system}.default;
 in
 {
   inherit package;
