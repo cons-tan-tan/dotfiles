@@ -1,6 +1,6 @@
 ---
 name: japanese-tech-writing
-description: Guides natural, precise Japanese technical writing and revision. Applies only when the target artifact is Japanese-language technical prose; excludes non-Japanese artifacts even when the surrounding discussion is Japanese.
+description: Guides natural, precise drafting and revision of Japanese-language technical prose when the output is intended or likely to be used beyond the immediate interaction, including documentation, articles, issues, PRs, and runbooks.
 ---
 
 # 日本語の技術文書向け文章規範
