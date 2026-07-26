@@ -138,7 +138,9 @@ in
   # で一意にするのは固定名だと並行 switch が同じ候補を共有し TOCTOU になるため。
   # サブシェル + set -e + trap は、後始末を他フラグメントへ漏らさず、検証失敗時に
   # 本番へ mv させないため。
-  home.activation.codexHooksConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+  # linkGeneration が ~/.codex と管理対象 symlink を作った後に実行する。
+  # 既存ホームに依存すると、新規 NixOS-WSL の初回 activation で mktemp が失敗する。
+  home.activation.codexHooksConfig = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
     (
       set -e
       candidate=$(${pkgs.coreutils}/bin/mktemp "${configPath}.hooks-XXXXXX")

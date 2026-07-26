@@ -464,6 +464,7 @@
                   windowsUsername = home.my.windows.username;
                   windowsHomedir = home.my.windows.homedir;
                   dotfilesDir = home.my.dotfilesDir;
+                  codexActivationAfter = home.home.activation.codexHooksConfig.after;
                 };
                 expected = {
                   wslEnabled = true;
@@ -483,6 +484,7 @@
                   windowsUsername = windowsUsername;
                   windowsHomedir = windowsHomedir;
                   dotfilesDir = toString self.outPath;
+                  codexActivationAfter = [ "linkGeneration" ];
                 };
               in
               assert lib.assertMsg (actual == expected) ''
