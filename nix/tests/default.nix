@@ -94,6 +94,52 @@ let
   updatePinsSmoke = pkgs.callPackage ../apps/update-pins/smoke.nix { };
   applySecretsCore = pkgs.callPackage ../apps/apply-secrets { };
   applyNixSettingsCore = pkgs.callPackage ../apps/apply-nix-settings { };
+  nhCleanUser = pkgs.callPackage ../packages/nh-clean-user { };
+  nhCleanArgumentProbe = pkgs.writeShellApplication {
+    name = "nh";
+    text = ''
+      expected=(
+        clean
+        user
+        --keep
+        5
+        --keep-since
+        1d
+        --no-gcroots
+        --no-direnv
+        --dry
+        --no-gc
+      )
+      actual=("$@")
+
+      if (( ''${#actual[@]} != ''${#expected[@]} )); then
+        printf 'unexpected argument count: %d\n' "$#" >&2
+        printf 'actual: <%s>\n' "$@" >&2
+        exit 1
+      fi
+
+      for index in "''${!expected[@]}"; do
+        if [[ ''${actual[index]} != "''${expected[index]}" ]]; then
+          printf 'argument %d: expected <%s>, got <%s>\n' \
+            "$index" "''${expected[index]}" "''${actual[index]}" >&2
+          exit 1
+        fi
+      done
+
+      printf 'called\n' >"$NH_CLEAN_ARGUMENT_PROBE"
+    '';
+  };
+  nhCleanNixProbe = pkgs.writeShellApplication {
+    name = "nix";
+    text = ''
+      echo "nh-clean-user unexpectedly invoked the nix probe" >&2
+      exit 1
+    '';
+  };
+  nhCleanUserArgumentContract = pkgs.callPackage ../packages/nh-clean-user {
+    nh = nhCleanArgumentProbe;
+    nix = nhCleanNixProbe;
+  };
   agentConfigHelper = pkgs.callPackage ../libexec/agent-config-helper { };
   awsConfigHelper = pkgs.callPackage ../packages/aws/config-helper { };
   safeFetch = pkgs.callPackage ../packages/safe-fetch { };
@@ -834,6 +880,32 @@ let
         path = batsChecks.${name};
       }) batsShardNames
     );
+
+    nh-clean-user-arguments = pkgs.runCommand "nh-clean-user-arguments" { } ''
+      export NH_CLEAN_ARGUMENT_PROBE="$TMPDIR/called"
+
+      PATH=/nonexistent \
+        ${nhCleanUserArgumentContract}/bin/nh-clean-user --dry --no-gc
+
+      test -f "$NH_CLEAN_ARGUMENT_PROBE"
+      touch "$out"
+    '';
+  }
+  // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+    nh-clean-user-smoke = pkgs.runCommand "nh-clean-user-smoke" { } ''
+      mkdir -p "$TMPDIR/home"
+
+      # The timer never inherits an interactive shell. Deliberately make
+      # PATH unusable and prove that the wrapper can still start nh and
+      # nh's nix subprocess from its runtime closure.
+      HOME="$TMPDIR/home" PATH=/nonexistent \
+        ${nhCleanUser}/bin/nh-clean-user --dry --no-gc \
+        >"$TMPDIR/output"
+
+      ${lib.getExe pkgs.gnugrep} --fixed-strings \
+        "Welcome to nh clean" "$TMPDIR/output" >/dev/null
+      touch "$out"
+    '';
   }
   // batsChecks;
 in

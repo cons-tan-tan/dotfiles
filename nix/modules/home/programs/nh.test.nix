@@ -4,29 +4,18 @@
   pkgs,
 }:
 let
-  mkModule =
-    {
-      isLinux ? false,
-      isWsl ? false,
-    }:
-    import ./nh.nix {
-      config = {
-        home.profileDirectory = "/home/test/.nix-profile";
-        my = {
-          inherit isLinux isWsl;
-        };
-        programs.nh.package = "/nix/store/test-nh";
-      };
-      inherit lib pkgs;
-    };
+  cleanupPolicy = import ../../../lib/nh-clean-policy.nix;
+  cleanupArgs = lib.escapeShellArgs cleanupPolicy.arguments;
 
   mkEvaluatedConfig =
     {
       isLinux ? false,
       isWsl ? false,
+      osConfig ? null,
     }:
     (homeManager.lib.homeManagerConfiguration {
       inherit pkgs;
+      extraSpecialArgs = { inherit osConfig; };
       modules = [
         ./nh.nix
         (
@@ -58,25 +47,35 @@ let
       ];
     }).config;
 
-  linuxModule = mkModule { isLinux = true; };
-  wslModule = mkModule { isWsl = true; };
-  darwinModule = mkModule { };
   evaluatedLinux = mkEvaluatedConfig { isLinux = true; };
   evaluatedWsl = mkEvaluatedConfig { isWsl = true; };
-  resultRootPruner = pkgs.callPackage ../../../packages/nh-result-root-pruner { };
+  evaluatedIntegratedWsl = mkEvaluatedConfig {
+    isWsl = true;
+    osConfig = { };
+  };
+  evaluatedDarwin = mkEvaluatedConfig { };
+
   expectedCleanup = {
     enable = true;
-    dates = "*-*-* 00/6:00:00";
-    extraArgs = "--keep 5 --keep-since 1d --no-gcroots --no-direnv";
+    dates = cleanupPolicy.dates;
+    extraArgs = cleanupArgs;
   };
-  expectedServicePath = [
-    "PATH=/home/test/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-  ];
+  expectedDisabledSystemCleanup = expectedCleanup // {
+    enable = false;
+  };
+  expectedDarwinCleanup = expectedDisabledSystemCleanup // {
+    dates = "weekly";
+  };
+  resultRootPruner = pkgs.callPackage ../../../packages/nh-result-root-pruner { };
+  expectedCleanupRunner = pkgs.callPackage ../../../packages/nh-clean-user {
+    nh = evaluatedLinux.programs.nh.package;
+    nix = pkgs.nix;
+  };
   expectedResultRootService = {
     Unit.Description = "Prune stale Nix build result roots";
     Service = {
       Type = "oneshot";
-      ExecStart = "${resultRootPruner}/bin/nh-prune-result-roots --keep-minutes 10080";
+      ExecStart = "${resultRootPruner}/bin/nh-prune-result-roots --keep-minutes ${toString cleanupPolicy.resultRoots.keepMinutes}";
       Nice = 10;
       IOSchedulingClass = "idle";
     };
@@ -84,12 +83,13 @@ let
   expectedResultRootTimer = {
     Unit.Description = "Weekly cleanup of stale Nix build result roots";
     Timer = {
-      OnCalendar = "Sun *-*-* 03:00:00";
+      OnCalendar = cleanupPolicy.resultRoots.dates;
       Persistent = true;
       RandomizedDelaySec = "30min";
     };
     Install.WantedBy = [ "timers.target" ];
   };
+
   finalRegularService =
     evaluated:
     let
@@ -135,21 +135,21 @@ let
         inherit (timer) Install Timer;
       };
     };
-  expectedFinalRegularService = evaluated: {
-    Environment = expectedServicePath;
-    ExecStart = [ "${evaluated.programs.nh.package}/bin/nh clean user ${expectedCleanup.extraArgs}" ];
+  expectedFinalRegularService = {
+    Environment = [ ];
+    ExecStart = [ "${expectedCleanupRunner}/bin/nh-clean-user" ];
     IOSchedulingClass = "idle";
     Nice = 10;
   };
   expectedFinalRegularTimer = {
-    OnCalendar = expectedCleanup.dates;
+    OnCalendar = cleanupPolicy.dates;
     Persistent = true;
     WantedBy = [ "timers.target" ];
   };
-  expectedFinalResultRootUnit = evaluated: {
+  expectedFinalResultRootUnit = {
     service = expectedResultRootService // {
       Service = expectedResultRootService.Service // {
-        ExecStart = [ "${resultRootPruner}/bin/nh-prune-result-roots --keep-minutes 10080" ];
+        ExecStart = [ expectedResultRootService.Service.ExecStart ];
       };
     };
     timer = expectedResultRootTimer;
@@ -165,62 +165,24 @@ let
       };
 in
 {
-  testCleanupPolicyLimitsHighChurnProfiles = {
-    expr = linuxModule.programs.nh.clean;
+  testLinuxUsesBoundedCleanupPolicy = systemdPlatformTest {
+    expr = evaluatedLinux.programs.nh.clean;
     expected = expectedCleanup;
   };
 
-  testWslUsesCleanupPolicy = {
-    expr = wslModule.programs.nh.clean;
+  testWslUsesBoundedCleanupPolicy = systemdPlatformTest {
+    expr = evaluatedWsl.programs.nh.clean;
     expected = expectedCleanup;
   };
 
-  testLinuxCleanupCanResolveNix = {
-    expr = linuxModule.systemd.user.services.nh-clean.Service;
-    expected = {
-      Environment = expectedServicePath;
-      Nice = 10;
-      IOSchedulingClass = "idle";
-    };
-  };
-
-  testWslCleanupCanResolveNix = {
-    expr = wslModule.systemd.user.services.nh-clean.Service;
-    expected = {
-      Environment = expectedServicePath;
-      Nice = 10;
-      IOSchedulingClass = "idle";
-    };
-  };
-
-  testLinuxPrunesOnlyStaleResultRoots = {
-    expr = linuxModule.systemd.user.services.nh-clean-result-roots;
-    expected = expectedResultRootService;
-  };
-
-  testWslPrunesOnlyStaleResultRoots = {
-    expr = wslModule.systemd.user.services.nh-clean-result-roots;
-    expected = expectedResultRootService;
-  };
-
-  testLinuxSchedulesResultRootCleanup = {
-    expr = linuxModule.systemd.user.timers.nh-clean-result-roots;
-    expected = expectedResultRootTimer;
-  };
-
-  testWslSchedulesResultRootCleanup = {
-    expr = wslModule.systemd.user.timers.nh-clean-result-roots;
-    expected = expectedResultRootTimer;
-  };
-
-  testLinuxFinalCleanupService = systemdPlatformTest {
+  testLinuxCleanupUsesStoreClosedRunner = systemdPlatformTest {
     expr = finalRegularService evaluatedLinux;
-    expected = expectedFinalRegularService evaluatedLinux;
+    expected = expectedFinalRegularService;
   };
 
-  testWslFinalCleanupService = systemdPlatformTest {
+  testWslCleanupUsesStoreClosedRunner = systemdPlatformTest {
     expr = finalRegularService evaluatedWsl;
-    expected = expectedFinalRegularService evaluatedWsl;
+    expected = expectedFinalRegularService;
   };
 
   testLinuxFinalCleanupTimer = systemdPlatformTest {
@@ -233,19 +195,36 @@ in
     expected = expectedFinalRegularTimer;
   };
 
+  testIntegratedWslDelegatesCleanupToNixos = systemdPlatformTest {
+    expr = {
+      clean = evaluatedIntegratedWsl.programs.nh.clean;
+      hasUserCleanupService = evaluatedIntegratedWsl.systemd.user.services ? nh-clean;
+      hasUserCleanupTimer = evaluatedIntegratedWsl.systemd.user.timers ? nh-clean;
+      hasResultRootService = evaluatedIntegratedWsl.systemd.user.services ? nh-clean-result-roots;
+      hasResultRootTimer = evaluatedIntegratedWsl.systemd.user.timers ? nh-clean-result-roots;
+    };
+    expected = {
+      clean = expectedDisabledSystemCleanup;
+      hasUserCleanupService = false;
+      hasUserCleanupTimer = false;
+      hasResultRootService = true;
+      hasResultRootTimer = true;
+    };
+  };
+
   testLinuxFinalResultRootUnits = systemdPlatformTest {
     expr = finalResultRootUnit evaluatedLinux;
-    expected = expectedFinalResultRootUnit evaluatedLinux;
+    expected = expectedFinalResultRootUnit;
   };
 
   testWslFinalResultRootUnits = systemdPlatformTest {
     expr = finalResultRootUnit evaluatedWsl;
-    expected = expectedFinalResultRootUnit evaluatedWsl;
+    expected = expectedFinalResultRootUnit;
   };
 
   testDarwinDoesNotDefineSystemdCleanup = {
     expr = {
-      inherit (darwinModule.systemd.user) services timers;
+      inherit (evaluatedDarwin.systemd.user) services timers;
     };
     expected = {
       services = { };
@@ -253,12 +232,8 @@ in
     };
   };
 
-  testDarwinDisablesCleanup = {
-    expr = darwinModule.programs.nh.clean;
-    expected = {
-      enable = false;
-      dates = "weekly";
-      extraArgs = "--keep 5 --keep-since 1d --no-gcroots --no-direnv";
-    };
+  testDarwinLeavesCleanupToDeterminateNix = {
+    expr = evaluatedDarwin.programs.nh.clean;
+    expected = expectedDarwinCleanup;
   };
 }

@@ -5,6 +5,10 @@
   ...
 }:
 {
+  imports = [
+    ./nh.nix
+  ];
+
   wsl = {
     enable = true;
     defaultUser = username;

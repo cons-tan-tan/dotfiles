@@ -1,12 +1,22 @@
 {
   config,
   lib,
+  osConfig,
   pkgs,
   ...
 }:
 let
   isSystemdHost = config.my.isLinux || config.my.isWsl;
-  servicePath = "${config.home.profileDirectory}/bin:/nix/var/nix/profiles/default/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+  isNixosIntegrated = osConfig != null;
+  enableUserCleanup = isSystemdHost && !isNixosIntegrated;
+  cleanupPolicy = import ../../../lib/nh-clean-policy.nix;
+  cleanupArgs = lib.escapeShellArgs cleanupPolicy.arguments;
+  nixPackage =
+    if config.nix.enable && config.nix.package != null then config.nix.package else pkgs.nix;
+  userCleanupRunner = pkgs.callPackage ../../../packages/nh-clean-user {
+    nh = config.programs.nh.package;
+    nix = nixPackage;
+  };
   resultRootPruner = pkgs.callPackage ../../../packages/nh-result-root-pruner { };
 in
 {
@@ -15,41 +25,42 @@ in
 
     clean = {
       # Home Manager currently appends extraArgs as one launchd argument.
-      # Keep automatic cleanup on the systemd-backed hosts where it is split correctly.
-      enable = isSystemdHost;
-      dates = if isSystemdHost then "*-*-* 00/6:00:00" else "weekly";
-      extraArgs = "--keep 5 --keep-since 1d --no-gcroots --no-direnv";
+      # NixOS also needs root access to prune its system generations, so its
+      # system module owns cleanup instead of this user-scoped service.
+      enable = enableUserCleanup;
+      dates = if isSystemdHost then cleanupPolicy.dates else "weekly";
+      extraArgs = cleanupArgs;
     };
   };
 
-  # nh resolves nix as a child process, while the user manager does not inherit
-  # the Nix paths configured by the interactive shell.
-  systemd.user.services = lib.optionalAttrs isSystemdHost {
-    nh-clean.Service = {
-      Environment = [ "PATH=${servicePath}" ];
-      Nice = 10;
-      IOSchedulingClass = "idle";
-    };
-
-    # The multi-user Nix daemon owns the auto-root registry, so a user service
-    # expires the user's result symlinks and lets the next Nix GC drop the
-    # resulting stale registrations.
-    nh-clean-result-roots = {
-      Unit.Description = "Prune stale Nix build result roots";
-      Service = {
-        Type = "oneshot";
-        ExecStart = "${resultRootPruner}/bin/nh-prune-result-roots --keep-minutes 10080";
+  systemd.user.services =
+    lib.optionalAttrs isSystemdHost {
+      # The multi-user Nix daemon owns the auto-root registry, so a user service
+      # expires the user's result symlinks and lets the next Nix GC drop the
+      # resulting stale registrations.
+      nh-clean-result-roots = {
+        Unit.Description = "Prune stale Nix build result roots";
+        Service = {
+          Type = "oneshot";
+          ExecStart = "${resultRootPruner}/bin/nh-prune-result-roots --keep-minutes ${toString cleanupPolicy.resultRoots.keepMinutes}";
+          Nice = 10;
+          IOSchedulingClass = "idle";
+        };
+      };
+    }
+    // lib.optionalAttrs enableUserCleanup {
+      nh-clean.Service = {
+        ExecStart = lib.mkForce "${userCleanupRunner}/bin/nh-clean-user";
         Nice = 10;
         IOSchedulingClass = "idle";
       };
     };
-  };
 
   systemd.user.timers = lib.optionalAttrs isSystemdHost {
     nh-clean-result-roots = {
       Unit.Description = "Weekly cleanup of stale Nix build result roots";
       Timer = {
-        OnCalendar = "Sun *-*-* 03:00:00";
+        OnCalendar = cleanupPolicy.resultRoots.dates;
         Persistent = true;
         RandomizedDelaySec = "30min";
       };

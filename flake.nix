@@ -456,6 +456,35 @@
                   { home-manager.users.${username}.dotfiles.hcom.enable = true; }
                 ];
               }).system;
+            darwin-nh-cleanup-contract =
+              let
+                cfg = darwinConfigurations.${darwinHostname}.config;
+                home = cfg.home-manager.users.${username};
+                actual = {
+                  systemNixEnabled = cfg.nix.enable;
+                  systemNixGcAutomatic = cfg.nix.gc.automatic;
+                  systemNixGcDaemonDefined = cfg.launchd.daemons ? nix-gc;
+                  homeNixGcAutomatic = home.nix.gc.automatic;
+                  homeNixGcAgentDefined = home.launchd.agents ? nix-gc;
+                  homeNhCleanupEnabled = home.programs.nh.clean.enable;
+                  homeNhCleanupAgentDefined = home.launchd.agents ? nh-clean;
+                };
+                expected = {
+                  systemNixEnabled = false;
+                  systemNixGcAutomatic = false;
+                  systemNixGcDaemonDefined = false;
+                  homeNixGcAutomatic = false;
+                  homeNixGcAgentDefined = false;
+                  homeNhCleanupEnabled = false;
+                  homeNhCleanupAgentDefined = false;
+                };
+              in
+              assert lib.assertMsg (actual == expected) ''
+                Darwin Nix cleanup ownership contract mismatch:
+                expected ${builtins.toJSON expected}
+                actual ${builtins.toJSON actual}
+              '';
+              pkgs.runCommand "darwin-nh-cleanup-contract" { } ''touch "$out"'';
           }
           // lib.optionalAttrs (lib.hasSuffix "-linux" system) {
             nixos-wsl-system = nixosWslConfiguration.config.system.build.toplevel;
@@ -489,6 +518,27 @@
                     daemonHosts = cfg.virtualisation.docker.daemon.settings.hosts;
                     listenOptions = cfg.virtualisation.docker.listenOptions;
                     autoPruneEnabled = cfg.virtualisation.docker.autoPrune.enable;
+                  };
+                  nhCleanup = {
+                    systemProgramEnabled = cfg.programs.nh.enable;
+                    systemCleanupEnabled = cfg.programs.nh.clean.enable;
+                    systemCleanupDates = cfg.programs.nh.clean.dates;
+                    systemCleanupArgs = cfg.programs.nh.clean.extraArgs;
+                    systemCommand = cfg.systemd.services.nh-clean.script;
+                    systemPathHasNix = lib.elem cfg.nix.package cfg.systemd.services.nh-clean.path;
+                    systemUser = cfg.systemd.services.nh-clean.serviceConfig.User;
+                    systemNice = cfg.systemd.services.nh-clean.serviceConfig.Nice;
+                    systemIoClass = cfg.systemd.services.nh-clean.serviceConfig.IOSchedulingClass;
+                    timerOnCalendar = cfg.systemd.timers.nh-clean.timerConfig.OnCalendar;
+                    timerPersistent = cfg.systemd.timers.nh-clean.timerConfig.Persistent;
+                    timerWantedBy = cfg.systemd.timers.nh-clean.wantedBy;
+                    nixGcAutomatic = cfg.nix.gc.automatic;
+                    homeProgramEnabled = home.programs.nh.enable;
+                    homeCleanupEnabled = home.programs.nh.clean.enable;
+                    homeCleanupServiceDefined = home.systemd.user.services ? nh-clean;
+                    homeCleanupTimerDefined = home.systemd.user.timers ? nh-clean;
+                    resultRootServiceDefined = home.systemd.user.services ? nh-clean-result-roots;
+                    resultRootTimerDefined = home.systemd.user.timers ? nh-clean-result-roots;
                   };
                   wslConsole = {
                     gettyEnabled = cfg.services.getty.enable;
@@ -555,6 +605,27 @@
                     daemonHosts = [ "fd://" ];
                     listenOptions = [ "/run/docker.sock" ];
                     autoPruneEnabled = false;
+                  };
+                  nhCleanup = {
+                    systemProgramEnabled = false;
+                    systemCleanupEnabled = true;
+                    systemCleanupDates = "*-*-* 00/6:00:00";
+                    systemCleanupArgs = "--keep 5 --keep-since 1d --no-gcroots --no-direnv";
+                    systemCommand = "exec ${lib.getExe cfg.programs.nh.package} clean all --keep 5 --keep-since 1d --no-gcroots --no-direnv";
+                    systemPathHasNix = true;
+                    systemUser = "root";
+                    systemNice = 10;
+                    systemIoClass = "idle";
+                    timerOnCalendar = [ "*-*-* 00/6:00:00" ];
+                    timerPersistent = true;
+                    timerWantedBy = [ "timers.target" ];
+                    nixGcAutomatic = false;
+                    homeProgramEnabled = true;
+                    homeCleanupEnabled = false;
+                    homeCleanupServiceDefined = false;
+                    homeCleanupTimerDefined = false;
+                    resultRootServiceDefined = true;
+                    resultRootTimerDefined = true;
                   };
                   wslConsole = {
                     gettyEnabled = true;
