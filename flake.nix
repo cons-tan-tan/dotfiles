@@ -450,6 +450,14 @@
                   interopRegistered = cfg.wsl.interop.register;
                   hasWslInteropRegistration = cfg.boot.binfmt.registrations ? WSLInterop;
                   userLinger = cfg.users.users.${username}.linger;
+                  docker = {
+                    enabled = cfg.virtualisation.docker.enable;
+                    enableOnBoot = cfg.virtualisation.docker.enableOnBoot;
+                    userInDockerGroup = lib.elem "docker" cfg.users.users.${username}.extraGroups;
+                    daemonHosts = cfg.virtualisation.docker.daemon.settings.hosts;
+                    listenOptions = cfg.virtualisation.docker.listenOptions;
+                    autoPruneEnabled = cfg.virtualisation.docker.autoPrune.enable;
+                  };
                   wslConsole = {
                     gettyEnabled = cfg.services.getty.enable;
                     gettyTargetWants = cfg.systemd.targets.getty.wants;
@@ -496,6 +504,14 @@
                   interopRegistered = true;
                   hasWslInteropRegistration = true;
                   userLinger = true;
+                  docker = {
+                    enabled = true;
+                    enableOnBoot = true;
+                    userInDockerGroup = true;
+                    daemonHosts = [ "fd://" ];
+                    listenOptions = [ "/run/docker.sock" ];
+                    autoPruneEnabled = false;
+                  };
                   wslConsole = {
                     gettyEnabled = true;
                     gettyTargetWants = [ ];

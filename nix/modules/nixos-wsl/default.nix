@@ -21,7 +21,17 @@
 
   # 非対話の WSL 起動でも user manager を常駐させ、nixos-rebuild が
   # Home Manager の user units を再読込できるようにする。
-  users.users.${username}.linger = true;
+  users.users.${username} = {
+    linger = true;
+    extraGroups = [ "docker" ];
+  };
+
+  # Docker Desktopに依存せず、LinuxコンテナをNixOS内で完結させる。
+  # Docker APIはTCP公開せず、ローカルのUnix socketをdocker groupから利用する。
+  virtualisation.docker = {
+    enable = true;
+    enableOnBoot = true;
+  };
 
   # WSLのセッションはLinux VT1を使わない。nixpkgsがgetty.targetから起動する
   # autovt@tty1はWSL上で再起動を繰り返し、switchを失敗扱いにするため、
