@@ -23,6 +23,12 @@
   # Home Manager の user units を再読込できるようにする。
   users.users.${username}.linger = true;
 
+  # WSLのセッションはLinux VT1を使わない。nixpkgsがgetty.targetから起動する
+  # autovt@tty1はWSL上で再起動を繰り返し、switchを失敗扱いにするため、
+  # getty自体は残したまま自動起動だけを外す。
+  # https://github.com/NixOS/nixpkgs/pull/428972
+  systemd.targets.getty.wants = lib.mkForce [ ];
+
   # 暫定対応: WSL起動直後はuser@.serviceのexecutor spawnがEBUSYで失敗するため、
   # user managerだけを短時間で再試行する。microsoft/WSL#40519を含むreleaseへ
   # 更新後に再試行なしで起動できることを確認し、このuser@ overrideを削除する。

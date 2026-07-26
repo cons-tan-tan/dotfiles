@@ -450,6 +450,10 @@
                   interopRegistered = cfg.wsl.interop.register;
                   hasWslInteropRegistration = cfg.boot.binfmt.registrations ? WSLInterop;
                   userLinger = cfg.users.users.${username}.linger;
+                  wslConsole = {
+                    gettyEnabled = cfg.services.getty.enable;
+                    gettyTargetWants = cfg.systemd.targets.getty.wants;
+                  };
                   # nix/modules/nixos-wsl/default.nixの暫定対応と対になるcontract。
                   # microsoft/WSL#40519を含むreleaseで再発しないことを確認後、
                   # 対応する設定とこのattrsetを同時に削除する。
@@ -492,6 +496,10 @@
                   interopRegistered = true;
                   hasWslInteropRegistration = true;
                   userLinger = true;
+                  wslConsole = {
+                    gettyEnabled = true;
+                    gettyTargetWants = [ ];
+                  };
                   temporaryWslWorkarounds = {
                     hostname = {
                       configured = "";
