@@ -450,6 +450,23 @@
                   interopRegistered = cfg.wsl.interop.register;
                   hasWslInteropRegistration = cfg.boot.binfmt.registrations ? WSLInterop;
                   userLinger = cfg.users.users.${username}.linger;
+                  # nix/modules/nixos-wsl/default.nixの暫定対応と対になるcontract。
+                  # microsoft/WSL#40519を含むreleaseで再発しないことを確認後、
+                  # 対応する設定とこのattrsetを同時に削除する。
+                  temporaryWslWorkarounds = {
+                    hostname = {
+                      configured = cfg.wsl.wslConf.network.hostname;
+                      directiveGenerated = lib.hasInfix "hostname=" cfg.environment.etc."wsl.conf".text;
+                    };
+                    userManagerRetry = {
+                      restart = cfg.systemd.services."user@".serviceConfig.Restart;
+                      restartSec = cfg.systemd.services."user@".serviceConfig.RestartSec;
+                      startLimitIntervalSec = cfg.systemd.services."user@".startLimitIntervalSec;
+                      startLimitBurst = cfg.systemd.services."user@".startLimitBurst;
+                      overrideStrategy = cfg.systemd.services."user@".overrideStrategy;
+                      restartIfChanged = cfg.systemd.services."user@".restartIfChanged;
+                    };
+                  };
                   stateVersion = cfg.system.stateVersion;
                   flakesEnabled = lib.elem "flakes" cfg.nix.settings.experimental-features;
                   trustedUser = lib.elem username cfg.nix.settings."extra-trusted-users";
@@ -475,6 +492,20 @@
                   interopRegistered = true;
                   hasWslInteropRegistration = true;
                   userLinger = true;
+                  temporaryWslWorkarounds = {
+                    hostname = {
+                      configured = "";
+                      directiveGenerated = false;
+                    };
+                    userManagerRetry = {
+                      restart = "on-failure";
+                      restartSec = "250ms";
+                      startLimitIntervalSec = 5;
+                      startLimitBurst = 5;
+                      overrideStrategy = "asDropinIfExists";
+                      restartIfChanged = false;
+                    };
+                  };
                   stateVersion = "26.05";
                   flakesEnabled = true;
                   trustedUser = true;
