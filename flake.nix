@@ -447,6 +447,7 @@
                 actual = {
                   wslEnabled = cfg.wsl.enable;
                   defaultUser = cfg.wsl.defaultUser;
+                  userLinger = cfg.users.users.${username}.linger;
                   stateVersion = cfg.system.stateVersion;
                   flakesEnabled = lib.elem "flakes" cfg.nix.settings.experimental-features;
                   trustedUser = lib.elem username cfg.nix.settings."extra-trusted-users";
@@ -469,6 +470,7 @@
                 expected = {
                   wslEnabled = true;
                   defaultUser = username;
+                  userLinger = true;
                   stateVersion = "26.05";
                   flakesEnabled = true;
                   trustedUser = true;
