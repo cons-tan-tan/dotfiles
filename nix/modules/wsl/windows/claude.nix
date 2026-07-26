@@ -17,7 +17,6 @@ let
   windowsSettingsRaw = (pkgs.formats.json { }).generate "claude-windows-settings.json" (
     settingsLib.mkSettings {
       forWindows = true;
-      windowsUsername = config.my.windows.username;
     }
   );
 

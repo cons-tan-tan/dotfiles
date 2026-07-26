@@ -6,8 +6,6 @@ let
     (import ./yaml-frontmatter.nix { inherit lib; }) // (import ./skill-policy.nix { inherit lib; });
   policy = import ./policy.nix { inherit lib; };
 
-  withFm = "---\nname: demo\n---\nbody line\n";
-  noFm = "body only\n---\nnot frontmatter\n";
   defaultInheritedFields = policy.defaultInheritedFrontmatterFields;
   prepare =
     customization: original:

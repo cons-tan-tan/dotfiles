@@ -13,7 +13,6 @@ in
     {
       forWindows ? false,
       isDarwin ? false,
-      windowsUsername ? null,
       wslUserProfile ? null,
       hcomPath ? null,
     }:

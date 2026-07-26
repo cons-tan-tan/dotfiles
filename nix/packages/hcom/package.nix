@@ -10,7 +10,7 @@ let
   # `nix run .#update-pins` は両方を同じ transaction で更新する。
   # Linux uses the static musl build: no glibc dependency, so autoPatchelfHook
   # is unnecessary. macOS has no musl variant, so use the native darwin build.
-  version = (builtins.fromTOML (builtins.readFile "${hcomSource}/Cargo.toml")).package.version;
+  version = (fromTOML (builtins.readFile "${hcomSource}/Cargo.toml")).package.version;
 
   system = stdenvNoCC.hostPlatform.system;
   pinnedAsset = import ../../lib/mk-pinned-asset.nix {

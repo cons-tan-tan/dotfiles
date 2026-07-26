@@ -282,12 +282,19 @@
         treefmt-nix.lib.evalModule pkgs {
           projectRootFile = "flake.nix";
           programs = {
+            nixf-diagnose = {
+              enable = true;
+              autoFix = true;
+            };
             nixfmt.enable = true;
             rustfmt.enable = true;
             shfmt.enable = true;
           };
           settings = {
+            # nixf の修正で生じたレイアウト差分を同じ実行内で nixfmt に渡す。
+            formatter.nixf-diagnose.priority = -1;
             global.excludes = [
+              ".direnv/**"
               ".git/**"
               "*.lock"
               "result"

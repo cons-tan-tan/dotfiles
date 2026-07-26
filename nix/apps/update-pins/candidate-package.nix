@@ -23,7 +23,7 @@ let
     then
       package
     else
-      builtins.throw "update-pins dependency provenance mismatch for ${packageName}";
+      throw "update-pins dependency provenance mismatch for ${packageName}";
 in
 validatedPackage.override (
   builtins.listToAttrs [

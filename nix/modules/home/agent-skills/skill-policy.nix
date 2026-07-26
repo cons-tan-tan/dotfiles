@@ -71,10 +71,10 @@ rec {
       rawDescription = frontmatter.description or null;
       description = if rawDescription == null then null else normalizeDescription rawDescription;
       set = frontmatter.set or { };
-      inheritFields = validateFrontmatterFieldNames ("${context}.frontmatter.inheritFields") (
+      inheritFields = validateFrontmatterFieldNames "${context}.frontmatter.inheritFields" (
         frontmatter.inheritFields or [ ]
       );
-      excludeFields = validateFrontmatterFieldNames ("${context}.frontmatter.excludeFields") (
+      excludeFields = validateFrontmatterFieldNames "${context}.frontmatter.excludeFields" (
         frontmatter.excludeFields or [ ]
       );
       disableAutomaticInvocation = customization.disableAutomaticInvocation or false;

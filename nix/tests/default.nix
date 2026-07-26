@@ -17,11 +17,11 @@ let
 
   # 評価だけで完結するテストは実装の隣に置き、ファイル名から checks の
   # 名前を生成する。
-  testFiles = builtins.filter (path: lib.hasSuffix testSuffix (builtins.baseNameOf path)) (
+  testFiles = builtins.filter (path: lib.hasSuffix testSuffix (baseNameOf path)) (
     lib.filesystem.listFilesRecursive nixRoot
   );
 
-  testStem = path: lib.removeSuffix testSuffix (builtins.baseNameOf path);
+  testStem = path: lib.removeSuffix testSuffix (baseNameOf path);
   checkName = path: "${testStem path}-tests";
   discoveredCheckNames = map checkName testFiles;
   checkNames = discoveredCheckNames ++ builtins.attrNames fixedChecks ++ reservedCheckNames;
@@ -312,7 +312,7 @@ let
     }
   ];
 
-  discoveredRustLockfiles = builtins.filter (path: builtins.baseNameOf path == "Cargo.lock") (
+  discoveredRustLockfiles = builtins.filter (path: baseNameOf path == "Cargo.lock") (
     lib.filesystem.listFilesRecursive nixRoot
   );
   declaredRustLockfiles = map (lock: lock.path) rustLockfiles;
@@ -814,7 +814,7 @@ let
       shard:
       lib.nameValuePair shard.name (
         mkBatsCheck (
-          builtins.removeAttrs shard [ "platformPredicate" ]
+          removeAttrs shard [ "platformPredicate" ]
           // {
             inherit (shard) platformPredicate;
           }

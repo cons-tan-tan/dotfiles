@@ -3,7 +3,7 @@
 # 純データ契約なので、合成用の synthetic attr を混ぜない。
 { callPackage }:
 path: args:
-builtins.removeAttrs (callPackage path args) [
+removeAttrs (callPackage path args) [
   "override"
   "overrideDerivation"
 ]

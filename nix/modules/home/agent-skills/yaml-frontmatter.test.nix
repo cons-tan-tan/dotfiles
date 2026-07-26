@@ -288,16 +288,18 @@ in
   };
 
   testFilterFrontmatterFieldsBlocksAllowedToolsWithCrLf = {
-    expr = fm.filterFrontmatterFields [ "name" "description" ] (
-      "---\r\nname: demo\r\ndescription: Demo.\r\nallowed-tools: Bash(example:*)\r\n---\r\nbody\r\n"
-    );
+    expr = fm.filterFrontmatterFields [
+      "name"
+      "description"
+    ] "---\r\nname: demo\r\ndescription: Demo.\r\nallowed-tools: Bash(example:*)\r\n---\r\nbody\r\n";
     expected = "---\nname: demo\ndescription: Demo.\n---\nbody\n";
   };
 
   testFilterFrontmatterFieldsBlocksAllowedToolsWithBom = {
-    expr = fm.filterFrontmatterFields [ "name" "description" ] (
-      "${fm.utf8Bom}---\nname: demo\ndescription: Demo.\nallowed-tools: Bash(example:*)\n---\nbody\n"
-    );
+    expr = fm.filterFrontmatterFields [
+      "name"
+      "description"
+    ] "${fm.utf8Bom}---\nname: demo\ndescription: Demo.\nallowed-tools: Bash(example:*)\n---\nbody\n";
     expected = "---\nname: demo\ndescription: Demo.\n---\nbody\n";
   };
 

@@ -1,14 +1,14 @@
 { lib }:
 let
   fixtureLib = lib // {
-    getExe = package: "${package}/bin/${builtins.baseNameOf package}";
+    getExe = package: "${package}/bin/${baseNameOf package}";
     hm.dag.entryAfter = after: data: { inherit after data; };
   };
   fixturePkgs = {
     awscli2 = "/nix/store/aws";
     callPackage =
       path: _:
-      if builtins.baseNameOf path == "config-helper" then
+      if baseNameOf path == "config-helper" then
         "/nix/store/aws-config-helper"
       else
         "/nix/store/aws-config-reconcile";
