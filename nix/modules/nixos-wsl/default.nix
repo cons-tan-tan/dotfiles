@@ -7,6 +7,9 @@
   wsl = {
     enable = true;
     defaultUser = username;
+
+    # WSL側の自動登録が欠ける環境でもWindows実行ファイルを起動できるようにする。
+    interop.register = true;
   };
 
   # 非対話の WSL 起動でも user manager を常駐させ、nixos-rebuild が

@@ -447,6 +447,8 @@
                 actual = {
                   wslEnabled = cfg.wsl.enable;
                   defaultUser = cfg.wsl.defaultUser;
+                  interopRegistered = cfg.wsl.interop.register;
+                  hasWslInteropRegistration = cfg.boot.binfmt.registrations ? WSLInterop;
                   userLinger = cfg.users.users.${username}.linger;
                   stateVersion = cfg.system.stateVersion;
                   flakesEnabled = lib.elem "flakes" cfg.nix.settings.experimental-features;
@@ -470,6 +472,8 @@
                 expected = {
                   wslEnabled = true;
                   defaultUser = username;
+                  interopRegistered = true;
+                  hasWslInteropRegistration = true;
                   userLinger = true;
                   stateVersion = "26.05";
                   flakesEnabled = true;
