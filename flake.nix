@@ -27,6 +27,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    nixos-wsl = {
+      url = "github:nix-community/NixOS-WSL/main";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     nix-index-database = {
       url = "github:nix-community/nix-index-database";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -210,6 +215,17 @@
         homedir = darwinHomedir;
       };
 
+      mkNixosWsl = import ./nix/lib/mk-nixos-wsl.nix {
+        inherit
+          inputs
+          username
+          windowsUsername
+          windowsHomedir
+          pkgsFor
+          ;
+        homedir = linuxHomedir;
+      };
+
       linuxHostMatrix = [
         {
           hostKind = "linux";
@@ -235,6 +251,30 @@
 
       configNames = import ./nix/lib/linux-config-name.nix { inherit username; };
       linuxConfigName = configNames.forHost;
+      nixosWslConfigName = configNames.forNixosWsl;
+
+      nixosWslMatrix = builtins.filter (entry: entry.hostKind == "wsl") linuxHostMatrix;
+
+      darwinConfigurations = {
+        ${darwinHostname} = mkDarwin {
+          system = darwinSystem;
+          hostFile = ./nix/hosts/darwin.nix;
+        };
+      };
+
+      homeConfigurations = lib.listToAttrs (
+        map (entry: {
+          name = linuxConfigName entry;
+          value = mkHost entry;
+        }) linuxHostMatrix
+      );
+
+      nixosConfigurations = lib.listToAttrs (
+        map (entry: {
+          name = nixosWslConfigName entry;
+          value = mkNixosWsl { inherit (entry) system; };
+        }) nixosWslMatrix
+      );
 
       # treefmt: formatter 出力 (wrapper) と checks 出力 (check) の両方に使う
       mkTreefmtEval =
@@ -292,6 +332,10 @@
           mkLinuxHostApps {
             inherit system;
             pkgs = pkgsFor.${system};
+            nixosTarget = nixosWslConfigName { inherit system; };
+            nixosRebuildBin = "${
+              nixosConfigurations.${nixosWslConfigName { inherit system; }}.config.system.build.nixos-rebuild
+            }/bin/nixos-rebuild";
           }
       );
       appsFor = lib.genAttrs systems (
@@ -301,22 +345,9 @@
           hostAppsFor.${system}
         ]
       );
-      darwinConfigurations = {
-        ${darwinHostname} = mkDarwin {
-          system = darwinSystem;
-          hostFile = ./nix/hosts/darwin.nix;
-        };
-      };
-
-      homeConfigurations = lib.listToAttrs (
-        map (entry: {
-          name = linuxConfigName entry;
-          value = mkHost entry;
-        }) linuxHostMatrix
-      );
     in
     {
-      inherit darwinConfigurations homeConfigurations;
+      inherit darwinConfigurations homeConfigurations nixosConfigurations;
 
       # 全 system で同一の app 集合になるよう genAttrs で生成する
       apps = lib.genAttrs systems (system: appsFor.${system}.apps);
@@ -382,6 +413,11 @@
         system:
         let
           pkgs = pkgsFor.${system};
+          nixosWslConfiguration =
+            if lib.hasSuffix "-linux" system then
+              nixosConfigurations.${nixosWslConfigName { inherit system; }}
+            else
+              null;
           baseChecks = {
             treefmt = treefmtEvalFor.${system}.config.build.check self;
             # 全 app スクリプトをビルドし、wrapper のビルド時 shellcheck を
@@ -400,6 +436,61 @@
                   { home-manager.users.${username}.dotfiles.hcom.enable = true; }
                 ];
               }).system;
+          }
+          // lib.optionalAttrs (lib.hasSuffix "-linux" system) {
+            nixos-wsl-system = nixosWslConfiguration.config.system.build.toplevel;
+            nixos-wsl-tarball-builder = nixosWslConfiguration.config.system.build.tarballBuilder;
+            nixos-wsl-contract =
+              let
+                cfg = nixosWslConfiguration.config;
+                home = cfg.home-manager.users.${username};
+                actual = {
+                  wslEnabled = cfg.wsl.enable;
+                  defaultUser = cfg.wsl.defaultUser;
+                  stateVersion = cfg.system.stateVersion;
+                  flakesEnabled = lib.elem "flakes" cfg.nix.settings.experimental-features;
+                  trustedUser = lib.elem username cfg.nix.settings."extra-trusted-users";
+                  channelsEnabled = cfg.nix.channel.enable;
+                  tarballConfigPath = toString cfg.wsl.tarball.configPath;
+                  inherit (cfg.home-manager)
+                    useGlobalPkgs
+                    useUserPackages
+                    backupFileExtension
+                    ;
+                  homeUsername = home.home.username;
+                  homeDirectory = home.home.homeDirectory;
+                  hostKind = home.my.hostKind;
+                  isWsl = home.my.isWsl;
+                  windowsUsername = home.my.windows.username;
+                  windowsHomedir = home.my.windows.homedir;
+                  dotfilesDir = home.my.dotfilesDir;
+                };
+                expected = {
+                  wslEnabled = true;
+                  defaultUser = username;
+                  stateVersion = "26.05";
+                  flakesEnabled = true;
+                  trustedUser = true;
+                  channelsEnabled = false;
+                  tarballConfigPath = toString self.outPath;
+                  useGlobalPkgs = true;
+                  useUserPackages = true;
+                  backupFileExtension = "hm-backup";
+                  homeUsername = username;
+                  homeDirectory = linuxHomedir;
+                  hostKind = "wsl";
+                  isWsl = true;
+                  windowsUsername = windowsUsername;
+                  windowsHomedir = windowsHomedir;
+                  dotfilesDir = toString self.outPath;
+                };
+              in
+              assert lib.assertMsg (actual == expected) ''
+                NixOS-WSL configuration contract mismatch:
+                expected ${builtins.toJSON expected}
+                actual ${builtins.toJSON actual}
+              '';
+              pkgs.runCommand "nixos-wsl-contract" { } ''touch "$out"'';
           }
           // lib.listToAttrs (
             lib.concatMap (entry: [

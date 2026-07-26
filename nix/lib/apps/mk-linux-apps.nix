@@ -3,7 +3,12 @@
   username,
   windowsHomedir,
 }:
-{ system, pkgs }:
+{
+  system,
+  pkgs,
+  nixosTarget,
+  nixosRebuildBin,
+}:
 let
   inherit (pkgs.lib) escapeShellArg;
   appSet = import ./mk-app-set.nix { lib = pkgs.lib; };
@@ -20,21 +25,24 @@ let
   hmBin = "${inputs.home-manager.packages.${system}.default}/bin/home-manager";
 
   buildScript = pkgs.writeShellApplication {
-    name = "home-manager-build";
+    name = "linux-host-build";
     text = ''
       export HM_TARGET_WSL=${escapeShellArg wslTarget}
       export HM_TARGET_LINUX=${escapeShellArg linuxTarget}
-      ${builtins.readFile ../../apps/home-manager-build.sh}
+      export NIXOS_TARGET=${escapeShellArg nixosTarget}
+      ${builtins.readFile ../../apps/linux-host-build.sh}
     '';
   };
 
   switchScript = pkgs.writeShellApplication {
-    name = "home-manager-switch";
+    name = "linux-host-switch";
     text = ''
       export HM_TARGET_WSL=${escapeShellArg wslTarget}
       export HM_TARGET_LINUX=${escapeShellArg linuxTarget}
       export HM_BIN=${escapeShellArg hmBin}
-      ${builtins.readFile ../../apps/home-manager-switch.sh}
+      export NIXOS_TARGET=${escapeShellArg nixosTarget}
+      export NIXOS_REBUILD_BIN=${escapeShellArg nixosRebuildBin}
+      ${builtins.readFile ../../apps/linux-host-switch.sh}
     '';
   };
 
@@ -49,11 +57,11 @@ in
 appSet.mkAppSet {
   entries = {
     build = {
-      description = "Build the Home Manager configuration without activating it (auto-detects WSL/Linux)";
+      description = "Build the host configuration without activating it (auto-detects NixOS-WSL/Home Manager)";
       script = buildScript;
     };
     switch = {
-      description = "Build and activate the Home Manager configuration (auto-detects WSL/Linux)";
+      description = "Build and activate the host configuration (auto-detects NixOS-WSL/Home Manager)";
       script = switchScript;
     };
     apply-winget = {

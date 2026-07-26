@@ -1,6 +1,4 @@
-# Linux/WSL の homeConfigurations 名 ("user@kind-arch") の単一ソース。
-# flake.nix (構成の属性名) と mk-linux-apps.nix (switch/build スクリプトへ
-# 渡す候補名) の双方がここから組み立てる。
+# Linux/WSL の構成名を flake outputs と switch/build スクリプトで共有する。
 { username }:
 let
   shortArch = {
@@ -10,4 +8,9 @@ let
 in
 {
   forHost = { hostKind, system, ... }: "${username}@${hostKind}-${shortArch.${system}}";
+
+  # x86_64 は通常利用する短い名前を維持し、aarch64 だけarchを明示する。
+  forNixosWsl =
+    { system, ... }:
+    if system == "x86_64-linux" then "wsl" else "wsl-${shortArch.${system}}";
 }

@@ -12,6 +12,8 @@ let
   nixRoot = ../.;
   repoRoot = ../..;
   testSuffix = ".test.nix";
+  hostArch = if pkgs.stdenv.hostPlatform.isx86_64 then "x86_64" else "aarch64";
+  expectedNixosWslTarget = if hostArch == "x86_64" then "wsl" else "wsl-aarch64";
 
   # 評価だけで完結するテストは実装の隣に置き、ファイル名から checks の
   # 名前を生成する。
@@ -587,7 +589,7 @@ let
         "tests/drawio-headless.bats"
         "tests/ghq-fetch-all.bats"
         "tests/herdr-wrapper.bats"
-        "tests/home-manager-apps.bats"
+        "tests/linux-host-apps.bats"
         "tests/nh-result-root-pruner.bats"
         "tests/pi-package-manager.bats"
         "tests/pi-wrapper.bats"
@@ -598,8 +600,8 @@ let
         "nix/apps/apply-winget.sh"
         "nix/apps/darwin-build.sh"
         "nix/apps/darwin-switch.sh"
-        "nix/apps/home-manager-build.sh"
-        "nix/apps/home-manager-switch.sh"
+        "nix/apps/linux-host-build.sh"
+        "nix/apps/linux-host-switch.sh"
         "nix/modules/wsl/wsl-open.sh"
         "nix/packages/aws/aws-login.sh"
         "nix/packages/aws/reconcile-package.nix"
@@ -633,8 +635,11 @@ let
         DRAWIO_WRAPPER_TEST_PACKAGE =
           if pkgs.stdenv.hostPlatform.isLinux then drawioWrapperTestPackage else "";
         HERDR_WRAPPER_TEST_PACKAGE = herdrWrapperTestPackage;
-        HOST_APP_KIND = if pkgs.stdenv.hostPlatform.isDarwin then "darwin" else "home-manager";
+        HOST_APP_KIND = if pkgs.stdenv.hostPlatform.isDarwin then "darwin" else "linux-host";
         HOST_BUILD_PUBLIC_BIN = publicApps.build.program;
+        HOST_EXPECTED_HM_LINUX = "${username}@linux-${hostArch}";
+        HOST_EXPECTED_HM_WSL = "${username}@wsl-${hostArch}";
+        HOST_EXPECTED_NIXOS_WSL = expectedNixosWslTarget;
         HOST_SWITCH_PUBLIC_BIN = publicApps.switch.program;
         PI_WRAPPER_TEST_PACKAGE = piWrapperTestPackage;
         WSL_OPEN_TEST_PACKAGE = wslOpenTestPackage;
@@ -647,6 +652,9 @@ let
         "HERDR_WRAPPER_TEST_PACKAGE"
         "HOST_APP_KIND"
         "HOST_BUILD_PUBLIC_BIN"
+        "HOST_EXPECTED_HM_LINUX"
+        "HOST_EXPECTED_HM_WSL"
+        "HOST_EXPECTED_NIXOS_WSL"
         "HOST_SWITCH_PUBLIC_BIN"
         "PI_WRAPPER_TEST_PACKAGE"
         "WSL_OPEN_TEST_PACKAGE"

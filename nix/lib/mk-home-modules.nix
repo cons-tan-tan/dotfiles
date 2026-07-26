@@ -6,6 +6,7 @@
   homedir,
   hostKind,
   hostFile,
+  dotfilesDir ? "${homedir}/ghq/github.com/cons-tan-tan/dotfiles",
   windowsUsername ? null,
   windowsHomedir ? null,
 }:
@@ -15,7 +16,7 @@
   {
     my = {
       inherit hostKind;
-      dotfilesDir = "${homedir}/ghq/github.com/cons-tan-tan/dotfiles";
+      inherit dotfilesDir;
     }
     // (
       if hostKind == "wsl" then
