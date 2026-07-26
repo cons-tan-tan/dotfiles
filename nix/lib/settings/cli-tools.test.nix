@@ -33,6 +33,7 @@ in
       "ghq"
       "starship"
       "zoxide"
+      "zed"
       "wt"
       "pwsh"
     ];

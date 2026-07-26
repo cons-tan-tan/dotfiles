@@ -141,6 +141,14 @@
   }
   {
     winget = {
+      id = "zed";
+      packageId = "ZedIndustries.Zed";
+      description = "Zed";
+    };
+    linux = "none";
+  }
+  {
+    winget = {
       id = "wt";
       packageId = "Microsoft.WindowsTerminal";
       description = "Windows Terminal";

@@ -44,6 +44,8 @@ in
       github-copilot-cli
       ccusage
       # Node.js
+      # Zed remote が公式 glibc バイナリへフォールバックするのを避ける。
+      nodejs
       ni
       pnpm
 
