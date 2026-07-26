@@ -50,7 +50,6 @@ in
       "ast-grep"
       "fzf"
       "ghq"
-      "zoxide"
     ];
   };
 }

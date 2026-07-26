@@ -136,8 +136,7 @@
       packageId = "ajeetdsouza.zoxide";
       description = "zoxide";
     };
-    linux = "home-packages";
-    nixpkgsAttr = "zoxide";
+    linux = "programs";
   }
   {
     winget = {

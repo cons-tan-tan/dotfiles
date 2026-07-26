@@ -470,6 +470,18 @@
                   interopRegistered = cfg.wsl.interop.register;
                   hasWslInteropRegistration = cfg.boot.binfmt.registrations ? WSLInterop;
                   userLinger = cfg.users.users.${username}.linger;
+                  shell = {
+                    zshEnabled = cfg.programs.zsh.enable;
+                    userShell = lib.getExe cfg.users.users.${username}.shell;
+                    homeZshEnabled = home.programs.zsh.enable;
+                    zoxideEnabled = home.programs.zoxide.enable;
+                    direnvIntegrated = home.programs.direnv.enableZshIntegration;
+                    starshipIntegrated = home.programs.starship.enableZshIntegration;
+                    zoxideIntegrated = home.programs.zoxide.enableZshIntegration;
+                    gpgAgentIntegrated = home.services.gpg-agent.enableZshIntegration;
+                    gpgSshSupport = home.services.gpg-agent.enableSshSupport;
+                    gitWtIntegrated = lib.hasInfix "git-wt --init zsh" home.programs.zsh.initContent;
+                  };
                   docker = {
                     enabled = cfg.virtualisation.docker.enable;
                     enableOnBoot = cfg.virtualisation.docker.enableOnBoot;
@@ -524,6 +536,18 @@
                   interopRegistered = true;
                   hasWslInteropRegistration = true;
                   userLinger = true;
+                  shell = {
+                    zshEnabled = true;
+                    userShell = lib.getExe pkgs.zsh;
+                    homeZshEnabled = true;
+                    zoxideEnabled = true;
+                    direnvIntegrated = true;
+                    starshipIntegrated = true;
+                    zoxideIntegrated = true;
+                    gpgAgentIntegrated = true;
+                    gpgSshSupport = true;
+                    gitWtIntegrated = true;
+                  };
                   docker = {
                     enabled = true;
                     enableOnBoot = true;

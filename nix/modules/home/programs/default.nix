@@ -9,6 +9,7 @@
     ./gh.nix
     ./ghq-sync.nix
     ./git.nix
+    ./git-wt.nix
     ./gpg.nix
     ./herdr.nix
     ./hunk.nix
@@ -17,5 +18,7 @@
     ./pi.nix
     ./ssh.nix
     ./starship.nix
+    ./zoxide.nix
+    ./zsh.nix
   ];
 }
