@@ -456,242 +456,31 @@
                   { home-manager.users.${username}.dotfiles.hcom.enable = true; }
                 ];
               }).system;
-            darwin-nh-cleanup-contract =
-              let
-                cfg = darwinConfigurations.${darwinHostname}.config;
-                home = cfg.home-manager.users.${username};
-                actual = {
-                  systemNixEnabled = cfg.nix.enable;
-                  systemNixGcAutomatic = cfg.nix.gc.automatic;
-                  systemNixGcDaemonDefined = cfg.launchd.daemons ? nix-gc;
-                  homeNixGcAutomatic = home.nix.gc.automatic;
-                  homeNixGcAgentDefined = home.launchd.agents ? nix-gc;
-                  homeNhCleanupEnabled = home.programs.nh.clean.enable;
-                  homeNhCleanupAgentDefined = home.launchd.agents ? nh-clean;
-                };
-                expected = {
-                  systemNixEnabled = false;
-                  systemNixGcAutomatic = false;
-                  systemNixGcDaemonDefined = false;
-                  homeNixGcAutomatic = false;
-                  homeNixGcAgentDefined = false;
-                  homeNhCleanupEnabled = false;
-                  homeNhCleanupAgentDefined = false;
-                };
-              in
-              assert lib.assertMsg (actual == expected) ''
-                Darwin Nix cleanup ownership contract mismatch:
-                expected ${builtins.toJSON expected}
-                actual ${builtins.toJSON actual}
-              '';
-              pkgs.runCommand "darwin-nh-cleanup-contract" { } ''touch "$out"'';
+            darwin-nh-cleanup-contract = import ./nix/checks/darwin-nh-cleanup-contract.nix {
+              inherit lib pkgs username;
+              config = darwinConfigurations.${darwinHostname}.config;
+            };
           }
           // lib.optionalAttrs (lib.hasSuffix "-linux" system) {
             nixos-wsl-system = nixosWslConfiguration.config.system.build.toplevel;
             nixos-wsl-tarball-builder = nixosWslConfiguration.config.system.build.tarballBuilder;
-            nixos-wsl-contract =
-              let
-                cfg = nixosWslConfiguration.config;
-                home = cfg.home-manager.users.${username};
-                actual = {
-                  wslEnabled = cfg.wsl.enable;
-                  defaultUser = cfg.wsl.defaultUser;
-                  interopRegistered = cfg.wsl.interop.register;
-                  hasWslInteropRegistration = cfg.boot.binfmt.registrations ? WSLInterop;
-                  userLinger = cfg.users.users.${username}.linger;
-                  shell = {
-                    zshEnabled = cfg.programs.zsh.enable;
-                    userShell = lib.getExe cfg.users.users.${username}.shell;
-                    homeZshEnabled = home.programs.zsh.enable;
-                    zoxideEnabled = home.programs.zoxide.enable;
-                    direnvIntegrated = home.programs.direnv.enableZshIntegration;
-                    starshipIntegrated = home.programs.starship.enableZshIntegration;
-                    zoxideIntegrated = home.programs.zoxide.enableZshIntegration;
-                    gpgAgentIntegrated = home.services.gpg-agent.enableZshIntegration;
-                    gpgSshSupport = home.services.gpg-agent.enableSshSupport;
-                    gitWtIntegrated = lib.hasInfix "git-wt --init zsh" home.programs.zsh.initContent;
-                  };
-                  docker = {
-                    enabled = cfg.virtualisation.docker.enable;
-                    enableOnBoot = cfg.virtualisation.docker.enableOnBoot;
-                    userInDockerGroup = lib.elem "docker" cfg.users.users.${username}.extraGroups;
-                    daemonHosts = cfg.virtualisation.docker.daemon.settings.hosts;
-                    listenOptions = cfg.virtualisation.docker.listenOptions;
-                    autoPruneEnabled = cfg.virtualisation.docker.autoPrune.enable;
-                  };
-                  nhCleanup = {
-                    systemProgramEnabled = cfg.programs.nh.enable;
-                    systemCleanupEnabled = cfg.programs.nh.clean.enable;
-                    systemCleanupDates = cfg.programs.nh.clean.dates;
-                    systemCleanupArgs = cfg.programs.nh.clean.extraArgs;
-                    systemCommand = cfg.systemd.services.nh-clean.script;
-                    systemPathHasNix = lib.elem cfg.nix.package cfg.systemd.services.nh-clean.path;
-                    systemUser = cfg.systemd.services.nh-clean.serviceConfig.User;
-                    systemNice = cfg.systemd.services.nh-clean.serviceConfig.Nice;
-                    systemIoClass = cfg.systemd.services.nh-clean.serviceConfig.IOSchedulingClass;
-                    timerOnCalendar = cfg.systemd.timers.nh-clean.timerConfig.OnCalendar;
-                    timerPersistent = cfg.systemd.timers.nh-clean.timerConfig.Persistent;
-                    timerWantedBy = cfg.systemd.timers.nh-clean.wantedBy;
-                    nixGcAutomatic = cfg.nix.gc.automatic;
-                    homeProgramEnabled = home.programs.nh.enable;
-                    homeCleanupEnabled = home.programs.nh.clean.enable;
-                    homeCleanupServiceDefined = home.systemd.user.services ? nh-clean;
-                    homeCleanupTimerDefined = home.systemd.user.timers ? nh-clean;
-                    resultRootServiceDefined = home.systemd.user.services ? nh-clean-result-roots;
-                    resultRootTimerDefined = home.systemd.user.timers ? nh-clean-result-roots;
-                  };
-                  wslConsole = {
-                    gettyEnabled = cfg.services.getty.enable;
-                    gettyTargetWants = cfg.systemd.targets.getty.wants;
-                  };
-                  # nix/modules/nixos-wsl/default.nixの暫定対応と対になるcontract。
-                  # microsoft/WSL#40519を含むreleaseで再発しないことを確認後、
-                  # 対応する設定とこのattrsetを同時に削除する。
-                  temporaryWslWorkarounds = {
-                    hostname = {
-                      configured = cfg.wsl.wslConf.network.hostname;
-                      directiveGenerated = lib.hasInfix "hostname=" cfg.environment.etc."wsl.conf".text;
-                    };
-                    userManagerRetry = {
-                      restart = cfg.systemd.services."user@".serviceConfig.Restart;
-                      restartSec = cfg.systemd.services."user@".serviceConfig.RestartSec;
-                      startLimitIntervalSec = cfg.systemd.services."user@".startLimitIntervalSec;
-                      startLimitBurst = cfg.systemd.services."user@".startLimitBurst;
-                      overrideStrategy = cfg.systemd.services."user@".overrideStrategy;
-                      restartIfChanged = cfg.systemd.services."user@".restartIfChanged;
-                    };
-                  };
-                  stateVersion = cfg.system.stateVersion;
-                  flakesEnabled = lib.elem "flakes" cfg.nix.settings.experimental-features;
-                  trustedUser = lib.elem username cfg.nix.settings."extra-trusted-users";
-                  channelsEnabled = cfg.nix.channel.enable;
-                  tarballConfigPath = toString cfg.wsl.tarball.configPath;
-                  inherit (cfg.home-manager)
-                    useGlobalPkgs
-                    useUserPackages
-                    backupFileExtension
-                    ;
-                  homeUsername = home.home.username;
-                  homeDirectory = home.home.homeDirectory;
-                  hostKind = home.my.hostKind;
-                  isWsl = home.my.isWsl;
-                  windowsUsername = home.my.windows.username;
-                  windowsHomedir = home.my.windows.homedir;
-                  dotfilesDir = home.my.dotfilesDir;
-                  codexActivationAfter = home.home.activation.codexHooksConfig.after;
-                };
-                expected = {
-                  wslEnabled = true;
-                  defaultUser = username;
-                  interopRegistered = true;
-                  hasWslInteropRegistration = true;
-                  userLinger = true;
-                  shell = {
-                    zshEnabled = true;
-                    userShell = lib.getExe pkgs.zsh;
-                    homeZshEnabled = true;
-                    zoxideEnabled = true;
-                    direnvIntegrated = true;
-                    starshipIntegrated = true;
-                    zoxideIntegrated = true;
-                    gpgAgentIntegrated = true;
-                    gpgSshSupport = true;
-                    gitWtIntegrated = true;
-                  };
-                  docker = {
-                    enabled = true;
-                    enableOnBoot = true;
-                    userInDockerGroup = true;
-                    daemonHosts = [ "fd://" ];
-                    listenOptions = [ "/run/docker.sock" ];
-                    autoPruneEnabled = false;
-                  };
-                  nhCleanup = {
-                    systemProgramEnabled = false;
-                    systemCleanupEnabled = true;
-                    systemCleanupDates = "*-*-* 00/6:00:00";
-                    systemCleanupArgs = "--keep 5 --keep-since 1d --no-gcroots --no-direnv";
-                    systemCommand = "exec ${lib.getExe cfg.programs.nh.package} clean all --keep 5 --keep-since 1d --no-gcroots --no-direnv";
-                    systemPathHasNix = true;
-                    systemUser = "root";
-                    systemNice = 10;
-                    systemIoClass = "idle";
-                    timerOnCalendar = [ "*-*-* 00/6:00:00" ];
-                    timerPersistent = true;
-                    timerWantedBy = [ "timers.target" ];
-                    nixGcAutomatic = false;
-                    homeProgramEnabled = true;
-                    homeCleanupEnabled = false;
-                    homeCleanupServiceDefined = false;
-                    homeCleanupTimerDefined = false;
-                    resultRootServiceDefined = true;
-                    resultRootTimerDefined = true;
-                  };
-                  wslConsole = {
-                    gettyEnabled = true;
-                    gettyTargetWants = [ ];
-                  };
-                  temporaryWslWorkarounds = {
-                    hostname = {
-                      configured = "";
-                      directiveGenerated = false;
-                    };
-                    userManagerRetry = {
-                      restart = "on-failure";
-                      restartSec = "250ms";
-                      startLimitIntervalSec = 5;
-                      startLimitBurst = 5;
-                      overrideStrategy = "asDropinIfExists";
-                      restartIfChanged = false;
-                    };
-                  };
-                  stateVersion = "26.05";
-                  flakesEnabled = true;
-                  trustedUser = true;
-                  channelsEnabled = false;
-                  tarballConfigPath = toString self.outPath;
-                  useGlobalPkgs = true;
-                  useUserPackages = true;
-                  backupFileExtension = "hm-backup";
-                  homeUsername = username;
-                  homeDirectory = linuxHomedir;
-                  hostKind = "wsl";
-                  isWsl = true;
-                  windowsUsername = windowsUsername;
-                  windowsHomedir = windowsHomedir;
-                  dotfilesDir = toString self.outPath;
-                  codexActivationAfter = [ "linkGeneration" ];
-                };
-              in
-              assert lib.assertMsg (actual == expected) ''
-                NixOS-WSL configuration contract mismatch:
-                expected ${builtins.toJSON expected}
-                actual ${builtins.toJSON actual}
-              '';
-              pkgs.runCommand "nixos-wsl-contract" { } ''touch "$out"'';
-            claude-userprofile-contract =
-              let
-                wslSettings = wslHomeConfiguration.config.home.file.".claude/settings.json".source;
-                linuxSettings = linuxHomeConfiguration.config.home.file.".claude/settings.json".source;
-              in
-              pkgs.runCommand "claude-userprofile-contract"
-                {
-                  nativeBuildInputs = [ pkgs.jq ];
-                }
-                ''
-                  actual="$(${lib.getExe pkgs.jq} --raw-output '.env.USERPROFILE // empty' ${wslSettings})"
-                  if [ "$actual" != ${lib.escapeShellArg windowsHomedir} ]; then
-                    echo "WSL Claude USERPROFILE mismatch: $actual" >&2
-                    exit 1
-                  fi
-
-                  if ${lib.getExe pkgs.jq} --exit-status '.env | has("USERPROFILE")' ${linuxSettings} >/dev/null; then
-                    echo "non-WSL Claude settings unexpectedly contain USERPROFILE" >&2
-                    exit 1
-                  fi
-
-                  touch "$out"
-                '';
+            nixos-wsl-contract = import ./nix/checks/nixos-wsl-contract.nix {
+              inherit
+                lib
+                linuxHomedir
+                pkgs
+                username
+                windowsHomedir
+                windowsUsername
+                ;
+              config = nixosWslConfiguration.config;
+              sourcePath = toString self.outPath;
+            };
+            claude-userprofile-contract = import ./nix/checks/claude-userprofile-contract.nix {
+              inherit lib pkgs windowsHomedir;
+              linuxSettings = linuxHomeConfiguration.config.home.file.".claude/settings.json".source;
+              wslSettings = wslHomeConfiguration.config.home.file.".claude/settings.json".source;
+            };
           }
           // lib.listToAttrs (
             lib.concatMap (entry: [
