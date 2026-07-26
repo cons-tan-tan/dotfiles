@@ -3,6 +3,6 @@
   lib,
   ...
 }:
-lib.mkIf config.my.isWsl {
+lib.mkIf (config.my.isDarwin || config.my.isWsl) {
   programs.zsh.enable = true;
 }
