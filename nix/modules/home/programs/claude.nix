@@ -24,6 +24,7 @@ let
   baseSettingsFile = jsonFormat.generate "claude-settings-base.json" (
     settingsLib.mkSettings {
       isDarwin = config.my.isDarwin;
+      wslUserProfile = if config.my.isWsl then config.my.windows.homedir else null;
       hcomPath = if enableHcom then "${pkgs.dotfilesPackages.hcom.package}/bin/hcom" else null;
     }
   );

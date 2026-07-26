@@ -8,11 +8,13 @@ in
 {
   # forWindows = true なら Windows companion 向け (hcom なし、Windows パス)。
   # hcomPath は POSIX ホストでフックが参照する hcom バイナリの絶対パス。
+  # wslUserProfile は WSL 上の Claude Code だけに渡す Windows home の POSIX パス。
   mkSettings =
     {
       forWindows ? false,
       isDarwin ? false,
       windowsUsername ? null,
+      wslUserProfile ? null,
       hcomPath ? null,
     }:
     {
@@ -41,6 +43,12 @@ in
         CLAUDE_CODE_SCROLL_SPEED = if isDarwin then "3" else "6";
         # サブエージェントも同じ Sonnet に固定する。
         CLAUDE_CODE_SUBAGENT_MODEL = models.claude.sonnet;
+      }
+      // lib.optionalAttrs (wslUserProfile != null) {
+        # Claude Code 2.1.212 は WSL で未設定の USERPROFILE を PowerShell で
+        # 取得する。起動時の取得が廃止されたらこの上書きを削除する。
+        # https://github.com/anthropics/claude-code/issues/619#issuecomment-4106944524
+        USERPROFILE = wslUserProfile;
       }
       // lib.optionalAttrs (!forWindows && hcomPath != null) {
         # フックが参照する hcom を store path に固定し PATH 非依存にする。

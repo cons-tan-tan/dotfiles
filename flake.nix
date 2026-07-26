@@ -418,6 +418,26 @@
               nixosConfigurations.${nixosWslConfigName { inherit system; }}
             else
               null;
+          linuxHomeConfiguration =
+            if lib.hasSuffix "-linux" system then
+              homeConfigurations.${
+                linuxConfigName {
+                  hostKind = "linux";
+                  inherit system;
+                }
+              }
+            else
+              null;
+          wslHomeConfiguration =
+            if lib.hasSuffix "-linux" system then
+              homeConfigurations.${
+                linuxConfigName {
+                  hostKind = "wsl";
+                  inherit system;
+                }
+              }
+            else
+              null;
           baseChecks = {
             treefmt = treefmtEvalFor.${system}.config.build.check self;
             # 全 app スクリプトをビルドし、wrapper のビルド時 shellcheck を
@@ -554,6 +574,29 @@
                 actual ${builtins.toJSON actual}
               '';
               pkgs.runCommand "nixos-wsl-contract" { } ''touch "$out"'';
+            claude-userprofile-contract =
+              let
+                wslSettings = wslHomeConfiguration.config.home.file.".claude/settings.json".source;
+                linuxSettings = linuxHomeConfiguration.config.home.file.".claude/settings.json".source;
+              in
+              pkgs.runCommand "claude-userprofile-contract"
+                {
+                  nativeBuildInputs = [ pkgs.jq ];
+                }
+                ''
+                  actual="$(${lib.getExe pkgs.jq} --raw-output '.env.USERPROFILE // empty' ${wslSettings})"
+                  if [ "$actual" != ${lib.escapeShellArg windowsHomedir} ]; then
+                    echo "WSL Claude USERPROFILE mismatch: $actual" >&2
+                    exit 1
+                  fi
+
+                  if ${lib.getExe pkgs.jq} --exit-status '.env | has("USERPROFILE")' ${linuxSettings} >/dev/null; then
+                    echo "non-WSL Claude settings unexpectedly contain USERPROFILE" >&2
+                    exit 1
+                  fi
+
+                  touch "$out"
+                '';
           }
           // lib.listToAttrs (
             lib.concatMap (entry: [
