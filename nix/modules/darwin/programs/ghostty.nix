@@ -5,7 +5,10 @@
     package = pkgs.ghostty-bin;
     settings = {
       background-opacity = 0.7;
-      font-family = "HackGen Console NF";
+      font-family = [
+        "HackGen Console NF"
+        "Symbols Nerd Font Mono"
+      ];
     };
   };
 }

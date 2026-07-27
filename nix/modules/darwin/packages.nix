@@ -8,7 +8,6 @@
       dotfilesPackages.codex-app
       dotfilesPackages.sleepctl
       raycast
-      hackgen-nf-font # ghostty 用フォント (nix/modules/darwin/programs/ghostty.nix)
     ]
     # brew-nix packages (Homebrew casks managed via Nix)
     # システム統合を伴う cask は darwin/system.nix の homebrew.casks 側

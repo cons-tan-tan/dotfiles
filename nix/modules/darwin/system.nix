@@ -1,4 +1,5 @@
 {
+  pkgs,
   username,
   homedir,
   ...
@@ -20,6 +21,11 @@
   users.users.${username} = {
     home = homedir;
   };
+
+  fonts.packages = with pkgs; [
+    hackgen-nf-font
+    nerd-fonts.symbols-only
+  ];
 
   security.pam.services.sudo_local.touchIdAuth = true;
 
