@@ -1,12 +1,22 @@
 {
   claudeCode,
+  fd,
   herdrPlugin,
   lib,
   nodejs,
   symlinkJoin,
+  writeText,
   writeShellApplication,
 }:
 let
+  agentFdWrapper = import ../agent-fd-wrapper {
+    inherit
+      fd
+      lib
+      writeText
+      writeShellApplication
+      ;
+  };
   # Home Manager also wraps Claude Code when plugins are enabled, so the
   # wrapper keeps an absolute reference to its base executable for safe
   # composition.
@@ -14,6 +24,7 @@ let
     name = "claude";
     text = ''
       CLAUDE_BASE=${lib.escapeShellArg "${claudeCode}/bin/claude"}
+      FD_WRAPPER_DIR=${lib.escapeShellArg "${agentFdWrapper}/bin"}
       NODE_BIN=${lib.escapeShellArg "${nodejs}/bin"}
       HERDR_PLUGIN=${lib.escapeShellArg "${herdrPlugin}"}
       ${builtins.readFile ./claude-wrapper.sh}

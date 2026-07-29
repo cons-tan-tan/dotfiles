@@ -21,6 +21,7 @@ teardown() {
 run_wrapper() {
   run env \
     CLAUDE_BASE="$TEST_TMPDIR/claude" \
+    FD_WRAPPER_DIR=/nix/store/agent-fd/bin \
     NODE_BIN=/nix/store/node/bin \
     HERDR_PLUGIN=/nix/store/herdr-plugin \
     "$@" \
@@ -31,7 +32,7 @@ run_wrapper() {
   run_wrapper HERDR_ENV=0
 
   [ "$status" -eq 0 ]
-  grep -F "path:/nix/store/node/bin:" "$TEST_TMPDIR/result"
+  grep -F "path:/nix/store/node/bin:/nix/store/agent-fd/bin:" "$TEST_TMPDIR/result"
   [ "$(grep -c '^arg:' "$TEST_TMPDIR/result")" -eq 3 ]
   grep -Fx "arg:--effort" "$TEST_TMPDIR/result"
   grep -Fx "arg:xhigh" "$TEST_TMPDIR/result"
@@ -56,6 +57,7 @@ run_wrapper() {
 
   [ "$status" -eq 0 ]
   grep -E '^path:/nix/store/.+-nodejs-.+/bin:' "$TEST_TMPDIR/result"
+  grep -E '^path:/nix/store/.+-nodejs-.+/bin:/nix/store/.+-fd/bin:' "$TEST_TMPDIR/result"
   grep -Fx "arg:--effort" "$TEST_TMPDIR/result"
   grep -Fx "arg:xhigh" "$TEST_TMPDIR/result"
   grep -Fx "arg:--plugin-dir" "$TEST_TMPDIR/result"

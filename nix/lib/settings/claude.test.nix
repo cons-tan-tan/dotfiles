@@ -5,6 +5,7 @@ let
   wslSettings = settingsLib.mkSettings {
     wslUserProfile = "/mnt/c/Users/test-user";
   };
+  windowsSettings = settingsLib.mkSettings { forWindows = true; };
 in
 {
   testReadOnlyFetchWrappersStayAutoApproved = {
@@ -26,6 +27,11 @@ in
     expected = false;
   };
 
+  testFdOptionPolicyDoesNotUseLossyClaudeGlobs = {
+    expr = lib.any (lib.hasPrefix "Bash(fd ") settings.permissions.deny;
+    expected = false;
+  };
+
   testUserProfileIsAbsentByDefault = {
     expr = settings.env ? USERPROFILE;
     expected = false;
@@ -34,5 +40,16 @@ in
   testWslUserProfileIsSetForClaude = {
     expr = wslSettings.env.USERPROFILE;
     expected = "/mnt/c/Users/test-user";
+  };
+
+  testWindowsDoesNotReceiveCommandPolicy = {
+    expr = {
+      hasBashAllow = lib.any (lib.hasPrefix "Bash(") windowsSettings.permissions.allow;
+      hasCommandPolicyDeny = windowsSettings.permissions ? deny;
+    };
+    expected = {
+      hasBashAllow = false;
+      hasCommandPolicyDeny = false;
+    };
   };
 }

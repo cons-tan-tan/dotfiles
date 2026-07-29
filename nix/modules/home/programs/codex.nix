@@ -16,17 +16,38 @@ let
   configPath = "${codexHome}/config.toml";
   hooksJsonPath = "${codexHome}/hooks.json";
 
-  settingsLib = import ../../../../lib/settings/codex.nix;
+  settingsLib = import ../../../lib/settings/codex.nix;
+  commandPolicy = import ../../../lib/agent-command-policy { inherit lib; };
   jsonFormat = pkgs.formats.json { };
   herdrSkillPath = "${codexHome}/skills/herdr/SKILL.md";
   herdrHookPath = "${codexHome}/herdr-agent-state.sh";
-  herdrSettings = import ../../../../lib/settings/herdr.nix { inherit lib pkgs; };
+  herdrSettings = import ../../../lib/settings/herdr.nix { inherit lib pkgs; };
   herdrHookCommand = herdrSettings.mkSessionHookCommand herdrHookPath;
 
   codex = pkgs.dotfilesPackages.codex.mkWrappedPackage {
     inherit herdrSkillPath;
   };
-  agentConfigHelper = pkgs.callPackage ../../../../libexec/agent-config-helper { };
+  agentConfigHelper = pkgs.callPackage ../../../libexec/agent-config-helper { };
+
+  codexRulesFile = pkgs.writeText "codex-default.rules" commandPolicy.codexRulesContent;
+  codexRulesDir =
+    pkgs.runCommand "codex-rules"
+      {
+        nativeBuildInputs = [ pkgs.codex ];
+      }
+      ''
+        export HOME="$TMPDIR/home"
+        mkdir -p "$HOME/.codex" "$out"
+        cp ${codexRulesFile} "$out/default.rules"
+        ln -s "$out" "$HOME/.codex/rules"
+
+        # 実配置と同じ directory symlink を経由し、導入する Codex 自身で
+        # Starlark 構文と inline match contract を検証する。
+        codex execpolicy check \
+          --resolve-host-executables \
+          --rules "$HOME/.codex/rules/default.rules" \
+          -- rg --files >/dev/null
+      '';
 
   baseMergePayloadJson = jsonFormat.generate "codex-config-merge-base.json" (
     settingsLib.mkMergePayload {
@@ -125,6 +146,14 @@ in
   # Codex は読むだけなので read-only symlink で良い。
   home.file.".codex/hooks.json".source = hooksJson;
   home.file.".codex/herdr-agent-state.sh".source = "${herdrCodexIntegration}/herdr-agent-state.sh";
+
+  # user layer の rules directory 全体を read-only symlink にし、対話操作による
+  # default.rules への追記ではなく Nix の SSOT だけから変更する。trusted project
+  # など別 layer の rules は Codex の仕様どおり追加で読み込まれる。
+  home.file.".codex/rules" = {
+    source = codexRulesDir;
+    recursive = false;
+  };
 
   # Herdr の Codex plugin enable は SessionFlags (`-c`) で反転できないため、
   # Codex では通常 skill として配置し、skills.config だけを wrapper から反転する。

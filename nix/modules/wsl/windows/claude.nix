@@ -1,6 +1,5 @@
 # Windows companion: Windows 側 Claude Code の settings.json を書き出す。
-# Windows には hcom (linux/darwin バイナリ) が無いので gh-api guard のみで、
-# hcom 生成物とのマージは不要。
+# Windows は hcomと共通command policyの対象外なので、生成物とのマージは不要。
 {
   config,
   pkgs,

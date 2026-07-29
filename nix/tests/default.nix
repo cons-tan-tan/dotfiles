@@ -141,6 +141,8 @@ let
     nix = nhCleanNixProbe;
   };
   agentConfigHelper = pkgs.callPackage ../libexec/agent-config-helper { };
+  agentCommandPolicy = import ../lib/agent-command-policy { inherit lib; };
+  codexCommandRules = pkgs.writeText "codex-command-policy.rules" agentCommandPolicy.codexRulesContent;
   awsConfigHelper = pkgs.callPackage ../packages/aws/config-helper { };
   safeFetch = pkgs.callPackage ../packages/safe-fetch { };
   curlFetch = pkgs.dotfilesPackages.curl-fetch;
@@ -416,6 +418,7 @@ let
     text = ''
       : "''${TEST_TMPDIR:?}"
       printf 'arg:%s\n' "$@" >"$TEST_TMPDIR/result"
+      printf 'fd:%s\n' "$(command -v fd)" >>"$TEST_TMPDIR/result"
     '';
   };
   herdrSkillFixture = pkgs.runCommand "herdr-skill-fixture" { } ''
@@ -653,6 +656,7 @@ let
         "nix/packages/aws/reconcile-package.nix"
         "nix/packages/claude-code/claude-wrapper.sh"
         "nix/packages/codex/codex-wrapper.sh"
+        "nix/packages/agent-fd-wrapper/fd-wrapper.sh"
         "nix/packages/drawio-headless/drawio-wrapper.sh"
         "nix/packages/ghq-fetch-all/ghq-fetch-all.sh"
         "nix/packages/herdr/herdr-wrapper.sh"
@@ -832,6 +836,38 @@ let
     agent-config-helper-rust = agentConfigHelper;
     aws-config-helper-rust = awsConfigHelper;
     safe-fetch-rust = safeFetchCheck;
+    codex-command-policy =
+      pkgs.runCommand "codex-command-policy"
+        {
+          nativeBuildInputs = [
+            pkgs.codex
+            pkgs.jq
+          ];
+        }
+        ''
+          export HOME="$TMPDIR/home"
+          mkdir -p "$HOME/.codex"
+
+          check_decision() {
+            expected="$1"
+            shift
+            actual="$(codex execpolicy check \
+              --resolve-host-executables \
+              --rules ${codexCommandRules} \
+              -- "$@" | jq -r '.decision // "unmatched"')"
+            test "$actual" = "$expected"
+          }
+
+          check_decision allow rg --files
+          check_decision allow gh pr view 123
+          check_decision forbidden rm -rf build
+          check_decision unmatched gh pr create
+          check_decision allow fd --exec rm
+          check_decision unmatched /run/current-system/sw/bin/fd --exec rm
+          check_decision unmatched /tmp/curl-fetch https://example.com
+
+          touch "$out"
+        '';
     rust-clippy = rustClippy;
     rust-advisories = rustAdvisories;
 

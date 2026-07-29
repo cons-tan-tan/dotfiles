@@ -4,6 +4,7 @@
 { lib }:
 let
   models = import ./models.nix;
+  commandPolicy = import ../agent-command-policy { inherit lib; };
 in
 {
   # forWindows = true なら Windows companion 向け (hcom なし、Windows パス)。
@@ -16,6 +17,9 @@ in
       wslUserProfile ? null,
       hcomPath ? null,
     }:
+    let
+      commandPermissions = commandPolicy.mkClaudePermissions { };
+    in
     {
       includeCoAuthoredBy = false;
       autoMemoryEnabled = false;
@@ -58,43 +62,17 @@ in
         allow = [
           "WebSearch"
           "WebFetch(*)"
-          "Bash(rg *)"
-          "Bash(bat *)"
-          "Bash(eza *)"
-          "Bash(jq *)"
-          "Bash(fd *)"
-          "Bash(ast-grep *)"
-          "Bash(gh issue list *)"
-          "Bash(gh issue view *)"
-          "Bash(gh pr list *)"
-          "Bash(gh pr view *)"
-          "Bash(gh pr diff *)"
-          "Bash(gh pr checks *)"
-          "Bash(gh run list *)"
-          "Bash(gh run view *)"
-          "Bash(gh repo view *)"
-          "Bash(gh search *)"
-          # These broad command patterns are auto-approved because the Rust
-          # wrappers positively validate every forwarded argument. gh-api-get
-          # fixes the host to GitHub; curl-fetch permits only GET/HEAD requests.
-          "Bash(gh api-get *)"
-          "Bash(curl-fetch *)"
         ]
-        ++ lib.optionals forWindows [
-          "Bash(wsl.exe *)"
-          "Bash(pwsh.exe *)"
-        ];
-        deny = [
-          "Bash(rm -rf *)"
-          "Bash(fd *--exec*)"
-          "Bash(fd *--exec-batch*)"
-          "Bash(fd *-x *)"
-          "Bash(fd *-X *)"
-        ]
-        ++ lib.optionals forWindows [
-          "Bash(Remove-Item -Recurse -Force *)"
-        ];
-      };
+        ++ lib.optionals (!forWindows) commandPermissions.allow;
+      }
+      // lib.optionalAttrs (!forWindows) (
+        {
+          inherit (commandPermissions) deny;
+        }
+        // lib.optionalAttrs (commandPermissions ? ask) {
+          inherit (commandPermissions) ask;
+        }
+      );
       # hcom 分の hooks/permissions はここに書かず、build 時に hcom の生成物と
       # マージする (claude.nix の mergedSettingsFile)。eval 時に生成 JSON を読む
       # (IFD) と、異種プラットフォーム向け構成の評価 (nix flake check 等) が

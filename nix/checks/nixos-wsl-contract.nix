@@ -96,6 +96,10 @@ let
     windowsHomedir = home.my.windows.homedir;
     dotfilesDir = home.my.dotfilesDir;
     codexActivationAfter = home.home.activation.codexHooksConfig.after;
+    codexRules = {
+      managed = home.home.file ? ".codex/rules";
+      recursive = home.home.file.".codex/rules".recursive;
+    };
   };
   expected = {
     wslEnabled = true;
@@ -177,6 +181,10 @@ let
     inherit windowsUsername windowsHomedir;
     dotfilesDir = sourcePath;
     codexActivationAfter = [ "linkGeneration" ];
+    codexRules = {
+      managed = true;
+      recursive = false;
+    };
   };
 in
 assert lib.assertMsg (actual == expected) ''
