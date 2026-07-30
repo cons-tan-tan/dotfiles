@@ -62,21 +62,5 @@ run_wrapper() {
   local fd_path
   fd_path="$(sed -n 's/^fd://p' "$TEST_TMPDIR/result")"
   [[ "$fd_path" == /nix/store/*/bin/fd ]]
-
-  local option
-  for option in --exec --exec=echo --exec-batch -x -X -xecho -Xecho -HIx -HIX; do
-    run "$fd_path" "$option" echo '{}'
-    [ "$status" -eq 2 ]
-    [[ "$output" == *"is disabled for agents"* ]]
-  done
-
-  run "$fd_path" -HEx
-  [ "$status" -eq 0 ]
-
-  mkdir -p "$TEST_TMPDIR/x"
-  run "$fd_path" -C"$TEST_TMPDIR/x" --version
-  [ "$status" -eq 0 ]
-
-  run "$fd_path" -- --exec
-  [ "$status" -eq 0 ]
+  assert_agent_fd_policy "$fd_path"
 }

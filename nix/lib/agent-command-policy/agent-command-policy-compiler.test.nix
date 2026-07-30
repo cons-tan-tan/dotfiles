@@ -1,89 +1,77 @@
-# agent-command-policy compilerの投影と意味検証を確認する。
+# 再帰agent-command-policyの正規化、backend投影、意味検証を確認する。
 { lib }:
 let
-  evalRules =
-    rules:
-    (lib.evalModules {
-      modules = [
-        ./options.nix
-        { agentCommandPolicy.rules = rules; }
-      ];
-    }).config.agentCommandPolicy.rules;
-
-  fixtureRules = evalRules [
-    {
-      match.argvGroups.lookup = {
-        exact = [ ];
-        group = [
-          "first"
-          "second"
+  evalPolicy =
+    module:
+    let
+      evaluated = lib.evalModules {
+        modules = [
+          ./options.nix
+          { agentCommandPolicy = module; }
         ];
       };
-      decision = "allow";
-      justification = "Fixture allow rule.";
-    }
-    {
-      match.commands = [ "review" ];
-      decision = "prompt";
-      justification = "Fixture prompt rule.";
-    }
-    {
-      match.commands = [ "remove" ];
-      decision = "forbidden";
-      justification = "Fixture forbidden rule.";
-    }
-    {
-      match.commandOptions.fd = [
-        "--exec"
-        "-x"
-      ];
-      decision = "forbidden";
-      justification = "Fixture command option rule.";
-    }
-  ];
+      policy = evaluated.config.agentCommandPolicy;
+    in
+    import ./compiler.nix {
+      inherit lib;
+      inherit (policy) argv options;
+    };
 
-  fixturePolicy = import ./compiler.nix {
-    inherit lib;
-    rules = fixtureRules;
+  fixturePolicy = evalPolicy {
+    argv = {
+      lookup = {
+        exact = true;
+        group = {
+          deep.path = true;
+          first = true;
+          second = true;
+        };
+      };
+      remove = false;
+    };
+    options.fd = {
+      "--exec" = false;
+      "-x" = false;
+    };
   };
 
-  failsToCompile =
-    rules:
+  failsToCompile = module: !(builtins.tryEval (builtins.deepSeq (evalPolicy module) true)).success;
+
+  failsUncheckedCompile =
+    policy:
     !(builtins.tryEval (
       builtins.deepSeq (import ./compiler.nix {
         inherit lib;
-        rules = evalRules rules;
-      }) true
-    )).success;
-
-  failsUncheckedCompile =
-    rules:
-    !(builtins.tryEval (
-      builtins.deepSeq (import ./compiler.nix {
-        inherit lib rules;
+        inherit (policy) argv options;
       }) true
     )).success;
 in
 {
-  testClaudeProjectionUsesSharedMatchExpressions = {
+  testRecursiveArgvTreeProjectsToClaude = {
     expr = fixturePolicy.mkClaudePermissions { };
     expected = {
       allow = [
         "Bash(lookup exact *)"
+        "Bash(lookup group deep path *)"
         "Bash(lookup group first *)"
         "Bash(lookup group second *)"
       ];
-      ask = [ "Bash(review *)" ];
       deny = [ "Bash(remove *)" ];
     };
   };
 
-  testCodexProjectionUsesRepresentablePrefixMatches = {
+  testRecursiveArgvTreeProjectsToCodexPrefixes = {
     expr = map (rule: rule.argvPrefix) fixturePolicy.prefixRules;
     expected = [
       [
         "lookup"
         "exact"
+      ]
+      [
+        "lookup"
+        "group"
+        "deep"
+        "path"
       ]
       [
         "lookup"
@@ -95,146 +83,115 @@ in
         "group"
         "second"
       ]
-      [ "review" ]
       [ "remove" ]
     ];
   };
 
-  testCodexRulesIncludeExecutableAndMatchContracts = {
+  testCodexRulesIncludeGeneratedReasonAndMatchContracts = {
     expr =
       lib.hasInfix ''name = "lookup"'' fixturePolicy.codexRulesContent
+      && lib.hasInfix ''justification = "Allowed by the shared agent command policy: lookup exact."'' fixturePolicy.codexRulesContent
       && lib.hasInfix ''match = ["lookup exact __codex_rule_probe__"]'' fixturePolicy.codexRulesContent
       && lib.hasInfix ''not_match = ["__codex_rule_probe__ lookup exact"]'' fixturePolicy.codexRulesContent;
     expected = true;
   };
 
-  testCommandOptionMatchesProjectToTheSharedWrapper = {
-    expr = fixturePolicy.fdForbiddenOptions;
+  testOptionDecisionsProjectToTheSharedWrapperOnly = {
+    expr = {
+      forbiddenOptions = fixturePolicy.fdForbiddenOptions;
+      hasFdPrefix = lib.any (rule: builtins.head rule.argvPrefix == "fd") fixturePolicy.prefixRules;
+    };
+    expected = {
+      forbiddenOptions = [
+        "--exec"
+        "-x"
+      ];
+      hasFdPrefix = false;
+    };
+  };
+
+  testCompilerProjectsMixedDecisionsForOneExecutable = {
+    expr =
+      map
+        (rule: {
+          inherit (rule) argvPrefix decision;
+        })
+        (evalPolicy {
+          argv.tool = {
+            danger = false;
+            safe = true;
+          };
+        }).prefixRules;
     expected = [
-      "--exec"
-      "-x"
-    ];
-  };
-
-  testCompilerRejectsDuplicateSemanticMatches = {
-    expr = failsToCompile [
       {
-        match.commands = [ "duplicate" ];
-        decision = "allow";
-        justification = "First duplicate fixture.";
-      }
-      {
-        match.commands = [ "duplicate" ];
-        decision = "allow";
-        justification = "Second duplicate fixture.";
-      }
-    ];
-    expected = true;
-  };
-
-  testCompilerRejectsDuplicateCommandOptionMatches = {
-    expr = failsToCompile [
-      {
-        match.commandOptions.fd = [
-          "--exec"
-          "--exec"
+        argvPrefix = [
+          "tool"
+          "danger"
         ];
         decision = "forbidden";
-        justification = "Duplicate command option fixture.";
       }
-    ];
-    expected = true;
-  };
-
-  testCompilerRejectsMixedCodexDecisionsForOneExecutable = {
-    expr = failsToCompile [
       {
-        match.commands = [ "tool" ];
+        argvPrefix = [
+          "tool"
+          "safe"
+        ];
         decision = "allow";
-        justification = "Allow fixture.";
-      }
-      {
-        match.argvGroups.tool.danger = [ ];
-        decision = "forbidden";
-        justification = "Forbidden fixture.";
       }
     ];
+  };
+
+  testCompilerRejectsAnEmptyPolicy = {
+    expr = failsToCompile { };
     expected = true;
   };
 
-  testCompilerRejectsEmptyMatchExpressions = {
-    expr = failsToCompile [
-      {
-        match = { };
-        decision = "forbidden";
-        justification = "Empty match fixture.";
-      }
-    ];
-    expected = true;
-  };
-
-  testCompilerRejectsUnsafeArgvGroupKeys = {
-    expr = map failsUncheckedCompile [
-      [
-        {
-          match = {
-            commands = [ ];
-            argvGroups."*".safe = [ ];
-            commandOptions = { };
-          };
-          decision = "allow";
-          justification = "Unsafe executable fixture.";
-        }
-      ]
-      [
-        {
-          match = {
-            commands = [ ];
-            argvGroups.safe."two words" = [ ];
-            commandOptions = { };
-          };
-          decision = "allow";
-          justification = "Unsafe second token fixture.";
-        }
-      ]
+  testCompilerRejectsUnsafeArgvTokens = {
+    expr = map failsToCompile [
+      { argv."*" = true; }
+      { argv."FOO=bar" = true; }
+      { argv.safe."two words" = true; }
     ];
     expected = [
       true
       true
+      true
     ];
   };
 
-  testCompilerRejectsArgvGroupsThatExpandToNoMatches = {
-    expr = failsUncheckedCompile [
-      {
-        match = {
-          commands = [ "safe" ];
-          argvGroups.gh = { };
-          commandOptions = { };
-        };
-        decision = "allow";
-        justification = "Compiler boundary fixture.";
-      }
-    ];
+  testCompilerRejectsAnEmptyArgvBranch = {
+    expr = failsToCompile { argv.gh = { }; };
     expected = true;
   };
 
-  testCompilerRejectsUnsupportedCommandOptionMatches = {
-    expr = map failsToCompile [
-      [
-        {
-          match.commandOptions.tool = [ "--unsafe" ];
-          decision = "forbidden";
-          justification = "Unsupported command fixture.";
-        }
-      ]
-      [
-        {
-          match.commandOptions.fd = [ "--exec" ];
-          decision = "allow";
-          justification = "Unsupported decision fixture.";
-        }
-      ]
+  testCompilerBoundaryRejectsNonBooleanLeaves = {
+    expr = failsUncheckedCompile {
+      argv.safe = "allow";
+      options = { };
+    };
+    expected = true;
+  };
+
+  testSelectingOptionProjectionStillValidatesArgvTree = {
+    expr =
+      !(builtins.tryEval (
+        builtins.deepSeq
+          (import ./compiler.nix {
+            inherit lib;
+            argv."*" = true;
+            options.fd."--exec" = false;
+          }).fdForbiddenOptions
+          true
+      )).success;
+    expected = true;
+  };
+
+  testCompilerRejectsUnsupportedOptionDecisions = {
+    expr = [
+      (failsToCompile { options.tool."--unsafe" = false; })
+      (failsUncheckedCompile {
+        argv = { };
+        options.fd."--exec" = true;
+      })
     ];
     expected = [
       true

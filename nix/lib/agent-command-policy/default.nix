@@ -1,4 +1,4 @@
-# 共通ruleを型検証し、各consumer向けの公開APIを返す。
+# 共通policyを型検証し、各consumer向けの公開APIを返す。
 { lib }:
 let
   evaluated = lib.evalModules {
@@ -7,8 +7,9 @@ let
       ./rules.nix
     ];
   };
+  policy = evaluated.config.agentCommandPolicy;
 in
 import ./compiler.nix {
   inherit lib;
-  rules = evaluated.config.agentCommandPolicy.rules;
+  inherit (policy) argv options;
 }

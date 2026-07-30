@@ -143,6 +143,23 @@ let
   agentConfigHelper = pkgs.callPackage ../libexec/agent-config-helper { };
   agentCommandPolicy = import ../lib/agent-command-policy { inherit lib; };
   codexCommandRules = pkgs.writeText "codex-command-policy.rules" agentCommandPolicy.codexRulesContent;
+  mixedAgentCommandPolicy = import ../lib/agent-command-policy/compiler.nix {
+    inherit lib;
+    argv.jq = {
+      danger = false;
+      safe = true;
+    };
+    options = { };
+  };
+  mixedCodexCommandRules = pkgs.writeText "mixed-codex-command-policy.rules" (
+    mixedAgentCommandPolicy.codexRulesContent
+  );
+  commandPolicyDecisionChecks = lib.concatMapStringsSep "\n" (
+    rule:
+    "check_decision ${lib.escapeShellArg rule.decision} ${
+      lib.escapeShellArgs (rule.argvPrefix ++ [ "__policy_probe__" ])
+    }"
+  ) agentCommandPolicy.prefixRules;
   awsConfigHelper = pkgs.callPackage ../packages/aws/config-helper { };
   safeFetch = pkgs.callPackage ../packages/safe-fetch { };
   curlFetch = pkgs.dotfilesPackages.curl-fetch;
@@ -402,6 +419,7 @@ let
       : "''${TEST_TMPDIR:?}"
       printf 'path:%s\n' "$PATH" >"$TEST_TMPDIR/result"
       printf 'arg:%s\n' "$@" >>"$TEST_TMPDIR/result"
+      printf 'fd:%s\n' "$(command -v fd)" >>"$TEST_TMPDIR/result"
     '';
   };
   herdrPluginFixture = pkgs.runCommand "herdr-plugin-fixture" { } ''
@@ -848,23 +866,32 @@ let
           export HOME="$TMPDIR/home"
           mkdir -p "$HOME/.codex"
 
-          check_decision() {
+          check_decision_with_rules() {
             expected="$1"
-            shift
+            rules="$2"
+            shift 2
             actual="$(codex execpolicy check \
               --resolve-host-executables \
-              --rules ${codexCommandRules} \
+              --rules "$rules" \
               -- "$@" | jq -r '.decision // "unmatched"')"
             test "$actual" = "$expected"
           }
 
-          check_decision allow rg --files
-          check_decision allow gh pr view 123
-          check_decision forbidden rm -rf build
+          check_decision() {
+            expected="$1"
+            shift
+            check_decision_with_rules "$expected" ${codexCommandRules} "$@"
+          }
+
+          ${commandPolicyDecisionChecks}
+
           check_decision unmatched gh pr create
-          check_decision allow fd --exec rm
           check_decision unmatched /run/current-system/sw/bin/fd --exec rm
           check_decision unmatched /tmp/curl-fetch https://example.com
+
+          check_decision_with_rules allow ${mixedCodexCommandRules} jq safe
+          check_decision_with_rules forbidden ${mixedCodexCommandRules} jq danger
+          check_decision_with_rules unmatched ${mixedCodexCommandRules} jq other
 
           touch "$out"
         '';

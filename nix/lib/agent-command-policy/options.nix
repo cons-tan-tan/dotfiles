@@ -1,70 +1,52 @@
-# command policy ruleのNix module schema。
+# command policyの再帰argv treeとoption policyのNix module schema。
 { lib, ... }:
 let
   inherit (lib) mkOption types;
 
-  nonEmptyString = types.strMatching ".+";
   executableTokenPattern = "^[a-zA-Z0-9_][a-zA-Z0-9_+@%.-]*$";
-  argvTokenPattern = "^[a-zA-Z0-9_./:+@%=-]+$";
+  commandOptionPattern = "^(--[a-zA-Z0-9][a-zA-Z0-9-]*|-[a-zA-Z0-9])$";
   isExecutableToken = value: builtins.match executableTokenPattern value != null;
-  isArgvToken = value: builtins.match argvTokenPattern value != null;
-  executableToken = types.strMatching executableTokenPattern;
-  argvToken = types.strMatching argvTokenPattern;
-  argvGroup = types.addCheck (types.attrsOf (types.listOf argvToken)) (
-    values: builtins.attrNames values != [ ] && lib.all isArgvToken (builtins.attrNames values)
+  isCommandOption = value: builtins.match commandOptionPattern value != null;
+
+  # attrsetは次のargv token、booleanはそのprefixのdecisionを表す。
+  validateArgvTree =
+    tree:
+    let
+      validNode =
+        isRoot: node:
+        builtins.isAttrs node
+        && (isRoot || builtins.attrNames node != [ ])
+        && lib.all (value: builtins.isBool value || (builtins.isAttrs value && validNode false value)) (
+          builtins.attrValues node
+        );
+    in
+    assert lib.assertMsg (validNode true tree)
+      "agentCommandPolicy.argv must be a recursive attribute set with boolean leaves and no empty branches";
+    tree;
+  optionPolicy = types.addCheck (types.attrsOf types.bool) (
+    values:
+    builtins.attrNames values != [ ]
+    && lib.all isCommandOption (builtins.attrNames values)
+    && lib.all (decision: builtins.isBool decision && !decision) (builtins.attrValues values)
   );
-  argvGroups = types.addCheck (types.attrsOf argvGroup) (
+  optionPolicies = types.addCheck (types.attrsOf optionPolicy) (
     values: lib.all isExecutableToken (builtins.attrNames values)
   );
-  commandOption = types.strMatching "^(--[a-zA-Z0-9][a-zA-Z0-9-]*|-[a-zA-Z0-9])$";
-  commandOptionList = types.addCheck (types.listOf commandOption) (values: values != [ ]);
-
-  matchType = types.submodule {
-    options = {
-      commands = mkOption {
-        default = [ ];
-        type = types.listOf executableToken;
-        description = "Executables whose invocations are matched.";
-      };
-      argvGroups = mkOption {
-        default = { };
-        type = argvGroups;
-        description = "Two- or three-token argv prefixes; an empty third-token list matches the first two tokens.";
-      };
-      commandOptions = mkOption {
-        default = { };
-        type = types.attrsOf commandOptionList;
-        description = "Options matched regardless of argument position, grouped by executable.";
-      };
-    };
-  };
-
-  ruleType = types.submodule {
-    options = {
-      match = mkOption {
-        type = matchType;
-        description = "Agent-independent command match expression.";
-      };
-      decision = mkOption {
-        type = types.enum [
-          "allow"
-          "prompt"
-          "forbidden"
-        ];
-        description = "Shared command policy decision.";
-      };
-      justification = mkOption {
-        type = nonEmptyString;
-        description = "Human-readable reason rendered into supported agent policies.";
-      };
-    };
-  };
-
 in
 {
-  options.agentCommandPolicy.rules = mkOption {
-    default = [ ];
-    type = types.listOf ruleType;
-    description = "Agent-independent command policy rules.";
+  options.agentCommandPolicy = {
+    argv = mkOption {
+      default = { };
+      # anythingはmodule間の再帰attrset mergeに使い、shapeはapplyで検証する。
+      type = types.attrsOf types.anything;
+      apply = validateArgvTree;
+      description = "Recursive argv-prefix policy tree; true allows, false forbids, and absence leaves the agent default.";
+    };
+
+    options = mkOption {
+      default = { };
+      type = optionPolicies;
+      description = "Parsed command options forbidden by the shared wrapper; each leaf must be false.";
+    };
   };
 }

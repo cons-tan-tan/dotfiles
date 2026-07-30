@@ -1,4 +1,4 @@
-# agent-command-policy rule schemaが誤った宣言を拒否することを検証する。
+# agent-command-policy moduleが再帰treeをmergeし、誤ったshapeを拒否することを確認する。
 { lib }:
 let
   eval =
@@ -10,106 +10,84 @@ let
   failsToEvaluate =
     modules: !(builtins.tryEval (builtins.deepSeq (eval modules).config true)).success;
 
+  evaluated = eval [
+    {
+      agentCommandPolicy = {
+        argv.gh.issue.list = true;
+        options.fd."--exec" = false;
+      };
+    }
+    {
+      agentCommandPolicy = {
+        argv = {
+          gh.pr.view = true;
+          rm."-rf" = false;
+        };
+        options.fd."-x" = false;
+      };
+    }
+  ];
 in
 {
-  testCommandPolicyRejectsUnknownMatchField = {
+  testCommandPolicyMergesRecursiveBranches = {
+    expr = evaluated.config.agentCommandPolicy;
+    expected = {
+      argv = {
+        gh = {
+          issue.list = true;
+          pr.view = true;
+        };
+        rm."-rf" = false;
+      };
+      options.fd = {
+        "--exec" = false;
+        "-x" = false;
+      };
+    };
+  };
+
+  testCommandPolicyRejectsUnknownTopLevelField = {
     expr = failsToEvaluate [
-      {
-        agentCommandPolicy.rules = [
-          {
-            match = {
-              commands = [ "demo" ];
-              argvGroupps.demo.typo = [ ];
-            };
-            decision = "allow";
-            justification = "Demo policy.";
-          }
-        ];
-      }
+      { agentCommandPolicy.commandz.rg = true; }
     ];
     expected = true;
   };
 
-  testCommandPolicyRejectsEmptyArgvGroups = {
+  testCommandPolicyRejectsNonBooleanArgvLeaves = {
     expr = failsToEvaluate [
-      {
-        agentCommandPolicy.rules = [
-          {
-            match.argvGroups.gh = { };
-            decision = "allow";
-            justification = "Empty argv group fixture.";
-          }
-        ];
-      }
+      { agentCommandPolicy.argv.demo = "allow"; }
     ];
     expected = true;
   };
 
-  testCommandPolicyRejectsTokensThatCannotBeProjectedSafely = {
+  testCommandPolicyRejectsNonBooleanOptionLeaves = {
+    expr = failsToEvaluate [
+      { agentCommandPolicy.options.fd."--exec" = "false"; }
+    ];
+    expected = true;
+  };
+
+  testCommandPolicyRejectsAllowedOptionLeaves = {
+    expr = failsToEvaluate [
+      { agentCommandPolicy.options.fd."--exec" = true; }
+    ];
+    expected = true;
+  };
+
+  testCommandPolicyRejectsEmptyOptionGroups = {
+    expr = failsToEvaluate [
+      { agentCommandPolicy.options.fd = { }; }
+    ];
+    expected = true;
+  };
+
+  testCommandPolicyRejectsInvalidOptionNames = {
     expr =
       map
         (
-          match:
+          option:
           failsToEvaluate [
-            {
-              agentCommandPolicy.rules = [
-                {
-                  inherit match;
-                  decision = "allow";
-                  justification = "Unsafe argv token fixture.";
-                }
-              ];
-            }
-          ]
-        )
-        [
-          { commands = [ "*" ]; }
-          { commands = [ "FOO=bar" ]; }
-          { argvGroups."*".safe = [ ]; }
-          { argvGroups."FOO=bar".safe = [ ]; }
-          { argvGroups.safe."two words" = [ ]; }
-          { argvGroups.safe.group = [ "two words" ]; }
-        ];
-    expected = [
-      true
-      true
-      true
-      true
-      true
-      true
-    ];
-  };
-
-  testCommandPolicyRejectsInvalidDecision = {
-    expr = failsToEvaluate [
-      {
-        agentCommandPolicy.rules = [
-          {
-            match.commands = [ "demo" ];
-            decision = "permit";
-            justification = "Demo policy.";
-          }
-        ];
-      }
-    ];
-    expected = true;
-  };
-
-  testCommandPolicyRejectsInvalidCommandOptions = {
-    expr =
-      map
-        (
-          commandOption:
-          failsToEvaluate [
-            {
-              agentCommandPolicy.rules = [
-                {
-                  match.commandOptions.fd = [ commandOption ];
-                  decision = "forbidden";
-                  justification = "Invalid command option fixture.";
-                }
-              ];
-            }
+            { agentCommandPolicy.options.fd.${option} = false; }
           ]
         )
         [
@@ -122,5 +100,28 @@ in
       true
       true
     ];
+  };
+
+  testCommandPolicyRejectsInvalidOptionCommands = {
+    expr = failsToEvaluate [
+      { agentCommandPolicy.options."*"."--unsafe" = false; }
+    ];
+    expected = true;
+  };
+
+  testCommandPolicyRejectsConflictingLeafDecisions = {
+    expr = failsToEvaluate [
+      { agentCommandPolicy.argv.tool.safe = true; }
+      { agentCommandPolicy.argv.tool.safe = false; }
+    ];
+    expected = true;
+  };
+
+  testCommandPolicyRejectsLeafBranchConflicts = {
+    expr = failsToEvaluate [
+      { agentCommandPolicy.argv.tool = true; }
+      { agentCommandPolicy.argv.tool.safe = true; }
+    ];
+    expected = true;
   };
 }

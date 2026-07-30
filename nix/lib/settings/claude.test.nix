@@ -9,16 +9,18 @@ let
 in
 {
   testReadOnlyFetchWrappersStayAutoApproved = {
-    expr = builtins.filter (
-      permission:
-      builtins.elem permission [
-        "Bash(gh api-get *)"
-        "Bash(curl-fetch *)"
-      ]
-    ) settings.permissions.allow;
+    expr = lib.sort builtins.lessThan (
+      builtins.filter (
+        permission:
+        builtins.elem permission [
+          "Bash(gh api-get *)"
+          "Bash(curl-fetch *)"
+        ]
+      ) settings.permissions.allow
+    );
     expected = [
-      "Bash(gh api-get *)"
       "Bash(curl-fetch *)"
+      "Bash(gh api-get *)"
     ];
   };
 

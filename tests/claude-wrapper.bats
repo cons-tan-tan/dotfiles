@@ -63,4 +63,9 @@ run_wrapper() {
   grep -Fx "arg:--plugin-dir" "$TEST_TMPDIR/result"
   grep -E '^arg:/nix/store/.+-herdr-plugin-fixture$' "$TEST_TMPDIR/result"
   grep -Fx "arg:package-arg" "$TEST_TMPDIR/result"
+
+  local fd_path
+  fd_path="$(sed -n 's/^fd://p' "$TEST_TMPDIR/result")"
+  [[ "$fd_path" == /nix/store/*/bin/fd ]]
+  assert_agent_fd_policy "$fd_path"
 }
