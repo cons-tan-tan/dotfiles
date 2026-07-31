@@ -242,7 +242,12 @@ pub fn diff_target(spec: &TargetSpec, before: &[FileState], after: &[FileState])
                 &mut changes,
             );
         }
-        TargetKind::Shellfirm { pin, lock, .. } => {
+        TargetKind::Shellfirm {
+            pin,
+            lock,
+            guard_lock,
+            ..
+        } => {
             record_pin_changes(
                 spec,
                 pin,
@@ -256,6 +261,15 @@ pub fn diff_target(spec: &TargetSpec, before: &[FileState], after: &[FileState])
                 spec,
                 lock,
                 ChangeKind::Lockfile(lock.to_owned()),
+                before,
+                after,
+                &mut represented,
+                &mut changes,
+            );
+            record_changed_file(
+                spec,
+                guard_lock,
+                ChangeKind::Lockfile(guard_lock.to_owned()),
                 before,
                 after,
                 &mut represented,

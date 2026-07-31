@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::command::{CommandOutput, CommandRunner, CommandSpec};
@@ -19,6 +19,14 @@ let
   } builtins.currentSystem;
 in
 pkgs.dotfilesPackages.${builtins.getEnv "UPDATE_PINS_PACKAGE"}
+"#;
+
+const LOCAL_CHECK_EXPRESSION: &str = r#"
+let
+  flake = builtins.getFlake (toString ./.);
+  checks = builtins.getAttr builtins.currentSystem flake.checks;
+in
+builtins.getAttr (builtins.getEnv "UPDATE_PINS_CHECK") checks
 "#;
 
 const CANDIDATE_PACKAGE_EXPRESSION: &str = r#"
@@ -70,6 +78,33 @@ pub fn build_package_once<R: CommandRunner>(
     Err(UpdateError::message(format!(
         "{label}: candidate package build failed with status {status}:\n{diagnostic}"
     )))
+}
+
+pub fn build_check_output<R: CommandRunner>(
+    label: &str,
+    check: &str,
+    runner: &R,
+    transaction: &Transaction<'_, R>,
+) -> Result<PathBuf, UpdateError> {
+    validate_selector("check attribute", check)?;
+    println!("{label}: evaluating effective command policy...");
+    let command = local_check_command(transaction.root(), check);
+    let build = runner.run_limited_with_timeout(
+        &command,
+        BUILD_OUTPUT_LIMIT,
+        BUILD_OUTPUT_LIMIT,
+        BUILD_TIMEOUT,
+    )?;
+    if !build.success() {
+        let status = build
+            .status
+            .map_or_else(|| "signal".to_owned(), |status| status.to_string());
+        let diagnostic = output_tail(&build, 10);
+        return Err(UpdateError::message(format!(
+            "{label}: command policy check failed with status {status}:\n{diagnostic}"
+        )));
+    }
+    parse_single_output_path(&command, &build)
 }
 
 pub fn compute_candidate_dependency_hash<R: CommandRunner>(
@@ -137,6 +172,20 @@ fn local_package_command(root: &Path, package: &str) -> CommandSpec {
         .current_dir(root)
 }
 
+fn local_check_command(root: &Path, check: &str) -> CommandSpec {
+    CommandSpec::new("nix")
+        .args([
+            "build",
+            "--impure",
+            "--expr",
+            LOCAL_CHECK_EXPRESSION,
+            "--no-link",
+            "--print-out-paths",
+        ])
+        .env("UPDATE_PINS_CHECK", check)
+        .current_dir(root)
+}
+
 fn candidate_package_command(
     root: &Path,
     build: PackageBuildSpec,
@@ -178,18 +227,50 @@ fn validate_build_spec(build: PackageBuildSpec) -> Result<(), UpdateError> {
         ("pin override", build.pin_override),
         ("dependency hash field", build.dependency_hash_field),
     ] {
-        if value.is_empty()
-            || value.len() > 128
-            || !value
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-        {
-            return Err(UpdateError::message(format!(
-                "update-pins: unsafe {field} selector in package build specification"
-            )));
-        }
+        validate_selector(field, value)?;
     }
     Ok(())
+}
+
+fn validate_selector(field: &str, value: &str) -> Result<(), UpdateError> {
+    if value.is_empty()
+        || value.len() > 128
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    {
+        return Err(UpdateError::message(format!(
+            "update-pins: unsafe {field} selector"
+        )));
+    }
+    Ok(())
+}
+
+fn parse_single_output_path(
+    command: &CommandSpec,
+    output: &CommandOutput,
+) -> Result<PathBuf, UpdateError> {
+    let stdout = output.stdout_utf8(command)?;
+    let paths = stdout
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>();
+    let [path] = paths.as_slice() else {
+        return Err(UpdateError::message(format!(
+            "update-pins: {} returned {} output paths; expected exactly one",
+            command.display(),
+            paths.len()
+        )));
+    };
+    let path = PathBuf::from(path);
+    if !path.is_absolute() {
+        return Err(UpdateError::message(format!(
+            "update-pins: {} returned a non-absolute output path",
+            command.display()
+        )));
+    }
+    Ok(path)
 }
 
 fn parse_mismatch_hash(output: &CommandOutput) -> Result<String, &'static str> {
@@ -247,8 +328,9 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use super::{
-        CANDIDATE_PACKAGE_EXPRESSION, LOCAL_PACKAGE_EXPRESSION, candidate_package_command,
-        local_package_command, output_tail, parse_mismatch_hash,
+        CANDIDATE_PACKAGE_EXPRESSION, LOCAL_CHECK_EXPRESSION, LOCAL_PACKAGE_EXPRESSION,
+        candidate_package_command, local_check_command, local_package_command, output_tail,
+        parse_mismatch_hash, parse_single_output_path,
     };
     use crate::command::{CommandOutput, CommandSpec};
     use crate::registry::{
@@ -347,6 +429,37 @@ mod tests {
                 .contains(r#"pkgs.dotfilesPackages.${builtins.getEnv "UPDATE_PINS_PACKAGE"}"#)
         );
         assert!(!LOCAL_PACKAGE_EXPRESSION.contains("shellfirm"));
+    }
+
+    #[test]
+    fn check_selection_uses_environment_and_prints_one_output_path() {
+        let command = local_check_command(Path::new("/repo"), "agent-command-shellfirm-catalog");
+        assert_eq!(
+            command,
+            CommandSpec::new("nix")
+                .args([
+                    "build",
+                    "--impure",
+                    "--expr",
+                    LOCAL_CHECK_EXPRESSION,
+                    "--no-link",
+                    "--print-out-paths",
+                ])
+                .env("UPDATE_PINS_CHECK", "agent-command-shellfirm-catalog")
+                .current_dir(PathBuf::from("/repo"))
+        );
+        assert!(LOCAL_CHECK_EXPRESSION.contains("builtins.getEnv \"UPDATE_PINS_CHECK\""));
+        assert!(!LOCAL_CHECK_EXPRESSION.contains("agent-command-shellfirm-catalog"));
+        assert_eq!(
+            parse_single_output_path(&command, &output(b"/nix/store/example\n", b""))
+                .expect("one output path"),
+            PathBuf::from("/nix/store/example")
+        );
+        assert!(parse_single_output_path(&command, &output(b"relative\n", b"")).is_err());
+        assert!(
+            parse_single_output_path(&command, &output(b"/nix/store/a\n/nix/store/b\n", b""))
+                .is_err()
+        );
     }
 
     #[test]

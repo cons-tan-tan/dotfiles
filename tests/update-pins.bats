@@ -24,7 +24,8 @@
 #   publication; test 5 retains a paired multi-asset E2E.
 # - Shellfirm source/hash/lock: shellfirm::validates_*, rejects_*, reads_one_*,
 #   build::diagnostics_*, and the engine rollback tests assert validation,
-#   bounded diagnostics, and restoration; test 8 traverses the success path.
+#   bounded diagnostics, and restoration; the Shellfirm process tests retain
+#   successful four-file synchronization, rule diffs, and policy rollback.
 # - Difit source/pnpm/build: targets::npm_archive_*/validates_npm_* and
 #   build::parses_*/rejects_*/candidate_build_* assert archive identity,
 #   key/hash extraction, one mismatch candidate, and bounded final diagnostics;
@@ -34,8 +35,8 @@
 #   ZIP rejection; tests 6 and 7 retain real ZIP success and late failure.
 # - all-target rollback/idempotence: engine::late_target_failure_* and
 #   all_preflights_* assert real-Git all-managed rollback, shared flake.lock
-#   restore, commit-only success, and second-run inode/mtime stability; tests 7
-#   and 8 retain the public multi-target boundaries.
+#   restore, commit-only success, and second-run inode/mtime stability; the
+#   final process tests retain the public multi-target boundaries.
 
 make_difit_tarball() {
   local version=$1
@@ -62,9 +63,14 @@ setup() {
   REPO_ROOT="$(git rev-parse --show-toplevel)"
   BASH_BIN="$(command -v bash)"
   WORK="$(mktemp -d)"
-  mkdir -p "$WORK/nix/pins" "$WORK/nix/packages/shellfirm"
+  mkdir -p "$WORK/nix/pins" "$WORK/nix/packages/shellfirm" \
+    "$WORK/nix/packages/agent-command-guard"
   cp "$REPO_ROOT"/nix/pins/*.json "$WORK/nix/pins/"
   cp "$REPO_ROOT/nix/packages/shellfirm/Cargo.lock" "$WORK/nix/packages/shellfirm/Cargo.lock"
+  cp "$REPO_ROOT/nix/packages/agent-command-guard/Cargo.toml" \
+    "$WORK/nix/packages/agent-command-guard/Cargo.toml"
+  cp "$REPO_ROOT/nix/packages/agent-command-guard/Cargo.lock" \
+    "$WORK/nix/packages/agent-command-guard/Cargo.lock"
   cp "$REPO_ROOT/flake.nix" "$WORK/flake.nix"
   cp "$REPO_ROOT/flake.lock" "$WORK/flake.lock"
 
@@ -74,7 +80,9 @@ setup() {
     git config user.email update-pins-test@example.invalid
     git config user.name "update-pins test"
     git config commit.gpgsign false
-    git add flake.nix flake.lock nix/packages/shellfirm/Cargo.lock nix/pins/*.json
+    git add flake.nix flake.lock nix/packages/shellfirm/Cargo.lock \
+      nix/packages/agent-command-guard/Cargo.toml \
+      nix/packages/agent-command-guard/Cargo.lock nix/pins/*.json
     git commit -q -m "initial managed files"
   )
 
@@ -96,6 +104,7 @@ setup() {
   export UPDATE_PINS_COMMAND_LOG="$WORK/command.log"
   export UPDATE_PINS_FLAKE_UPDATE_LOG="$WORK/flake-update.log"
   export UPDATE_PINS_SHELLFIRM_BUILD_COUNT="$WORK/shellfirm-build-count"
+  export UPDATE_PINS_SHELLFIRM_CHECK_COUNT="$WORK/shellfirm-check-count"
   export UPDATE_PINS_DIFIT_BUILD_COUNT="$WORK/difit-build-count"
 
   make_difit_tarball "$(flake_version yoshiko-pg/difit)"
@@ -263,6 +272,39 @@ echo "npm must not be invoked by update-pins" >&2
 exit 97
 EOS
 
+  printf '#!%s\n' "$BASH_BIN" >"$STUB_DIR/cargo"
+  cat >>"$STUB_DIR/cargo" <<'EOS'
+set -euo pipefail
+printf 'cargo %s\n' "$*" >>"$UPDATE_PINS_COMMAND_LOG"
+if [ "$#" -ne 7 ] \
+  || [ "$1" != "update" ] \
+  || [ "$2" != "--manifest-path" ] \
+  || [ "$4" != "--package" ] \
+  || [ "$5" != "shellfirm" ] \
+  || [ "$6" != "--precise" ]; then
+  echo "unexpected cargo invocation: $*" >&2
+  exit 1
+fi
+manifest=$3
+version=$7
+cat >"$(dirname "$manifest")/Cargo.lock" <<LOCK
+version = 4
+
+[[package]]
+name = "agent-command-guard"
+version = "0.1.0"
+dependencies = [
+ "shellfirm",
+]
+
+[[package]]
+name = "shellfirm"
+version = "$version"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+LOCK
+EOS
+
   printf '#!%s\n' "$BASH_BIN" >"$STUB_DIR/nix"
   cat >>"$STUB_DIR/nix" <<'EOS'
 set -euo pipefail
@@ -363,6 +405,33 @@ if [ "$1" = "build" ] \
   && [ "${2:-}" = "--impure" ] \
   && [ "${3:-}" = "--expr" ] \
   && [ "${5:-}" = "--no-link" ] \
+  && [ "${6:-}" = "--print-out-paths" ] \
+  && [ "${UPDATE_PINS_CHECK:-}" = "agent-command-shellfirm-catalog" ]; then
+  count=0
+  if [ -f "$UPDATE_PINS_SHELLFIRM_CHECK_COUNT" ]; then
+    count=$(cat "$UPDATE_PINS_SHELLFIRM_CHECK_COUNT")
+  fi
+  count=$((count + 1))
+  printf '%s\n' "$count" >"$UPDATE_PINS_SHELLFIRM_CHECK_COUNT"
+  if [ "${UPDATE_PINS_FAIL_CANDIDATE_POLICY:-0}" = 1 ] && [ "$count" -eq 2 ]; then
+    echo "candidate command policy rejected" >&2
+    exit 1
+  fi
+  output="$UPDATE_PINS_FAKE_ROOT/shellfirm-catalog-$count"
+  mkdir -p "$output"
+  if [ "$count" -eq 1 ]; then
+    printf 'git:force_push\nshell:rm_rf\n' >"$output/effective-shellfirm-rules.txt"
+  else
+    printf 'fs:overwrite_device\ngit:force_push\n' >"$output/effective-shellfirm-rules.txt"
+  fi
+  printf '%s\n' "$output"
+  exit 0
+fi
+
+if [ "$1" = "build" ] \
+  && [ "${2:-}" = "--impure" ] \
+  && [ "${3:-}" = "--expr" ] \
+  && [ "${5:-}" = "--no-link" ] \
   && [ "${UPDATE_PINS_PACKAGE:-}" = "shellfirm" ]; then
   count=0
   if [ -f "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT" ]; then
@@ -401,7 +470,8 @@ echo "unexpected nix invocation: $*" >&2
 exit 1
 EOS
 
-  chmod +x "$STUB_DIR/gh" "$STUB_DIR/curl" "$STUB_DIR/npm" "$STUB_DIR/nix"
+  chmod +x "$STUB_DIR/gh" "$STUB_DIR/curl" "$STUB_DIR/npm" \
+    "$STUB_DIR/cargo" "$STUB_DIR/nix"
   export PATH="$STUB_DIR:$PATH"
 }
 
@@ -415,11 +485,16 @@ run_update_pins() {
 
 save_managed() {
   local dst=$1
-  mkdir -p "$dst/nix/pins" "$dst/nix/packages/shellfirm"
+  mkdir -p "$dst/nix/pins" "$dst/nix/packages/shellfirm" \
+    "$dst/nix/packages/agent-command-guard"
   cp -p "$WORK/flake.nix" "$dst/flake.nix"
   cp -p "$WORK/flake.lock" "$dst/flake.lock"
   cp -p "$WORK"/nix/pins/*.json "$dst/nix/pins/"
   cp -p "$WORK/nix/packages/shellfirm/Cargo.lock" "$dst/nix/packages/shellfirm/Cargo.lock"
+  cp -p "$WORK/nix/packages/agent-command-guard/Cargo.toml" \
+    "$dst/nix/packages/agent-command-guard/Cargo.toml"
+  cp -p "$WORK/nix/packages/agent-command-guard/Cargo.lock" \
+    "$dst/nix/packages/agent-command-guard/Cargo.lock"
 }
 
 file_mode() {
@@ -438,6 +513,10 @@ assert_managed_matches() {
   [ "$(file_mode "$WORK/flake.lock")" = "$(file_mode "$expected/flake.lock")" ]
   cmp -s "$WORK/nix/packages/shellfirm/Cargo.lock" "$expected/nix/packages/shellfirm/Cargo.lock"
   [ "$(file_mode "$WORK/nix/packages/shellfirm/Cargo.lock")" = "$(file_mode "$expected/nix/packages/shellfirm/Cargo.lock")" ]
+  cmp -s "$WORK/nix/packages/agent-command-guard/Cargo.toml" \
+    "$expected/nix/packages/agent-command-guard/Cargo.toml"
+  cmp -s "$WORK/nix/packages/agent-command-guard/Cargo.lock" \
+    "$expected/nix/packages/agent-command-guard/Cargo.lock"
   for pin in "$expected"/nix/pins/*.json; do
     name=$(basename "$pin")
     cmp -s "$WORK/nix/pins/$name" "$pin"
@@ -573,6 +652,43 @@ assert_check_lock_reacquirable() {
   assert_managed_matches "$original"
 }
 
+@test "Shellfirm candidate policy failure restores all four synchronized files" {
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_SHELLFIRM_TAG=v8.8.8
+  export UPDATE_PINS_FAIL_CANDIDATE_POLICY=1
+
+  run_update_pins shellfirm
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"candidate command policy rejected"* ]]
+  [[ "$output" == *"restoring managed files from backup"* ]]
+  [ "$(cat "$UPDATE_PINS_SHELLFIRM_CHECK_COUNT")" -eq 2 ]
+  assert_managed_matches "$original"
+  assert_no_staging_files
+}
+
+@test "Shellfirm update synchronizes guard pins and reports effective rule changes" {
+  export UPDATE_PINS_SHELLFIRM_TAG=v8.8.8
+
+  run_update_pins shellfirm
+
+  [ "$status" -eq 0 ]
+  [ "$(jq -r .version "$WORK/nix/pins/shellfirm.json")" = 8.8.8 ]
+  grep -Fq 'shellfirm = { version = "=8.8.8", default-features = false }' \
+    "$WORK/nix/packages/agent-command-guard/Cargo.toml"
+  grep -A2 -F 'name = "shellfirm"' \
+    "$WORK/nix/packages/agent-command-guard/Cargo.lock" \
+    | grep -Fq 'version = "8.8.8"'
+  grep -A1 -F 'name = "shellfirm"' \
+    "$WORK/nix/packages/shellfirm/Cargo.lock" \
+    | grep -Fq 'version = "8.8.8"'
+  [[ "$output" == *$'  added:\n    fs:overwrite_device'* ]]
+  [[ "$output" == *$'  removed:\n    shell:rm_rf'* ]]
+  [ "$(cat "$UPDATE_PINS_SHELLFIRM_CHECK_COUNT")" -eq 2 ]
+  [ "$(cat "$UPDATE_PINS_SHELLFIRM_BUILD_COUNT")" -eq 1 ]
+}
+
 @test "paired Agent Browser update publishes every asset with its flake input" {
   original="$WORK/original"
   save_managed "$original"
@@ -645,7 +761,9 @@ assert_check_lock_reacquirable() {
   [ "$status" -eq 0 ]
   after_first="$WORK/after-first"
   save_managed "$after_first"
-  git -C "$WORK" add flake.nix flake.lock nix/packages/shellfirm/Cargo.lock nix/pins/*.json
+  git -C "$WORK" add flake.nix flake.lock nix/packages/shellfirm/Cargo.lock \
+    nix/packages/agent-command-guard/Cargo.toml \
+    nix/packages/agent-command-guard/Cargo.lock nix/pins/*.json
   git -C "$WORK" commit -q -m "apply first update"
 
   run_update_pins

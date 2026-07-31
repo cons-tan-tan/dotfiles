@@ -64,7 +64,13 @@ pub fn validate_target_input<R: CommandRunner>(
             validate_https_field(spec, pin, &document, &["url"])?;
             validate_hash_field(spec, pin, &document, &["hash"])
         }
-        TargetKind::Shellfirm { pin, lock, .. } => {
+        TargetKind::Shellfirm {
+            pin,
+            lock,
+            guard_manifest,
+            guard_lock,
+            ..
+        } => {
             let document = load_pin(transaction, pin)?;
             validate_version_field(spec, pin, &document)?;
             validate_hash_field(spec, pin, &document, &["srcHash"])?;
@@ -72,6 +78,18 @@ pub fn validate_target_input<R: CommandRunner>(
                 spec.name,
                 lock,
                 &transaction.read(lock)?,
+                document.string(&["version"])?,
+            )?;
+            crate::shellfirm::validate_guard_manifest(
+                spec.name,
+                guard_manifest,
+                &transaction.read(guard_manifest)?,
+                document.string(&["version"])?,
+            )?;
+            crate::shellfirm::validate_guard_lock(
+                spec.name,
+                guard_lock,
+                &transaction.read(guard_lock)?,
                 document.string(&["version"])?,
             )
         }

@@ -373,6 +373,8 @@ mod tests {
                 "nix/pins/watchexec.json",
                 "nix/pins/shellfirm.json",
                 "nix/packages/shellfirm/Cargo.lock",
+                "nix/packages/agent-command-guard/Cargo.toml",
+                "nix/packages/agent-command-guard/Cargo.lock",
                 "nix/pins/herdr.json",
                 "nix/pins/difit.json",
                 "nix/pins/claude-code-settings-schema.json",
