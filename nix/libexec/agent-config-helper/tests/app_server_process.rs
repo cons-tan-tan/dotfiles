@@ -7,7 +7,7 @@ use std::thread;
 use std::time::Duration;
 
 use agent_config_helper::app_server::fetch_hooks_list_with_timeout;
-use agent_config_helper::hook_state::build_payload;
+use agent_config_helper::hook_state::{HookSpec, build_payload_for_specs};
 use tempfile::TempDir;
 
 const NORMAL_TEST_TIMEOUT: Duration = Duration::from_secs(5);
@@ -93,9 +93,15 @@ fn normal_protocol_returns_typed_hooks_and_reaps_a_lingering_child() {
     let hooks = result.unwrap();
     let pid = fixture.pid();
     assert_eq!(hooks.data.len(), 1);
-    let payload = build_payload(
+    let payload = build_payload_for_specs(
         &hooks,
-        "herdr-command",
+        &[HookSpec {
+            event_name: "sessionStart".to_owned(),
+            handler_type: "command".to_owned(),
+            matcher: None,
+            command: "herdr-command".to_owned(),
+            timeout_sec: 10,
+        }],
         Path::new("/home/me/.codex/hooks.json"),
     )
     .unwrap();

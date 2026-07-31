@@ -39,6 +39,7 @@ in
   agent-browser = pkgs.callPackage ./agent-browser {
     agentBrowserSource = inputs.agent-browser-skill;
   };
+  agent-command-guard = pkgs.callPackage ./agent-command-guard { };
   agent-slack = pkgs.callPackage ./agent-slack {
     agentSlackSource = inputs.agent-slack-skill;
   };

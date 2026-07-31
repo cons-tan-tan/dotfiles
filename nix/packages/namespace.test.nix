@@ -3,6 +3,7 @@ let
   local = pkgs.dotfilesPackages;
   commonNames = [
     "agent-browser"
+    "agent-command-guard"
     "agent-slack"
     "curl-fetch"
     "difit"

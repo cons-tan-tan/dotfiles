@@ -10,9 +10,9 @@ pub enum Command {
         payload: PathBuf,
         output: PathBuf,
     },
-    GenerateHerdrHookState {
+    GenerateManagedHookState {
         codex_bin: PathBuf,
-        hook_command: String,
+        manifest: PathBuf,
         hooks_json_path: PathBuf,
         cwd: PathBuf,
     },
@@ -35,8 +35,15 @@ pub enum Command {
         hooks_path: PathBuf,
         state: PathBuf,
     },
-    CodexAppendSessionHook {
+    CodexApplyHookManifest {
+        manifest: PathBuf,
+        hooks: PathBuf,
+    },
+    CodexAppendCommandHook {
+        event: String,
+        matcher: Option<String>,
         command: String,
+        timeout: u64,
         hooks: PathBuf,
     },
     CodexMergePayloads {
@@ -55,14 +62,16 @@ pub enum Action {
 pub const USAGE: &str = "\
 Usage:
   agent-config-helper merge <source.toml> <payload.json> <output.toml>
-  agent-config-helper generate-herdr-hook-state \\
-    --codex-bin <path> --hook-command <command> --hooks-json-path <path> [--cwd <path>]
+  agent-config-helper generate-managed-hook-state \\
+    --codex-bin <path> --manifest <json> --hooks-json-path <path> [--cwd <path>]
   agent-config-helper claude select-integration <settings.json>
   agent-config-helper claude rewrite-session-command --command <command> <settings.json>
   agent-config-helper claude merge-settings --base <json> --hcom <json> --herdr <json>
   agent-config-helper codex extract-hook-state <config.toml>
   agent-config-helper codex rekey-hook-state --hooks-path <path> <state.json>
-  agent-config-helper codex append-session-hook --command <command> <hooks.json>
+  agent-config-helper codex apply-hook-manifest --manifest <json> <hooks.json>
+  agent-config-helper codex append-command-hook \
+    --event <event> [--matcher <regex>] --command <command> --timeout <seconds> <hooks.json>
   agent-config-helper codex merge-payloads <base.json> <hcom.json> <herdr.json>
 ";
 
@@ -77,7 +86,7 @@ pub fn parse(arguments: &[OsString]) -> Result<Action> {
     }
     match subcommand.to_str() {
         Some("merge") => parse_merge(&arguments[1..]),
-        Some("generate-herdr-hook-state") => parse_generate(&arguments[1..]),
+        Some("generate-managed-hook-state") => parse_generate_hook_state(&arguments[1..]),
         Some("claude") => parse_claude(&arguments[1..]),
         Some("codex") => parse_codex(&arguments[1..]),
         _ => Err(AppError::new(format!(
@@ -103,12 +112,12 @@ fn parse_merge(arguments: &[OsString]) -> Result<Action> {
     }))
 }
 
-fn parse_generate(arguments: &[OsString]) -> Result<Action> {
+fn parse_generate_hook_state(arguments: &[OsString]) -> Result<Action> {
     if arguments.iter().any(|argument| is_help(argument)) {
         return Ok(Action::Help);
     }
     let mut codex_bin = None;
-    let mut hook_command = None;
+    let mut manifest = None;
     let mut hooks_json_path = None;
     let mut cwd = None;
     let mut index = 0;
@@ -122,12 +131,7 @@ fn parse_generate(arguments: &[OsString]) -> Result<Action> {
         })?;
         match option.to_str() {
             Some("--codex-bin") => set_once(&mut codex_bin, PathBuf::from(value), option)?,
-            Some("--hook-command") => {
-                let value = value.to_str().ok_or_else(|| {
-                    AppError::new("agent-config-helper: hook command must be valid UTF-8")
-                })?;
-                set_once(&mut hook_command, value.to_owned(), option)?;
-            }
+            Some("--manifest") => set_once(&mut manifest, PathBuf::from(value), option)?,
             Some("--hooks-json-path") => {
                 set_once(&mut hooks_json_path, PathBuf::from(value), option)?;
             }
@@ -141,10 +145,9 @@ fn parse_generate(arguments: &[OsString]) -> Result<Action> {
         }
         index += 2;
     }
-
-    Ok(Action::Run(Command::GenerateHerdrHookState {
+    Ok(Action::Run(Command::GenerateManagedHookState {
         codex_bin: required(codex_bin, "--codex-bin")?,
-        hook_command: required(hook_command, "--hook-command")?,
+        manifest: required(manifest, "--manifest")?,
         hooks_json_path: required(hooks_json_path, "--hooks-json-path")?,
         cwd: cwd.unwrap_or(std::env::current_dir().map_err(|error| {
             AppError::new(format!(
@@ -224,7 +227,8 @@ fn parse_codex(arguments: &[OsString]) -> Result<Action> {
     match subcommand.to_str() {
         Some("extract-hook-state") => parse_codex_extract_hook_state(&arguments[1..]),
         Some("rekey-hook-state") => parse_codex_rekey_hook_state(&arguments[1..]),
-        Some("append-session-hook") => parse_codex_append_session_hook(&arguments[1..]),
+        Some("apply-hook-manifest") => parse_codex_apply_hook_manifest(&arguments[1..]),
+        Some("append-command-hook") => parse_codex_append_command_hook(&arguments[1..]),
         Some("merge-payloads") => parse_codex_merge_payloads(&arguments[1..]),
         _ => Err(AppError::new(format!(
             "agent-config-helper: unknown Codex subcommand: {}",
@@ -277,15 +281,98 @@ fn parse_codex_rekey_hook_state(arguments: &[OsString]) -> Result<Action> {
     }))
 }
 
-fn parse_codex_append_session_hook(arguments: &[OsString]) -> Result<Action> {
-    if help_requested(arguments, &["--command"]) {
+fn parse_codex_apply_hook_manifest(arguments: &[OsString]) -> Result<Action> {
+    if help_requested(arguments, &["--manifest"]) {
         return Ok(Action::Help);
     }
-    let (command, hooks) =
-        parse_command_and_path(arguments, "Codex hooks JSON", "codex append-session-hook")?;
-    Ok(Action::Run(Command::CodexAppendSessionHook {
-        command,
-        hooks,
+    let mut manifest = None;
+    let mut hooks = None;
+    let mut index = 0;
+    while index < arguments.len() {
+        let argument = &arguments[index];
+        match argument.to_str() {
+            Some("--manifest") => {
+                let value = option_value(arguments, index, argument)?;
+                set_once(&mut manifest, PathBuf::from(value), argument)?;
+                index += 2;
+            }
+            Some(value) if value.starts_with('-') => return Err(unknown_option(argument)),
+            _ => {
+                set_positional_once(
+                    &mut hooks,
+                    PathBuf::from(argument),
+                    argument,
+                    "codex apply-hook-manifest",
+                )?;
+                index += 1;
+            }
+        }
+    }
+    Ok(Action::Run(Command::CodexApplyHookManifest {
+        manifest: required(manifest, "--manifest")?,
+        hooks: required_path(
+            hooks,
+            "codex apply-hook-manifest requires a hooks JSON path",
+        )?,
+    }))
+}
+
+fn parse_codex_append_command_hook(arguments: &[OsString]) -> Result<Action> {
+    if help_requested(
+        arguments,
+        &["--event", "--matcher", "--command", "--timeout"],
+    ) {
+        return Ok(Action::Help);
+    }
+    let mut event = None;
+    let mut matcher = None;
+    let mut command = None;
+    let mut timeout = None;
+    let mut hooks = None;
+    let mut index = 0;
+    while index < arguments.len() {
+        let argument = &arguments[index];
+        match argument.to_str() {
+            Some("--event" | "--matcher" | "--command" | "--timeout") => {
+                let value = option_value(arguments, index, argument)?;
+                let text = value.to_str().ok_or_else(|| {
+                    AppError::new("agent-config-helper: hook metadata must be valid UTF-8")
+                })?;
+                match argument.to_str() {
+                    Some("--event") => set_once(&mut event, text.to_owned(), argument)?,
+                    Some("--matcher") => set_once(&mut matcher, text.to_owned(), argument)?,
+                    Some("--command") => set_once(&mut command, text.to_owned(), argument)?,
+                    Some("--timeout") => {
+                        let seconds = text.parse::<u64>().map_err(|_| {
+                            AppError::new("agent-config-helper: --timeout must be an integer")
+                        })?;
+                        set_once(&mut timeout, seconds, argument)?;
+                    }
+                    _ => unreachable!(),
+                }
+                index += 2;
+            }
+            Some(value) if value.starts_with('-') => return Err(unknown_option(argument)),
+            _ => {
+                set_positional_once(
+                    &mut hooks,
+                    PathBuf::from(argument),
+                    argument,
+                    "codex append-command-hook",
+                )?;
+                index += 1;
+            }
+        }
+    }
+    Ok(Action::Run(Command::CodexAppendCommandHook {
+        event: required(event, "--event")?,
+        matcher,
+        command: required(command, "--command")?,
+        timeout: required(timeout, "--timeout")?,
+        hooks: required_path(
+            hooks,
+            "codex append-command-hook requires a hooks JSON path",
+        )?,
     }))
 }
 
@@ -479,20 +566,20 @@ mod tests {
     fn parses_generate_options_in_any_order() {
         assert_eq!(
             parse(&args(&[
-                "generate-herdr-hook-state",
-                "--hook-command",
-                "hook command",
-                "--cwd",
-                "/repo",
+                "generate-managed-hook-state",
+                "--manifest",
+                "manifest.json",
                 "--hooks-json-path",
                 "/home/me/.codex/hooks.json",
                 "--codex-bin",
                 "/nix/store/codex",
+                "--cwd",
+                "/repo",
             ]))
             .unwrap(),
-            Action::Run(Command::GenerateHerdrHookState {
+            Action::Run(Command::GenerateManagedHookState {
                 codex_bin: "/nix/store/codex".into(),
-                hook_command: "hook command".into(),
+                manifest: "manifest.json".into(),
                 hooks_json_path: "/home/me/.codex/hooks.json".into(),
                 cwd: "/repo".into(),
             })
@@ -501,10 +588,10 @@ mod tests {
 
     #[test]
     fn rejects_missing_duplicate_and_unknown_options() {
-        assert!(parse(&args(&["generate-herdr-hook-state"])).is_err());
+        assert!(parse(&args(&["generate-managed-hook-state"])).is_err());
         assert!(
             parse(&args(&[
-                "generate-herdr-hook-state",
+                "generate-managed-hook-state",
                 "--codex-bin",
                 "/one",
                 "--codex-bin",
@@ -512,7 +599,14 @@ mod tests {
             ]))
             .is_err()
         );
-        assert!(parse(&args(&["generate-herdr-hook-state", "--unknown", "value"])).is_err());
+        assert!(
+            parse(&args(&[
+                "generate-managed-hook-state",
+                "--unknown",
+                "value"
+            ]))
+            .is_err()
+        );
     }
 
     #[test]
@@ -582,14 +676,37 @@ mod tests {
         assert_eq!(
             parse(&args(&[
                 "codex",
-                "append-session-hook",
+                "apply-hook-manifest",
                 "hooks.json",
-                "--command",
-                "--help",
+                "--manifest",
+                "manifest.json",
             ]))
             .unwrap(),
-            Action::Run(Command::CodexAppendSessionHook {
-                command: "--help".to_owned(),
+            Action::Run(Command::CodexApplyHookManifest {
+                manifest: "manifest.json".into(),
+                hooks: "hooks.json".into(),
+            })
+        );
+        assert_eq!(
+            parse(&args(&[
+                "codex",
+                "append-command-hook",
+                "--timeout",
+                "10",
+                "--command",
+                "guard",
+                "hooks.json",
+                "--event",
+                "PreToolUse",
+                "--matcher",
+                "Bash",
+            ]))
+            .unwrap(),
+            Action::Run(Command::CodexAppendCommandHook {
+                event: "PreToolUse".to_owned(),
+                matcher: Some("Bash".to_owned()),
+                command: "guard".to_owned(),
+                timeout: 10,
                 hooks: "hooks.json".into(),
             })
         );
@@ -625,7 +742,7 @@ mod tests {
             ],
             &["codex", "extract-hook-state"],
             &["codex", "rekey-hook-state", "state"],
-            &["codex", "append-session-hook", "hooks"],
+            &["codex", "apply-hook-manifest", "hooks"],
             &["codex", "merge-payloads", "base", "hcom"],
         ] {
             assert!(parse(&args(arguments)).is_err(), "{arguments:?}");
@@ -689,7 +806,7 @@ mod tests {
             &["codex", "rekey-hook-state", "--unknown", "value", "state"],
             &[
                 "codex",
-                "append-session-hook",
+                "apply-hook-manifest",
                 "--unknown",
                 "value",
                 "hooks",
@@ -707,9 +824,9 @@ mod tests {
         assert!(
             parse(&args(&[
                 "codex",
-                "append-session-hook",
-                "--command",
-                "hook",
+                "apply-hook-manifest",
+                "--manifest",
+                "manifest",
                 "one",
                 "two",
             ]))
@@ -725,9 +842,13 @@ mod tests {
         let invalid = OsString::from_vec(vec![0xff]);
         let invalid_command = vec![
             OsString::from("codex"),
-            OsString::from("append-session-hook"),
+            OsString::from("append-command-hook"),
             OsString::from("--command"),
             invalid.clone(),
+            OsString::from("--event"),
+            OsString::from("SessionStart"),
+            OsString::from("--timeout"),
+            OsString::from("10"),
             OsString::from("hooks.json"),
         ];
         assert!(parse(&invalid_command).is_err());

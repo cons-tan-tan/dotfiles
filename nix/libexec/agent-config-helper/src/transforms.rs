@@ -4,6 +4,7 @@ use serde_json::{Map, Number, Value};
 use toml_edit::{DocumentMut, Item, Value as TomlValue};
 
 use crate::error::{AppError, Result};
+use crate::hook_state::{HookSpec, hooks_event_name, validate_specs};
 
 pub fn claude_select_integration(settings: &Value) -> Result<Value> {
     let source = match settings {
@@ -135,30 +136,62 @@ pub fn codex_rekey_hook_state(state: &Value, hooks_path: &str) -> Result<Value> 
     Ok(Value::Object(hooks_wrapper))
 }
 
-pub fn codex_append_session_hook(hooks: &Value, command: &str) -> Result<Value> {
+pub fn codex_apply_hook_manifest(hooks: &Value, specs: &[HookSpec]) -> Result<Value> {
+    validate_specs(specs)?;
+    specs.iter().try_fold(hooks.clone(), |hooks, spec| {
+        codex_append_command_hook(
+            &hooks,
+            hooks_event_name(&spec.event_name)?,
+            spec.matcher.as_deref(),
+            &spec.command,
+            spec.timeout_sec,
+        )
+    })
+}
+
+pub fn codex_append_command_hook(
+    hooks: &Value,
+    event: &str,
+    matcher: Option<&str>,
+    command: &str,
+    timeout: u64,
+) -> Result<Value> {
+    if !matches!(event, "SessionStart" | "PreToolUse") {
+        return Err(shape_error(format!(
+            "unsupported managed Codex hook event {event}"
+        )));
+    }
+    if command.trim().is_empty() || timeout == 0 {
+        return Err(shape_error(
+            "managed Codex hook command and timeout are required",
+        ));
+    }
     let mut output = match hooks {
         Value::Object(output) => output.clone(),
         Value::Null => Map::new(),
         _ => return Err(shape_error("Codex hooks must be an object or null")),
     };
     let hooks = object_field_or_default(&mut output, "hooks", "Codex hooks table")?;
-    let mut session_start = match hooks.get("SessionStart") {
+    let mut entries = match hooks.get(event) {
         None | Some(Value::Null) | Some(Value::Bool(false)) => Vec::new(),
         Some(Value::Array(entries)) => entries.clone(),
-        Some(_) => return Err(shape_error("Codex SessionStart hooks must be an array")),
+        Some(_) => return Err(shape_error(format!("Codex {event} hooks must be an array"))),
     };
 
     let mut command_hook = Map::new();
     command_hook.insert("command".to_owned(), Value::String(command.to_owned()));
-    command_hook.insert("timeout".to_owned(), Value::Number(Number::from(10)));
+    command_hook.insert("timeout".to_owned(), Value::Number(Number::from(timeout)));
     command_hook.insert("type".to_owned(), Value::String("command".to_owned()));
     let mut group = Map::new();
+    if let Some(matcher) = matcher {
+        group.insert("matcher".to_owned(), Value::String(matcher.to_owned()));
+    }
     group.insert(
         "hooks".to_owned(),
         Value::Array(vec![Value::Object(command_hook)]),
     );
-    session_start.push(Value::Object(group));
-    hooks.insert("SessionStart".to_owned(), Value::Array(session_start));
+    entries.push(Value::Object(group));
+    hooks.insert(event.to_owned(), Value::Array(entries));
 
     Ok(Value::Object(output))
 }
@@ -364,6 +397,7 @@ mod tests {
                 "permissions": null
             })
         );
+
         assert_eq!(
             claude_select_integration(&Value::Null).unwrap(),
             json!({"hooks": null, "env": null, "permissions": null})
@@ -515,7 +549,7 @@ not_a_number = nan
     }
 
     #[test]
-    fn rekeys_state_and_appends_the_codex_session_hook() {
+    fn rekeys_state_and_applies_the_codex_hook_manifest() {
         let rekeyed = codex_rekey_hook_state(
             &json!({
                 "SessionStart": {"trusted_hash": "opaque"},
@@ -529,9 +563,24 @@ not_a_number = nan
             "opaque"
         );
 
-        let appended = codex_append_session_hook(
+        let appended = codex_apply_hook_manifest(
             &json!({"hooks": {"SessionStart": false}, "unknown": true}),
-            "run hook",
+            &[
+                HookSpec {
+                    event_name: "sessionStart".to_owned(),
+                    handler_type: "command".to_owned(),
+                    matcher: None,
+                    command: "run hook".to_owned(),
+                    timeout_sec: 10,
+                },
+                HookSpec {
+                    event_name: "preToolUse".to_owned(),
+                    handler_type: "command".to_owned(),
+                    matcher: Some("Bash".to_owned()),
+                    command: "guard hook".to_owned(),
+                    timeout_sec: 10,
+                },
+            ],
         )
         .unwrap();
         assert_eq!(appended["unknown"], true);
@@ -540,6 +589,18 @@ not_a_number = nan
             json!({
                 "hooks": [{
                     "command": "run hook",
+                    "timeout": 10,
+                    "type": "command"
+                }]
+            })
+        );
+
+        assert_eq!(
+            appended["hooks"]["PreToolUse"][0],
+            json!({
+                "matcher": "Bash",
+                "hooks": [{
+                    "command": "guard hook",
                     "timeout": 10,
                     "type": "command"
                 }]
@@ -589,7 +650,18 @@ not_a_number = nan
             .unwrap_err(),
             codex_extract_hook_state_from_toml("[hooks]\nstate = 1").unwrap_err(),
             codex_rekey_hook_state(&json!([]), secret).unwrap_err(),
-            codex_append_session_hook(&json!({"hooks": {"SessionStart": {}}}), secret).unwrap_err(),
+            codex_apply_hook_manifest(
+                &json!({"hooks": {"SessionStart": {}}}),
+                &[HookSpec {
+                    event_name: "sessionStart".to_owned(),
+                    handler_type: "command".to_owned(),
+                    matcher: None,
+                    command: secret.to_owned(),
+                    timeout_sec: 10,
+                }],
+            )
+            .unwrap_err(),
+            codex_append_command_hook(&json!({}), "Unknown", None, secret, 10).unwrap_err(),
             codex_merge_payloads(&json!({}), &json!([]), &json!({})).unwrap_err(),
         ];
         for error in errors {

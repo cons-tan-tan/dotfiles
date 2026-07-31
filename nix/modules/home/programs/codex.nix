@@ -18,6 +18,10 @@ let
 
   settingsLib = import ../../../lib/settings/codex.nix;
   commandPolicy = import ../../../lib/agent-command-policy { inherit lib; };
+  guardHook = import ../../../lib/agent-command-policy/mk-guard.nix {
+    inherit lib pkgs;
+    policy = commandPolicy.guardPolicy;
+  };
   jsonFormat = pkgs.formats.json { };
   herdrSkillPath = "${codexHome}/skills/herdr/SKILL.md";
   herdrHookPath = "${codexHome}/herdr-agent-state.sh";
@@ -59,8 +63,7 @@ let
   hcomHooksJson = if enableHcom then "${hcomCodex}/hooks.json" else emptyHooksJson;
 
   # hcom state key は実環境の hooks.json 絶対パスを含むため、有効時はbuild時に
-  # 生成する。無効時は同じhooks.jsonに属する既存stateをprefixで削除し、後段で
-  # Herdr分だけを再投入する。
+  # 生成する。古いstateの削除はbase payloadで常に行い、後段で現行hookだけ戻す。
   hcomHooksPayloadJson =
     if enableHcom then
       pkgs.runCommand "codex-hcom-hooks-payload.json"
@@ -74,17 +77,7 @@ let
             > "$out"
         ''
     else
-      jsonFormat.generate "codex-hcom-hooks-disabled-payload.json" {
-        __delete_prefixes = [
-          {
-            path = [
-              "hooks"
-              "state"
-            ];
-            prefix = "${hooksJsonPath}:";
-          }
-        ];
-      };
+      jsonFormat.generate "codex-hcom-hooks-disabled-payload.json" { };
 
   hooksJson =
     pkgs.runCommand "codex-hooks.json"
@@ -92,14 +85,31 @@ let
         nativeBuildInputs = [ agentConfigHelper ];
       }
       ''
-        ${lib.getExe agentConfigHelper} codex append-session-hook \
-          --command ${lib.escapeShellArg herdrHookCommand} \
+        ${lib.getExe agentConfigHelper} codex apply-hook-manifest \
+          --manifest ${managedHookManifest} \
           ${hcomHooksJson} \
           > "$out"
       '';
 
-  herdrHooksStatePayloadJson =
-    pkgs.runCommand "codex-herdr-hooks-state-payload.json"
+  managedHookManifest = jsonFormat.generate "codex-managed-hook-manifest.json" [
+    {
+      eventName = "sessionStart";
+      handlerType = "command";
+      matcher = null;
+      command = herdrHookCommand;
+      timeoutSec = 10;
+    }
+    {
+      eventName = "preToolUse";
+      handlerType = "command";
+      matcher = "Bash";
+      command = guardHook.command;
+      timeoutSec = 10;
+    }
+  ];
+
+  managedHooksStatePayloadJson =
+    pkgs.runCommand "codex-managed-hooks-state-payload.json"
       {
         nativeBuildInputs = [ agentConfigHelper ];
       }
@@ -112,9 +122,9 @@ let
         export HOME="$home"
         export XDG_CONFIG_HOME="$home/.config"
 
-        ${lib.getExe agentConfigHelper} generate-herdr-hook-state \
+        ${lib.getExe agentConfigHelper} generate-managed-hook-state \
           --codex-bin ${lib.escapeShellArg "${pkgs.codex}/bin/codex"} \
-          --hook-command ${lib.escapeShellArg herdrHookCommand} \
+          --manifest ${managedHookManifest} \
           --hooks-json-path ${lib.escapeShellArg hooksJsonPath} \
           > "$out"
       '';
@@ -129,7 +139,7 @@ let
         ${lib.getExe agentConfigHelper} codex merge-payloads \
           ${baseMergePayloadJson} \
           ${hcomHooksPayloadJson} \
-          ${herdrHooksStatePayloadJson} \
+          ${managedHooksStatePayloadJson} \
           > "$out"
       '';
 

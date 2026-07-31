@@ -44,31 +44,25 @@ fn run_main() -> Result<u8> {
             merge::merge(&source, &payload, &output)?;
             Ok(0)
         }
-        Action::Run(Command::GenerateHerdrHookState {
+        Action::Run(Command::GenerateManagedHookState {
             codex_bin,
-            hook_command,
+            manifest,
             hooks_json_path,
             cwd,
         }) => {
+            let manifest = read_json(&manifest, "managed hook manifest")?;
+            let specs: Vec<hook_state::HookSpec> =
+                serde_json::from_value(manifest).map_err(|error| {
+                    AppError::new(format!(
+                        "agent-config-helper: invalid managed hook manifest: {error}"
+                    ))
+                })?;
             let response = app_server::fetch_hooks_list(&codex_bin, &cwd)?;
-            let payload = hook_state::build_payload(&response, &hook_command, &hooks_json_path)?;
-            let stdout = io::stdout();
-            let mut output = stdout.lock();
-            serde_json::to_writer(&mut output, &payload).map_err(|error| {
-                AppError::new(format!(
-                    "agent-config-helper: cannot write hook state JSON: {error}"
-                ))
-            })?;
-            output.write_all(b"\n").map_err(|error| {
-                AppError::new(format!(
-                    "agent-config-helper: cannot finish hook state JSON: {error}"
-                ))
-            })?;
-            output.flush().map_err(|error| {
-                AppError::new(format!(
-                    "agent-config-helper: cannot flush hook state JSON: {error}"
-                ))
-            })?;
+            write_json(&hook_state::build_payload_for_specs(
+                &response,
+                &specs,
+                &hooks_json_path,
+            )?)?;
             Ok(0)
         }
         Action::Run(Command::ClaudeSelectIntegration { settings }) => {
@@ -107,9 +101,33 @@ fn run_main() -> Result<u8> {
             write_json(&transforms::codex_rekey_hook_state(&state, hooks_path)?)?;
             Ok(0)
         }
-        Action::Run(Command::CodexAppendSessionHook { command, hooks }) => {
+        Action::Run(Command::CodexApplyHookManifest { manifest, hooks }) => {
+            let manifest = read_json(&manifest, "managed hook manifest")?;
+            let specs: Vec<hook_state::HookSpec> =
+                serde_json::from_value(manifest).map_err(|error| {
+                    AppError::new(format!(
+                        "agent-config-helper: invalid managed hook manifest: {error}"
+                    ))
+                })?;
             let hooks = read_json(&hooks, "Codex hooks")?;
-            write_json(&transforms::codex_append_session_hook(&hooks, &command)?)?;
+            write_json(&transforms::codex_apply_hook_manifest(&hooks, &specs)?)?;
+            Ok(0)
+        }
+        Action::Run(Command::CodexAppendCommandHook {
+            event,
+            matcher,
+            command,
+            timeout,
+            hooks,
+        }) => {
+            let hooks = read_json(&hooks, "Codex hooks")?;
+            write_json(&transforms::codex_append_command_hook(
+                &hooks,
+                &event,
+                matcher.as_deref(),
+                &command,
+                timeout,
+            )?)?;
             Ok(0)
         }
         Action::Run(Command::CodexMergePayloads { base, hcom, herdr }) => {

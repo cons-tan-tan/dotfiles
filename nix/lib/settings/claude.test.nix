@@ -6,6 +6,11 @@ let
     wslUserProfile = "/mnt/c/Users/test-user";
   };
   windowsSettings = settingsLib.mkSettings { forWindows = true; };
+  guardedSettings = settingsLib.mkSettings { guardCommand = "/store/guard --policy /store/policy"; };
+  guardedWindowsSettings = settingsLib.mkSettings {
+    forWindows = true;
+    guardCommand = "/store/guard --policy /store/policy";
+  };
 in
 {
   testReadOnlyFetchWrappersStayAutoApproved = {
@@ -52,6 +57,28 @@ in
     expected = {
       hasBashAllow = false;
       hasCommandPolicyDeny = false;
+    };
+  };
+
+  testGuardHookIsPosixOnlyAndKeepsTheExactCommand = {
+    expr = {
+      posix = guardedSettings.hooks.PreToolUse;
+      windows = guardedWindowsSettings.hooks.PreToolUse;
+    };
+    expected = {
+      posix = [
+        {
+          matcher = "Bash";
+          hooks = [
+            {
+              type = "command";
+              command = "/store/guard --policy /store/policy";
+              timeout = 10;
+            }
+          ];
+        }
+      ];
+      windows = [ ];
     };
   };
 }

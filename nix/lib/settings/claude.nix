@@ -16,6 +16,7 @@ in
       isDarwin ? false,
       wslUserProfile ? null,
       hcomPath ? null,
+      guardCommand ? null,
     }:
     let
       commandPermissions = commandPolicy.mkClaudePermissions { };
@@ -77,7 +78,18 @@ in
       # マージする (claude.nix の mergedSettingsFile)。eval 時に生成 JSON を読む
       # (IFD) と、異種プラットフォーム向け構成の評価 (nix flake check 等) が
       # 壊れるため。
-      hooks.PreToolUse = [ ];
+      hooks.PreToolUse = lib.optionals (!forWindows && guardCommand != null) [
+        {
+          matcher = "Bash";
+          hooks = [
+            {
+              type = "command";
+              command = guardCommand;
+              timeout = 10;
+            }
+          ];
+        }
+      ];
       # programs.claude-code.settings 経由で HM が付与していた schema と揃える。
       "$schema" = "https://json.schemastore.org/claude-code-settings.json";
     };

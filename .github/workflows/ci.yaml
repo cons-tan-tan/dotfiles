@@ -64,6 +64,8 @@ jobs:
         run: >-
           nix build
           .#checks.x86_64-linux.bats-tests
+          .#checks.x86_64-linux.agent-command-guard-rust
+          .#checks.x86_64-linux.agent-command-shellfirm-catalog
           .#checks.x86_64-linux.agent-config-helper-rust
           .#checks.x86_64-linux.rust-advisories
           .#checks.x86_64-linux.rust-clippy

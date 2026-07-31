@@ -18,6 +18,11 @@ let
   settingsLib = import ../../../lib/settings/claude.nix { inherit lib; };
   settingsValidator = import ../../../lib/mk-claude-settings-validator.nix { inherit pkgs; };
   agentConfigHelper = pkgs.callPackage ../../../libexec/agent-config-helper { };
+  commandPolicy = import ../../../lib/agent-command-policy { inherit lib; };
+  guardHook = import ../../../lib/agent-command-policy/mk-guard.nix {
+    inherit lib pkgs;
+    policy = commandPolicy.guardPolicy;
+  };
 
   jsonFormat = pkgs.formats.json { };
 
@@ -26,6 +31,7 @@ let
       isDarwin = config.my.isDarwin;
       wslUserProfile = if config.my.isWsl then config.my.windows.homedir else null;
       hcomPath = if enableHcom then "${pkgs.dotfilesPackages.hcom.package}/bin/hcom" else null;
+      guardCommand = guardHook.command;
     }
   );
 

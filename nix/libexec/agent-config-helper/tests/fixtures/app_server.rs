@@ -161,7 +161,11 @@ fn main() {
                 "hooks": [{
                     "key": "/tmp/build-home/.codex/hooks.json:session_start:1:0",
                     "eventName": "sessionStart",
+                    "handlerType": "command",
+                    "matcher": null,
                     "command": "herdr-command",
+                    "timeoutSec": 10,
+                    "enabled": true,
                     "currentHash": "sha256:from-fixture",
                 }],
                 "warnings": [],

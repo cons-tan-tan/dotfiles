@@ -34,6 +34,7 @@ let
 
   updatePinsScript = mkScript "update-pins" {
     runtimeInputs = [
+      pkgs.cargo
       pkgs.curl
       pkgs.gitMinimal
       pkgs.nix

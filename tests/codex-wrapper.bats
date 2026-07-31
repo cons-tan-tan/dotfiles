@@ -18,10 +18,8 @@ teardown() {
 }
 
 run_wrapper() {
-  mkdir -p "$TEST_TMPDIR/fd-wrapper"
   run env \
     CODEX_BIN="$TEST_TMPDIR/codex" \
-    FD_WRAPPER_DIR="$TEST_TMPDIR/fd-wrapper" \
     HERDR_SKILL_OVERRIDE='skills.config=[{path="/home/test/.codex/skills/herdr/SKILL.md",enabled=true}]' \
     "$@" \
     bash "$SCRIPT" user-arg
@@ -59,8 +57,4 @@ run_wrapper() {
     'arg:skills.config=[{path="/nix/store/'*'-herdr-skill-fixture/SKILL.md",enabled=true}]' ]]
   grep -Fx "arg:package-arg" "$TEST_TMPDIR/result"
 
-  local fd_path
-  fd_path="$(sed -n 's/^fd://p' "$TEST_TMPDIR/result")"
-  [[ "$fd_path" == /nix/store/*/bin/fd ]]
-  assert_agent_fd_policy "$fd_path"
 }

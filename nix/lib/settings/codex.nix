@@ -10,6 +10,16 @@ in
       codexHome,
     }:
     {
+      __delete_prefixes = [
+        {
+          path = [
+            "hooks"
+            "state"
+          ];
+          prefix = "${codexHome}/hooks.json:";
+        }
+      ];
+
       __delete = [
         [
           "plugins"

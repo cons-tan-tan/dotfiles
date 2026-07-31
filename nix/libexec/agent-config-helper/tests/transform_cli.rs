@@ -170,11 +170,22 @@ fn codex_commands_read_transform_and_emit_compact_json() {
     );
 
     let hooks = write_json(&directory, "hooks.json", &Value::Null);
+    let manifest = write_json(
+        &directory,
+        "hook-manifest.json",
+        &json!([{
+            "eventName": "sessionStart",
+            "handlerType": "command",
+            "matcher": null,
+            "command": "herdr hook",
+            "timeoutSec": 10
+        }]),
+    );
     let appended = parse_success(helper([
         OsStr::new("codex"),
-        OsStr::new("append-session-hook"),
-        OsStr::new("--command"),
-        OsStr::new("herdr hook"),
+        OsStr::new("apply-hook-manifest"),
+        OsStr::new("--manifest"),
+        path(&manifest),
         path(&hooks),
     ]));
     assert_eq!(
@@ -190,6 +201,26 @@ fn codex_commands_read_transform_and_emit_compact_json() {
                 }]
             }
         })
+    );
+
+    let appended_path = write_json(&directory, "appended-hooks.json", &appended);
+    let guarded = parse_success(helper([
+        OsStr::new("codex"),
+        OsStr::new("append-command-hook"),
+        OsStr::new("--event"),
+        OsStr::new("PreToolUse"),
+        OsStr::new("--matcher"),
+        OsStr::new("Bash"),
+        OsStr::new("--command"),
+        OsStr::new("guard hook"),
+        OsStr::new("--timeout"),
+        OsStr::new("10"),
+        path(&appended_path),
+    ]));
+    assert_eq!(guarded["hooks"]["PreToolUse"][0]["matcher"], "Bash");
+    assert_eq!(
+        guarded["hooks"]["PreToolUse"][0]["hooks"][0]["command"],
+        "guard hook"
     );
 
     let base = write_json(

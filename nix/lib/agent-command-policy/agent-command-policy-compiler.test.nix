@@ -1,4 +1,4 @@
-# 再帰agent-command-policyの正規化、backend投影、意味検証を確認する。
+# 共有command policyのnative allowとguard policyへの非対称投影を確認する。
 { lib }:
 let
   evalPolicy =
@@ -14,8 +14,22 @@ let
     in
     import ./compiler.nix {
       inherit lib;
-      inherit (policy) argv options;
+      inherit (policy) argv semantic shellfirm;
     };
+
+  semanticLeaf = aliases: {
+    optionSyntax = {
+      valueTaking = [ "-C" ];
+      optionalEquals = [ "--color" ];
+    };
+    deny = [
+      {
+        when.options.all = [ aliases ];
+        reason = "Blocked by the fixture.";
+        alternatives = [ "Use the safe fixture command." ];
+      }
+    ];
+  };
 
   fixturePolicy = evalPolicy {
     argv = {
@@ -29,9 +43,30 @@ let
       };
       remove = false;
     };
-    options.fd = {
-      "--exec" = false;
-      "-x" = false;
+    semantic = {
+      fd = semanticLeaf [
+        "-x"
+        "--exec"
+      ];
+      gh.pr.create = semanticLeaf [ "--fill" ];
+    };
+    shellfirm = {
+      enabled = true;
+      minimumSeverity = "High";
+      categories.git = true;
+      ruleNamespaces.git-strict = false;
+      rules = {
+        aws.delete_bucket = true;
+        git.force_push = false;
+      };
+    };
+  };
+
+  actualPolicy = import ./default.nix { inherit lib; };
+  markerNamePolicy = evalPolicy {
+    semantic.demo = {
+      deny.child = semanticLeaf [ "-x" ];
+      optionSyntax.child = semanticLeaf [ "-y" ];
     };
   };
 
@@ -39,105 +74,189 @@ let
 
   failsUncheckedCompile =
     policy:
-    !(builtins.tryEval (
-      builtins.deepSeq (import ./compiler.nix {
-        inherit lib;
-        inherit (policy) argv options;
-      }) true
-    )).success;
+    !(builtins.tryEval (builtins.deepSeq (import ./compiler.nix ({ inherit lib; } // policy)) true))
+    .success;
 in
 {
-  testRecursiveArgvTreeProjectsToClaude = {
-    expr = fixturePolicy.mkClaudePermissions { };
-    expected = {
-      allow = [
-        "Bash(lookup exact *)"
-        "Bash(lookup group deep path *)"
-        "Bash(lookup group first *)"
-        "Bash(lookup group second *)"
-      ];
-      deny = [ "Bash(remove *)" ];
-    };
-  };
-
-  testRecursiveArgvTreeProjectsToCodexPrefixes = {
-    expr = map (rule: rule.argvPrefix) fixturePolicy.prefixRules;
-    expected = [
-      [
-        "lookup"
-        "exact"
-      ]
-      [
-        "lookup"
-        "group"
-        "deep"
-        "path"
-      ]
-      [
-        "lookup"
-        "group"
-        "first"
-      ]
-      [
-        "lookup"
-        "group"
-        "second"
-      ]
-      [ "remove" ]
-    ];
-  };
-
-  testCodexRulesIncludeGeneratedReasonAndMatchContracts = {
-    expr =
-      lib.hasInfix ''name = "lookup"'' fixturePolicy.codexRulesContent
-      && lib.hasInfix ''justification = "Allowed by the shared agent command policy: lookup exact."'' fixturePolicy.codexRulesContent
-      && lib.hasInfix ''match = ["lookup exact __codex_rule_probe__"]'' fixturePolicy.codexRulesContent
-      && lib.hasInfix ''not_match = ["__codex_rule_probe__ lookup exact"]'' fixturePolicy.codexRulesContent;
-    expected = true;
-  };
-
-  testOptionDecisionsProjectToTheSharedWrapperOnly = {
+  testOnlyTrueArgvLeavesProjectToNativeBackends = {
     expr = {
-      forbiddenOptions = fixturePolicy.fdForbiddenOptions;
-      hasFdPrefix = lib.any (rule: builtins.head rule.argvPrefix == "fd") fixturePolicy.prefixRules;
+      claude = fixturePolicy.mkClaudePermissions { };
+      codexPrefixes = map (rule: rule.argvPrefix) fixturePolicy.prefixRules;
+      codexHasForbidden = lib.hasInfix ''decision = "forbidden"'' fixturePolicy.codexRulesContent;
     };
     expected = {
-      forbiddenOptions = [
-        "--exec"
-        "-x"
+      claude = {
+        allow = [
+          "Bash(lookup exact *)"
+          "Bash(lookup group deep path *)"
+          "Bash(lookup group first *)"
+          "Bash(lookup group second *)"
+        ];
+        deny = [ ];
+      };
+      codexPrefixes = [
+        [
+          "lookup"
+          "exact"
+        ]
+        [
+          "lookup"
+          "group"
+          "deep"
+          "path"
+        ]
+        [
+          "lookup"
+          "group"
+          "first"
+        ]
+        [
+          "lookup"
+          "group"
+          "second"
+        ]
       ];
-      hasFdPrefix = false;
+      codexHasForbidden = false;
     };
   };
 
-  testCompilerProjectsMixedDecisionsForOneExecutable = {
-    expr =
-      map
-        (rule: {
-          inherit (rule) argvPrefix decision;
-        })
-        (evalPolicy {
-          argv.tool = {
-            danger = false;
-            safe = true;
-          };
-        }).prefixRules;
+  testFalseArgvLeavesProjectOnlyToGuardExactDeny = {
+    expr = fixturePolicy.guardPolicy.exact;
     expected = [
       {
-        argvPrefix = [
-          "tool"
-          "danger"
-        ];
-        decision = "forbidden";
-      }
-      {
-        argvPrefix = [
-          "tool"
-          "safe"
-        ];
-        decision = "allow";
+        argvPrefix = [ "remove" ];
+        decision = "deny";
+        reason = "Forbidden by the shared agent command policy: remove.";
       }
     ];
+  };
+
+  testSemanticTreesFlattenToOneGenericShape = {
+    expr = fixturePolicy.guardPolicy.semantic;
+    expected = [
+      {
+        commandPrefix = [ "fd" ];
+        optionSyntax = {
+          valueTaking = [ "-C" ];
+          optionalEquals = [ "--color" ];
+        };
+        deny = [
+          {
+            optionGroups = [
+              [
+                "-x"
+                "--exec"
+              ]
+            ];
+            reason = "Blocked by the fixture.";
+            alternatives = [ "Use the safe fixture command." ];
+          }
+        ];
+      }
+      {
+        commandPrefix = [
+          "gh"
+          "pr"
+          "create"
+        ];
+        optionSyntax = {
+          valueTaking = [ "-C" ];
+          optionalEquals = [ "--color" ];
+        };
+        deny = [
+          {
+            optionGroups = [ [ "--fill" ] ];
+            reason = "Blocked by the fixture.";
+            alternatives = [ "Use the safe fixture command." ];
+          }
+        ];
+      }
+    ];
+  };
+
+  testSemanticMarkerNamesRemainUsableAsOrdinaryCommandTokens = {
+    expr = map (rule: rule.commandPrefix) markerNamePolicy.guardPolicy.semantic;
+    expected = [
+      [
+        "demo"
+        "deny"
+        "child"
+      ]
+      [
+        "demo"
+        "optionSyntax"
+        "child"
+      ]
+    ];
+  };
+
+  testShellfirmSelectorPreservesMapsAndFlattensOnlyIndividualRules = {
+    expr = fixturePolicy.guardPolicy.shellfirm;
+    expected = {
+      enabled = true;
+      minimumSeverity = "High";
+      categories.git = true;
+      ruleNamespaces.git-strict = false;
+      rules = {
+        "aws:delete_bucket" = true;
+        "git:force_push" = false;
+      };
+    };
+  };
+
+  testGeneratedPolicyKeepsUnknownBehaviorVersioned = {
+    expr = {
+      inherit (fixturePolicy.guardPolicy) schemaVersion unknown;
+    };
+    expected = {
+      schemaVersion = 1;
+      unknown = {
+        parseError = "deny";
+        dynamicExecutable = "deny";
+        dynamicRelevantOption = "deny";
+        maxDecodeDepth = 8;
+      };
+    };
+  };
+
+  testRepositoryPolicySelectsTheApprovedShellfirmSurface = {
+    expr = {
+      inherit (actualPolicy.guardPolicy.shellfirm) enabled minimumSeverity;
+      enabledCategories = builtins.attrNames (
+        lib.filterAttrs (_: decision: decision) actualPolicy.guardPolicy.shellfirm.categories
+      );
+      disabledNamespaces = builtins.attrNames (
+        lib.filterAttrs (_: decision: !decision) actualPolicy.guardPolicy.shellfirm.ruleNamespaces
+      );
+      individualRules = actualPolicy.guardPolicy.shellfirm.rules;
+      semanticCommands = map (rule: rule.commandPrefix) actualPolicy.guardPolicy.semantic;
+    };
+    expected = {
+      enabled = true;
+      minimumSeverity = "High";
+      enabledCategories = [
+        "aws"
+        "docker"
+        "fs"
+        "gcp"
+        "git"
+        "github"
+        "kubernetes"
+        "network"
+        "npm"
+        "shell"
+      ];
+      disabledNamespaces = [
+        "fs-strict"
+        "git-strict"
+        "kubernetes-strict"
+      ];
+      individualRules = { };
+      semanticCommands = [
+        [ "fd" ]
+        [ "rm" ]
+      ];
+    };
   };
 
   testCompilerRejectsAnEmptyPolicy = {
@@ -158,42 +277,74 @@ in
     ];
   };
 
-  testCompilerRejectsAnEmptyArgvBranch = {
-    expr = failsToCompile { argv.gh = { }; };
-    expected = true;
-  };
-
-  testCompilerBoundaryRejectsNonBooleanLeaves = {
-    expr = failsUncheckedCompile {
-      argv.safe = "allow";
-      options = { };
-    };
-    expected = true;
-  };
-
-  testSelectingOptionProjectionStillValidatesArgvTree = {
-    expr =
-      !(builtins.tryEval (
-        builtins.deepSeq
-          (import ./compiler.nix {
-            inherit lib;
-            argv."*" = true;
-            options.fd."--exec" = false;
-          }).fdForbiddenOptions
-          true
-      )).success;
-    expected = true;
-  };
-
-  testCompilerRejectsUnsupportedOptionDecisions = {
-    expr = [
-      (failsToCompile { options.tool."--unsafe" = false; })
-      (failsUncheckedCompile {
-        argv = { };
-        options.fd."--exec" = true;
-      })
+  testCompilerRejectsInvalidSemanticBoundaries = {
+    expr = map failsUncheckedCompile [
+      {
+        argv.safe = true;
+        semantic.demo = {
+          optionSyntax = { };
+          deny = [ ];
+        };
+      }
+      {
+        argv.safe = true;
+        semantic.demo = semanticLeaf [
+          "-x"
+          "-x"
+        ];
+      }
+      {
+        argv.safe = true;
+        semantic.demo = semanticLeaf [ "--" ];
+      }
+      {
+        argv.safe = true;
+        semantic.demo = semanticLeaf [ ];
+      }
     ];
     expected = [
+      true
+      true
+      true
+      true
+    ];
+  };
+
+  testCompilerRejectsInvalidShellfirmBoundaries = {
+    expr = map failsUncheckedCompile [
+      {
+        argv.safe = true;
+        shellfirm = {
+          enabled = true;
+          minimumSeverity = "Extreme";
+          categories = { };
+          ruleNamespaces = { };
+          rules = { };
+        };
+      }
+      {
+        argv.safe = true;
+        shellfirm = {
+          enabled = true;
+          minimumSeverity = "High";
+          categories."bad:name" = true;
+          ruleNamespaces = { };
+          rules = { };
+        };
+      }
+      {
+        argv.safe = true;
+        shellfirm = {
+          enabled = true;
+          minimumSeverity = "High";
+          categories = { };
+          ruleNamespaces = { };
+          rules.git.force_push = "false";
+        };
+      }
+    ];
+    expected = [
+      true
       true
       true
     ];
