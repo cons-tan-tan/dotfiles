@@ -87,8 +87,6 @@ in
 
   home.file.".claude/commands".source =
     config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/claude/commands";
-  home.file.".claude/rules".source =
-    config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/claude/rules";
   home.file.".claude/output-styles".source =
     config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/claude/output-styles";
   home.file.".claude/hooks/.gitkeep".source =

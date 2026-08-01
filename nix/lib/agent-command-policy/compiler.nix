@@ -200,9 +200,6 @@ let
         };
 
   semanticRules = lib.filter (rule: rule != null) (map (entry: entry.semanticRule) commandEntries);
-  guidance = lib.unique (
-    lib.filter (value: value != null) (map (rule: rule.guidance or null) semanticRules)
-  );
 
   shellPolicy = (import ./shell-policy-schema.nix { inherit lib; }).validate shell;
 
@@ -369,7 +366,6 @@ assert checkedPolicy;
   inherit
     codexAllowedExecutables
     codexRulesContent
-    guidance
     guardPolicy
     mkClaudePermissions
     ;

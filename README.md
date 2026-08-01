@@ -79,9 +79,9 @@ nix/
 ├── overlays/      # 登録の適用、外部 input の橋渡し、意図的な上書き
 ├── pins/          # 配布物の version や hash (update-pins が更新)
 └── apps/          # pptx / markdownlint / textlint / update-pins
-agents/skills/     # ローカル agent skills
+agents/            # coding agent共通contextとローカルskills
 pi/                # Pi 拡張 (extensions/)
-claude/            # Claude Code 設定
+claude/            # Claude Code固有のcommands / hooks / output styles
 secrets/           # sops + GPG 暗号化 secrets (運用は secrets/README.md)
 ```
 

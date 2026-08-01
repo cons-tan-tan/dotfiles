@@ -25,11 +25,12 @@ in
           };
         };
       };
-      # instructions は opencode 側で glob 展開される (claude.nix が配置する
-      # ~/.claude 配下の symlink に依存)。
+      # instructions はopencode側でglob展開される。共通contextを先に読み、
+      # tool固有のoutput styleを最後に追加する。
       instructions = [
+        "${config.home.homeDirectory}/.agents/context/global.md"
+        "${config.home.homeDirectory}/.agents/context/rules/*.md"
         "${config.home.homeDirectory}/.claude/output-styles/faust.md"
-        "${config.home.homeDirectory}/.claude/rules/*.md"
       ];
       command = {
         # agents/skills/commit (~/.agents/skills/commit に配置) を呼ぶ

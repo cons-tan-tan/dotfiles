@@ -1,6 +1,6 @@
-# AI Assistance Rules
+## AI Assistance Rules
 
-## Code Analysis
+### Code Analysis
 
 Use the `ast-grep` skill for:
 

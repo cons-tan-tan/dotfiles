@@ -1,16 +1,28 @@
-# coding agentが共有する短いglobal guidanceを1つの生成物から配布する。
+# coding agentが共有するstatic contextを、各toolの読み込み方式に合わせて配布する。
 { lib, ... }:
 let
-  commandPolicy = import ../../../lib/agent-command-policy { inherit lib; };
-  baseGuidance = builtins.readFile ../../../../claude/CLAUDE.md;
-  policyGuidance = lib.concatMapStrings (guidance: "- ${guidance}\n") commandPolicy.guidance;
-  separator = lib.optionalString (!lib.hasSuffix "\n" baseGuidance) "\n";
-  guidanceText = "${baseGuidance}${separator}${policyGuidance}";
+  contextRoot = ../../../../agents/context;
+  globalContext = contextRoot + "/global.md";
+  rulesDirectory = contextRoot + "/rules";
+  ruleEntries = builtins.readDir rulesDirectory;
+  ruleNames = builtins.filter (name: ruleEntries.${name} == "regular" && lib.hasSuffix ".md" name) (
+    builtins.attrNames ruleEntries
+  );
+  stripTrailingNewlines =
+    text: if lib.hasSuffix "\n" text then stripTrailingNewlines (lib.removeSuffix "\n" text) else text;
+  readContext = path: stripTrailingNewlines (builtins.readFile path);
+  combinedContext =
+    lib.concatStringsSep "\n\n" (
+      [ (readContext globalContext) ] ++ map (name: readContext (rulesDirectory + "/${name}")) ruleNames
+    )
+    + "\n";
 in
 {
   home.file = {
-    ".claude/CLAUDE.md".text = guidanceText;
-    ".codex/AGENTS.md".text = guidanceText;
-    ".pi/agent/AGENTS.md".text = guidanceText;
+    ".agents/context".source = contextRoot;
+    ".claude/CLAUDE.md".source = globalContext;
+    ".claude/rules".source = rulesDirectory;
+    ".codex/AGENTS.md".text = combinedContext;
+    ".pi/agent/AGENTS.md".text = combinedContext;
   };
 }

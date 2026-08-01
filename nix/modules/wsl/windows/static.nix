@@ -12,6 +12,8 @@ let
   windowsExcludedRules = [
     "nix.md"
     "nix.md.license"
+    "tools.md"
+    "tools.md.license"
     "web-fetch.md"
     "web-fetch.md.license"
   ];
@@ -32,11 +34,11 @@ in
     run mkdir -p "$WIN_CLAUDE" "$WIN_AGENTS/skills"
 
     run ${pkgs.rsync}/bin/rsync -aL --delete \
-      "${dotfilesDir}/claude/CLAUDE.md" \
+      "${dotfilesDir}/agents/context/global.md" \
       "$WIN_CLAUDE/CLAUDE.md"
 
-    run ${pkgs.rsync}/bin/rsync -aL --delete ${rsyncExcludeArgs} \
-      "${dotfilesDir}/claude/rules/" \
+    run ${pkgs.rsync}/bin/rsync -aL --delete --delete-excluded ${rsyncExcludeArgs} \
+      "${dotfilesDir}/agents/context/rules/" \
       "$WIN_CLAUDE/rules/"
 
     for dir in commands output-styles hooks; do

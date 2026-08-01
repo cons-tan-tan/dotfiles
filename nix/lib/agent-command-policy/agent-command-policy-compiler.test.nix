@@ -86,7 +86,7 @@ in
       nativePrefixes = map (rule: rule.argvPrefix) fixturePolicy.prefixRules;
       exact = fixturePolicy.guardPolicy.exact;
       semanticPrefixes = map (rule: rule.commandPrefix) fixturePolicy.guardPolicy.semantic;
-      guidance = fixturePolicy.guidance;
+      semanticGuidance = map (rule: rule.guidance or null) fixturePolicy.guardPolicy.semantic;
       codexHasForbidden = lib.hasInfix ''decision = "forbidden"'' fixturePolicy.codexRulesContent;
     };
     expected = {
@@ -123,7 +123,10 @@ in
           "create"
         ]
       ];
-      guidance = [ "Use the fixture." ];
+      semanticGuidance = [
+        "Use the fixture."
+        null
+      ];
       codexHasForbidden = false;
     };
   };

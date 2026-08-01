@@ -1,6 +1,6 @@
-# Nix Build Rules
+## Nix Build Rules
 
-## Debug Flags
+### Debug Flags
 
 Use these flags only when debugging build errors:
 
@@ -11,7 +11,7 @@ Use these flags only when debugging build errors:
 - `--print-build-logs`: Shows full build output (normally only shown on failure)
 - `--show-trace`: Displays stack traces on evaluation errors
 
-## Examples
+### Examples
 
 ```bash
 # Normal usage (no flags needed)
@@ -24,7 +24,7 @@ nix build --print-build-logs --show-trace
 nix flake check --print-build-logs --show-trace
 ```
 
-## CI Usage
+### CI Usage
 
 In CI environments, prefer `nix profile add` over `nix develop` for faster setup:
 

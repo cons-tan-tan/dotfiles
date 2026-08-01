@@ -1,6 +1,6 @@
-# GitHub Access Strategy
+## GitHub Access Strategy
 
-## Pre-approved Commands
+### Pre-approved Commands
 
 The following `gh` subcommands are pre-approved and do not require user confirmation.
 Prefer these over alternatives that need approval:
@@ -13,9 +13,10 @@ Prefer these over alternatives that need approval:
 
 For other `gh` operations (e.g., `gh pr create`, `gh issue create`), user approval is required.
 
-## Accessing GitHub Content
+### Accessing GitHub Content
 
-When accessing GitHub-hosted content (repository files, issues, PRs, etc.), prefer `gh` commands over WebFetch or curl.
+When accessing GitHub-hosted content (repository files, issues, PRs, etc.), prefer `gh` commands over the built-in web fetch tool or curl.
 
-## Tips
+### Tips
+
 - If you use `gh do` command, you can pass GitHub credentials via environment variables. See `gh do --help` for more details.
