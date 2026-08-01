@@ -31,6 +31,7 @@ in
   dotfiles.agentSkills.externalSkills = {
     ast-grep = {
       root = "${ast-grep-skill}/ast-grep/skills/ast-grep";
+      customization.frontmatter.description = "Performs syntax-aware structural code search when tasks require matching language constructs, nested relationships, or code patterns that plain-text search cannot express reliably.";
     };
 
     agent-browser = {

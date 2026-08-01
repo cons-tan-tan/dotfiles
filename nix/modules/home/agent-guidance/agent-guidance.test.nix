@@ -53,14 +53,13 @@ in
       combinedStartsWithGlobal = lib.hasPrefix "# Global Configuration\n" codexText;
       combinedIncludesGlobal = count "Interact with the user in Japanese" codexText;
       combinedRuleHeadings = map (heading: count heading codexText) [
-        "## AI Assistance Rules"
         "## GitHub Access Strategy"
         "## Nix Build Rules"
         "## Preferred Tools"
         "## Web Fetch Strategy"
       ];
       combinedRuleOrderCorrect =
-        builtins.match ".*## AI Assistance Rules.*## GitHub Access Strategy.*## Nix Build Rules.*## Preferred Tools.*## Web Fetch Strategy.*" flattenedCodexText
+        builtins.match ".*## GitHub Access Strategy.*## Nix Build Rules.*## Preferred Tools.*## Web Fetch Strategy.*" flattenedCodexText
         != null;
       trashPreferenceCount = count "Recoverable deletion" codexText;
       claudeGlobalExcludesRules = !lib.hasInfix "Recoverable deletion" (builtins.readFile globalContext);
@@ -70,7 +69,6 @@ in
     expected = {
       sourceMappingsCorrect = true;
       discoveredRules = [
-        "ai-assistance.md"
         "github.md"
         "nix.md"
         "tools.md"
@@ -82,7 +80,6 @@ in
       combinedStartsWithGlobal = true;
       combinedIncludesGlobal = 1;
       combinedRuleHeadings = [
-        1
         1
         1
         1
