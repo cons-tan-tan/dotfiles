@@ -17,8 +17,6 @@ in
     sharedCliPackages
     ++ (with pkgs; [
       # CLI tools
-      # fzf のシェル統合は共有zsh設定の移行時に扱う。zoxide / starship は
-      # programs.* モジュールでパッケージとzsh統合を管理する。
       fastfetch
       reuse
       watchexec
