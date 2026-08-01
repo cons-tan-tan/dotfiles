@@ -8,6 +8,7 @@ in
   mkMergePayload =
     {
       codexHome,
+      trashDirectory,
     }:
     {
       __delete_prefixes = [
@@ -47,15 +48,16 @@ in
       approval_policy = "on-request";
       approvals_reviewer = "auto_review";
 
-      # 開発ツールは ~/.cache 配下へ書き込むものが多いため、workspace の
-      # baseline protections を維持したまま共通キャッシュだけ追加で許可する。
+      # workspace のbaseline protectionsを維持したまま、開発用cacheと
+      # recoverable deleteの保存先だけを追加で許可する。
       default_permissions = "local-dev";
       permissions = {
         local-dev = {
-          description = "Workspace access with a writable user cache.";
+          description = "Workspace access with writable cache and trash.";
           extends = ":workspace";
           filesystem = {
             "~/.cache" = "write";
+            "${trashDirectory}" = "write";
           };
         };
       };

@@ -56,6 +56,7 @@ let
   baseMergePayloadJson = jsonFormat.generate "codex-config-merge-base.json" (
     settingsLib.mkMergePayload {
       inherit codexHome;
+      trashDirectory = "${config.xdg.dataHome}/Trash";
     }
   );
 
