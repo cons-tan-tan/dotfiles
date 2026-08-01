@@ -73,6 +73,23 @@ let
       optionSyntax.child = semanticCommand [ "-y" ];
     };
   };
+  guardedDsl = (import ./rule-dsl.nix { inherit lib; }).guarded;
+  fixtureProfile = {
+    optionSyntax.valueTaking = [ "-C" ];
+    conditions.execution = [
+      [
+        "-x"
+        "--exec"
+      ]
+    ];
+  };
+  guarded = guardedDsl fixtureProfile {
+    guidance = "Use the fixture.";
+    deny.execution = {
+      reason = "Blocked by the fixture.";
+      alternatives = [ "Use the safe fixture command." ];
+    };
+  };
 
   failsToCompile = module: !(builtins.tryEval (builtins.deepSeq (evalPolicy module) true)).success;
   failsUncheckedCompile =
@@ -145,6 +162,43 @@ in
         "child"
       ]
     ];
+  };
+
+  testRuleDslExpandsNamedConditionsToCompilerInput = {
+    expr = guarded;
+    expected = {
+      decision = true;
+      guidance = "Use the fixture.";
+      optionSyntax = {
+        valueTaking = [ "-C" ];
+        optionalEquals = [ ];
+      };
+      deny = [
+        {
+          when.options.all = [
+            [
+              "-x"
+              "--exec"
+            ]
+          ];
+          reason = "Blocked by the fixture.";
+          alternatives = [ "Use the safe fixture command." ];
+        }
+      ];
+    };
+  };
+
+  testRuleDslRejectsUnknownNamedConditions = {
+    expr =
+      !(builtins.tryEval (
+        builtins.deepSeq (guardedDsl fixtureProfile {
+          deny.missing = {
+            reason = "Blocked by the fixture.";
+            alternatives = [ "Use the safe fixture command." ];
+          };
+        }) true
+      )).success;
+    expected = true;
   };
 
   testShellfirmSelectorPrecedenceDataIsPreserved = {

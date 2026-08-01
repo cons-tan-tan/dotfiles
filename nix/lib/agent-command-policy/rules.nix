@@ -1,5 +1,8 @@
 # coding agentへ投影するcommand allowと共通guard policyのSSOT。
+{ lib, ... }:
 let
+  profiles = import ./command-profiles.nix { inherit lib; };
+  inherit (import ./rule-dsl.nix { inherit lib; }) guarded;
   trashGuidance = "Use `trash` instead of `rm`.";
 in
 {
@@ -38,154 +41,28 @@ in
       trash-empty = false;
       trash-rm = false;
 
-      rm = {
-        decision = true;
+      rm = guarded profiles.rm {
         guidance = trashGuidance;
-        optionSyntax = {
-          valueTaking = [ ];
-          optionalEquals = [ ];
+        deny.recursiveForce = {
+          reason = "Recursive forced deletion is disabled for coding agents.";
+          alternatives = [ trashGuidance ];
         };
-        deny = [
-          {
-            when.options.all = [
-              [
-                "-r"
-                "-R"
-                "--recursive"
-              ]
-              [
-                "-f"
-                "--force"
-              ]
-            ];
-            reason = "Recursive forced deletion is disabled for coding agents.";
-            alternatives = [
-              trashGuidance
-            ];
-          }
-        ];
       };
 
-      fd = {
-        decision = true;
-        optionSyntax = {
-          valueTaking = [
-            "--and"
-            "-d"
-            "--max-depth"
-            "--min-depth"
-            "--exact-depth"
-            "-E"
-            "--exclude"
-            "-t"
-            "--type"
-            "-e"
-            "--extension"
-            "-S"
-            "--size"
-            "--changed-within"
-            "--change-newer-than"
-            "--newer"
-            "--changed-after"
-            "--changed-before"
-            "--change-older-than"
-            "--older"
-            "-o"
-            "--owner"
-            "--format"
-            "--batch-size"
-            "--ignore-file"
-            "-c"
-            "--color"
-            "--ignore-contain"
-            "-j"
-            "--threads"
-            "--max-results"
-            "-C"
-            "--base-directory"
-            "--path-separator"
-            "--search-path"
-          ];
-          optionalEquals = [
-            "--hyperlink"
-            "--strip-cwd-prefix"
+      fd = guarded profiles.fd {
+        deny.execution = {
+          reason = "fd command execution options are disabled for coding agents.";
+          alternatives = [
+            "List matching paths first, then run a separately reviewed command."
           ];
         };
-        deny = [
-          {
-            when.options.all = [
-              [
-                "-x"
-                "-X"
-                "--exec"
-                "--exec-batch"
-              ]
-            ];
-            reason = "fd command execution options are disabled for coding agents.";
-            alternatives = [
-              "List matching paths first, then run a separately reviewed command."
-            ];
-          }
-        ];
       };
 
-      trash-restore = {
-        decision = true;
-        optionSyntax = {
-          # argparse also accepts unique long-option abbreviations for these.
-          valueTaking = [
-            "--p"
-            "--pr"
-            "--pri"
-            "--prin"
-            "--print"
-            "--print-"
-            "--print-c"
-            "--print-co"
-            "--print-com"
-            "--print-comp"
-            "--print-compl"
-            "--print-comple"
-            "--print-complet"
-            "--print-completi"
-            "--print-completio"
-            "--print-completion"
-            "--s"
-            "--so"
-            "--sor"
-            "--sort"
-            "--t"
-            "--tr"
-            "--tra"
-            "--tras"
-            "--trash"
-            "--trash-"
-            "--trash-d"
-            "--trash-di"
-            "--trash-dir"
-          ];
-          optionalEquals = [ ];
+      trash-restore = guarded profiles.trashRestore {
+        deny.overwrite = {
+          reason = "Overwriting an existing path during trash restore is disabled for coding agents.";
+          alternatives = [ "Restore only when the original path does not exist." ];
         };
-        deny = [
-          {
-            # trash-cli's argparse accepts every unique long-option abbreviation.
-            when.options.all = [
-              [
-                "--o"
-                "--ov"
-                "--ove"
-                "--over"
-                "--overw"
-                "--overwr"
-                "--overwri"
-                "--overwrit"
-                "--overwrite"
-              ]
-            ];
-            reason = "Overwriting an existing path during trash restore is disabled for coding agents.";
-            alternatives = [ "Restore only when the original path does not exist." ];
-          }
-        ];
       };
     };
 

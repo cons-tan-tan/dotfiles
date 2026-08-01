@@ -1007,6 +1007,7 @@ let
               "rm -fR target"
               "rm -r -f target"
               "rm --force --recursive target"
+              "rm --rec --for target"
               "/bin/rm -fr target"
               "gh pr create --body \"$(rm -rf target)\""
               "cat <(rm -rf target)"
