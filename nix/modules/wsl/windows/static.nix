@@ -18,9 +18,14 @@ let
     "web-fetch.md.license"
   ];
 
-  rsyncExcludeArgs = lib.concatMapStringsSep " " (
-    f: "--exclude=${lib.escapeShellArg f}"
-  ) windowsExcludedRules;
+  # ax CLI はNix側だけに導入するため、command not foundになるSkillを
+  # Windows companionへ配らない。
+  windowsExcludedSkills = [ "ax/" ];
+
+  mkRsyncExcludeArgs =
+    values: lib.concatMapStringsSep " " (f: "--exclude=${lib.escapeShellArg f}") values;
+  ruleRsyncExcludeArgs = mkRsyncExcludeArgs windowsExcludedRules;
+  skillRsyncExcludeArgs = mkRsyncExcludeArgs windowsExcludedSkills;
 in
 {
   # linkGeneration の後に実行する: ~/.claude/skills と ~/.agents/skills は
@@ -37,7 +42,7 @@ in
       "${dotfilesDir}/agents/context/global.md" \
       "$WIN_CLAUDE/CLAUDE.md"
 
-    run ${pkgs.rsync}/bin/rsync -aL --delete --delete-excluded ${rsyncExcludeArgs} \
+    run ${pkgs.rsync}/bin/rsync -aL --delete --delete-excluded ${ruleRsyncExcludeArgs} \
       "${dotfilesDir}/agents/context/rules/" \
       "$WIN_CLAUDE/rules/"
 
@@ -47,11 +52,11 @@ in
         "$WIN_CLAUDE/$dir/"
     done
 
-    run ${pkgs.rsync}/bin/rsync -aL --delete \
+    run ${pkgs.rsync}/bin/rsync -aL --delete --delete-excluded ${skillRsyncExcludeArgs} \
       "$HOME/.claude/skills/" \
       "$WIN_CLAUDE/skills/"
 
-    run ${pkgs.rsync}/bin/rsync -aL --delete \
+    run ${pkgs.rsync}/bin/rsync -aL --delete --delete-excluded ${skillRsyncExcludeArgs} \
       "$HOME/.agents/skills/" \
       "$WIN_AGENTS/skills/"
   '';
