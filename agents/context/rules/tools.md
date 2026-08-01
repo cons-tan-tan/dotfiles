@@ -6,7 +6,6 @@ Use these tools instead of their standard alternatives:
 | ------- | -------- | -------------------- |
 | `rg`    | grep     | Fast search          |
 | `fd`    | find     | File finder          |
-| `bat`   | cat      | Syntax highlighting  |
 | `eza`   | ls       | Git-aware listing    |
 | `jq`    | -        | JSON processor       |
 | `trash` | rm       | Recoverable deletion |
