@@ -1,10 +1,12 @@
 {
   config,
+  inputs,
   lib,
   pkgs,
   ...
 }:
 let
+  ax = inputs.ax.packages.${pkgs.stdenv.hostPlatform.system}.ax;
   cliTools = import ../../lib/settings/cli-tools.nix;
   sharedCliPackages = map (tool: pkgs.${tool.nixpkgsAttr}) (
     builtins.filter (tool: tool.linux == "home-packages") cliTools
@@ -39,6 +41,7 @@ in
       gemini-cli
       github-copilot-cli
       ccusage
+      ax
       # Node.js
       # Zed remote が公式 glibc バイナリへフォールバックするのを避ける。
       nodejs

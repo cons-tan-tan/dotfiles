@@ -8,6 +8,7 @@
 }:
 let
   inherit (inputs)
+    ax
     ast-grep-skill
     agent-browser-skill
     agent-slack-skill
@@ -29,6 +30,10 @@ let
 in
 {
   dotfiles.agentSkills.externalSkills = {
+    ax = {
+      root = "${ax}/skills/ax";
+    };
+
     ast-grep = {
       root = "${ast-grep-skill}/ast-grep/skills/ast-grep";
       customization.frontmatter.description = "Performs syntax-aware structural code search when tasks require matching language constructs, nested relationships, or code patterns that plain-text search cannot express reliably.";

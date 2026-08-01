@@ -13,18 +13,19 @@ let
   };
 in
 {
-  testReadOnlyFetchWrappersStayAutoApproved = {
+  testConfiguredFetchCommandsStayAutoApproved = {
     expr = lib.sort builtins.lessThan (
       builtins.filter (
         permission:
         builtins.elem permission [
           "Bash(gh api-get *)"
           "Bash(curl-fetch *)"
+          "Bash(ax *)"
         ]
       ) settings.permissions.allow
     );
     expected = [
-      "Bash(curl-fetch *)"
+      "Bash(ax *)"
       "Bash(gh api-get *)"
     ];
   };

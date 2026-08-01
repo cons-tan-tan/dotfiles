@@ -1,7 +1,4 @@
 { pkgs, ... }:
 {
-  home.packages = [
-    pkgs.curl
-    pkgs.dotfilesPackages.curl-fetch
-  ];
+  home.packages = [ pkgs.curl ];
 }

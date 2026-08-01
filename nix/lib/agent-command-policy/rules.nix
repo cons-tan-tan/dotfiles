@@ -12,6 +12,8 @@ in
       bat = true;
       eza = true;
       jq = true;
+      # ax は書き込み系HTTP methodも扱うが、CLI全体をagentへ許可する方針。
+      ax = true;
       ast-grep = true;
       git = {
         clone = true;
@@ -43,7 +45,6 @@ in
         api-get = true;
       };
 
-      curl-fetch = true;
       trash = true;
       trash-put = true;
       trash-list = true;

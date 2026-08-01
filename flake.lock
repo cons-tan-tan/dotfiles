@@ -66,6 +66,30 @@
         "type": "github"
       }
     },
+    "ax": {
+      "inputs": {
+        "bun2nix": [
+          "bun2nix"
+        ],
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1785552410,
+        "narHash": "sha256-t9l8dJaHZCajzFgdJN4n9NjJeUQtRA7uQlESFK+8VhM=",
+        "owner": "yusukebe",
+        "repo": "ax",
+        "rev": "b4194c45b5c766f3fbd4b09d8f06676a928f0ccf",
+        "type": "github"
+      },
+      "original": {
+        "owner": "yusukebe",
+        "ref": "v0.1.23",
+        "repo": "ax",
+        "type": "github"
+      }
+    },
     "brew-api": {
       "flake": false,
       "locked": {
@@ -583,6 +607,7 @@
         "agent-slack-skill": "agent-slack-skill",
         "anthropic-skills": "anthropic-skills",
         "ast-grep-skill": "ast-grep-skill",
+        "ax": "ax",
         "brew-api": "brew-api",
         "brew-nix": "brew-nix",
         "bun2nix": "bun2nix",

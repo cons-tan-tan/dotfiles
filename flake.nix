@@ -44,6 +44,13 @@
       inputs.treefmt-nix.follows = "treefmt-nix";
     };
 
+    # CLI と skill は同じ input を version authority として使う。
+    ax = {
+      url = "github:yusukebe/ax/v0.1.23";
+      inputs.bun2nix.follows = "bun2nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     hunk = {
       url = "github:modem-dev/hunk";
       inputs.bun2nix.follows = "bun2nix";
