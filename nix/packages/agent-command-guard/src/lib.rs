@@ -3,6 +3,7 @@ pub mod error;
 pub mod option_scan;
 pub mod policy;
 pub mod protocol;
+mod redirection;
 pub mod shell;
 pub mod shellfirm_provider;
 

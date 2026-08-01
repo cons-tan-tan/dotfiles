@@ -1,4 +1,4 @@
-# 共有command policyのnative allowとguard policyへの非対称投影を確認する。
+# 単一command treeからnative allowと共通guardが一貫して生成されることを確認する。
 { lib }:
 let
   evalPolicy =
@@ -14,10 +14,15 @@ let
     in
     import ./compiler.nix {
       inherit lib;
-      inherit (policy) argv semantic shellfirm;
+      inherit (policy)
+        commands
+        shell
+        shellfirm
+        ;
     };
 
-  semanticLeaf = aliases: {
+  semanticCommand = aliases: {
+    decision = true;
     optionSyntax = {
       valueTaking = [ "-C" ];
       optionalEquals = [ "--color" ];
@@ -32,24 +37,23 @@ let
   };
 
   fixturePolicy = evalPolicy {
-    argv = {
+    commands = {
       lookup = {
         exact = true;
-        group = {
-          deep.path = true;
-          first = true;
-          second = true;
-        };
+        group.deep.path = true;
       };
       remove = false;
+      fd =
+        (semanticCommand [
+          "-x"
+          "--exec"
+        ])
+        // {
+          guidance = "Use the fixture.";
+        };
+      gh.pr.create = semanticCommand [ "--fill" ];
     };
-    semantic = {
-      fd = semanticLeaf [
-        "-x"
-        "--exec"
-      ];
-      gh.pr.create = semanticLeaf [ "--fill" ];
-    };
+    shell.redirection.emptyFile = false;
     shellfirm = {
       enabled = true;
       minimumSeverity = "High";
@@ -64,37 +68,35 @@ let
 
   actualPolicy = import ./default.nix { inherit lib; };
   markerNamePolicy = evalPolicy {
-    semantic.demo = {
-      deny.child = semanticLeaf [ "-x" ];
-      optionSyntax.child = semanticLeaf [ "-y" ];
+    commands.demo = {
+      deny.child = semanticCommand [ "-x" ];
+      optionSyntax.child = semanticCommand [ "-y" ];
     };
   };
 
   failsToCompile = module: !(builtins.tryEval (builtins.deepSeq (evalPolicy module) true)).success;
-
   failsUncheckedCompile =
     policy:
     !(builtins.tryEval (builtins.deepSeq (import ./compiler.nix ({ inherit lib; } // policy)) true))
     .success;
 in
 {
-  testOnlyTrueArgvLeavesProjectToNativeBackends = {
+  testOneCommandTerminalFeedsNativeAndSemanticBackends = {
     expr = {
-      claude = fixturePolicy.mkClaudePermissions { };
-      codexPrefixes = map (rule: rule.argvPrefix) fixturePolicy.prefixRules;
+      nativePrefixes = map (rule: rule.argvPrefix) fixturePolicy.prefixRules;
+      exact = fixturePolicy.guardPolicy.exact;
+      semanticPrefixes = map (rule: rule.commandPrefix) fixturePolicy.guardPolicy.semantic;
+      guidance = fixturePolicy.guidance;
       codexHasForbidden = lib.hasInfix ''decision = "forbidden"'' fixturePolicy.codexRulesContent;
     };
     expected = {
-      claude = {
-        allow = [
-          "Bash(lookup exact *)"
-          "Bash(lookup group deep path *)"
-          "Bash(lookup group first *)"
-          "Bash(lookup group second *)"
-        ];
-        deny = [ ];
-      };
-      codexPrefixes = [
+      nativePrefixes = [
+        [ "fd" ]
+        [
+          "gh"
+          "pr"
+          "create"
+        ]
         [
           "lookup"
           "exact"
@@ -105,76 +107,28 @@ in
           "deep"
           "path"
         ]
+      ];
+      exact = [
+        {
+          argvPrefix = [ "remove" ];
+          decision = "deny";
+          reason = "Forbidden by the shared agent command policy: remove.";
+        }
+      ];
+      semanticPrefixes = [
+        [ "fd" ]
         [
-          "lookup"
-          "group"
-          "first"
-        ]
-        [
-          "lookup"
-          "group"
-          "second"
+          "gh"
+          "pr"
+          "create"
         ]
       ];
+      guidance = [ "Use the fixture." ];
       codexHasForbidden = false;
     };
   };
 
-  testFalseArgvLeavesProjectOnlyToGuardExactDeny = {
-    expr = fixturePolicy.guardPolicy.exact;
-    expected = [
-      {
-        argvPrefix = [ "remove" ];
-        decision = "deny";
-        reason = "Forbidden by the shared agent command policy: remove.";
-      }
-    ];
-  };
-
-  testSemanticTreesFlattenToOneGenericShape = {
-    expr = fixturePolicy.guardPolicy.semantic;
-    expected = [
-      {
-        commandPrefix = [ "fd" ];
-        optionSyntax = {
-          valueTaking = [ "-C" ];
-          optionalEquals = [ "--color" ];
-        };
-        deny = [
-          {
-            optionGroups = [
-              [
-                "-x"
-                "--exec"
-              ]
-            ];
-            reason = "Blocked by the fixture.";
-            alternatives = [ "Use the safe fixture command." ];
-          }
-        ];
-      }
-      {
-        commandPrefix = [
-          "gh"
-          "pr"
-          "create"
-        ];
-        optionSyntax = {
-          valueTaking = [ "-C" ];
-          optionalEquals = [ "--color" ];
-        };
-        deny = [
-          {
-            optionGroups = [ [ "--fill" ] ];
-            reason = "Blocked by the fixture.";
-            alternatives = [ "Use the safe fixture command." ];
-          }
-        ];
-      }
-    ];
-  };
-
-  testSemanticMarkerNamesRemainUsableAsOrdinaryCommandTokens = {
+  testSemanticMarkerNamesRemainOrdinaryCommandTokens = {
     expr = map (rule: rule.commandPrefix) markerNamePolicy.guardPolicy.semantic;
     expected = [
       [
@@ -190,7 +144,7 @@ in
     ];
   };
 
-  testShellfirmSelectorPreservesMapsAndFlattensOnlyIndividualRules = {
+  testShellfirmSelectorPrecedenceDataIsPreserved = {
     expr = fixturePolicy.guardPolicy.shellfirm;
     expected = {
       enabled = true;
@@ -204,12 +158,14 @@ in
     };
   };
 
-  testGeneratedPolicyKeepsUnknownBehaviorVersioned = {
+  testGeneratedPolicyKeepsFailClosedBehaviorVersioned = {
     expr = {
       inherit (fixturePolicy.guardPolicy) schemaVersion unknown;
+      shell = fixturePolicy.guardPolicy.shell;
     };
     expected = {
-      schemaVersion = 1;
+      schemaVersion = 2;
+      shell.redirection.emptyFile = false;
       unknown = {
         parseError = "deny";
         dynamicExecutable = "deny";
@@ -219,88 +175,51 @@ in
     };
   };
 
-  testRepositoryPolicySelectsTheApprovedShellfirmSurface = {
+  testRepositoryPolicyKeepsRecoverableTrashBoundary = {
     expr = {
-      inherit (actualPolicy.guardPolicy.shellfirm) enabled minimumSeverity;
-      enabledCategories = builtins.attrNames (
-        lib.filterAttrs (_: decision: decision) actualPolicy.guardPolicy.shellfirm.categories
-      );
-      disabledNamespaces = builtins.attrNames (
-        lib.filterAttrs (_: decision: !decision) actualPolicy.guardPolicy.shellfirm.ruleNamespaces
-      );
-      individualRules = actualPolicy.guardPolicy.shellfirm.rules;
+      nativeTrash =
+        lib.all (prefix: lib.elem prefix (map (rule: rule.argvPrefix) actualPolicy.prefixRules))
+          [
+            [ "trash" ]
+            [ "trash-list" ]
+            [ "trash-put" ]
+            [ "trash-restore" ]
+          ];
+      exactDenied = map (rule: rule.argvPrefix) actualPolicy.guardPolicy.exact;
       semanticCommands = map (rule: rule.commandPrefix) actualPolicy.guardPolicy.semantic;
+      flushRule = actualPolicy.guardPolicy.shellfirm.rules."fs:flush_file_content";
     };
     expected = {
-      enabled = true;
-      minimumSeverity = "High";
-      enabledCategories = [
-        "aws"
-        "docker"
-        "fs"
-        "gcp"
-        "git"
-        "github"
-        "kubernetes"
-        "network"
-        "npm"
-        "shell"
+      nativeTrash = true;
+      exactDenied = [
+        [ "trash-empty" ]
+        [ "trash-rm" ]
       ];
-      disabledNamespaces = [
-        "fs-strict"
-        "git-strict"
-        "kubernetes-strict"
-      ];
-      individualRules = { };
       semanticCommands = [
         [ "fd" ]
         [ "rm" ]
+        [ "trash-restore" ]
       ];
+      flushRule = false;
     };
   };
 
-  testCompilerRejectsAnEmptyPolicy = {
-    expr = failsToCompile { };
-    expected = true;
-  };
-
-  testCompilerRejectsUnsafeArgvTokens = {
-    expr = map failsToCompile [
-      { argv."*" = true; }
-      { argv."FOO=bar" = true; }
-      { argv.safe."two words" = true; }
-    ];
-    expected = [
-      true
-      true
-      true
-    ];
-  };
-
-  testCompilerRejectsInvalidSemanticBoundaries = {
-    expr = map failsUncheckedCompile [
-      {
-        argv.safe = true;
-        semantic.demo = {
+  testCompilerRejectsInvalidCommandBoundaries = {
+    expr = [
+      (failsToCompile { commands."*" = true; })
+      (failsToCompile { commands.safe."two words" = true; })
+      (failsUncheckedCompile {
+        commands.demo = {
+          decision = true;
           optionSyntax = { };
           deny = [ ];
         };
-      }
-      {
-        argv.safe = true;
-        semantic.demo = semanticLeaf [
-          "-x"
-          "-x"
-        ];
-      }
-      {
-        argv.safe = true;
-        semantic.demo = semanticLeaf [ "--" ];
-      }
-      {
-        argv.safe = true;
-        semantic.demo = semanticLeaf [ ];
-      }
+      })
+      (failsUncheckedCompile {
+        commands.demo = (semanticCommand [ "-x" ]) // {
+          guidance = "";
+        };
+      })
     ];
     expected = [
       true
@@ -310,41 +229,15 @@ in
     ];
   };
 
-  testCompilerRejectsInvalidShellfirmBoundaries = {
-    expr = map failsUncheckedCompile [
-      {
-        argv.safe = true;
-        shellfirm = {
-          enabled = true;
-          minimumSeverity = "Extreme";
-          categories = { };
-          ruleNamespaces = { };
-          rules = { };
-        };
-      }
-      {
-        argv.safe = true;
-        shellfirm = {
-          enabled = true;
-          minimumSeverity = "High";
-          categories."bad:name" = true;
-          ruleNamespaces = { };
-          rules = { };
-        };
-      }
-      {
-        argv.safe = true;
-        shellfirm = {
-          enabled = true;
-          minimumSeverity = "High";
-          categories = { };
-          ruleNamespaces = { };
-          rules.git.force_push = "false";
-        };
-      }
+  testCompilerRejectsEmptyAndUnimplementedShellPolicies = {
+    expr = [
+      (failsToCompile { })
+      (failsUncheckedCompile {
+        commands.safe = true;
+        shell.process.substitution = true;
+      })
     ];
     expected = [
-      true
       true
       true
     ];

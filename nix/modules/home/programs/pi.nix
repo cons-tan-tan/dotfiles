@@ -1,5 +1,6 @@
 {
   config,
+  lib,
   pkgs,
   ...
 }:
@@ -17,6 +18,15 @@ let
     herdrSkillPath = "${pkgs.dotfilesPackages.herdr.agent.plugin}/skills/herdr";
   };
   herdrPiIntegration = pkgs.dotfilesPackages.herdr.integrations.pi;
+  commandPolicy = import ../../../lib/agent-command-policy { inherit lib; };
+  guardHook = import ../../../lib/agent-command-policy/mk-guard.nix {
+    inherit lib pkgs;
+    policy = commandPolicy.guardPolicy;
+  };
+  commandGuard = pkgs.replaceVars ../../../../pi/extensions/agent-command-guard.ts {
+    guardBin = lib.getExe guardHook.guard;
+    guardPolicy = guardHook.policyFile;
+  };
 
   managedSettings = {
     defaultProvider = models.pi.provider;
@@ -47,13 +57,11 @@ in
 {
   home.packages = [ pi ];
 
-  home.file.".pi/agent/AGENTS.md".source =
-    config.lib.file.mkOutOfStoreSymlink "${config.my.dotfilesDir}/claude/CLAUDE.md";
-
-  home.file.".pi/agent/package".source =
-    "${pkgs.pi}/lib/node_modules/@earendil-works/pi-coding-agent";
+  home.file.".pi/agent/package".source = "${pkgs.pi}/libexec/pi";
 
   home.file.".pi/agent/extensions/herdr-skill-loader.ts".source = herdrSkillLoader;
+
+  home.file.".pi/agent/extensions/agent-command-guard.ts".source = commandGuard;
 
   home.file.".pi/agent/extensions/herdr-agent-state.ts".source =
     "${herdrPiIntegration}/extensions/herdr-agent-state.ts";

@@ -43,10 +43,11 @@ impl Word {
 pub struct Redirect {
     operator: String,
     destination: Option<Word>,
+    source: Range<usize>,
 }
 
 impl Redirect {
-    fn projection(&self) -> Projection {
+    pub(crate) fn projection(&self) -> Projection {
         let mut projection = Projection::default();
         projection.push_piece(&self.operator, OriginRole::Operator, false);
         if let Some(destination) = &self.destination {
@@ -58,6 +59,14 @@ impl Redirect {
             );
         }
         projection
+    }
+
+    pub(crate) fn operator(&self) -> &str {
+        &self.operator
+    }
+
+    pub(crate) fn destination(&self) -> Option<&Word> {
+        self.destination.as_ref()
     }
 }
 
@@ -111,6 +120,10 @@ impl SimpleCommand {
     pub fn redirect_projections(&self) -> Vec<Projection> {
         self.redirects.iter().map(Redirect::projection).collect()
     }
+
+    pub(crate) fn redirects(&self) -> &[Redirect] {
+        &self.redirects
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -138,7 +151,8 @@ pub struct ParsedShell {
     pub commands: Vec<SimpleCommand>,
     pub pipelines: Vec<Pipeline>,
     pub functions: Vec<FunctionDefinition>,
-    pub standalone_redirects: Vec<Projection>,
+    pub standalone_redirects: Vec<Redirect>,
+    pub redirect_projections: Vec<Projection>,
 }
 
 #[derive(Default)]
@@ -147,7 +161,8 @@ struct CollectedShell {
     commands: Vec<SimpleCommand>,
     functions: Vec<FunctionDefinition>,
     pipelines: Vec<Pipeline>,
-    standalone_redirects: Vec<Projection>,
+    standalone_redirects: Vec<Redirect>,
+    redirect_projections: Vec<Projection>,
 }
 
 #[derive(Debug, Clone)]
@@ -269,6 +284,7 @@ pub fn parse(source: &str) -> Result<ParsedShell> {
         functions: collected.functions,
         pipelines: collected.pipelines,
         standalone_redirects: collected.standalone_redirects,
+        redirect_projections: collected.redirect_projections,
     })
 }
 
@@ -283,12 +299,23 @@ fn walk(
     }
     if node.kind() == "redirected_statement" && !inside_function {
         let mut cursor = node.walk();
-        for redirect in node.children_by_field_name("redirect", &mut cursor) {
-            if redirect.kind() == "file_redirect" {
-                collected
-                    .standalone_redirects
-                    .push(extract_redirect(redirect, source)?.projection());
+        let redirects = node
+            .children_by_field_name("redirect", &mut cursor)
+            .filter(|redirect| redirect.kind() == "file_redirect")
+            .map(|redirect| extract_redirect(redirect, source))
+            .collect::<Result<Vec<_>>>()?;
+        match node.child_by_field_name("body") {
+            Some(body) if matches!(body.kind(), "command" | "declaration_command") => {
+                let mut command = extract_simple_command(body, source)?;
+                let mut redirects = redirects;
+                associate_named_descriptors(&mut command, &mut redirects, source);
+                command.redirects.extend(redirects);
+                collected.commands.push(command);
             }
+            Some(_) => collected
+                .redirect_projections
+                .extend(redirects.iter().map(Redirect::projection)),
+            None => collected.standalone_redirects.extend(redirects),
         }
     }
     let inside_function = inside_function || node.kind() == "function_definition";
@@ -297,7 +324,12 @@ fn walk(
             .assignment_names
             .push(extract_assignment_name(node, source)?);
     }
-    if matches!(node.kind(), "command" | "declaration_command") && !inside_function {
+    if matches!(node.kind(), "command" | "declaration_command")
+        && !inside_function
+        && node
+            .parent()
+            .is_none_or(|parent| parent.kind() != "redirected_statement")
+    {
         collected
             .commands
             .push(extract_simple_command(node, source)?);
@@ -406,10 +438,48 @@ fn extract_redirect(node: Node<'_>, source: &[u8]) -> Result<Redirect> {
         .to_owned();
     Ok(Redirect {
         operator,
+        source: node.byte_range(),
         destination: destination
             .map(|value| extract_word(value, source))
             .transpose()?,
     })
+}
+
+fn associate_named_descriptors(
+    command: &mut SimpleCommand,
+    redirects: &mut [Redirect],
+    source: &[u8],
+) {
+    let mut descriptor_indices = Vec::new();
+    for redirect in redirects {
+        let Some((index, descriptor)) = command.words.iter().enumerate().find(|(_, word)| {
+            word.source.end == redirect.source.start
+                && std::str::from_utf8(&source[word.source.clone()]).is_ok_and(is_named_descriptor)
+        }) else {
+            continue;
+        };
+        let raw = std::str::from_utf8(&source[descriptor.source.clone()])
+            .expect("the descriptor was already checked as UTF-8");
+        redirect.operator = format!("{raw}{}", redirect.operator);
+        descriptor_indices.push(index);
+    }
+    descriptor_indices.sort_unstable();
+    descriptor_indices.dedup();
+    for index in descriptor_indices.into_iter().rev() {
+        command.words.remove(index);
+    }
+}
+
+fn is_named_descriptor(value: &str) -> bool {
+    value
+        .strip_prefix('{')
+        .and_then(|value| value.strip_suffix('}'))
+        .is_some_and(|name| {
+            !name.is_empty()
+                && name
+                    .chars()
+                    .all(|character| character.is_ascii_alphanumeric() || character == '_')
+        })
 }
 
 fn extract_pipeline(node: Node<'_>, source: &[u8]) -> Result<Option<Pipeline>> {
@@ -462,7 +532,7 @@ fn extract_word(node: Node<'_>, source: &[u8]) -> Result<Word> {
     let bytes = &source[node.byte_range()];
     let raw = std::str::from_utf8(bytes)
         .map_err(|_| GuardError::Parser("shell command is not valid UTF-8".to_owned()))?;
-    let value = if contains_dynamic(node) {
+    let value = if contains_dynamic(node) || contains_unquoted_shell_expansion(raw) {
         WordValue::Dynamic
     } else {
         WordValue::Static(decode_shell_literal(raw)?)
@@ -477,8 +547,10 @@ fn contains_dynamic(node: Node<'_>) -> bool {
     if matches!(
         node.kind(),
         "arithmetic_expansion"
+            | "brace_expression"
             | "command_substitution"
             | "expansion"
+            | "extglob_pattern"
             | "process_substitution"
             | "simple_expansion"
     ) {
@@ -486,6 +558,66 @@ fn contains_dynamic(node: Node<'_>) -> bool {
     }
     let mut cursor = node.walk();
     node.named_children(&mut cursor).any(contains_dynamic)
+}
+
+fn contains_unquoted_shell_expansion(raw: &str) -> bool {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum State {
+        Unquoted,
+        Single,
+        Double,
+        Ansi,
+    }
+
+    let chars = raw.chars().collect::<Vec<_>>();
+    let mut state = State::Unquoted;
+    let mut bracket_start = None;
+    let mut brace_starts = Vec::new();
+    let mut index = 0;
+    while index < chars.len() {
+        let current = chars[index];
+        match state {
+            State::Unquoted => match current {
+                '\'' => state = State::Single,
+                '"' => state = State::Double,
+                '$' if chars.get(index + 1) == Some(&'\'') => {
+                    state = State::Ansi;
+                    index += 1;
+                }
+                '\\' => index += 1,
+                '*' | '?' => return true,
+                '[' => bracket_start = Some(index),
+                ']' if bracket_start.is_some_and(|start| index > start + 1) => return true,
+                '{' => brace_starts.push(index),
+                '}' => {
+                    if let Some(start) = brace_starts.pop() {
+                        let body = &chars[start + 1..index];
+                        if body.contains(&',') || body.windows(2).any(|pair| pair == ['.', '.']) {
+                            return true;
+                        }
+                    }
+                }
+                _ => {}
+            },
+            State::Single => {
+                if current == '\'' {
+                    state = State::Unquoted;
+                }
+            }
+            State::Double => match current {
+                '"' => state = State::Unquoted,
+                '\\' => index += 1,
+                _ => {}
+            },
+            State::Ansi => match current {
+                '\'' => state = State::Unquoted,
+                '\\' => index += 1,
+                _ => {}
+            },
+        }
+        index += 1;
+    }
+    false
 }
 
 fn decode_shell_literal(raw: &str) -> Result<String> {
@@ -707,10 +839,44 @@ mod tests {
     }
 
     #[test]
+    fn treats_brace_and_unquoted_pathname_expansion_as_dynamic() {
+        for source in ["r{m..m} target", "trash-empt? 7"] {
+            let parsed = parse(source).unwrap();
+            assert_eq!(parsed.commands[0].words[0].static_value(), None, "{source}");
+        }
+        for source in ["'trash-empt?' 7", "\"r[m]\" target"] {
+            let parsed = parse(source).unwrap();
+            assert!(
+                parsed.commands[0].words[0].static_value().is_some(),
+                "{source}"
+            );
+        }
+        for raw in ["to[ol]", "r*", "trash-empt?", "r{m..m}", "r{m,{x}}"] {
+            assert!(contains_unquoted_shell_expansion(raw), "{raw}");
+        }
+        for raw in ["[", "'to[ol]'", "\"r*\"", "trash\\-empt\\?", "r\\{m..m\\}"] {
+            assert!(!contains_unquoted_shell_expansion(raw), "{raw}");
+        }
+    }
+
+    #[test]
     fn collects_standalone_redirects() {
         let parsed = parse("> /etc/hosts").unwrap();
         assert_eq!(parsed.standalone_redirects.len(), 1);
-        assert_eq!(parsed.standalone_redirects[0].text(), "> /etc/hosts");
+        assert_eq!(
+            parsed.standalone_redirects[0].projection().text(),
+            "> /etc/hosts"
+        );
+    }
+
+    #[test]
+    fn associates_command_redirections_with_their_command() {
+        let parsed = parse(": > existing; true 2> existing; : {fd}> existing").unwrap();
+        assert_eq!(parsed.commands.len(), 3);
+        assert_eq!(parsed.commands[0].redirects[0].operator(), ">");
+        assert_eq!(parsed.commands[1].redirects[0].operator(), "2>");
+        assert_eq!(parsed.commands[2].redirects[0].operator(), "{fd}>");
+        assert_eq!(parsed.commands[2].static_argv(), [Some(":")]);
     }
 
     #[test]

@@ -2,11 +2,13 @@
 {
   imports = [
     inputs.nix-index-database.homeModules.default
+    ./agent-guidance
     ./agent-skills
     ./hcom.nix
     ./packages.nix
     ./programs
     ./registries.nix
+    ./trash.nix
   ];
 
   home = {

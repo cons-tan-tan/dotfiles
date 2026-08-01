@@ -11,5 +11,9 @@ let
 in
 import ./compiler.nix {
   inherit lib;
-  inherit (policy) argv semantic shellfirm;
+  inherit (policy)
+    commands
+    shell
+    shellfirm
+    ;
 }

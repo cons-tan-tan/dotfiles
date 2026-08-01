@@ -1,8 +1,8 @@
 # agent非依存の再帰command policyをnative allowと共通guardへ投影する。
 {
   lib,
-  argv,
-  semantic ? { },
+  commands,
+  shell ? { },
   shellfirm ? {
     enabled = false;
     minimumSeverity = "High";
@@ -24,7 +24,7 @@ let
   ];
 
   isUnique = values: builtins.length values == builtins.length (lib.unique values);
-  isNonEmptyString = value: builtins.isString value && value != "";
+  isNonBlankString = value: builtins.isString value && builtins.match "^[[:space:]]*$" value == null;
   isSelectorToken = value: value != "" && !lib.hasInfix ":" value;
   hasOnlyAttrs = allowed: value: lib.all (name: lib.elem name allowed) (builtins.attrNames value);
 
@@ -33,16 +33,23 @@ let
     allowed: subject:
     "${if allowed then "Allowed" else "Forbidden"} by the shared agent command policy: ${subject}.";
 
-  flattenArgvTree =
+  mkPrefixRule = prefix: allowed: {
+    argvPrefix = prefix;
+    inherit allowed;
+    decision = decisionFor allowed;
+    justification = justificationFor allowed (lib.escapeShellArgs prefix);
+  };
+
+  flattenCommandTree =
     prefix: tree:
     if !builtins.isAttrs tree then
-      throw "agent command policy argv branch must be an attribute set"
+      throw "agent command policy command branch must be an attribute set"
     else
       let
         tokens = builtins.attrNames tree;
       in
       if tokens == [ ] then
-        throw "agent command policy argv branch must not be empty: ${builtins.toJSON prefix}"
+        throw "agent command policy command branch must not be empty: ${builtins.toJSON prefix}"
       else
         lib.concatMap (
           token:
@@ -52,23 +59,54 @@ let
             tokenPattern = if prefix == [ ] then executableTokenPattern else argvTokenPattern;
           in
           if builtins.match tokenPattern token == null then
-            throw "agent command policy has an invalid argv token: ${builtins.toJSON token}"
+            throw "agent command policy has an invalid command token: ${builtins.toJSON token}"
           else if builtins.isBool value then
             [
               {
-                argvPrefix = nextPrefix;
-                allowed = value;
-                decision = decisionFor value;
-                justification = justificationFor value (lib.escapeShellArgs nextPrefix);
+                prefixRule = mkPrefixRule nextPrefix value;
+                semanticRule = null;
               }
             ]
+          else if builtins.isAttrs value && value ? decision then
+            if
+              !builtins.isBool value.decision
+              || !hasOnlyAttrs [
+                "decision"
+                "deny"
+                "guidance"
+                "optionSyntax"
+              ] value
+              || !(value ? deny)
+              || !(value ? optionSyntax)
+              || !builtins.isList value.deny
+              || value.deny == [ ]
+              || !builtins.isAttrs value.optionSyntax
+            then
+              throw "agent command policy command terminal is invalid: ${builtins.toJSON nextPrefix}"
+            else if (value ? guidance) && !isNonBlankString value.guidance then
+              throw "agent command policy command guidance must be non-empty: ${builtins.toJSON nextPrefix}"
+            else
+              [
+                {
+                  prefixRule = mkPrefixRule nextPrefix value.decision;
+                  semanticRule = {
+                    commandPrefix = nextPrefix;
+                    optionSyntax = normalizeOptionSyntax nextPrefix value.optionSyntax;
+                    deny = map (normalizeDenyRule nextPrefix) value.deny;
+                  }
+                  // lib.optionalAttrs (value ? guidance) {
+                    inherit (value) guidance;
+                  };
+                }
+              ]
           else if builtins.isAttrs value then
-            flattenArgvTree nextPrefix value
+            flattenCommandTree nextPrefix value
           else
-            throw "agent command policy argv leaves must be boolean: ${builtins.toJSON nextPrefix}"
+            throw "agent command policy command leaves must be boolean or semantic terminals: ${builtins.toJSON nextPrefix}"
         ) tokens;
 
-  prefixRules = if argv == { } then [ ] else flattenArgvTree [ ] argv;
+  commandEntries = if commands == { } then [ ] else flattenCommandTree [ ] commands;
+  prefixRules = map (entry: entry.prefixRule) commandEntries;
   nativePrefixRules = builtins.filter (rule: rule.allowed) prefixRules;
   deniedPrefixRules = builtins.filter (rule: !rule.allowed) prefixRules;
 
@@ -145,13 +183,13 @@ let
       in
       if !isUnique aliases then
         throw "agent command policy semantic deny option aliases must be unique: ${builtins.toJSON commandPrefix}"
-      else if !(rule ? reason) || !isNonEmptyString rule.reason then
+      else if !(rule ? reason) || !isNonBlankString rule.reason then
         throw "agent command policy semantic deny reason must be non-empty: ${builtins.toJSON commandPrefix}"
       else if
         !(rule ? alternatives)
         || !builtins.isList rule.alternatives
         || rule.alternatives == [ ]
-        || !lib.all isNonEmptyString rule.alternatives
+        || !lib.all isNonBlankString rule.alternatives
         || !isUnique rule.alternatives
       then
         throw "agent command policy semantic deny alternatives are invalid: ${builtins.toJSON commandPrefix}"
@@ -161,44 +199,12 @@ let
           inherit (rule) alternatives reason;
         };
 
-  flattenSemanticTree =
-    prefix: tree:
-    if !builtins.isAttrs tree then
-      throw "agent command policy semantic branch must be an attribute set"
-    else if
-      builtins.attrNames tree == [
-        "deny"
-        "optionSyntax"
-      ]
-      && builtins.isList tree.deny
-      && builtins.isAttrs tree.optionSyntax
-    then
-      if prefix == [ ] || tree.deny == [ ] then
-        throw "agent command policy semantic terminal is invalid: ${builtins.toJSON prefix}"
-      else
-        [
-          {
-            commandPrefix = prefix;
-            optionSyntax = normalizeOptionSyntax prefix tree.optionSyntax;
-            deny = map (normalizeDenyRule prefix) tree.deny;
-          }
-        ]
-    else
-      let
-        tokens = builtins.attrNames tree;
-      in
-      if prefix != [ ] && tokens == [ ] then
-        throw "agent command policy semantic branch must not be empty: ${builtins.toJSON prefix}"
-      else
-        lib.concatMap (
-          token:
-          if builtins.match executableTokenPattern token == null then
-            throw "agent command policy has an invalid semantic command token: ${builtins.toJSON token}"
-          else
-            flattenSemanticTree (prefix ++ [ token ]) tree.${token}
-        ) tokens;
+  semanticRules = lib.filter (rule: rule != null) (map (entry: entry.semanticRule) commandEntries);
+  guidance = lib.unique (
+    lib.filter (value: value != null) (map (rule: rule.guidance or null) semanticRules)
+  );
 
-  semanticRules = flattenSemanticTree [ ] semantic;
+  shellPolicy = (import ./shell-policy-schema.nix { inherit lib; }).validate shell;
 
   checkSelectorMap =
     label: values:
@@ -235,12 +241,15 @@ let
           if !isSelectorToken token then
             throw "agent command policy has an invalid Shellfirm rule token: ${builtins.toJSON token}"
           else if builtins.isBool value then
-            [
-              {
-                name = lib.concatStringsSep ":" nextPrefix;
-                inherit value;
-              }
-            ]
+            if builtins.length nextPrefix < 2 then
+              throw "agent command policy Shellfirm rules require namespace and rule tokens"
+            else
+              [
+                {
+                  name = lib.concatStringsSep ":" nextPrefix;
+                  inherit value;
+                }
+              ]
           else if builtins.isAttrs value then
             flattenShellfirmRules nextPrefix value
           else
@@ -282,10 +291,12 @@ let
       || lib.any (decision: decision) (builtins.attrValues shellfirmPolicy.rules)
     );
 
-  hasDecision = prefixRules != [ ] || semanticRules != [ ] || shellfirmHasPositiveSelector;
+  hasDecision =
+    prefixRules != [ ] || semanticRules != [ ] || shellPolicy != { } || shellfirmHasPositiveSelector;
   checkedPolicy = builtins.deepSeq [
     prefixRules
     semanticRules
+    shellPolicy
     shellfirmPolicy
   ] (if !hasDecision then throw "agent command policy must define at least one decision" else true);
 
@@ -336,13 +347,14 @@ let
   '';
 
   guardPolicy = {
-    schemaVersion = 1;
+    schemaVersion = 2;
     exact = map (rule: {
       argvPrefix = rule.argvPrefix;
       decision = "deny";
       reason = rule.justification;
     }) deniedPrefixRules;
     semantic = semanticRules;
+    shell = shellPolicy;
     shellfirm = shellfirmPolicy;
     unknown = {
       parseError = "deny";
@@ -357,6 +369,7 @@ assert checkedPolicy;
   inherit
     codexAllowedExecutables
     codexRulesContent
+    guidance
     guardPolicy
     mkClaudePermissions
     ;

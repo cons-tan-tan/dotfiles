@@ -1,4 +1,4 @@
-# agent-command-policy moduleが再帰treeをmergeし、不正なshapeを拒否することを確認する。
+# command policy moduleのmerge境界と不正なshapeの拒否を確認する。
 { lib }:
 let
   eval =
@@ -16,35 +16,30 @@ let
     alternatives = [ "Use the safe fixture command." ];
   };
 
+  semanticCommand = option: {
+    decision = true;
+    optionSyntax = {
+      valueTaking = [ "-C" ];
+      optionalEquals = [ ];
+    };
+    deny = [ (denyRule option) ];
+  };
+
   evaluated = eval [
     {
       agentCommandPolicy = {
-        argv.gh.issue.list = true;
-        semantic.fd = {
-          optionSyntax = {
-            valueTaking = [ "-C" ];
-            optionalEquals = [ ];
-          };
-          deny = [ (denyRule "-x") ];
-        };
-        shellfirm = {
-          categories.git = true;
-          ruleNamespaces.git-strict = false;
-        };
+        commands.gh.issue.list = true;
+        commands.fd = semanticCommand "-x";
+        shell.redirection.emptyFile = false;
+        shellfirm.categories.git = true;
       };
     }
     {
       agentCommandPolicy = {
-        argv.gh.pr.view = true;
-        semantic.gh.pr.create = {
-          optionSyntax = {
-            valueTaking = [ ];
-            optionalEquals = [ ];
-          };
-          deny = [ (denyRule "--fill") ];
-        };
+        commands.gh.pr.view = true;
         shellfirm = {
           categories.fs = true;
+          ruleNamespaces.git-strict = false;
           rules.git.force_push = false;
         };
       };
@@ -52,39 +47,20 @@ let
   ];
 in
 {
-  testCommandPolicyMergesRecursiveBranches = {
-    expr = evaluated.config.agentCommandPolicy;
+  testCommandPolicyMergesIndependentRecursiveBranches = {
+    expr = {
+      inherit (evaluated.config.agentCommandPolicy.commands.gh) issue pr;
+      fdDecision = evaluated.config.agentCommandPolicy.commands.fd.decision;
+      categories = builtins.attrNames evaluated.config.agentCommandPolicy.shellfirm.categories;
+    };
     expected = {
-      argv.gh = {
-        issue.list = true;
-        pr.view = true;
-      };
-      semantic = {
-        fd = {
-          optionSyntax = {
-            valueTaking = [ "-C" ];
-            optionalEquals = [ ];
-          };
-          deny = [ (denyRule "-x") ];
-        };
-        gh.pr.create = {
-          optionSyntax = {
-            valueTaking = [ ];
-            optionalEquals = [ ];
-          };
-          deny = [ (denyRule "--fill") ];
-        };
-      };
-      shellfirm = {
-        enabled = false;
-        minimumSeverity = "High";
-        categories = {
-          fs = true;
-          git = true;
-        };
-        ruleNamespaces.git-strict = false;
-        rules.git.force_push = false;
-      };
+      issue.list = true;
+      pr.view = true;
+      fdDecision = true;
+      categories = [
+        "fs"
+        "git"
+      ];
     };
   };
 
@@ -95,73 +71,63 @@ in
     expected = true;
   };
 
-  testCommandPolicyRejectsNonBooleanArgvLeaves = {
-    expr = failsToEvaluate [
-      { agentCommandPolicy.argv.demo = "allow"; }
-    ];
-    expected = true;
-  };
-
-  testCommandPolicyRejectsSemanticTerminalBranchMixing = {
-    expr = failsToEvaluate [
-      {
-        agentCommandPolicy.semantic.demo = {
-          optionSyntax = {
-            valueTaking = [ ];
-            optionalEquals = [ ];
+  testCommandPolicyRejectsInvalidCommandLeavesAndTerminals = {
+    expr = map failsToEvaluate [
+      [ { agentCommandPolicy.commands.demo = "allow"; } ]
+      [ { agentCommandPolicy.commands.demo = { }; } ]
+      [ { agentCommandPolicy.commands.demo.decision = true; } ]
+      [
+        {
+          agentCommandPolicy.commands.demo = (semanticCommand "-x") // {
+            decision = "allow";
           };
-          deny = [ (denyRule "-x") ];
-          child = { };
-        };
-      }
-    ];
-    expected = true;
-  };
-
-  testCommandPolicyRejectsInvalidSemanticRules = {
-    expr =
-      map
-        (
-          semantic:
-          failsToEvaluate [
-            { agentCommandPolicy.semantic.demo = semantic; }
-          ]
-        )
-        [
-          {
-            optionSyntax = { };
-            deny = [ ];
-          }
-          {
-            optionSyntax.valueTaking = [ "--" ];
-            deny = [ (denyRule "-x") ];
-          }
-          {
-            optionSyntax.valueTaking = [ ];
-            deny = [ (denyRule "-xy") ];
-          }
-          {
-            optionSyntax.valueTaking = [ ];
+        }
+      ]
+      [
+        {
+          agentCommandPolicy.commands.demo = (semanticCommand "-x") // {
             deny = [
               {
                 when.options.all = [ [ "-x" ] ];
-                reason = "";
+                reason = "   ";
                 alternatives = [ "safe" ];
               }
             ];
-          }
-          {
-            optionSyntax.valueTaking = [ ];
-            deny = [
-              {
-                when.options.all = [ [ "-x" ] ];
-                reason = "reason";
-                alternatives = [ ];
-              }
-            ];
-          }
-        ];
+          };
+        }
+      ]
+      [
+        {
+          agentCommandPolicy.commands.demo = (semanticCommand "-x") // {
+            guidance = "   ";
+          };
+        }
+      ]
+      [
+        {
+          agentCommandPolicy.commands.demo = (semanticCommand "-x") // {
+            child = true;
+          };
+        }
+      ]
+      [
+        {
+          agentCommandPolicy.commands.demo = (semanticCommand "-x") // {
+            deny = [ ];
+          };
+        }
+      ]
+      [
+        {
+          agentCommandPolicy.commands.demo = (semanticCommand "--");
+        }
+      ]
+    ];
     expected = [
+      true
+      true
+      true
+      true
       true
       true
       true
@@ -171,24 +137,16 @@ in
   };
 
   testCommandPolicyRejectsInvalidShellfirmSelectors = {
-    expr = [
-      (failsToEvaluate [
-        { agentCommandPolicy.shellfirm.minimumSeverity = "Extreme"; }
-      ])
-      (failsToEvaluate [
-        { agentCommandPolicy.shellfirm.categories.git = "true"; }
-      ])
-      (failsToEvaluate [
-        { agentCommandPolicy.shellfirm.ruleNamespaces."bad:name" = false; }
-      ])
-      (failsToEvaluate [
-        { agentCommandPolicy.shellfirm.rules.git.force_push = "false"; }
-      ])
-      (failsToEvaluate [
-        { agentCommandPolicy.shellfirm.rules.git = { }; }
-      ])
+    expr = map failsToEvaluate [
+      [ { agentCommandPolicy.shellfirm.minimumSeverity = "Extreme"; } ]
+      [ { agentCommandPolicy.shellfirm.categories.git = "true"; } ]
+      [ { agentCommandPolicy.shellfirm.ruleNamespaces."bad:name" = false; } ]
+      [ { agentCommandPolicy.shellfirm.rules.git.force_push = "false"; } ]
+      [ { agentCommandPolicy.shellfirm.rules.git = { }; } ]
+      [ { agentCommandPolicy.shellfirm.rules.force_push = false; } ]
     ];
     expected = [
+      true
       true
       true
       true
@@ -197,16 +155,34 @@ in
     ];
   };
 
+  testCommandPolicyRejectsUnimplementedShellLeaves = {
+    expr = map failsToEvaluate [
+      [ { agentCommandPolicy.shell.redirection = { }; } ]
+      [ { agentCommandPolicy.shell.redirection.emptyFile = "false"; } ]
+      [ { agentCommandPolicy.shell.process.substitution = true; } ]
+      [
+        { agentCommandPolicy.shell.redirection = false; }
+        { agentCommandPolicy.shell.redirection.emptyFile = false; }
+      ]
+    ];
+    expected = [
+      true
+      true
+      true
+      true
+    ];
+  };
+
   testCommandPolicyRejectsLeafBranchConflicts = {
-    expr = [
-      (failsToEvaluate [
-        { agentCommandPolicy.argv.tool = true; }
-        { agentCommandPolicy.argv.tool.safe = true; }
-      ])
-      (failsToEvaluate [
+    expr = map failsToEvaluate [
+      [
+        { agentCommandPolicy.commands.tool = true; }
+        { agentCommandPolicy.commands.tool.safe = true; }
+      ]
+      [
         { agentCommandPolicy.shellfirm.rules.git = true; }
         { agentCommandPolicy.shellfirm.rules.git.force_push = false; }
-      ])
+      ]
     ];
     expected = [
       true

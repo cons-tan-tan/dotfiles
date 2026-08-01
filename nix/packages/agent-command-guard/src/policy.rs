@@ -15,6 +15,8 @@ pub struct Policy {
     pub schema_version: u32,
     pub exact: Vec<ExactRule>,
     pub semantic: Vec<SemanticRule>,
+    #[serde(default)]
+    pub shell: ShellPolicy,
     pub shellfirm: ShellfirmPolicy,
     pub unknown: UnknownPolicy,
 }
@@ -31,8 +33,33 @@ pub struct ExactRule {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SemanticRule {
     pub command_prefix: Vec<String>,
+    pub guidance: Option<String>,
     pub option_syntax: OptionSyntax,
     pub deny: Vec<SemanticDenyRule>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ShellPolicy {
+    #[serde(default)]
+    pub redirection: RedirectionPolicy,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RedirectionPolicy {
+    #[serde(default = "default_true")]
+    pub empty_file: bool,
+}
+
+impl Default for RedirectionPolicy {
+    fn default() -> Self {
+        Self { empty_file: true }
+    }
+}
+
+const fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -81,7 +108,7 @@ impl Policy {
     }
 
     pub fn validate_structure(&self) -> Result<()> {
-        if self.schema_version != 1 {
+        if self.schema_version != 2 {
             return Err(GuardError::Policy(format!(
                 "unsupported schemaVersion {}",
                 self.schema_version
@@ -123,6 +150,16 @@ impl Policy {
                 ));
             }
             validate_options(rule)?;
+            if rule
+                .guidance
+                .as_deref()
+                .is_some_and(|guidance| guidance.trim().is_empty())
+            {
+                return Err(GuardError::Policy(format!(
+                    "semantic rule {:?} has empty guidance",
+                    rule.command_prefix
+                )));
+            }
         }
 
         validate_selector_tokens("category", self.shellfirm.categories.keys())?;
@@ -246,22 +283,78 @@ fn validate_selector_tokens<'a>(
 
 #[cfg(test)]
 mod tests {
+    use serde_json::{Value, json};
+
     use super::*;
+
+    fn policy_json() -> Value {
+        json!({
+            "schemaVersion": 2,
+            "exact": [],
+            "semantic": [{
+                "commandPrefix": ["fd"],
+                "optionSyntax": {"valueTaking": [], "optionalEquals": []},
+                "deny": [{
+                    "optionGroups": [["-x"]],
+                    "reason": "no",
+                    "alternatives": ["safe"]
+                }]
+            }],
+            "shell": {"redirection": {"emptyFile": true}},
+            "shellfirm": {
+                "enabled": false,
+                "minimumSeverity": "High",
+                "categories": {},
+                "ruleNamespaces": {},
+                "rules": {}
+            },
+            "unknown": {
+                "parseError": "deny",
+                "dynamicExecutable": "deny",
+                "dynamicRelevantOption": "deny",
+                "maxDecodeDepth": 8
+            }
+        })
+    }
+
+    fn deserialize(value: Value) -> Policy {
+        serde_json::from_value(value).unwrap()
+    }
 
     #[test]
     fn rejects_empty_option_groups() {
-        let json = r#"{
-          "schemaVersion":1,
-          "exact":[],
-          "semantic":[{
-            "commandPrefix":["fd"],
-            "optionSyntax":{"valueTaking":[],"optionalEquals":[]},
-            "deny":[{"optionGroups":[[]],"reason":"no","alternatives":["safe"]}]
-          }],
-          "shellfirm":{"enabled":false,"minimumSeverity":"High","categories":{},"ruleNamespaces":{},"rules":{}},
-          "unknown":{"parseError":"deny","dynamicExecutable":"deny","dynamicRelevantOption":"deny","maxDecodeDepth":8}
-        }"#;
-        let policy: Policy = serde_json::from_str(json).unwrap();
+        let mut value = policy_json();
+        value["semantic"][0]["deny"][0]["optionGroups"] = json!([[]]);
+        let policy = deserialize(value);
         assert!(policy.validate_structure().is_err());
+    }
+
+    #[test]
+    fn absent_shell_policy_defaults_to_allow() {
+        let mut value = policy_json();
+        value.as_object_mut().unwrap().remove("shell");
+        let policy = deserialize(value);
+        assert!(policy.shell.redirection.empty_file);
+        assert!(policy.validate_structure().is_ok());
+    }
+
+    #[test]
+    fn rejects_unsupported_schema_versions_and_blank_guidance() {
+        for version in [1, 3] {
+            let mut value = policy_json();
+            value["schemaVersion"] = json!(version);
+            assert!(deserialize(value).validate_structure().is_err());
+        }
+
+        let mut value = policy_json();
+        value["semantic"][0]["guidance"] = json!("   ");
+        assert!(deserialize(value).validate_structure().is_err());
+    }
+
+    #[test]
+    fn rejects_unknown_shell_fields_during_deserialization() {
+        let mut value = policy_json();
+        value["shell"]["redirection"]["future"] = json!(false);
+        assert!(serde_json::from_value::<Policy>(value).is_err());
     }
 }

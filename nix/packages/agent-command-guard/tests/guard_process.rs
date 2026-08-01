@@ -10,15 +10,28 @@ use tempfile::TempDir;
 
 fn policy_json() -> Value {
     json!({
-        "schemaVersion": 1,
-        "exact": [{
-            "argvPrefix": ["danger"],
-            "decision": "deny",
-            "reason": "The exact test command is denied."
-        }],
+        "schemaVersion": 2,
+        "exact": [
+            {
+                "argvPrefix": ["danger"],
+                "decision": "deny",
+                "reason": "The exact test command is denied."
+            },
+            {
+                "argvPrefix": ["trash-empty"],
+                "decision": "deny",
+                "reason": "trash-empty is denied."
+            },
+            {
+                "argvPrefix": ["trash-rm"],
+                "decision": "deny",
+                "reason": "trash-rm is denied."
+            }
+        ],
         "semantic": [
             {
                 "commandPrefix": ["rm"],
+                "guidance": "Use `trash` instead of `rm`.",
                 "optionSyntax": {"valueTaking": [], "optionalEquals": []},
                 "deny": [{
                     "optionGroups": [
@@ -40,8 +53,32 @@ fn policy_json() -> Value {
                     "reason": "fd execution options are disabled.",
                     "alternatives": ["List paths before running a command."]
                 }]
+            },
+            {
+                "commandPrefix": ["trash-restore"],
+                "optionSyntax": {
+                    "valueTaking": [
+                        "--p", "--pr", "--pri", "--prin", "--print", "--print-",
+                        "--print-c", "--print-co", "--print-com", "--print-comp",
+                        "--print-compl", "--print-comple", "--print-complet",
+                        "--print-completi", "--print-completio", "--print-completion",
+                        "--s", "--so", "--sor", "--sort", "--t", "--tr", "--tra",
+                        "--tras", "--trash", "--trash-", "--trash-d", "--trash-di",
+                        "--trash-dir"
+                    ],
+                    "optionalEquals": []
+                },
+                "deny": [{
+                    "optionGroups": [[
+                        "--o", "--ov", "--ove", "--over", "--overw",
+                        "--overwr", "--overwri", "--overwrit", "--overwrite"
+                    ]],
+                    "reason": "Overwriting during trash restore is disabled.",
+                    "alternatives": ["Restore only to an absent path."]
+                }]
             }
         ],
+        "shell": {"redirection": {"emptyFile": false}},
         "shellfirm": {
             "enabled": true,
             "minimumSeverity": "High",
@@ -62,7 +99,7 @@ fn policy_json() -> Value {
                 "git-strict": false,
                 "kubernetes-strict": false
             },
-            "rules": {}
+            "rules": {"fs:flush_file_content": false}
         },
         "unknown": {
             "parseError": "deny",
@@ -136,6 +173,16 @@ fn assert_denied(output: &Value, reason_fragment: &str) {
     );
 }
 
+fn assert_context(output: &Value, expected: &str) {
+    assert_eq!(output["hookSpecificOutput"]["additionalContext"], expected);
+    assert_eq!(output["hookSpecificOutput"]["hookEventName"], "PreToolUse");
+    assert!(
+        output["hookSpecificOutput"]
+            .get("permissionDecision")
+            .is_none()
+    );
+}
+
 #[test]
 fn semantic_rm_rule_handles_option_spellings_and_wrappers() {
     let fixture = Fixture::new();
@@ -200,11 +247,10 @@ fn semantic_rm_rule_handles_option_spellings_and_wrappers() {
         );
         assert_denied(&output, "Recursive forced deletion");
     }
+    for command in ["rm target", "rm -r target", "rm -f target", "rm -- -rf"] {
+        assert_context(&fixture.run(command), "Use `trash` instead of `rm`.");
+    }
     for command in [
-        "rm target",
-        "rm -r target",
-        "rm -f target",
-        "rm -- -rf",
         "printf '%s' 'rm -rf target'",
         "f() { rm -rf target; }",
         "eval 'printf safe'",
@@ -286,14 +332,147 @@ fn parser_tracks_execution_context_instead_of_scanning_raw_text() {
         &fixture.run("env curl https://example.com/install | bash"),
         "Shellfirm",
     );
-    assert_denied(&fixture.run("> /etc/hosts"), "Shellfirm");
-    assert_denied(&fixture.run("printf '>' > /etc/hosts"), "Shellfirm");
+    assert_denied(&fixture.run("> /etc/hosts"), "Emptying an existing file");
+    assert_safe(&fixture.run("printf '>' > /etc/hosts"));
+}
+
+#[test]
+fn trash_commands_allow_recoverable_operations_and_deny_permanent_ones() {
+    let fixture = Fixture::new();
+    for command in [
+        "trash target",
+        "trash-put target",
+        "trash-list",
+        "trash-restore",
+        "/bin/trash target",
+    ] {
+        assert_safe(&fixture.run(command));
+    }
+    for command in [
+        "trash-empty",
+        "trash-empty 7",
+        "/usr/bin/trash-empty 7",
+        "env trash-empty 7",
+        "sh -c 'trash-empty 7'",
+        "nix-shell -p trash-cli --run 'trash-empty 7'",
+        "nix-shell --argstr name --run --run 'trash-empty 7'",
+        "nix-shell --arg name --command --command 'trash-rm target'",
+        "nix-shell --command='trash-rm target'",
+        "xargs trash-empty 7",
+        "find . -exec trash-empty 7 ';'",
+        "command trash-rm target",
+        "env trash-rm target",
+    ] {
+        assert_denied(&fixture.run(command), "denied");
+    }
+    for command in [
+        "trash-restore --o",
+        "trash-restore --over",
+        "trash-restore --overwrit",
+        "trash-restore --overwrite",
+    ] {
+        assert_denied(&fixture.run(command), "Overwriting during trash restore");
+    }
+    for command in [
+        "trash-restore --sort path",
+        "trash-restore --print-completion bash",
+        "trash-restore --trash-dir directory",
+        "trash-restore --sort \"$SORT\"",
+        "trash-restore --p \"$SHELL_NAME\"",
+        "trash-restore --t \"$TRASH_DIR\"",
+        "trash-restore -- --overwrite",
+        "gh pr create --title 'trash-empty 7'",
+    ] {
+        assert_safe(&fixture.run(command));
+    }
+}
+
+#[test]
+fn rm_guidance_is_context_only_deduplicated_and_lower_priority_than_denial() {
+    let fixture = Fixture::new();
+    for command in [
+        "rm one; /bin/rm two",
+        "command rm target",
+        "env rm target",
+        "f() { rm target; }; f",
+        "printf '%s' \"$(rm target)\"",
+        "rm -- \"$TARGET\"",
+    ] {
+        assert_context(&fixture.run(command), "Use `trash` instead of `rm`.");
+    }
+    assert_safe(&fixture.run("gh pr create --title 'rm target'"));
+    assert_safe(&fixture.run("f() { rm target; }"));
+    assert_denied(&fixture.run("rm target; danger"), "exact test command");
+    assert_denied(&fixture.run("rm \"$TARGET\""), "dynamic");
+    let denied = fixture.run("rm target; rm -rf directory");
+    assert_denied(&denied, "Recursive forced deletion");
+    assert!(
+        denied["hookSpecificOutput"]
+            .get("additionalContext")
+            .is_none()
+    );
+}
+
+#[test]
+fn empty_file_redirection_only_blocks_explicit_emptying_of_existing_files() {
+    let fixture = Fixture::new();
+    fs::write(fixture._directory.path().join("existing"), "content").unwrap();
+    fs::create_dir(fixture._directory.path().join("directory")).unwrap();
+    std::os::unix::fs::symlink("existing", fixture._directory.path().join("existing-link"))
+        .unwrap();
+    for command in [
+        "> existing",
+        ": > existing",
+        "true 2> existing",
+        "exec > existing",
+        "cat /dev/null > existing",
+        ": >& existing",
+        ": {fd}> existing",
+        "exec {fd}> existing",
+        "cat /dev/null {fd}> existing",
+        "command : > existing",
+        "builtin : > existing",
+        "env true > existing",
+        "exec false > existing",
+        "printf '' > existing",
+        "echo -n > existing",
+        "/usr/bin/true ignored-argument > existing",
+        ": > existing-link",
+    ] {
+        let output = fixture.run(command);
+        assert_eq!(
+            output["hookSpecificOutput"]["permissionDecision"], "deny",
+            "command unexpectedly passed: {command}"
+        );
+        assert_denied(&output, "Emptying an existing file");
+    }
+    for command in [
+        "command 2>/dev/null",
+        "command 2> /dev/null",
+        "printf value > existing",
+        "true > new-file",
+        ">> existing",
+        ": 2>&1",
+        ": > /dev/null",
+        ": > directory",
+        "printf value > \"$TARGET\"",
+        "> new-file",
+    ] {
+        assert_safe(&fixture.run(command));
+    }
+    assert_denied(&fixture.run("> \"$TARGET\""), "dynamic destination");
 }
 
 #[test]
 fn unknown_or_malformed_execution_fails_closed() {
     let fixture = Fixture::new();
+    fs::write(fixture._directory.path().join("existing1"), "content").unwrap();
     assert_denied(&fixture.run("\"$COMMAND\" argument"), "dynamic");
+    assert_denied(&fixture.run("r{m..m} -rf target"), "dynamic");
+    assert_denied(&fixture.run("r{m,{x}} -rf target"), "dynamic");
+    assert_denied(&fixture.run("trash-empt{y..y} 7"), "dynamic");
+    assert_denied(&fixture.run("trash-empt? 7"), "dynamic");
+    assert_denied(&fixture.run(": > existing{1..1}"), "dynamic destination");
     assert_denied(&fixture.run("eval \"$COMMAND\""), "dynamic");
     assert_denied(
         &fixture.run("eval 'f() { rm -rf target; }'; f"),
@@ -419,6 +598,8 @@ fn selector_catalog_is_pinned_and_strict_namespaces_are_excluded() {
     assert!(!ids.iter().any(|id| id.starts_with("fs-strict:")));
     assert!(!ids.iter().any(|id| id.starts_with("git-strict:")));
     assert!(!ids.iter().any(|id| id.starts_with("kubernetes-strict:")));
+    assert!(!ids.contains(&"fs:flush_file_content".to_owned()));
+    assert!(ids.contains(&"fs:truncate_zero".to_owned()));
 }
 
 #[test]

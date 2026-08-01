@@ -86,6 +86,19 @@ struct HookSpecificOutput<'a> {
     permission_decision_reason: &'a str,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ContextOutput<'a> {
+    hook_specific_output: ContextHookSpecificOutput<'a>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ContextHookSpecificOutput<'a> {
+    hook_event_name: &'static str,
+    additional_context: &'a str,
+}
+
 pub fn safe_output() -> &'static str {
     "{}"
 }
@@ -97,6 +110,17 @@ pub fn deny_output(reason: &str) -> String {
             hook_event_name: "PreToolUse",
             permission_decision: "deny",
             permission_decision_reason: &reason,
+        },
+    })
+    .expect("serializing a fixed hook response cannot fail")
+}
+
+pub fn context_output(context: &str) -> String {
+    let context = bounded_reason(context);
+    serde_json::to_string(&ContextOutput {
+        hook_specific_output: ContextHookSpecificOutput {
+            hook_event_name: "PreToolUse",
+            additional_context: &context,
         },
     })
     .expect("serializing a fixed hook response cannot fail")
@@ -137,5 +161,25 @@ mod tests {
             "blocked"
         );
         assert_eq!(output["hookSpecificOutput"]["hookEventName"], "PreToolUse");
+    }
+
+    #[test]
+    fn context_output_adds_guidance_without_a_permission_decision() {
+        let output: Value = serde_json::from_str(&context_output("Use trash.")).unwrap();
+        assert_eq!(
+            output["hookSpecificOutput"]["additionalContext"],
+            "Use trash."
+        );
+        assert_eq!(output["hookSpecificOutput"]["hookEventName"], "PreToolUse");
+        assert!(
+            output["hookSpecificOutput"]
+                .get("permissionDecision")
+                .is_none()
+        );
+        assert!(
+            output["hookSpecificOutput"]
+                .get("permissionDecisionReason")
+                .is_none()
+        );
     }
 }

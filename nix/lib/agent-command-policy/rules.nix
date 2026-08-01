@@ -1,12 +1,14 @@
 # coding agentへ投影するcommand allowと共通guard policyのSSOT。
+let
+  trashGuidance = "Use `trash` instead of `rm`.";
+in
 {
   agentCommandPolicy = {
-    argv = {
+    commands = {
       rg = true;
       bat = true;
       eza = true;
       jq = true;
-      fd = true;
       ast-grep = true;
 
       gh = {
@@ -30,10 +32,15 @@
       };
 
       curl-fetch = true;
-    };
+      trash = true;
+      trash-put = true;
+      trash-list = true;
+      trash-empty = false;
+      trash-rm = false;
 
-    semantic = {
       rm = {
+        decision = true;
+        guidance = trashGuidance;
         optionSyntax = {
           valueTaking = [ ];
           optionalEquals = [ ];
@@ -53,13 +60,14 @@
             ];
             reason = "Recursive forced deletion is disabled for coding agents.";
             alternatives = [
-              "Move the target to trash or remove it without recursive force."
+              trashGuidance
             ];
           }
         ];
       };
 
       fd = {
+        decision = true;
         optionSyntax = {
           valueTaking = [
             "--and"
@@ -120,7 +128,68 @@
           }
         ];
       };
+
+      trash-restore = {
+        decision = true;
+        optionSyntax = {
+          # argparse also accepts unique long-option abbreviations for these.
+          valueTaking = [
+            "--p"
+            "--pr"
+            "--pri"
+            "--prin"
+            "--print"
+            "--print-"
+            "--print-c"
+            "--print-co"
+            "--print-com"
+            "--print-comp"
+            "--print-compl"
+            "--print-comple"
+            "--print-complet"
+            "--print-completi"
+            "--print-completio"
+            "--print-completion"
+            "--s"
+            "--so"
+            "--sor"
+            "--sort"
+            "--t"
+            "--tr"
+            "--tra"
+            "--tras"
+            "--trash"
+            "--trash-"
+            "--trash-d"
+            "--trash-di"
+            "--trash-dir"
+          ];
+          optionalEquals = [ ];
+        };
+        deny = [
+          {
+            # trash-cli's argparse accepts every unique long-option abbreviation.
+            when.options.all = [
+              [
+                "--o"
+                "--ov"
+                "--ove"
+                "--over"
+                "--overw"
+                "--overwr"
+                "--overwri"
+                "--overwrit"
+                "--overwrite"
+              ]
+            ];
+            reason = "Overwriting an existing path during trash restore is disabled for coding agents.";
+            alternatives = [ "Restore only when the original path does not exist." ];
+          }
+        ];
+      };
     };
+
+    shell.redirection.emptyFile = false;
 
     shellfirm = {
       enabled = true;
@@ -142,7 +211,7 @@
         git-strict = false;
         kubernetes-strict = false;
       };
-      rules = { };
+      rules.fs.flush_file_content = false;
     };
   };
 }

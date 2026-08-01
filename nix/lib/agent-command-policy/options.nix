@@ -6,27 +6,11 @@ let
   executableTokenPattern = "^[a-zA-Z0-9_][a-zA-Z0-9_+@%.-]*$";
   commandOptionPattern = "^(--[a-zA-Z0-9][a-zA-Z0-9-]*|-[a-zA-Z0-9])$";
 
-  isExecutableToken = value: builtins.match executableTokenPattern value != null;
   isCommandOption = value: builtins.match commandOptionPattern value != null;
   isSelectorToken = value: value != "" && !lib.hasInfix ":" value;
-  isNonEmptyString = value: builtins.isString value && value != "";
+  isNonBlankString = value: builtins.isString value && builtins.match "^[[:space:]]*$" value == null;
   isUnique = values: builtins.length values == builtins.length (lib.unique values);
   hasOnlyAttrs = allowed: value: lib.all (name: lib.elem name allowed) (builtins.attrNames value);
-
-  validateArgvTree =
-    tree:
-    let
-      validNode =
-        isRoot: node:
-        builtins.isAttrs node
-        && (isRoot || builtins.attrNames node != [ ])
-        && lib.all (value: builtins.isBool value || (builtins.isAttrs value && validNode false value)) (
-          builtins.attrValues node
-        );
-    in
-    assert lib.assertMsg (validNode true tree)
-      "agentCommandPolicy.argv must be a recursive attribute set with boolean leaves and no empty branches";
-    tree;
 
   validOptionSyntax =
     value:
@@ -62,41 +46,52 @@ let
     ) rule.when.options.all
     && isUnique (lib.concatLists rule.when.options.all)
     && rule ? reason
-    && isNonEmptyString rule.reason
+    && isNonBlankString rule.reason
     && rule ? alternatives
     && builtins.isList rule.alternatives
     && rule.alternatives != [ ]
-    && lib.all isNonEmptyString rule.alternatives
+    && lib.all isNonBlankString rule.alternatives
     && isUnique rule.alternatives;
 
-  validateSemanticTree =
+  validateCommandTree =
     tree:
     let
       validNode =
         isRoot: node:
         let
-          isTerminal =
-            builtins.isAttrs node
-            &&
-              builtins.attrNames node == [
-                "deny"
-                "optionSyntax"
-              ]
-            && builtins.isList node.deny
-            && builtins.isAttrs node.optionSyntax;
+          isTerminal = builtins.isAttrs node && node ? decision;
         in
         builtins.isAttrs node
         && (isRoot || builtins.attrNames node != [ ])
         && (
           if isTerminal then
-            validOptionSyntax node.optionSyntax && node.deny != [ ] && lib.all validDenyRule node.deny
+            node ? deny
+            && node ? optionSyntax
+            && hasOnlyAttrs [
+              "decision"
+              "deny"
+              "guidance"
+              "optionSyntax"
+            ] node
+            && builtins.isBool node.decision
+            && builtins.isList node.deny
+            && builtins.isAttrs node.optionSyntax
+            && validOptionSyntax node.optionSyntax
+            && node.deny != [ ]
+            && lib.all validDenyRule node.deny
+            && (!(node ? guidance) || isNonBlankString node.guidance)
           else
-            lib.all isExecutableToken (builtins.attrNames node)
-            && lib.all (value: builtins.isAttrs value && validNode false value) (builtins.attrValues node)
+            lib.all (
+              name:
+              builtins.match (if isRoot then executableTokenPattern else "^[a-zA-Z0-9_./:+@%=-]+$") name != null
+            ) (builtins.attrNames node)
+            && lib.all (value: builtins.isBool value || (builtins.isAttrs value && validNode false value)) (
+              builtins.attrValues node
+            )
         );
     in
     assert lib.assertMsg (validNode true tree)
-      "agentCommandPolicy.semantic must be a recursive command tree with valid optionSyntax and non-empty deny leaves";
+      "agentCommandPolicy.commands must be a recursive command tree with boolean leaves or valid decision terminals";
     tree;
 
   validateSelectorMap =
@@ -110,32 +105,35 @@ let
     tree:
     let
       validNode =
-        isRoot: node:
+        depth: node:
         builtins.isAttrs node
-        && (isRoot || builtins.attrNames node != [ ])
+        && (depth == 0 || builtins.attrNames node != [ ])
         && lib.all isSelectorToken (builtins.attrNames node)
-        && lib.all (value: builtins.isBool value || (builtins.isAttrs value && validNode false value)) (
-          builtins.attrValues node
-        );
+        && lib.all (
+          value:
+          (builtins.isBool value && depth >= 1) || (builtins.isAttrs value && validNode (depth + 1) value)
+        ) (builtins.attrValues node);
     in
-    assert lib.assertMsg (validNode true tree)
-      "agentCommandPolicy.shellfirm.rules must be a recursive selector tree with boolean leaves and no empty branches";
+    assert lib.assertMsg (validNode 0 tree)
+      "agentCommandPolicy.shellfirm.rules must contain namespace and rule tokens before boolean leaves";
     tree;
+
+  validateShellTree = tree: (import ./shell-policy-schema.nix { inherit lib; }).validate tree;
 in
 {
   options.agentCommandPolicy = {
-    argv = mkOption {
+    commands = mkOption {
       default = { };
       type = types.attrsOf types.anything;
-      apply = validateArgvTree;
-      description = "Recursive argv-prefix policy tree; true allows, false denies, and absence leaves the agent default.";
+      apply = validateCommandTree;
+      description = "Recursive command policy; boolean leaves are decisions and decision terminals add option-aware rules.";
     };
 
-    semantic = mkOption {
+    shell = mkOption {
       default = { };
       type = types.attrsOf types.anything;
-      apply = validateSemanticTree;
-      description = "Recursive command tree for option-aware semantic deny rules.";
+      apply = validateShellTree;
+      description = "Implemented shell-syntax policy leaves; true allows, false denies, and absence leaves the agent default.";
     };
 
     shellfirm = mkOption {

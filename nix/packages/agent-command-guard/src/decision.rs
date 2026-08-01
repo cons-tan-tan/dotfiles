@@ -5,6 +5,7 @@ use crate::{
     option_scan,
     policy::SemanticDenyRule,
     protocol::{HookInput, bounded_reason},
+    redirection,
     shell::{self, FunctionDefinition, ParsedShell, Pipeline, SimpleCommand, Word},
     shellfirm_provider::{ShellfirmMatch, ValidatedPolicy},
 };
@@ -12,11 +13,19 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Decision {
     Safe,
+    Context { additional_context: String },
     Deny { reason: String },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum FindingKind {
+    Context,
+    Deny,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct Finding {
+    kind: FindingKind,
     key: String,
     reason: String,
 }
@@ -49,8 +58,11 @@ struct FunctionScopes<'a> {
 pub fn assess(input: &HookInput, policy: &ValidatedPolicy) -> Decision {
     match assess_source(input.command(), input.cwd(), policy, 0) {
         Ok(findings) if findings.is_empty() => Decision::Safe,
-        Ok(findings) => Decision::Deny {
-            reason: render_findings(&findings),
+        Ok(findings) if has_deny_findings(&findings) => Decision::Deny {
+            reason: render_findings(&findings, FindingKind::Deny),
+        },
+        Ok(findings) => Decision::Context {
+            additional_context: render_findings(&findings, FindingKind::Context),
         },
         Err(error) => Decision::Deny {
             reason: bounded_reason(&format!(
@@ -155,7 +167,7 @@ fn assess_parsed(
             ExecutionContext::Shell,
             scopes,
             &mut findings,
-        ) && findings.is_empty()
+        ) && !has_deny_findings(&findings)
         {
             return Err(error);
         }
@@ -163,8 +175,29 @@ fn assess_parsed(
             add_shellfirm_findings(validated.shellfirm_matches(&projection, cwd), &mut findings);
         }
     }
-    for projection in &parsed.standalone_redirects {
+    for redirect in &parsed.standalone_redirects {
+        add_shellfirm_findings(
+            validated.shellfirm_matches(&redirect.projection(), cwd),
+            &mut findings,
+        );
+    }
+    for projection in &parsed.redirect_projections {
         add_shellfirm_findings(validated.shellfirm_matches(projection, cwd), &mut findings);
+    }
+    if !validated.policy.shell.redirection.empty_file {
+        match redirection::empty_file_findings(
+            parsed,
+            cwd,
+            validated.policy.unknown.max_decode_depth,
+        ) {
+            Ok(matches) => findings.extend(matches.into_iter().map(|matched| Finding {
+                kind: FindingKind::Deny,
+                key: matched.key,
+                reason: matched.reason,
+            })),
+            Err(error) if !has_deny_findings(&findings) => return Err(error),
+            Err(_) => {}
+        }
     }
     findings.sort();
     findings.dedup_by(|left, right| left.key == right.key);
@@ -314,6 +347,12 @@ fn assess_simple(
         }
         "bash" | "sh" | "dash" | "zsh" => {
             if let Some(source) = shell_source(&command.words[1..])? {
+                findings.extend(assess_source(&source, cwd, validated, depth + 1)?);
+            }
+            return Ok(());
+        }
+        "nix-shell" => {
+            if let Some(source) = nix_shell_source(&command.words[1..])? {
                 findings.extend(assess_source(&source, cwd, validated, depth + 1)?);
             }
             return Ok(());
@@ -594,6 +633,7 @@ fn add_exact_findings(
         .max_by_key(|rule| rule.argv_prefix.len());
     if let Some(rule) = matched {
         findings.push(Finding {
+            kind: FindingKind::Deny,
             key: format!("exact:{}", rule.argv_prefix.join("\u{0}")),
             reason: rule.reason.clone(),
         });
@@ -635,6 +675,7 @@ fn add_semantic_findings(
         {
             denied = true;
             findings.push(Finding {
+                kind: FindingKind::Deny,
                 key: format!("semantic:{}:{index}", rule.command_prefix.join("\u{0}")),
                 reason: semantic_reason(deny),
             });
@@ -645,6 +686,13 @@ fn add_semantic_findings(
             "an option for {} is dynamic; insert -- before dynamic positional arguments",
             rule.command_prefix.join(" ")
         )));
+    }
+    if !denied && let Some(guidance) = &rule.guidance {
+        findings.push(Finding {
+            kind: FindingKind::Context,
+            key: format!("context:{}", rule.command_prefix.join("\u{0}")),
+            reason: guidance.clone(),
+        });
     }
     Ok(())
 }
@@ -673,6 +721,7 @@ fn add_shellfirm_findings(matches: Vec<ShellfirmMatch>, findings: &mut Vec<Findi
             .map(|value| format!(" Alternative: {value}"))
             .unwrap_or_default();
         findings.push(Finding {
+            kind: FindingKind::Deny,
             key: format!("shellfirm:{}", matched.id),
             reason: format!(
                 "Shellfirm {} ({:?}): {}{}",
@@ -682,10 +731,17 @@ fn add_shellfirm_findings(matches: Vec<ShellfirmMatch>, findings: &mut Vec<Findi
     }
 }
 
-fn render_findings(findings: &[Finding]) -> String {
+fn has_deny_findings(findings: &[Finding]) -> bool {
+    findings
+        .iter()
+        .any(|finding| finding.kind == FindingKind::Deny)
+}
+
+fn render_findings(findings: &[Finding], kind: FindingKind) -> String {
     bounded_reason(
         &findings
             .iter()
+            .filter(|finding| finding.kind == kind)
             .map(|finding| finding.reason.as_str())
             .collect::<Vec<_>>()
             .join(" "),
@@ -1200,6 +1256,56 @@ fn shell_source(words: &[Word]) -> Result<Option<String>> {
         "shell source from standard input or a here-document is not decoded; use a literal -c command"
             .to_owned(),
     ))
+}
+
+fn nix_shell_source(words: &[Word]) -> Result<Option<String>> {
+    let two_value_options = BTreeSet::from(["--arg", "--arg-from-file", "--argstr", "--option"]);
+    let one_value_options = BTreeSet::from([
+        "-A",
+        "-I",
+        "-j",
+        "--arg-from-stdin",
+        "--attr",
+        "--builders",
+        "--cores",
+        "--eval-store",
+        "--exclude",
+        "--include",
+        "--keep",
+        "--log-format",
+        "--max-jobs",
+        "--store",
+        "--system",
+        "--timeout",
+    ]);
+    let mut index = 0;
+    while let Some(word) = words.get(index) {
+        let value = static_word(word, "nix-shell argument")?;
+        if matches!(value, "--run" | "--command") {
+            return require_static_value(words, index + 1, "nix-shell command")
+                .map(str::to_owned)
+                .map(Some);
+        }
+        if let Some(source) = value
+            .strip_prefix("--run=")
+            .or_else(|| value.strip_prefix("--command="))
+        {
+            return Ok(Some(source.to_owned()));
+        }
+        if two_value_options.contains(value) {
+            require_static_value(words, index + 1, "nix-shell option name")?;
+            require_static_value(words, index + 2, "nix-shell option value")?;
+            index += 3;
+            continue;
+        }
+        if one_value_options.contains(value) {
+            require_static_value(words, index + 1, "nix-shell option value")?;
+            index += 2;
+            continue;
+        }
+        index += 1;
+    }
+    Ok(None)
 }
 
 fn unwrap_nohup(words: &[Word]) -> Result<Option<SimpleCommand>> {

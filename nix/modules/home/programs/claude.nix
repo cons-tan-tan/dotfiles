@@ -85,8 +85,6 @@ in
 
   home.file.".claude/settings.json".source = mergedSettingsFile;
 
-  home.file.".claude/CLAUDE.md".source =
-    config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/claude/CLAUDE.md";
   home.file.".claude/commands".source =
     config.lib.file.mkOutOfStoreSymlink "${dotfilesDir}/claude/commands";
   home.file.".claude/rules".source =

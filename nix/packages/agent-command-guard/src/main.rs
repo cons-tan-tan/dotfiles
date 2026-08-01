@@ -2,7 +2,7 @@ use std::{env, path::PathBuf, process::ExitCode};
 
 use agent_command_guard::{
     Decision, HookInput, Policy, assess,
-    protocol::{deny_output, safe_output},
+    protocol::{context_output, deny_output, safe_output},
     validate_policy,
 };
 
@@ -43,6 +43,9 @@ fn main() -> ExitCode {
             });
             match result {
                 Ok(Decision::Safe) => println!("{}", safe_output()),
+                Ok(Decision::Context { additional_context }) => {
+                    println!("{}", context_output(&additional_context));
+                }
                 Ok(Decision::Deny { reason }) => println!("{}", deny_output(&reason)),
                 Err(error) => println!(
                     "{}",

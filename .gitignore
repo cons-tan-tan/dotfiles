@@ -6,5 +6,6 @@ result
 /nix/apps/apply-secrets/target/
 /nix/apps/apply-nix-settings/target/
 /nix/packages/safe-fetch/target/
+/nix/packages/agent-command-guard/target/
 /nix/libexec/agent-config-helper/target/
 /nix/packages/aws/config-helper/target/
