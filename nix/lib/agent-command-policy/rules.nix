@@ -13,6 +13,10 @@ in
       eza = true;
       jq = true;
       ast-grep = true;
+      git = {
+        clone = true;
+        commit = true;
+      };
 
       gh = {
         issue = {
@@ -29,7 +33,12 @@ in
           list = true;
           view = true;
         };
-        repo.view = true;
+        repo = {
+          clone = true;
+          read-dir = true;
+          read-file = true;
+          view = true;
+        };
         search = true;
         api-get = true;
       };

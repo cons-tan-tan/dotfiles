@@ -242,12 +242,45 @@ in
             [ "trash-put" ]
             [ "trash-restore" ]
           ];
+      nativeGhRepoAccess =
+        lib.all (prefix: lib.elem prefix (map (rule: rule.argvPrefix) actualPolicy.prefixRules))
+          [
+            [
+              "gh"
+              "repo"
+              "clone"
+            ]
+            [
+              "gh"
+              "repo"
+              "read-dir"
+            ]
+            [
+              "gh"
+              "repo"
+              "read-file"
+            ]
+          ];
+      nativeGitWrites =
+        lib.all (prefix: lib.elem prefix (map (rule: rule.argvPrefix) actualPolicy.prefixRules))
+          [
+            [
+              "git"
+              "clone"
+            ]
+            [
+              "git"
+              "commit"
+            ]
+          ];
       exactDenied = map (rule: rule.argvPrefix) actualPolicy.guardPolicy.exact;
       semanticCommands = map (rule: rule.commandPrefix) actualPolicy.guardPolicy.semantic;
       flushRule = actualPolicy.guardPolicy.shellfirm.rules."fs:flush_file_content";
     };
     expected = {
       nativeTrash = true;
+      nativeGhRepoAccess = true;
+      nativeGitWrites = true;
       exactDenied = [
         [ "trash-empty" ]
         [ "trash-rm" ]
