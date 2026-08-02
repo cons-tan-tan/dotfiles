@@ -12,19 +12,27 @@ let
   nixRoot = ../.;
   repoRoot = ../..;
   testSuffix = ".test.nix";
+  failureTestSuffix = ".failure.test.nix";
   cleanupPolicy = import ../lib/nh-clean-policy.nix;
   hostArch = if pkgs.stdenv.hostPlatform.isx86_64 then "x86_64" else "aarch64";
   expectedNixosWslTarget = if hostArch == "x86_64" then "wsl" else "wsl-aarch64";
 
   # 評価だけで完結するテストは実装の隣に置き、ファイル名から checks の
   # 名前を生成する。
-  testFiles = builtins.filter (path: lib.hasSuffix testSuffix (baseNameOf path)) (
-    lib.filesystem.listFilesRecursive nixRoot
-  );
+  discoveredNixFiles = lib.filesystem.listFilesRecursive nixRoot;
+  failureTestFiles = builtins.filter (
+    path: lib.hasSuffix failureTestSuffix (baseNameOf path)
+  ) discoveredNixFiles;
+  testFiles = builtins.filter (
+    path:
+    lib.hasSuffix testSuffix (baseNameOf path) && !lib.hasSuffix failureTestSuffix (baseNameOf path)
+  ) discoveredNixFiles;
 
   testStem = path: lib.removeSuffix testSuffix (baseNameOf path);
   checkName = path: "${testStem path}-tests";
-  discoveredCheckNames = map checkName testFiles;
+  failureStem = path: lib.removeSuffix failureTestSuffix (baseNameOf path);
+  failureCheckName = path: "${failureStem path}-failure-tests";
+  discoveredCheckNames = (map checkName testFiles) ++ (map failureCheckName failureTestFiles);
   checkNames = discoveredCheckNames ++ builtins.attrNames fixedChecks ++ reservedCheckNames;
   duplicateCheckNames = builtins.filter (
     name: builtins.length (builtins.filter (other: other == name) checkNames) > 1
@@ -91,6 +99,180 @@ let
     };
 
   evalChecks = lib.listToAttrs (map mkEvalCheck testFiles);
+
+  loadFailureSuite = path: import path;
+
+  validateFailureSuite =
+    path: suite: suiteArgs: cases:
+    let
+      names = if builtins.isAttrs cases then builtins.attrNames cases else [ ];
+      invalidNames = builtins.filter (name: builtins.match "^[a-z][A-Za-z0-9]*$" name == null) names;
+      invalidCases = builtins.filter (
+        name:
+        let
+          testCase = cases.${name};
+        in
+        !(builtins.isAttrs testCase && testCase ? expression && testCase ? expectedFragment)
+      ) names;
+      invalidFragments = builtins.filter (
+        name:
+        let
+          fragment = cases.${name}.expectedFragment;
+        in
+        !(
+          builtins.isString fragment
+          && builtins.match "[[:space:]]*" fragment == null
+          && !lib.hasInfix "\n" fragment
+          && builtins.stringLength fragment <= 256
+        )
+      ) names;
+    in
+    if !builtins.isFunction suite then
+      throw "${toString path} must return a function"
+    else if
+      builtins.attrNames suiteArgs != [
+        "caseName"
+        "nixpkgsPath"
+        "repoRoot"
+      ]
+    then
+      throw "${toString path} must accept exactly caseName, nixpkgsPath, and repoRoot"
+    else if !builtins.isAttrs cases then
+      throw "${toString path} must return its failure cases when caseName is null"
+    else if names == [ ] then
+      throw "${toString path} does not define any failure cases"
+    else if invalidNames != [ ] then
+      throw "${toString path} contains invalid failure case names: ${builtins.toJSON invalidNames}"
+    else if invalidCases != [ ] then
+      throw "${toString path} contains invalid failure cases: ${builtins.toJSON invalidCases}"
+    else if invalidFragments != [ ] then
+      throw "${toString path} contains invalid diagnostic fragments for cases: ${builtins.toJSON invalidFragments}"
+    else
+      null;
+
+  mkFailureCheck =
+    path:
+    let
+      suite = loadFailureSuite path;
+      suiteArgs = if builtins.isFunction suite then builtins.functionArgs suite else { };
+      suiteArgsValid =
+        builtins.attrNames suiteArgs == [
+          "caseName"
+          "nixpkgsPath"
+          "repoRoot"
+        ];
+      # null はmetadata列挙専用。case attrsetを返しても、expression fieldは
+      # 遅延値なので親 evaluator では強制されない。
+      cases =
+        if builtins.isFunction suite && suiteArgsValid then
+          suite {
+            caseName = null;
+            nixpkgsPath = pkgs.path;
+            inherit repoRoot;
+          }
+        else
+          null;
+      validation = validateFailureSuite path suite suiteArgs cases;
+      name = failureCheckName path;
+      suitePath = "${path}";
+      nixpkgsArgument = "${pkgs.path}";
+      repoRootArgument = "${repoRoot}";
+      runCases = lib.concatMapStringsSep "\n" (
+        caseName:
+        let
+          expectedFragment = cases.${caseName}.expectedFragment;
+          caseLabel = "${failureStem path}/${caseName}";
+        in
+        ''
+          case_label=${lib.escapeShellArg caseLabel}
+          expected_fragment=${lib.escapeShellArg expectedFragment}
+          stdout_file="$TMPDIR/${caseName}.stdout"
+          stderr_file="$TMPDIR/${caseName}.stderr"
+          diagnostic_file="$TMPDIR/${caseName}.diagnostic"
+          parse_error_file="$TMPDIR/${caseName}.parse-error"
+
+          status=0
+          if ${pkgs.nix}/bin/nix-instantiate \
+            --log-format internal-json \
+            --eval \
+            --strict \
+            ${lib.escapeShellArg suitePath} \
+            --argstr caseName ${lib.escapeShellArg caseName} \
+            --arg nixpkgsPath ${lib.escapeShellArg nixpkgsArgument} \
+            --arg repoRoot ${lib.escapeShellArg repoRootArgument} \
+            >"$stdout_file" 2>"$stderr_file"; then
+            status=0
+          else
+            status="$?"
+          fi
+
+          if [[ "$status" -eq 0 ]]; then
+            printf 'expected evaluation failure but succeeded: %s\n' "$case_label" >&2
+            exit 1
+          fi
+
+          if ! ${pkgs.jq}/bin/jq --raw-input --raw-output --slurp '
+            split("\n")
+            | map(select(length > 0)) as $lines
+            | if ($lines | length) == 0 then
+                error("Nix did not emit a structured diagnostic")
+              elif all($lines[]; startswith("@nix ")) then
+                $lines
+              else
+                error("Nix emitted a non-structured diagnostic line")
+              end
+            | map(ltrimstr("@nix ") | fromjson)
+            | map(select(
+                .action == "msg"
+                and .level == 0
+                and (.raw_msg | type) == "string"
+              ))
+            | if length == 1 then
+                .[0].raw_msg
+              else
+                error("expected exactly one root Nix diagnostic")
+              end
+            | gsub("\u001b\\[[0-9;]*m"; "")
+          ' "$stderr_file" >"$diagnostic_file" 2>"$parse_error_file"; then
+            printf 'could not extract root evaluation diagnostic: %s\n' "$case_label" >&2
+            ${pkgs.coreutils}/bin/head -c 1024 "$parse_error_file" >&2
+            printf '\nbounded stderr follows:\n' >&2
+            ${pkgs.coreutils}/bin/head -c 4096 "$stderr_file" >&2
+            printf '\n' >&2
+            exit 1
+          fi
+
+          if ! ${pkgs.ripgrep}/bin/rg \
+            --fixed-strings \
+            --quiet \
+            -- "$expected_fragment" \
+            "$diagnostic_file"; then
+            printf 'unexpected evaluation failure: %s\n' "$case_label" >&2
+            printf 'expected diagnostic fragment: %s\n' "$expected_fragment" >&2
+            printf 'bounded stderr follows:\n' >&2
+            ${pkgs.coreutils}/bin/head -c 4096 "$stderr_file" >&2
+            printf '\n' >&2
+            exit 1
+          fi
+        ''
+      ) (builtins.attrNames cases);
+    in
+    {
+      inherit name;
+      value = builtins.seq validation (
+        pkgs.runCommand name { } ''
+          set -euo pipefail
+          export HOME="$TMPDIR/home"
+          export LC_ALL=C
+          export NIX_STATE_DIR="$TMPDIR/nix-state"
+          mkdir -p "$HOME" "$NIX_STATE_DIR/profiles/per-user"
+          ${runCases}
+          touch "$out"
+        ''
+      );
+    };
+
+  failureChecks = lib.listToAttrs (map mkFailureCheck failureTestFiles);
   rustCatalog = import ./rust-projects.nix { inherit lib pkgs; };
   rustProjects = rustCatalog.projects;
   rustProjectsByName = lib.listToAttrs (
@@ -1110,5 +1292,5 @@ if duplicateCheckNames != [ ] then
   throw "duplicate test check names: ${builtins.toJSON duplicateCheckNames}"
 else
   builtins.seq rustInventoryValidation (
-    builtins.seq batsInventoryValidation (evalChecks // fixedChecks)
+    builtins.seq batsInventoryValidation (evalChecks // failureChecks // fixedChecks)
   )
