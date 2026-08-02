@@ -32,70 +32,43 @@ let
     ".codex/AGENTS.md"
     ".pi/agent/AGENTS.md"
   ];
+  stripTrailingNewlines =
+    text: if lib.hasSuffix "\n" text then stripTrailingNewlines (lib.removeSuffix "\n" text) else text;
+  readFragment = path: stripTrailingNewlines (builtins.readFile path);
+  globalFragment = readFragment globalContext;
+  ruleFragments = map (name: readFragment (rulesDirectory + "/${name}")) ruleNames;
+  expectedCombinedContext = lib.concatStringsSep "\n\n" ([ globalFragment ] ++ ruleFragments) + "\n";
   codexText = evaluated.home.file.".codex/AGENTS.md".text;
   piText = evaluated.home.file.".pi/agent/AGENTS.md".text;
-  flattenedCodexText = lib.replaceStrings [ "\n" ] [ " " ] codexText;
   count = needle: haystack: builtins.length (lib.splitString needle haystack) - 1;
 in
 {
-  testAgentContextProjectionMatchesToolCapabilities = {
+  testAgentContextProjectionMatchesDiscoveredFragments = {
     expr = {
-      sourceMappingsCorrect =
-        toString evaluated.home.file.".agents/context".source == toString contextRoot
-        && toString evaluated.home.file.".claude/CLAUDE.md".source == toString globalContext
-        && toString evaluated.home.file.".claude/rules".source == toString rulesDirectory;
-      discoveredRules = ruleNames;
-      fragmentsStartAtH2 = lib.all (
-        name: lib.hasPrefix "## " (builtins.readFile (rulesDirectory + "/${name}"))
-      ) ruleNames;
-      globalStartsAtH1 = lib.hasPrefix "# Global Configuration\n" (builtins.readFile globalContext);
-      combinedOutputsEqual = codexText == piText;
-      combinedStartsWithGlobal = lib.hasPrefix "# Global Configuration\n" codexText;
-      combinedIncludesGlobal = count "Interact with the user in Japanese" codexText;
-      combinedRuleHeadings = map (heading: count heading codexText) [
-        "## GitHub Access Strategy"
-        "## Nix Build Rules"
-        "## Preferred Tools"
-        "## Web Fetch Strategy"
-      ];
-      combinedRuleOrderCorrect =
-        builtins.match ".*## GitHub Access Strategy.*## Nix Build Rules.*## Preferred Tools.*## Web Fetch Strategy.*" flattenedCodexText
-        != null;
-      trashPreferenceCount = count "Recoverable deletion" codexText;
-      claudeGlobalExcludesRules = !lib.hasInfix "Recoverable deletion" (builtins.readFile globalContext);
-      codexIsCombined = codexText != builtins.readFile globalContext;
+      sourceMappings = {
+        agents = toString evaluated.home.file.".agents/context".source;
+        claudeGlobal = toString evaluated.home.file.".claude/CLAUDE.md".source;
+        claudeRules = toString evaluated.home.file.".claude/rules".source;
+      };
+      globalStartsAtH1 = lib.hasPrefix "# " globalFragment;
+      rulesStartAtH2 = map (fragment: lib.hasPrefix "## " fragment) ruleFragments;
+      codexText = codexText;
+      piMatchesCodex = piText == codexText;
+      ruleOccurrences = map (fragment: count fragment codexText) ruleFragments;
       forces = map (path: evaluated.home.file.${path}.force) managedPaths;
     };
     expected = {
-      sourceMappingsCorrect = true;
-      discoveredRules = [
-        "github.md"
-        "nix.md"
-        "tools.md"
-        "web-fetch.md"
-      ];
-      fragmentsStartAtH2 = true;
+      sourceMappings = {
+        agents = toString contextRoot;
+        claudeGlobal = toString globalContext;
+        claudeRules = toString rulesDirectory;
+      };
       globalStartsAtH1 = true;
-      combinedOutputsEqual = true;
-      combinedStartsWithGlobal = true;
-      combinedIncludesGlobal = 1;
-      combinedRuleHeadings = [
-        1
-        1
-        1
-        1
-      ];
-      combinedRuleOrderCorrect = true;
-      trashPreferenceCount = 1;
-      claudeGlobalExcludesRules = true;
-      codexIsCombined = true;
-      forces = [
-        false
-        false
-        false
-        false
-        false
-      ];
+      rulesStartAtH2 = map (_: true) ruleFragments;
+      codexText = expectedCombinedContext;
+      piMatchesCodex = true;
+      ruleOccurrences = map (_: 1) ruleFragments;
+      forces = map (_: false) managedPaths;
     };
   };
 }
