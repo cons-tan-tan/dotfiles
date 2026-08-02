@@ -3,6 +3,7 @@
   advisoryDbLastModified,
   homeManager,
   lib,
+  llmAgents,
   pkgs,
   publicApps,
   username,
@@ -42,6 +43,7 @@ let
     inherit
       homeManager
       lib
+      llmAgents
       pkgs
       username
       ;

@@ -61,13 +61,6 @@
 
     llm-agents = {
       url = "github:numtide/llm-agents.nix";
-      # upstream も nixpkgs-unstable / treefmt-nix を追っており、follows で
-      # root の pin に一本化する。なお lock 上の "nixpkgs" ノードは mozuku
-      # 専用の古い pin (root の nixpkgs とは別物 — mozuku のコメント参照)。
-      inputs.bun2nix.follows = "bun2nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-      inputs.systems.follows = "supported-systems";
-      inputs.treefmt-nix.follows = "treefmt-nix";
     };
 
     supported-systems = {
@@ -518,6 +511,7 @@
             advisoryDb = inputs.rustsec-advisory-db;
             advisoryDbLastModified = inputs.rustsec-advisory-db.lastModified;
             homeManager = home-manager;
+            llmAgents = inputs.llm-agents;
             publicApps = appsFor.${system}.apps;
             reservedCheckNames = builtins.attrNames baseChecks;
           };
