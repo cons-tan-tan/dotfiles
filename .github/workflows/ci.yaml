@@ -6,7 +6,7 @@ on:
   pull_request:
   workflow_dispatch:
 
-# 同一 ref の旧 run をキャンセルする。build-linux が mozuku-lsp をソース
+# 同一 ref の旧 run をキャンセルする。build matrix がmozuku-lspをソース
 # ビルドして重いため、force-push 時の並走が特に無駄になる。
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -41,34 +41,13 @@ jobs:
       - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
         with:
           enable_kvm: false
-      # eval 時 IFD を排除してあるため、darwin を含む全システムの構成評価が
-      # 単一の Linux ランナーで完結する (--no-build なのでビルドはしない)。
-      - run: nix flake check --no-build --all-systems --print-build-logs
+      # Hestiaのmatrix評価とは独立して開始し、buildのcritical pathに含めない。
+      # eval時IFDを排除してあるため、darwinを含む全systemをLinuxで評価できる。
+      - name: Evaluate flake outputs
+        run: nix flake check --no-build --all-systems
 
-  fmt:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
-        with:
-          enable_kvm: false
-      - run: nix run .#fmt -- --ci
-
-  reuse:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: fsfe/reuse-action@676e2d560c9a403aa252096d99fcab3e1132b0f5 # v6.0.0
-
-  # x86_64-linux の checks を一度だけ評価し、未キャッシュの group だけを
-  # build-linux-matrix へ渡す。.#checks 全体には aarch64-linux / darwin も
-  # 含まれるため、対象 system はここで明示的に限定する。
-  build-linux-eval:
-    name: build-linux / evaluate
+  build-eval:
+    name: build / evaluate
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
@@ -94,20 +73,21 @@ jobs:
       - id: matrix
         uses: Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320 # v3.0.0
         with:
-          flake: ".#checks.x86_64-linux"
+          flake: ".#hydraJobs.ci"
+          attr-prefix: "hydraJobs.ci"
 
-  # eval job が登録した drv closure を取得し、Nix の再評価なしで group ごとに
-  # 並列ビルドする。依存 output は通常の substituter から取得するため、flakeの
-  # nixConfigを読まないこのjobでも公開cacheを明示的に維持する。
-  build-linux-matrix:
-    name: build-linux / ${{ matrix.name }}
-    needs: build-linux-eval
-    if: needs.build-linux-eval.outputs.any-jobs == 'true'
+  # 評価済みのdrv closureを引き継ぎ、評価とbuildが別のderivationを選ぶ余地を
+  # 作らない。
+  build-matrix:
+    name: build / ${{ matrix.name }} (${{ matrix.system }})
+    needs: build-eval
+    if: >-
+      needs.build-eval.result == 'success'
+      && needs.build-eval.outputs.any-jobs == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
-      max-parallel: 5
-      matrix: ${{ fromJSON(needs.build-linux-eval.outputs.matrix) }}
+      matrix: ${{ fromJSON(needs.build-eval.outputs.matrix) }}
     steps:
       - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
         with:
@@ -120,7 +100,7 @@ jobs:
           version: ${{ env.HESTIA_VERSION }}
           upstream-cache-filter: true
           upstream-cache-key-names: ${{ env.HESTIA_UPSTREAM_CACHE_KEY_NAMES }}
-          wait-manifest-version: ${{ needs.build-linux-eval.outputs.manifest-version }}
+          wait-manifest-version: ${{ needs.build-eval.outputs.manifest-version }}
       - name: Verify binary substituters
         run: |
           set -euo pipefail
@@ -153,29 +133,35 @@ jobs:
           curl -fsS "http://$HESTIA_LISTEN/closure/$hashes" | nix-store --import
           nix build "${installables[@]}"
 
-  # matrix の行数はcache状態で変わるため、既存の安定したcheck名を集約jobとして
-  # 維持し、eval失敗・部分的なbuild失敗・全件cache hitを一箇所で判定する。
-  build-linux:
+  # matrixの行数はcache状態で変わるため、systemに依存しない安定したcheck名で
+  # 評価失敗・部分的なbuild失敗・全件cache hitを一箇所で判定する。
+  build:
     needs:
-      - build-linux-eval
-      - build-linux-matrix
+      - check
+      - build-eval
+      - build-matrix
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Verify Linux matrix result
+      - name: Verify matrix result
         env:
-          ANY_JOBS: ${{ needs.build-linux-eval.outputs.any-jobs }}
-          EVAL_RESULT: ${{ needs.build-linux-eval.result }}
-          MATRIX_RESULT: ${{ needs.build-linux-matrix.result }}
+          ANY_JOBS: ${{ needs.build-eval.outputs.any-jobs }}
+          CHECK_RESULT: ${{ needs.check.result }}
+          EVAL_RESULT: ${{ needs.build-eval.result }}
+          MATRIX_RESULT: ${{ needs.build-matrix.result }}
         run: |
           set -euo pipefail
+          if [[ "$CHECK_RESULT" != success ]]; then
+            echo "flake evaluation failed: $CHECK_RESULT" >&2
+            exit 1
+          fi
           if [[ "$EVAL_RESULT" != success ]]; then
-            echo "Linux check evaluation failed: $EVAL_RESULT" >&2
+            echo "matrix evaluation failed: $EVAL_RESULT" >&2
             exit 1
           fi
           if [[ "$ANY_JOBS" == true ]]; then
             if [[ "$MATRIX_RESULT" != success ]]; then
-              echo "Linux matrix build failed: $MATRIX_RESULT" >&2
+              echo "matrix build failed: $MATRIX_RESULT" >&2
               exit 1
             fi
           elif [[ "$ANY_JOBS" == false ]]; then
@@ -187,23 +173,3 @@ jobs:
             echo "invalid any-jobs output: $ANY_JOBS" >&2
             exit 1
           fi
-
-  # darwin 構成の実ビルド。eval だけでは hash 切れや darwin 専用パッケージの
-  # ビルド破損が素通りするため (build-linux と同じ理由の macOS 版)。
-  # brew-nix の cask 取得で upstream 都合の失敗があり得る — 慢性化したら
-  # ビルド対象の分割を検討する。
-  build-darwin:
-    runs-on: macos-14
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
-        with:
-          enable_kvm: false
-      - uses: Mic92/hestia@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320 # v3.0.0
-        with:
-          version: ${{ env.HESTIA_VERSION }}
-          upstream-cache-filter: true
-          upstream-cache-key-names: ${{ env.HESTIA_UPSTREAM_CACHE_KEY_NAMES }}
-      - run: nix flake check --print-build-logs

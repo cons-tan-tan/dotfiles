@@ -1,7 +1,13 @@
-{ lib, pkgs }:
+{
+  ciCheck,
+  lib,
+  pkgs,
+}:
 let
   nixRoot = ../.;
-  catalog = import ./rust-projects.nix { inherit lib pkgs; };
+  catalog = import ./rust-projects.nix {
+    inherit ciCheck lib pkgs;
+  };
   inherit (catalog) projects;
 
   relativePath = path: lib.removePrefix "${toString nixRoot}/" (toString path);

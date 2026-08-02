@@ -125,6 +125,28 @@ cache_setting() {
   [ "$status" -eq 0 ]
 }
 
+@test "flake checks are the only source of repository gates" {
+  run yq -e '
+    ([.. | select(kind == "map") | .run // ""] | map(select(length > 0))) as $runs
+    | ([.. | select(kind == "map") | .uses // ""] | map(select(length > 0))) as $uses
+    | [
+        (.jobs.fmt == null),
+        (.jobs.reuse == null),
+        (([$runs[] | select(
+          contains("nix flake check --no-build --all-systems")
+        )] | length) == 1),
+        (([$runs[] | select(
+          contains("nix flake check --no-build --all-systems")
+        )][0]) == "nix flake check --no-build --all-systems"),
+        (([$runs[] | select(contains("nix run .#fmt"))] | length) == 0),
+        (([$runs[] | select(contains("reuse lint"))] | length) == 0),
+        (([$uses[] | select(test("^fsfe/reuse-action@"))] | length) == 0)
+      ]
+      | all
+  ' "$CI_WORKFLOW"
+  [ "$status" -eq 0 ]
+}
+
 @test "live contract executable crosses the expression boundary through env" {
   run yq -e '
     [
@@ -155,58 +177,64 @@ cache_setting() {
   [ "$(yq -r '.jobs.gc.steps[] | select(.uses == "Mic92/hestia@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320") | .with.version' "$CACHE_GC_WORKFLOW")" = "$version" ]
 }
 
-@test "Linux checks are evaluated once for the Hestia matrix" {
+@test "check and Hestia evaluation start independently" {
   run yq -e '
-    .jobs."build-linux-eval".runs-on == "ubuntu-latest"
-    and .jobs."build-linux-eval".outputs.matrix
+    .jobs.check.runs-on == "ubuntu-latest"
+    and .jobs.check.needs == null
+    and .jobs."build-eval".runs-on == "ubuntu-latest"
+    and .jobs."build-eval".needs == null
+    and .jobs."build-eval".outputs.matrix
       == "${{ steps.matrix.outputs.matrix }}"
-    and .jobs."build-linux-eval".outputs."any-jobs"
+    and .jobs."build-eval".outputs."any-jobs"
       == "${{ steps.matrix.outputs.any-jobs }}"
-    and .jobs."build-linux-eval".outputs."manifest-version"
+    and .jobs."build-eval".outputs."manifest-version"
       == "${{ steps.matrix.outputs.manifest-version }}"
-    and ([.jobs."build-linux-eval".steps[] | select(.id == "matrix")]
+    and ([.jobs."build-eval".steps[] | select(.id == "matrix")]
       | length) == 1
-    and ([.jobs."build-linux-eval".steps[] | select(.id == "matrix")][0].uses)
+    and ([.jobs."build-eval".steps[] | select(.id == "matrix")][0].uses)
       == "Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320"
-    and ([.jobs."build-linux-eval".steps[] | select(.id == "matrix")][0].with.flake)
-      == ".#checks.x86_64-linux"
-    and ([.jobs."build-linux-eval".steps[] | select(
+    and ([.jobs."build-eval".steps[] | select(.id == "matrix")][0].with.flake)
+      == ".#hydraJobs.ci"
+    and ([.jobs."build-eval".steps[] | select(.id == "matrix")][0].with."attr-prefix")
+      == "hydraJobs.ci"
+    and ([.jobs."build-eval".steps[] | select(
       .name == "Install matrix evaluator"
     )][0].run) == "nix profile add --inputs-from . nixpkgs#nix-eval-jobs"
   ' "$CI_WORKFLOW"
   [ "$status" -eq 0 ]
 }
 
-@test "Linux matrix waits for and builds the evaluated derivations" {
+@test "multi-system matrix waits for and builds the evaluated derivations" {
   run yq -e '
-    .jobs."build-linux-matrix".needs == "build-linux-eval"
-    and .jobs."build-linux-matrix".if
-      == "needs.build-linux-eval.outputs.any-jobs == '\''true'\''"
-    and .jobs."build-linux-matrix".strategy."fail-fast" == false
-    and .jobs."build-linux-matrix".strategy."max-parallel" == 5
-    and .jobs."build-linux-matrix".strategy.matrix
-      == "${{ fromJSON(needs.build-linux-eval.outputs.matrix) }}"
-    and ([.jobs."build-linux-matrix".steps[] | select(
+    .jobs."build-matrix".needs == "build-eval"
+    and .jobs."build-matrix".if
+      == "needs.build-eval.result == '\''success'\'' && needs.build-eval.outputs.any-jobs == '\''true'\''"
+    and .jobs."build-matrix"."runs-on" == "${{ matrix.os }}"
+    and .jobs."build-matrix".strategy."fail-fast" == false
+    and .jobs."build-matrix".strategy."max-parallel" == null
+    and .jobs."build-matrix".strategy.matrix
+      == "${{ fromJSON(needs.build-eval.outputs.matrix) }}"
+    and ([.jobs."build-matrix".steps[] | select(
       .uses == "Mic92/hestia@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320"
     )][0].with."wait-manifest-version")
-      == "${{ needs.build-linux-eval.outputs.manifest-version }}"
-    and ([.jobs."build-linux-matrix".steps[] | select(
+      == "${{ needs.build-eval.outputs.manifest-version }}"
+    and ([.jobs."build-matrix".steps[] | select(
       .name == "Prefetch derivation closure and build"
     )][0].env.INSTALLABLES) == "${{ matrix.installables }}"
-    and ([.jobs."build-linux-matrix".steps[] | select(
+    and ([.jobs."build-matrix".steps[] | select(
       .name == "Prefetch derivation closure and build"
     )][0].run | contains("/closure/$hashes"))
-    and ([.jobs."build-linux-matrix".steps[] | select(
+    and ([.jobs."build-matrix".steps[] | select(
       .name == "Prefetch derivation closure and build"
     )][0].run | contains("nix-store --import"))
-    and ([.jobs."build-linux-matrix".steps[] | select(
+    and ([.jobs."build-matrix".steps[] | select(
       .name == "Prefetch derivation closure and build"
     )][0].run | contains("nix build"))
   ' "$CI_WORKFLOW"
   [ "$status" -eq 0 ]
 }
 
-@test "Linux matrix keeps public substituters and a stable aggregate result" {
+@test "multi-system matrix keeps public substituters and a stable aggregate result" {
   local numtide_substituter
   local numtide_key
   local nix_community_substituter
@@ -237,21 +265,21 @@ cache_setting() {
 
   run yq -e '
     ([
-      .jobs."build-linux-eval".steps[],
-      .jobs."build-linux-matrix".steps[]
+      .jobs."build-eval".steps[],
+      .jobs."build-matrix".steps[]
     ] | map(select(.uses
       == "nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c"))
       | length) == 2
     and ([
-      .jobs."build-linux-eval".steps[],
-      .jobs."build-linux-matrix".steps[]
+      .jobs."build-eval".steps[],
+      .jobs."build-matrix".steps[]
     ] | map(select(.uses
       == "nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c"))
       | map(select(.with.nix_conf | contains("${{ env.NIX_EXTRA_SUBSTITUTERS }}")))
       | length) == 2
     and ([
-      .jobs."build-linux-eval".steps[],
-      .jobs."build-linux-matrix".steps[]
+      .jobs."build-eval".steps[],
+      .jobs."build-matrix".steps[]
     ] | map(select(.uses
       == "nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c"))
       | map(select(.with.nix_conf | contains("${{ env.NIX_EXTRA_TRUSTED_PUBLIC_KEYS }}")))
@@ -264,31 +292,33 @@ cache_setting() {
       and .with."upstream-cache-filter" == true
       and .with."upstream-cache-key-names"
         == "${{ env.HESTIA_UPSTREAM_CACHE_KEY_NAMES }}"
-    )) | length) == 3
-    and (.jobs."build-linux".needs | join(","))
-      == "build-linux-eval,build-linux-matrix"
-    and .jobs."build-linux".if == "always()"
+    )) | length) == 2
+    and (.jobs.build.needs | join(",")) == "check,build-eval,build-matrix"
+    and .jobs.build.if == "always()"
   ' "$CI_WORKFLOW"
   [ "$status" -eq 0 ]
 }
 
-@test "Linux aggregate result rejects missing or failed matrix states" {
+@test "aggregate result rejects missing or failed matrix states" {
   local script
-  script=$(ci_step_script "build-linux" "Verify Linux matrix result")
+  script=$(ci_step_script "build" "Verify matrix result")
 
-  run env EVAL_RESULT=success ANY_JOBS=true MATRIX_RESULT=success bash -c "$script"
+  run env CHECK_RESULT=success EVAL_RESULT=success ANY_JOBS=true MATRIX_RESULT=success bash -c "$script"
   [ "$status" -eq 0 ]
 
-  run env EVAL_RESULT=success ANY_JOBS=false MATRIX_RESULT=skipped bash -c "$script"
+  run env CHECK_RESULT=success EVAL_RESULT=success ANY_JOBS=false MATRIX_RESULT=skipped bash -c "$script"
   [ "$status" -eq 0 ]
 
-  run env EVAL_RESULT=failure ANY_JOBS=false MATRIX_RESULT=skipped bash -c "$script"
+  run env CHECK_RESULT=success EVAL_RESULT=failure ANY_JOBS=false MATRIX_RESULT=skipped bash -c "$script"
   [ "$status" -ne 0 ]
 
-  run env EVAL_RESULT=success ANY_JOBS=true MATRIX_RESULT=failure bash -c "$script"
+  run env CHECK_RESULT=failure EVAL_RESULT=success ANY_JOBS=true MATRIX_RESULT=success bash -c "$script"
   [ "$status" -ne 0 ]
 
-  run env EVAL_RESULT=success ANY_JOBS= MATRIX_RESULT=skipped bash -c "$script"
+  run env CHECK_RESULT=success EVAL_RESULT=success ANY_JOBS=true MATRIX_RESULT=failure bash -c "$script"
+  [ "$status" -ne 0 ]
+
+  run env CHECK_RESULT=success EVAL_RESULT=success ANY_JOBS= MATRIX_RESULT=skipped bash -c "$script"
   [ "$status" -ne 0 ]
 }
 

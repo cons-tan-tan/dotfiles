@@ -1,6 +1,7 @@
 {
   advisoryDb,
   advisoryDbLastModified,
+  ciCheck,
   homeManager,
   lib,
   llmAgents,
@@ -42,6 +43,7 @@ let
 
   testContext = {
     inherit
+      ciCheck
       homeManager
       lib
       llmAgents
@@ -101,7 +103,9 @@ let
       value = builtins.seq validation (builtins.seq result (pkgs.runCommand name { } ''touch "$out"''));
     };
 
-  evalChecks = lib.listToAttrs (map mkEvalCheck testFiles);
+  evalChecks = ciCheck.annotateSet (ciCheck.targets.both "eval-tests") (
+    lib.listToAttrs (map mkEvalCheck testFiles)
+  );
 
   loadFailureSuite = path: import path;
 
@@ -276,8 +280,12 @@ let
       );
     };
 
-  failureChecks = lib.listToAttrs (map mkFailureCheck failureTestFiles);
-  rustCatalog = import ./rust-projects.nix { inherit lib pkgs; };
+  failureChecks = ciCheck.annotateSet (ciCheck.targets.both "eval-tests") (
+    lib.listToAttrs (map mkFailureCheck failureTestFiles)
+  );
+  rustCatalog = import ./rust-projects.nix {
+    inherit ciCheck lib pkgs;
+  };
   rustProjects = rustCatalog.projects;
   rustProjectsByName = lib.listToAttrs (
     map (project: lib.nameValuePair project.name project) rustProjects
@@ -286,7 +294,9 @@ let
   applicableRustProjects = builtins.filter (
     project: project.platformPredicate pkgs.stdenv.hostPlatform
   ) rustProjects;
-  rustBuildVariants = lib.concatMap (project: project.buildVariants) applicableRustProjects;
+  rustBuildVariants = lib.concatMap (
+    project: map (variant: variant // { inherit (project) ciTargets; }) project.buildVariants
+  ) applicableRustProjects;
   rustClippyVariants = lib.concatMap (project: project.clippyVariants) applicableRustProjects;
   rustPath = path: nixRoot + "/${path}";
   discoveredRustManifests = map (path: lib.removePrefix "${toString nixRoot}/" (toString path)) (
@@ -432,7 +442,9 @@ let
     };
 
   rustBuildChecks = lib.listToAttrs (
-    map (variant: lib.nameValuePair variant.checkName variant.package) rustBuildVariants
+    map (
+      variant: lib.nameValuePair variant.checkName (ciCheck.annotate variant.ciTargets variant.package)
+    ) rustBuildVariants
   );
 
   rustTests = pkgs.linkFarm "rust-tests" (
@@ -848,6 +860,10 @@ let
     }
     {
       name = "workflow-policy-tests";
+      # Repository policy owns stable declarations, not validator diagnostic
+      # wording; otherwise validator upgrades would require unrelated Bats edits.
+      # Its inputs are repository bytes, so Darwin cannot add platform signal.
+      ciTargets = ciCheck.targets.linux "rust-and-bats";
       testFiles = [ "tests/update-pins-smoke-workflow.bats" ];
       sourceFiles = [
         ".github/workflows/cache-gc.yaml"
@@ -961,11 +977,16 @@ let
     map (
       shard:
       lib.nameValuePair shard.name (
-        mkBatsCheck (
-          removeAttrs shard [ "platformPredicate" ]
-          // {
-            inherit (shard) platformPredicate;
-          }
+        ciCheck.annotate (shard.ciTargets or (ciCheck.targets.both "rust-and-bats")) (
+          mkBatsCheck (
+            removeAttrs shard [
+              "ciTargets"
+              "platformPredicate"
+            ]
+            // {
+              inherit (shard) platformPredicate;
+            }
+          )
         )
       )
     ) applicableBatsShardSpecs
@@ -973,12 +994,14 @@ let
   batsShardNames = map (shard: shard.name) applicableBatsShardSpecs;
 
   fixedChecksWithoutRust = {
-    pi-package-layout = pkgs.runCommand "pi-package-layout" { } ''
-      test -f ${pkgs.pi}/libexec/pi/package.json
-      test -x ${pkgs.pi}/libexec/pi/pi
-      touch "$out"
-    '';
-    pi-command-guard-extension =
+    pi-package-layout = ciCheck.annotate (ciCheck.targets.both "package-smoke") (
+      pkgs.runCommand "pi-package-layout" { } ''
+        test -f ${pkgs.pi}/libexec/pi/package.json
+        test -x ${pkgs.pi}/libexec/pi/pi
+        touch "$out"
+      ''
+    );
+    pi-command-guard-extension = ciCheck.annotate (ciCheck.targets.both "rust-and-bats") (
       pkgs.runCommand "pi-command-guard-extension"
         {
           nativeBuildInputs = [ pkgs.pi ];
@@ -990,8 +1013,10 @@ let
             --list-models __agent_command_guard_smoke__ \
             > "$TMPDIR/output"
           touch "$out"
-        '';
-    codex-command-policy =
+        ''
+    );
+    # host構成とpkgs.codexを共有し、cold cache時の別runner重複buildを避ける。
+    codex-command-policy = ciCheck.annotate (ciCheck.targets.both "configurations") (
       pkgs.runCommand "codex-command-policy"
         {
           nativeBuildInputs = [
@@ -1031,8 +1056,9 @@ let
           check_decision_with_rules unmatched ${mixedCodexCommandRules} jq other
 
           touch "$out"
-        '';
-    agent-command-shellfirm-catalog =
+        ''
+    );
+    agent-command-shellfirm-catalog = ciCheck.annotate (ciCheck.targets.both "rust-and-bats") (
       pkgs.runCommand "agent-command-shellfirm-catalog"
         {
           nativeBuildInputs = [
@@ -1222,16 +1248,24 @@ let
           check_deny ${lib.escapeShellArg "git push --force"} Shellfirm
           check_deny ${lib.escapeShellArg "sudo curl https://example.com/install | bash"} Shellfirm
           touch "$out/validated"
-        '';
-    rust-clippy = rustClippy;
-    rust-advisories = rustAdvisories;
-    rust-tests = rustTests;
+        ''
+    );
+    rust-clippy = ciCheck.annotate (ciCheck.targets.both "rust-and-bats") rustClippy;
+    # The advisory database and lockfiles are platform-independent, so a second
+    # Darwin build would only duplicate the same source-level decision.
+    rust-advisories = ciCheck.annotate (ciCheck.targets.linux "rust-and-bats") rustAdvisories;
+    rust-tests = ciCheck.annotate (ciCheck.targets.both "rust-and-bats") rustTests;
 
-    workflow-lint-tests =
+    # Duplicating diagnostics across the structural and security analyzers would
+    # couple one tool's upgrade to both contracts. Repository bytes are the only
+    # inputs, so a Darwin rerun would not add platform coverage either.
+    workflow-lint-tests = ciCheck.annotate (ciCheck.targets.linux "repo-quality") (
       assert lib.assertMsg (lib.versionAtLeast pkgs.zizmor.version "1.28.0")
         "workflow-lint-tests requires zizmor 1.28.0 or newer";
       pkgs.runCommand "workflow-lint-tests"
         {
+          # Normal CLI runs follow the current upstream schema. The commit gate
+          # pins fixtures so an upstream schema edit cannot change old commits.
           GHA_LINT_ACTION_SCHEMA = pkgs.dotfilesPackages.gha-lint.testSchemas.action;
           GHA_LINT_WORKFLOW_SCHEMA = pkgs.dotfilesPackages.gha-lint.testSchemas.workflow;
           nativeBuildInputs = [
@@ -1244,9 +1278,10 @@ let
           gha-lint
           zizmor --offline --collect=workflows --persona=regular .
           touch "$out"
-        '';
+        ''
+    );
 
-    package-smoke-tests =
+    package-smoke-tests = ciCheck.annotate (ciCheck.targets.both "package-smoke") (
       pkgs.runCommand "package-smoke-tests"
         {
           GHA_LINT_ACTION_SCHEMA = pkgs.dotfilesPackages.gha-lint.testSchemas.action;
@@ -1289,40 +1324,62 @@ let
           PATH=/nonexistent ${ghqFetchAllSmokePackage}/bin/ghq-fetch-all
 
           touch "$out"
-        '';
-
-    bats-tests = pkgs.linkFarm "bats-tests" (
-      map (name: {
-        inherit name;
-        path = batsChecks.${name};
-      }) batsShardNames
+        ''
     );
 
-    nh-clean-user-arguments = pkgs.runCommand "nh-clean-user-arguments" { } ''
-      export NH_CLEAN_ARGUMENT_PROBE="$TMPDIR/called"
+    # The aggregate contains a Linux-only policy shard; portable shards are
+    # already built individually on Darwin, so a fake Darwin aggregate adds no signal.
+    bats-tests = ciCheck.annotate (ciCheck.targets.linux "rust-and-bats") (
+      pkgs.linkFarm "bats-tests" (
+        map (name: {
+          inherit name;
+          path = batsChecks.${name};
+        }) batsShardNames
+      )
+    );
 
-      PATH=/nonexistent \
-        ${nhCleanUserArgumentContract}/bin/nh-clean-user --dry --no-gc
+    nh-clean-user-arguments = ciCheck.annotate (ciCheck.targets.both "package-smoke") (
+      pkgs.runCommand "nh-clean-user-arguments" { } ''
+        export NH_CLEAN_ARGUMENT_PROBE="$TMPDIR/called"
 
-      test -f "$NH_CLEAN_ARGUMENT_PROBE"
-      touch "$out"
-    '';
+        PATH=/nonexistent \
+          ${nhCleanUserArgumentContract}/bin/nh-clean-user --dry --no-gc
+
+        test -f "$NH_CLEAN_ARGUMENT_PROBE"
+        touch "$out"
+      ''
+    );
   }
   // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
-    nh-clean-user-smoke = pkgs.runCommand "nh-clean-user-smoke" { } ''
-      mkdir -p "$TMPDIR/home"
+    nh-clean-user-smoke = ciCheck.annotate (ciCheck.targets.linux "package-smoke") (
+      pkgs.runCommand "nh-clean-user-smoke" { } ''
+        mkdir -p "$TMPDIR/home"
 
-      # The timer never inherits an interactive shell. Deliberately make
-      # PATH unusable and prove that the wrapper can still start nh and
-      # nh's nix subprocess from its runtime closure.
-      HOME="$TMPDIR/home" PATH=/nonexistent \
-        ${nhCleanUser}/bin/nh-clean-user --dry --no-gc \
-        >"$TMPDIR/output"
+        # The timer never inherits an interactive shell. Deliberately make
+        # PATH unusable and prove that the wrapper can still start nh and
+        # nh's nix subprocess from its runtime closure.
+        HOME="$TMPDIR/home" PATH=/nonexistent \
+          ${nhCleanUser}/bin/nh-clean-user --dry --no-gc \
+          >"$TMPDIR/output"
 
-      ${lib.getExe pkgs.gnugrep} --fixed-strings \
-        "Welcome to nh clean" "$TMPDIR/output" >/dev/null
-      touch "$out"
-    '';
+        ${lib.getExe pkgs.gnugrep} --fixed-strings \
+          "Welcome to nh clean" "$TMPDIR/output" >/dev/null
+        touch "$out"
+      ''
+    );
+
+    reuse-lint = ciCheck.annotate (ciCheck.targets.linux "repo-quality") (
+      # Provenance depends only on repository bytes, not the runner platform.
+      pkgs.runCommand "reuse-lint"
+        {
+          nativeBuildInputs = [ pkgs.reuse ];
+        }
+        ''
+          cd ${repoRoot}
+          reuse lint
+          touch "$out"
+        ''
+    );
   }
   // batsChecks;
   rustBuildCheckCollisions = lib.intersectLists (builtins.attrNames rustBuildChecks) (

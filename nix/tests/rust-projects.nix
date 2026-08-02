@@ -1,4 +1,8 @@
-{ lib, pkgs }:
+{
+  ciCheck,
+  lib,
+  pkgs,
+}:
 let
   allPlatforms = _: true;
   darwinOnly = platform: platform.isDarwin;
@@ -39,6 +43,7 @@ let
       lockfile,
       package,
       checkName ? "${name}-rust",
+      ciTargets ? ciCheck.targets.both "rust-and-bats",
       clippyFlags ? allTargetsAndFeatures,
       platformPredicate ? allPlatforms,
     }:
@@ -47,6 +52,7 @@ let
         name
         manifest
         platformPredicate
+        ciTargets
         ;
       advisoryOnly = false;
       lock = {
@@ -115,6 +121,7 @@ let
     {
       name = "update-pins";
       manifest = "apps/update-pins/Cargo.toml";
+      ciTargets = ciCheck.targets.both "rust-and-bats";
       platformPredicate = allPlatforms;
       advisoryOnly = false;
       lock = {
@@ -183,6 +190,7 @@ let
     {
       name = "safe-fetch";
       manifest = "packages/safe-fetch/Cargo.toml";
+      ciTargets = ciCheck.targets.both "rust-and-bats";
       platformPredicate = allPlatforms;
       advisoryOnly = false;
       lock = {
@@ -215,6 +223,7 @@ let
       lockfile = "packages/sleepctl/Cargo.lock";
       package = sleepctl;
       platformPredicate = darwinOnly;
+      ciTargets = ciCheck.targets.darwin "rust-and-bats";
       clippyFlags = [ "--all-targets" ];
     })
     {
@@ -222,6 +231,7 @@ let
       # kept here so the same reproducible RustSec gate covers the dependency set.
       name = "shellfirm";
       manifest = null;
+      ciTargets = ciCheck.targets.both "rust-and-bats";
       platformPredicate = allPlatforms;
       advisoryOnly = true;
       lock = {

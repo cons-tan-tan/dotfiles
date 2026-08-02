@@ -194,138 +194,7 @@
       windowsHomedir = "/mnt/c/Users/${windowsUsername}";
 
       systems = import inputs.supported-systems;
-
-      # Hestia matrix の runner 間では未キャッシュの依存 output を共有できない。
-      # linkFarm とその構成要素、Home / NixOS 構成を同じ group に寄せ、cold
-      # cache 時の重複を抑える。Rust/Bats は構成群と並列化するため分離し、変更
-      # 直後に共通のローカルRust出力が最大2 runnerで重複する点は許容する。
-      linuxHestiaGroupMembers = {
-        linux-eval-tests = [
-          "agent-command-policy-compiler-failure-tests"
-          "agent-command-policy-compiler-tests"
-          "agent-command-policy-module-schema-failure-tests"
-          "agent-command-policy-module-schema-tests"
-          "agent-command-policy-shellfirm-pin-tests"
-          "agent-guidance-tests"
-          "aws-tests"
-          "cache-settings-tests"
-          "claude-tests"
-          "cli-tools-tests"
-          "codex-invocation-policy-tests"
-          "codex-tests"
-          "command-profiles-tests"
-          "deploy-tests"
-          "hcom-tests"
-          "herdr-package-tests"
-          "linux-config-name-tests"
-          "mk-app-set-tests"
-          "mk-pinned-asset-tests"
-          "namespace-tests"
-          "nh-tests"
-          "nix-custom-settings-tests"
-          "options-failure-tests"
-          "options-tests"
-          "overlay-contract-tests"
-          "package-families-tests"
-          "paired-sources-tests"
-          "pin-injectability-tests"
-          "rust-projects-tests"
-          "skill-policy-failure-tests"
-          "skill-policy-tests"
-          "sleepctl-daemon-tests"
-          "trash-tests"
-          "watchexec-pin-tests"
-          "yaml-frontmatter-failure-tests"
-          "yaml-frontmatter-tests"
-        ];
-        linux-configurations = [
-          "claude-userprofile-contract"
-          "home-linux"
-          "home-linux-hcom-enabled"
-          "home-wsl"
-          "home-wsl-hcom-enabled"
-          "nixos-wsl-contract"
-          "nixos-wsl-system"
-          "nixos-wsl-tarball-builder"
-        ];
-        linux-package-smoke = [
-          "codex-command-policy"
-          "nh-clean-user-arguments"
-          "nh-clean-user-smoke"
-          "package-smoke-tests"
-          "pi-package-layout"
-        ];
-        linux-repo-quality = [
-          "app-scripts"
-          "treefmt"
-          "workflow-lint-tests"
-        ];
-        linux-rust-and-bats = [
-          "agent-command-guard-rust"
-          "agent-command-shellfirm-catalog"
-          "agent-config-helper-rust"
-          "apply-nix-settings-rust"
-          "apply-secrets-rust"
-          "aws-config-helper-rust"
-          "bats-tests"
-          "pi-command-guard-extension"
-          "rust-advisories"
-          "rust-cli-e2e"
-          "rust-clippy"
-          "rust-tests"
-          "safe-fetch-e2e"
-          "safe-fetch-rust"
-          "shell-wrapper-tests"
-          "update-pins-e2e"
-          "update-pins-rust"
-          "update-pins-smoke"
-          "workflow-policy-tests"
-        ];
-      };
-
-      linuxHestiaCheckGroups =
-        let
-          entries = lib.concatLists (
-            lib.mapAttrsToList (
-              group: names: map (name: lib.nameValuePair name group) names
-            ) linuxHestiaGroupMembers
-          );
-          names = map (entry: entry.name) entries;
-          duplicates = builtins.filter (
-            name: builtins.length (builtins.filter (other: other == name) names) > 1
-          ) (lib.unique names);
-        in
-        if duplicates == [ ] then
-          lib.listToAttrs entries
-        else
-          throw "duplicate Hestia check groups: ${builtins.toJSON duplicates}";
-
-      groupLinuxHestiaChecks =
-        checks:
-        let
-          checkNames = builtins.attrNames checks;
-          configuredNames = builtins.attrNames linuxHestiaCheckGroups;
-          missing = builtins.filter (name: !builtins.hasAttr name linuxHestiaCheckGroups) checkNames;
-          stale = builtins.filter (name: !builtins.hasAttr name checks) configuredNames;
-        in
-        if missing != [ ] || stale != [ ] then
-          throw "Hestia check group mismatch: ${builtins.toJSON { inherit missing stale; }}"
-        else
-          lib.mapAttrs (
-            name: check:
-            let
-              group = linuxHestiaCheckGroups.${name};
-              oldMeta = check.meta or { };
-            in
-            check
-            // {
-              meta = oldMeta // {
-                hestia = (oldMeta.hestia or { }) // {
-                  inherit group;
-                };
-              };
-            }
-          ) checks;
+      ciCheck = import ./nix/lib/ci-check.nix { inherit lib; };
 
       mkPkgs = import ./nix/lib/mk-pkgs.nix { inherit inputs; };
 
@@ -552,6 +421,14 @@
 
       formatter = lib.genAttrs systems (system: treefmtEvalFor.${system}.config.build.wrapper);
 
+      # CI専用gateを別定義するとlocal checksと対象が乖離するため、同じ
+      # derivationから導出する。native runnerを用意していないaarch64-linuxは、
+      # 実build対象へ見せかけず全system評価だけに留める。
+      hydraJobs.ci = ciCheck.mkHestiaJobs {
+        x86_64-linux = self.checks.x86_64-linux;
+        ${darwinSystem} = self.checks.${darwinSystem};
+      };
+
       checks = lib.genAttrs systems (
         system:
         let
@@ -582,66 +459,91 @@
             else
               null;
           baseChecks = {
-            treefmt = treefmtEvalFor.${system}.config.build.check self;
-            # 全 app スクリプトをビルドし、wrapper のビルド時 shellcheck を
-            # CI (build-linux ジョブ) で強制する
-            app-scripts = pkgs.symlinkJoin {
-              name = "app-scripts";
-              paths = appsFor.${system}.scripts;
-            };
+            # treefmtの結果はrepository bytesだけで決まり、Darwinで繰り返しても
+            # platform固有のsignalは増えない。
+            treefmt = ciCheck.annotate (ciCheck.targets.linux "repo-quality") (
+              treefmtEvalFor.${system}.config.build.check self
+            );
+            # app wrapperが別の依存から偶然buildされた時だけ検査される状態を
+            # 避け、すべてのwrapperへbuild時shellcheckを適用する。
+            app-scripts =
+              ciCheck.annotate
+                # On Darwin, keep the app closure with host configurations so
+                # their shared packages are not rebuilt by a cold-cache runner.
+                (ciCheck.targets.bySystem {
+                  darwin = "configurations";
+                  linux = "repo-quality";
+                })
+                (
+                  pkgs.symlinkJoin {
+                    name = "app-scripts";
+                    paths = appsFor.${system}.scripts;
+                  }
+                );
           }
-          // lib.optionalAttrs (system == darwinSystem) {
-            darwin-system = darwinConfigurations.${darwinHostname}.system;
-            # hcom はデフォルト無効でも、opt-in 経路を CI で継続的に評価・build する。
-            darwin-system-hcom-enabled =
-              (darwinConfigurations.${darwinHostname}.extendModules {
-                modules = [
-                  { home-manager.users.${username}.dotfiles.hcom.enable = true; }
-                ];
-              }).system;
-            darwin-nh-cleanup-contract = import ./nix/checks/darwin-nh-cleanup-contract.nix {
-              inherit lib pkgs username;
-              config = darwinConfigurations.${darwinHostname}.config;
-            };
-          }
-          // lib.optionalAttrs (lib.hasSuffix "-linux" system) {
-            nixos-wsl-system = nixosWslConfiguration.config.system.build.toplevel;
-            nixos-wsl-tarball-builder = nixosWslConfiguration.config.system.build.tarballBuilder;
-            nixos-wsl-contract = import ./nix/checks/nixos-wsl-contract.nix {
-              inherit
-                lib
-                linuxHomedir
-                pkgs
-                username
-                windowsHomedir
-                windowsUsername
-                ;
-              config = nixosWslConfiguration.config;
-              sourcePath = toString self.outPath;
-            };
-            claude-userprofile-contract = import ./nix/checks/claude-userprofile-contract.nix {
-              inherit lib pkgs windowsHomedir;
-              linuxSettings = linuxHomeConfiguration.config.home.file.".claude/settings.json".source;
-              wslSettings = wslHomeConfiguration.config.home.file.".claude/settings.json".source;
-            };
-          }
-          // lib.listToAttrs (
-            lib.concatMap (entry: [
-              {
-                name = "home-${entry.hostKind}";
-                value = homeConfigurations.${linuxConfigName entry}.activationPackage;
-              }
-              {
-                name = "home-${entry.hostKind}-hcom-enabled";
-                value =
-                  (homeConfigurations.${linuxConfigName entry}.extendModules {
-                    modules = [ { dotfiles.hcom.enable = true; } ];
-                  }).activationPackage;
-              }
-            ]) (builtins.filter (entry: entry.system == system) linuxHostMatrix)
+          // ciCheck.annotateSet (ciCheck.targets.darwin "configurations") (
+            lib.optionalAttrs (system == darwinSystem) {
+              darwin-system = darwinConfigurations.${darwinHostname}.system;
+              # hcom はデフォルト無効でも、opt-in 経路を CI で継続的に評価・build する。
+              darwin-system-hcom-enabled =
+                (darwinConfigurations.${darwinHostname}.extendModules {
+                  modules = [
+                    { home-manager.users.${username}.dotfiles.hcom.enable = true; }
+                  ];
+                }).system;
+              darwin-nh-cleanup-contract = import ./nix/checks/darwin-nh-cleanup-contract.nix {
+                inherit lib pkgs username;
+                config = darwinConfigurations.${darwinHostname}.config;
+              };
+            }
+          )
+          // ciCheck.annotateSet (ciCheck.targets.linux "configurations") (
+            lib.optionalAttrs (lib.hasSuffix "-linux" system) {
+              nixos-wsl-system = nixosWslConfiguration.config.system.build.toplevel;
+              nixos-wsl-tarball-builder = nixosWslConfiguration.config.system.build.tarballBuilder;
+              nixos-wsl-contract = import ./nix/checks/nixos-wsl-contract.nix {
+                inherit
+                  lib
+                  linuxHomedir
+                  pkgs
+                  username
+                  windowsHomedir
+                  windowsUsername
+                  ;
+                config = nixosWslConfiguration.config;
+                sourcePath = toString self.outPath;
+              };
+              claude-userprofile-contract = import ./nix/checks/claude-userprofile-contract.nix {
+                inherit lib pkgs windowsHomedir;
+                linuxSettings = linuxHomeConfiguration.config.home.file.".claude/settings.json".source;
+                wslSettings = wslHomeConfiguration.config.home.file.".claude/settings.json".source;
+              };
+            }
+          )
+          // ciCheck.annotateSet (ciCheck.targets.linux "configurations") (
+            lib.listToAttrs (
+              lib.concatMap (entry: [
+                {
+                  name = "home-${entry.hostKind}";
+                  value = homeConfigurations.${linuxConfigName entry}.activationPackage;
+                }
+                {
+                  name = "home-${entry.hostKind}-hcom-enabled";
+                  value =
+                    (homeConfigurations.${linuxConfigName entry}.extendModules {
+                      modules = [ { dotfiles.hcom.enable = true; } ];
+                    }).activationPackage;
+                }
+              ]) (builtins.filter (entry: entry.system == system) linuxHostMatrix)
+            )
           );
           testChecks = import ./nix/tests {
-            inherit lib pkgs username;
+            inherit
+              ciCheck
+              lib
+              pkgs
+              username
+              ;
             advisoryDb = inputs.rustsec-advisory-db;
             advisoryDbLastModified = inputs.rustsec-advisory-db.lastModified;
             homeManager = home-manager;
@@ -651,7 +553,7 @@
           };
           allChecks = baseChecks // testChecks;
         in
-        if system == "x86_64-linux" then groupLinuxHestiaChecks allChecks else allChecks
+        allChecks
       );
     };
 }
