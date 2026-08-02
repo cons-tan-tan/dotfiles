@@ -116,6 +116,9 @@ pub(crate) fn update<R: CommandRunner>(
 
     let current_source_hash = pin.string(&["srcHash"])?.to_owned();
     let current_lock = transaction.read(lock_path)?;
+    // The repository lock may contain security refreshes newer than the release
+    // archive. Re-forcing the same release must not roll those dependencies back;
+    // a version change is the boundary for adopting a new upstream lock.
     let selected_lock =
         select_lock_for_release(&current_version, version, &current_lock, &candidate_lock);
     let (selected_guard_manifest, selected_guard_lock) = if current_version == version {
