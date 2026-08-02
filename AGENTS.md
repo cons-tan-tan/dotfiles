@@ -1,44 +1,34 @@
 # Repository Agent Guide
 
-This repo is a Nix flake for declarative dotfiles across macOS, Linux, WSL, and WSL-managed Windows companion config.
+## Entry points
+
+- [`README.md`](README.md): setup, supported hosts, and the canonical clone path.
+- [`docs/testing.md`](docs/testing.md): choosing a test layer and assertion style.
+- [`secrets/README.md`](secrets/README.md): encrypted secret operations.
+- `AGENTS.md` is the source of repository agent instructions; `CLAUDE.md` is a compatibility symlink.
 
 ## Verification
 
-Run the narrowest relevant checks. Before committing Nix or module changes, run at least:
+Run the narrowest relevant checks while iterating.
 
-- `nix flake check --no-build --all-systems`
-- `nix run .#fmt -- --ci`
+- `nix flake check` is the complete reproducible current-system gate and includes the treefmt check.
+- `nix flake check --no-build --all-systems` evaluates every system but does not execute checks.
+- Build an individual gate with `nix build --no-link .#checks.<system>.<name>` when the full gate is unnecessary.
+- The Git flake ignores untracked files. Stage new files before the standard check, or use `nix flake check path:.` while iterating.
 
-Other relevant gates:
+Checks and development aids outside the flake gate:
 
-- `nix run .#build` when evaluation is not enough and the changed output should build.
-- `reuse lint` for licensing or provenance changes.
-- `nix build --no-link .#checks.x86_64-linux.bats-tests` is the canonical Bats gate on Linux.
 - `bats --print-output-on-failure tests/` is a source-only development aid; Nix package cases skip without their fixtures.
-- `nix run .#markdownlint` / `nix run .#textlint` for Markdown or prose changes.
-- Pure Nix evaluation tests use `*.test.nix` under `nix/`.
-- Git flakes only discover tracked files, so add new tests to the index before the standard flake check.
-- Use `nix flake check path:.` while developing untracked tests.
+- `nix run .#markdownlint -- <files...>` checks Markdown structure.
+- `nix run .#textlint -- tech-jp <files...>` checks Japanese technical prose.
 
-See [`docs/testing.md`](docs/testing.md) for test-layer responsibilities and narrow commands.
+## Repository constraints
 
-## Rules
-
-- Keep repository agent instructions in `AGENTS.md`; `CLAUDE.md` is only a compatibility symlink.
+- Do not mirror implementation inventories or current wiring in prose.
+- Keep non-obvious why/why-not beside the relevant code. Reserve documentation for user operations or cross-cutting decisions that cannot be localized.
 - Avoid IFD during eval. Do not read derivation outputs with `builtins.readFile`; eval-time reads must be repo paths or flake inputs.
 - Respect REUSE. The default license is CC0-1.0 from `REUSE.toml`; add a sidecar `.license` only for files with different provenance.
 - New shell tools should use `writeShellApplication`. Put nontrivial logic in `.sh` files wrapped with `builtins.readFile`, and cover behavior with Bats.
-- Treat root flake `apps` and `packages` as permanent public CLI interfaces.
-- Never add an entry solely to build, run, debug, or calculate hashes.
-- Build an overlaid package through an existing configuration's `pkgs` before adding the overlay.
-- Alternatively, use `nix build --impure --expr` with `mk-pkgs.nix` and `callPackage`.
+- Treat root flake `apps` and `packages` as permanent public interfaces; do not add one for a one-off build, debug session, or hash calculation.
+- Build an overlaid package through an existing configuration's `pkgs`. For one-off evaluation, use `nix build --impure --expr` with `mk-pkgs.nix` and `callPackage` instead of widening the public flake interface.
 - Avoid `home.file.*.force = true`; prefer visible collisions or the configured backup extension over silently replacing user files.
-- Never commit plaintext secrets. `secrets/` is sops/GPG-managed; see `secrets/README.md`.
-
-## Notes
-
-- Use `README.md` for setup, top-level layout, and the canonical clone path instead of duplicating it here.
-- When editing shared settings, search import/call sites instead of assuming a single consumer.
-- Keep implementation-specific caveats next to the relevant code.
-- Keep `AGENTS.md` as a stable index of repository-wide rules and entry points.
-- Commit messages follow Conventional Commits. Comments should explain why, not restate what the code already says.
