@@ -13,9 +13,14 @@ Other relevant gates:
 
 - `nix run .#build` when evaluation is not enough and the changed output should build.
 - `reuse lint` for licensing or provenance changes.
-- `bats tests/` for shell scripts and wrappers.
+- `nix build --no-link .#checks.x86_64-linux.bats-tests` is the canonical Bats gate on Linux.
+- `bats --print-output-on-failure tests/` is a source-only development aid; Nix package cases skip without their fixtures.
 - `nix run .#markdownlint` / `nix run .#textlint` for Markdown or prose changes.
-- Pure Nix evaluation tests use `*.test.nix` under `nix/`. Git flakes only discover tracked files, so add new tests to the index before the standard flake check; use `nix flake check path:.` while developing untracked tests.
+- Pure Nix evaluation tests use `*.test.nix` under `nix/`.
+- Git flakes only discover tracked files, so add new tests to the index before the standard flake check.
+- Use `nix flake check path:.` while developing untracked tests.
+
+See [`docs/testing.md`](docs/testing.md) for test-layer responsibilities and narrow commands.
 
 ## Rules
 
@@ -23,7 +28,10 @@ Other relevant gates:
 - Avoid IFD during eval. Do not read derivation outputs with `builtins.readFile`; eval-time reads must be repo paths or flake inputs.
 - Respect REUSE. The default license is CC0-1.0 from `REUSE.toml`; add a sidecar `.license` only for files with different provenance.
 - New shell tools should use `writeShellApplication`. Put nontrivial logic in `.sh` files wrapped with `builtins.readFile`, and cover behavior with Bats.
-- Treat root flake `apps` and `packages` as permanent public CLI interfaces. Never add an entry solely to build, run, debug, or calculate hashes; build an overlaid package through an existing configuration's `pkgs`, or use `nix build --impure --expr` with `mk-pkgs.nix` and `callPackage` before adding the overlay.
+- Treat root flake `apps` and `packages` as permanent public CLI interfaces.
+- Never add an entry solely to build, run, debug, or calculate hashes.
+- Build an overlaid package through an existing configuration's `pkgs` before adding the overlay.
+- Alternatively, use `nix build --impure --expr` with `mk-pkgs.nix` and `callPackage`.
 - Avoid `home.file.*.force = true`; prefer visible collisions or the configured backup extension over silently replacing user files.
 - Never commit plaintext secrets. `secrets/` is sops/GPG-managed; see `secrets/README.md`.
 
