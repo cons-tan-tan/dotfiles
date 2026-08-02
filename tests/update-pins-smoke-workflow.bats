@@ -102,19 +102,27 @@ cache_setting() {
   local count=0
   for workflow in "$CI_WORKFLOW" "$CACHE_GC_WORKFLOW" "$WORKFLOW"; do
     run yq -e '
-      [.jobs[].steps[]? | select(
+      [.. | select(kind == "map") | select(
         (.uses // "") | test("^actions/checkout@")
       )] as $checkouts
-      | ($checkouts | length) > 0
-        and ([$checkouts[] | .with."persist-credentials" == false] | all)
+      | ([$checkouts[] | .with."persist-credentials" == false] | all)
     ' "$workflow"
     [ "$status" -eq 0 ]
-    checkout_count="$(yq -r '[.jobs[].steps[]? | select(
+    checkout_count="$(yq -r '[.. | select(kind == "map") | select(
       (.uses // "") | test("^actions/checkout@")
     )] | length' "$workflow")"
     count=$((count + checkout_count))
   done
   [ "$count" -gt 0 ]
+}
+
+@test "cache GC does not check out the repository" {
+  run yq -e '
+    ([.. | select(kind == "map") | select(
+      (.uses // "") | test("^actions/checkout@")
+    )] | length) == 0
+  ' "$CACHE_GC_WORKFLOW"
+  [ "$status" -eq 0 ]
 }
 
 @test "live contract executable crosses the expression boundary through env" {
