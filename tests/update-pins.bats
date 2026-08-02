@@ -6,6 +6,9 @@
 #   the public exit contract remains in test 1.
 # - target selection/order/report: engine::all_runs_*, engine::all_preflights_*,
 #   and ledger::rendering_* assert registry execution and field order.
+# - production no-op/rerun: targets::production_dispatch_* invokes every
+#   registry target twice and asserts stable bytes, modes, and bounded metadata
+#   child programs without duplicating the target inventory here.
 # - preflight/postflight: engine::failed_all_target_preflight_* asserts that no
 #   updater runs after a preflight failure, while engine::all_preflights_*
 #   asserts the full validate/update/validate sequence; the Hcom and Shellfirm
