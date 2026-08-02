@@ -452,16 +452,12 @@ mod tests {
                 events
                     .borrow_mut()
                     .push(format!("update:{}", target.name()));
-                let changed = target_spec(target)
-                    .expect("target spec")
-                    .managed_paths
-                    .iter()
-                    .map(|path| {
-                        transaction
-                            .replace(path, format!("updated {path}\n").as_bytes())
-                            .expect("replace managed path")
-                    })
-                    .fold(false, |changed, current| changed || current);
+                let mut changed = false;
+                for path in target_spec(target).expect("target spec").managed_paths {
+                    changed |= transaction
+                        .replace(path, format!("updated {path}\n").as_bytes())
+                        .expect("replace managed path");
+                }
                 if changed {
                     record_change(target, ledger);
                 }
@@ -506,16 +502,12 @@ mod tests {
             repository.repository(),
             |_target, _transaction| Ok(()),
             |target, _policy, transaction, ledger| {
-                let changed = target_spec(target)
-                    .expect("target spec")
-                    .managed_paths
-                    .iter()
-                    .map(|path| {
-                        transaction
-                            .replace(path, format!("updated {path}\n").as_bytes())
-                            .expect("idempotent managed path")
-                    })
-                    .fold(false, |changed, current| changed || current);
+                let mut changed = false;
+                for path in target_spec(target).expect("target spec").managed_paths {
+                    changed |= transaction
+                        .replace(path, format!("updated {path}\n").as_bytes())
+                        .expect("idempotent managed path");
+                }
                 if changed {
                     record_change(target, ledger);
                 }
