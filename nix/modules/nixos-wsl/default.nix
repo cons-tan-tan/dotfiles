@@ -48,6 +48,53 @@
   # https://github.com/NixOS/nixpkgs/pull/428972
   systemd.targets.getty.wants = lib.mkForce [ ];
 
+  # WSL VMのメモリ上限へ到達してカーネルごと応答不能になる前に、圧迫元の
+  # cgroupを終了する。NixOS-WSLは古いkernelとの互換性からoomdを既定で
+  # 無効化するが、この構成が対象とする現行WSL kernelではPSIを利用できる。
+  systemd.oomd = {
+    enable = true;
+    enableUserSlices = true;
+    settings.OOM.SwapUsedLimit = "80%";
+  };
+
+  # systemdはroot sliceでは個別cgroupのmemory pressureではなく、system全体の
+  # swap使用率による監視を推奨する。全8 GiBを使い切る前にdescendantを選ぶ。
+  systemd.slices."-".sliceConfig.ManagedOOMSwap = "kill";
+
+  # 現在のWSL VM上限32 GiBに対し、system serviceとkernelが応答する余地を
+  # 残す。Highで回収を促し、Max到達時はuser slice内だけでOOMを解決する。
+  systemd.slices.user.sliceConfig = {
+    MemoryAccounting = true;
+    MemoryHigh = "24G";
+    MemoryMax = "28G";
+    MemorySwapMax = "4G";
+  };
+
+  # WSL APIから直接起動されたprocessはsystemdのuser.sliceではなく、WSLの
+  # /initと同じinit.scopeに残る。合成されるinit.scopeも起動時にdrop-inを
+  # 読み込むため、上限とOOM後もscope全体を止めないpolicyを同時に適用する。
+  systemd.units."init.scope" = {
+    overrideStrategy = "asDropin";
+    text = ''
+      [Scope]
+      OOMPolicy=continue
+      ManagedOOMPreference=omit
+      MemoryHigh=24G
+      MemoryMax=28G
+      MemorySwapMax=4G
+    '';
+  };
+
+  # Nixの実buildはuser sliceではなくnix-daemon配下で動くため、別の上限を
+  # 設ける。評価processは起動元に応じてuser sliceかinit.scope、builderは
+  # このserviceでそれぞれ囲う。
+  systemd.services.nix-daemon.serviceConfig = {
+    MemoryAccounting = true;
+    MemoryHigh = "20G";
+    MemoryMax = "24G";
+    MemorySwapMax = "4G";
+  };
+
   # 暫定対応: WSL起動直後はuser@.serviceのexecutor spawnがEBUSYで失敗するため、
   # user managerだけを短時間で再試行する。microsoft/WSL#40519を含むreleaseへ
   # 更新後に再試行なしで起動できることを確認し、このuser@ overrideを削除する。

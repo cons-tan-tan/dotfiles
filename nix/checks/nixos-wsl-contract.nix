@@ -22,6 +22,14 @@ let
     lib.getExe config.programs.nh.package
   );
   systemCleanupScript = config.systemd.services.nh-clean.script;
+  expectedInitScopeDropIn = ''
+    [Scope]
+    OOMPolicy=continue
+    ManagedOOMPreference=omit
+    MemoryHigh=24G
+    MemoryMax=28G
+    MemorySwapMax=4G
+  '';
 
   contracts = {
     "wsl-base" = {
@@ -88,6 +96,65 @@ let
         daemonHosts = [ "fd://" ];
         listenOptions = [ "/run/docker.sock" ];
         autoPruneEnabled = false;
+      };
+    };
+
+    "memory-pressure-protection" = {
+      actual = {
+        oomd = {
+          enabled = config.systemd.oomd.enable;
+          rootMemoryPressureEnabled = config.systemd.oomd.enableRootSlice;
+          rootSwapAction = config.systemd.slices."-".sliceConfig.ManagedOOMSwap;
+          swapUsedLimit = config.systemd.oomd.settings.OOM.SwapUsedLimit;
+          userSlicesEnabled = config.systemd.oomd.enableUserSlices;
+        };
+        userSlice = {
+          inherit (config.systemd.slices.user.sliceConfig)
+            MemoryAccounting
+            MemoryHigh
+            MemoryMax
+            MemorySwapMax
+            ;
+        };
+        initScope = {
+          enabled = config.systemd.units."init.scope".enable;
+          overrideStrategy = config.systemd.units."init.scope".overrideStrategy;
+          dropIn = config.systemd.units."init.scope".text;
+        };
+        nixDaemon = {
+          inherit (config.systemd.services.nix-daemon.serviceConfig)
+            MemoryAccounting
+            MemoryHigh
+            MemoryMax
+            MemorySwapMax
+            ;
+        };
+      };
+      expected = {
+        oomd = {
+          enabled = true;
+          rootMemoryPressureEnabled = false;
+          rootSwapAction = "kill";
+          swapUsedLimit = "80%";
+          userSlicesEnabled = true;
+        };
+        userSlice = {
+          MemoryAccounting = true;
+          MemoryHigh = "24G";
+          MemoryMax = "28G";
+          MemorySwapMax = "4G";
+        };
+        initScope = {
+          enabled = true;
+          overrideStrategy = "asDropin";
+          dropIn = expectedInitScopeDropIn;
+        };
+        nixDaemon = {
+          MemoryAccounting = true;
+          MemoryHigh = "20G";
+          MemoryMax = "24G";
+          MemorySwapMax = "4G";
+        };
       };
     };
 
