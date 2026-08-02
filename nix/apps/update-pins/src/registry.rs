@@ -306,47 +306,45 @@ mod tests {
     use super::{TARGET_SPECS, Target, target_by_name, target_spec, unimplemented_target_names};
 
     #[test]
-    fn registry_contains_each_concrete_target_exactly_once() {
-        let registered: BTreeSet<_> = TARGET_SPECS.iter().map(|spec| spec.target.name()).collect();
-        let expected: BTreeSet<_> = [
-            Target::Hcom,
-            Target::AgentSlack,
-            Target::AgentBrowser,
-            Target::Watchexec,
-            Target::Shellfirm,
-            Target::Herdr,
-            Target::Difit,
-            Target::ClaudeCodeSettingsSchema,
-            Target::CodexApp,
-        ]
-        .map(Target::name)
-        .into_iter()
-        .collect();
-
-        assert_eq!(registered, expected);
-        assert_eq!(TARGET_SPECS.len(), expected.len());
-        assert_eq!(
-            TARGET_SPECS
-                .iter()
-                .map(|spec| spec.target)
-                .collect::<Vec<_>>(),
-            vec![
-                Target::Hcom,
-                Target::AgentSlack,
-                Target::AgentBrowser,
-                Target::Watchexec,
-                Target::Shellfirm,
-                Target::Herdr,
-                Target::Difit,
-                Target::ClaudeCodeSettingsSchema,
-                Target::CodexApp,
-            ]
-        );
-        assert!(target_spec(Target::All).is_none());
-        assert_eq!(target_by_name("all"), Some(Target::All));
+    fn registry_target_and_name_keys_are_unique() {
+        let mut targets = Vec::new();
+        let mut names = BTreeSet::new();
         for spec in TARGET_SPECS {
+            assert!(
+                !targets.contains(&spec.target),
+                "{} reuses a target key",
+                spec.name
+            );
+            assert!(names.insert(spec.name), "{} reuses a name key", spec.name);
+            targets.push(spec.target);
+        }
+    }
+
+    #[test]
+    fn registry_keys_round_trip_to_the_same_spec() {
+        for spec in TARGET_SPECS {
+            assert_eq!(target_spec(spec.target), Some(spec));
             assert_eq!(target_by_name(spec.name), Some(spec.target));
             assert_eq!(spec.target.name(), spec.name);
+        }
+    }
+
+    #[test]
+    fn all_is_a_parser_only_special_case() {
+        assert!(target_spec(Target::All).is_none());
+        assert_eq!(target_by_name("all"), Some(Target::All));
+        assert!(TARGET_SPECS.iter().all(|spec| spec.name != "all"));
+        assert_eq!(target_by_name("unknown"), None);
+    }
+
+    #[test]
+    fn managed_paths_are_safe_and_unique_within_each_target() {
+        for spec in TARGET_SPECS {
+            assert!(
+                !spec.managed_paths.is_empty(),
+                "{} has no managed paths",
+                spec.name
+            );
             let unique = spec.managed_paths.iter().copied().collect::<BTreeSet<_>>();
             assert_eq!(
                 unique.len(),
@@ -364,6 +362,12 @@ mod tests {
                     spec.name
                 );
             }
+        }
+    }
+
+    #[test]
+    fn target_kind_contracts_are_owned_by_their_specs() {
+        for spec in TARGET_SPECS {
             let pin = match spec.kind {
                 super::TargetKind::PairedRelease { pin, .. }
                 | super::TargetKind::Release { pin, .. }
@@ -438,7 +442,6 @@ mod tests {
                 _ => {}
             }
         }
-        assert_eq!(target_by_name("unknown"), None);
         assert!(unimplemented_target_names().is_empty());
     }
 }

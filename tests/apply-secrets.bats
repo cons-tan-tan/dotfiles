@@ -1,10 +1,11 @@
 #!/usr/bin/env bats
 # Nix-built binary and host filesystem boundaries; exhaustive cases live in Rust tests.
 
+source "$BATS_TEST_DIRNAME/test-helper.bash"
+
 setup_file() {
   if [ -z "${APPLY_SECRETS_TEST_BIN:-}" ]; then
-    echo "APPLY_SECRETS_TEST_BIN must be set to the built apply-secrets binary" >&2
-    return 1
+    return 0
   fi
   if [[ "$APPLY_SECRETS_TEST_BIN" != /* ]]; then
     echo "APPLY_SECRETS_TEST_BIN must be an absolute path" >&2
@@ -17,6 +18,8 @@ setup_file() {
 }
 
 setup() {
+  require_nix_fixture APPLY_SECRETS_TEST_BIN "built apply-secrets binary"
+
   BASH_BIN="$(command -v bash)"
   APP="$APPLY_SECRETS_TEST_BIN"
   WORK="$(mktemp -d)"

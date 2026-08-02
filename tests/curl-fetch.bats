@@ -1,12 +1,13 @@
 #!/usr/bin/env bats
 # Nix package/process boundaries only; the complete option policy lives in Rust tests.
 
+source "$BATS_TEST_DIRNAME/test-helper.bash"
+
 setup_file() {
   bats_require_minimum_version 1.5.0
 
   if [[ -z ${CURL_FETCH_TEST_BIN:-} ]]; then
-    echo "CURL_FETCH_TEST_BIN must identify the unwrapped curl-fetch binary" >&2
-    return 1
+    return 0
   fi
   case "$CURL_FETCH_TEST_BIN" in
   /*) ;;
@@ -22,6 +23,8 @@ setup_file() {
 }
 
 setup() {
+  require_nix_fixture CURL_FETCH_TEST_BIN "unwrapped curl-fetch binary"
+
   BASH_BIN="$(command -v bash)"
   STUB_DIR="$(mktemp -d)"
   CURL_STUB="$STUB_DIR/curl"

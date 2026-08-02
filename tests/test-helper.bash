@@ -1,3 +1,12 @@
+require_nix_fixture() {
+  local variable=$1
+  local description=$2
+
+  if [[ -z ${!variable:-} ]]; then
+    skip "$variable is only available in the Nix-backed Bats check: $description"
+  fi
+}
+
 write_bash_stub() {
   local stub_path=$1
   local bash_path=$BASH

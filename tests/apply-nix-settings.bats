@@ -1,12 +1,13 @@
 #!/usr/bin/env bats
 # Nix-built executable and host process boundaries; pure behavior lives in Rust tests.
 
+source "$BATS_TEST_DIRNAME/test-helper.bash"
+
 setup_file() {
   bats_require_minimum_version 1.5.0
 
   if [[ -z ${APPLY_NIX_SETTINGS_TEST_BIN:-} ]]; then
-    echo "APPLY_NIX_SETTINGS_TEST_BIN must identify the unwrapped apply-nix-settings binary" >&2
-    return 1
+    return 0
   fi
   case "$APPLY_NIX_SETTINGS_TEST_BIN" in
   /*) ;;
@@ -22,6 +23,8 @@ setup_file() {
 }
 
 setup() {
+  require_nix_fixture APPLY_NIX_SETTINGS_TEST_BIN "unwrapped apply-nix-settings binary"
+
   BASH_BIN="$(command -v bash)"
   WORK="$(mktemp -d)"
   STUB_DIR="$WORK/stub"

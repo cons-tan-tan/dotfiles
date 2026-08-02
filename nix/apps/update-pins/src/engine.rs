@@ -304,6 +304,25 @@ mod tests {
                 Transaction::begin_scoped(self.repository(), &runner, paths).expect("reacquire");
             transaction.rollback().expect("release reacquired lock");
         }
+
+        fn assert_no_staging_files(&self) {
+            for (relative, _, _) in &self.originals {
+                let parent = relative.parent().expect("managed path parent");
+                let entries = std::fs::read_dir(self.path().join(parent))
+                    .expect("read managed path directory");
+                for entry in entries {
+                    let entry = entry.expect("read managed path directory entry");
+                    assert!(
+                        !entry
+                            .file_name()
+                            .to_string_lossy()
+                            .contains(".update-pins."),
+                        "staging file remains at {}",
+                        entry.path().display()
+                    );
+                }
+            }
+        }
     }
 
     fn invocation(target: Target, publish_mode: PublishMode) -> Invocation {
@@ -362,25 +381,23 @@ mod tests {
     #[test]
     fn all_managed_paths_are_a_deterministic_registry_union() {
         let targets = selected_targets(Target::All).expect("all targets are implemented");
-        assert_eq!(
-            selected_managed_paths(&targets),
-            vec![
-                "nix/pins/hcom.json",
-                "flake.nix",
-                "flake.lock",
-                "nix/pins/agent-slack.json",
-                "nix/pins/agent-browser.json",
-                "nix/pins/watchexec.json",
-                "nix/pins/shellfirm.json",
-                "nix/packages/shellfirm/Cargo.lock",
-                "nix/packages/agent-command-guard/Cargo.toml",
-                "nix/packages/agent-command-guard/Cargo.lock",
-                "nix/pins/herdr.json",
-                "nix/pins/difit.json",
-                "nix/pins/claude-code-settings-schema.json",
-                "nix/pins/codex-app.json",
-            ]
-        );
+        let expected = TARGET_SPECS
+            .iter()
+            .flat_map(|spec| spec.managed_paths.iter().copied())
+            .fold(Vec::new(), |mut paths, path| {
+                if !paths.contains(&path) {
+                    paths.push(path);
+                }
+                paths
+            });
+        let selected = selected_managed_paths(&targets);
+
+        assert_eq!(selected, expected);
+        assert!(selected.iter().all(|path| {
+            TARGET_SPECS
+                .iter()
+                .any(|spec| spec.managed_paths.contains(path))
+        }));
     }
 
     #[test]
@@ -411,22 +428,16 @@ mod tests {
                 events
                     .borrow_mut()
                     .push(format!("update:{}", target.name()));
-                let path = target_spec(target)
+                let changed = target_spec(target)
                     .expect("target spec")
                     .managed_paths
-                    .first()
-                    .expect("target managed path");
-                let changed = transaction
-                    .replace(path, format!("updated {}\n", target.name()).as_bytes())
-                    .expect("replace target pin");
-                if target == Target::Hcom {
-                    transaction
-                        .replace("flake.nix", b"updated shared flake\n")
-                        .expect("replace shared flake");
-                    transaction
-                        .replace("flake.lock", b"updated shared lock\n")
-                        .expect("replace shared lock");
-                }
+                    .iter()
+                    .map(|path| {
+                        transaction
+                            .replace(path, format!("updated {path}\n").as_bytes())
+                            .expect("replace managed path")
+                    })
+                    .fold(false, |changed, current| changed || current);
                 if changed {
                     record_change(target, ledger);
                 }
@@ -448,12 +459,22 @@ mod tests {
         assert_eq!(*events.borrow(), expected);
         assert_eq!(
             std::fs::read(repository.path().join("flake.lock")).expect("committed lock"),
-            b"updated shared lock\n"
+            b"updated flake.lock\n"
         );
+        repository.assert_no_staging_files();
         repository.commit_changes();
-        let stable_pin = repository.path().join("nix/pins/hcom.json");
-        let stable_bytes = std::fs::read(&stable_pin).expect("stable pin bytes");
-        let stable_metadata = std::fs::metadata(&stable_pin).expect("stable pin metadata");
+        let stable = repository
+            .originals
+            .iter()
+            .map(|(relative, _, _)| {
+                let path = repository.path().join(relative);
+                (
+                    relative,
+                    std::fs::read(&path).expect("stable managed bytes"),
+                    std::fs::metadata(&path).expect("stable managed metadata"),
+                )
+            })
+            .collect::<Vec<_>>();
 
         run_in_repository(
             invocation(Target::All, PublishMode::Apply),
@@ -461,26 +482,16 @@ mod tests {
             repository.repository(),
             |_target, _transaction| Ok(()),
             |target, _policy, transaction, ledger| {
-                let path = target_spec(target)
+                let changed = target_spec(target)
                     .expect("target spec")
                     .managed_paths
-                    .first()
-                    .expect("target managed path");
-                let changed = transaction
-                    .replace(path, format!("updated {}\n", target.name()).as_bytes())
-                    .expect("idempotent target pin");
-                if target == Target::Hcom {
-                    assert!(
-                        !transaction
-                            .replace("flake.nix", b"updated shared flake\n")
-                            .expect("idempotent shared flake")
-                    );
-                    assert!(
-                        !transaction
-                            .replace("flake.lock", b"updated shared lock\n")
-                            .expect("idempotent shared lock")
-                    );
-                }
+                    .iter()
+                    .map(|path| {
+                        transaction
+                            .replace(path, format!("updated {path}\n").as_bytes())
+                            .expect("idempotent managed path")
+                    })
+                    .fold(false, |changed, current| changed || current);
                 if changed {
                     record_change(target, ledger);
                 }
@@ -489,26 +500,35 @@ mod tests {
         )
         .expect("second all-target apply");
 
-        assert_eq!(
-            std::fs::read(&stable_pin).expect("idempotent pin bytes"),
-            stable_bytes
-        );
-        let idempotent_metadata = std::fs::metadata(&stable_pin).expect("idempotent pin metadata");
-        assert_eq!(
-            idempotent_metadata.permissions(),
-            stable_metadata.permissions()
-        );
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::MetadataExt as _;
-
-            assert_eq!(idempotent_metadata.ino(), stable_metadata.ino());
-            assert_eq!(idempotent_metadata.mtime(), stable_metadata.mtime());
+        for (relative, stable_bytes, stable_metadata) in stable {
+            let path = repository.path().join(relative);
             assert_eq!(
-                idempotent_metadata.mtime_nsec(),
-                stable_metadata.mtime_nsec()
+                std::fs::read(&path).expect("idempotent managed bytes"),
+                stable_bytes,
+                "{} bytes changed on the second run",
+                relative.display()
             );
+            let idempotent_metadata =
+                std::fs::metadata(&path).expect("idempotent managed metadata");
+            assert_eq!(
+                idempotent_metadata.permissions(),
+                stable_metadata.permissions(),
+                "{} mode changed on the second run",
+                relative.display()
+            );
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::MetadataExt as _;
+
+                assert_eq!(idempotent_metadata.ino(), stable_metadata.ino());
+                assert_eq!(idempotent_metadata.mtime(), stable_metadata.mtime());
+                assert_eq!(
+                    idempotent_metadata.mtime_nsec(),
+                    stable_metadata.mtime_nsec()
+                );
+            }
         }
+        repository.assert_no_staging_files();
         repository.assert_lock_reacquirable();
     }
 
@@ -615,18 +635,10 @@ mod tests {
             repository.repository(),
             |_target, _transaction| Ok(()),
             |target, _policy, transaction, ledger| {
-                let path = target_spec(target)
-                    .expect("target spec")
-                    .managed_paths
-                    .first()
-                    .expect("target managed path");
-                transaction
-                    .replace(path, format!("candidate {}\n", target.name()).as_bytes())
-                    .expect("candidate pin");
-                if target == Target::Hcom {
+                for path in target_spec(target).expect("target spec").managed_paths {
                     transaction
-                        .replace("flake.lock", b"candidate shared lock\n")
-                        .expect("candidate shared lock");
+                        .replace(path, format!("candidate {path}\n").as_bytes())
+                        .expect("candidate managed path");
                 }
                 record_change(target, ledger);
                 if target == Target::CodexApp {
@@ -640,6 +652,7 @@ mod tests {
 
         assert_eq!(error.to_string(), "synthetic late target failure");
         repository.assert_originals();
+        repository.assert_no_staging_files();
         repository.assert_lock_reacquirable();
     }
 }

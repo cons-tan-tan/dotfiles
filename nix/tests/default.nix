@@ -679,7 +679,12 @@ let
         "nix/packages/agent-command-guard/Cargo.lock"
         "nix/packages/agent-command-guard/Cargo.toml"
         "nix/packages/shellfirm/Cargo.lock"
-        "nix/pins"
+        "nix/pins/agent-browser.json"
+        "nix/pins/codex-app.json"
+        "nix/pins/difit.json"
+        "nix/pins/hcom.json"
+        "nix/pins/shellfirm.json"
+        "tests/test-helper.bash"
       ];
       nativeBuildInputs = [
         pkgs.git
@@ -702,7 +707,7 @@ let
         "tests/curl-fetch.bats"
         "tests/gh-api-get.bats"
       ];
-      sourceFiles = [ ];
+      sourceFiles = [ "tests/test-helper.bash" ];
       nativeBuildInputs = [
         ghApiGet
         safeFetch.core
@@ -730,7 +735,7 @@ let
         "tests/apply-nix-settings.bats"
         "tests/apply-secrets.bats"
       ];
-      sourceFiles = [ ];
+      sourceFiles = [ "tests/test-helper.bash" ];
       nativeBuildInputs = [
         applyNixSettingsCore
         applySecretsCore
