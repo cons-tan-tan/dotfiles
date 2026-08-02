@@ -174,9 +174,10 @@ let
           null;
       validation = validateFailureSuite path suite suiteArgs cases;
       name = failureCheckName path;
-      suitePath = "${path}";
+      suiteRelativePath = lib.removePrefix "${toString repoRoot}/" (toString path);
       nixpkgsArgument = "${pkgs.path}";
       repoRootArgument = "${repoRoot}";
+      suitePath = "${repoRootArgument}/${suiteRelativePath}";
       runCases = lib.concatMapStringsSep "\n" (
         caseName:
         let
