@@ -15,11 +15,27 @@ concurrency:
 permissions:
   contents: read
 
+# GitHub Actions は flake.nix の nixConfig を Nix のインストール前には読めない。
+# 公開cache設定はここで一度だけ宣言し、Nix側との一致をworkflow-policy-testsで
+# 検証する。
+env:
+  NIX_EXTRA_SUBSTITUTERS: >-
+    https://cache.numtide.com
+    https://nix-community.cachix.org
+  NIX_EXTRA_TRUSTED_PUBLIC_KEYS: >-
+    niks3.numtide.com-1:DTx8wZduET09hRmMtKdQDxNNthLQETkc/yaX7M4qK0g=
+    nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
+  HESTIA_VERSION: v3.0.0
+  HESTIA_UPSTREAM_CACHE_KEY_NAMES: >-
+    cache.nixos.org-1
+    niks3.numtide.com-1
+    nix-community.cachix.org-1
+
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
         with:
           enable_kvm: false
@@ -30,7 +46,7 @@ jobs:
   fmt:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
         with:
           enable_kvm: false
@@ -39,37 +55,128 @@ jobs:
   reuse:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: fsfe/reuse-action@676e2d560c9a403aa252096d99fcab3e1132b0f5 # v6.0.0
 
-  # x86_64-linux の checks (home-linux / home-wsl / treefmt / tests) を実ビルドする。
-  # eval だけでは hash 切れや vendorHash 不一致が素通りするため。
-  # mozuku-lsp は公開キャッシュに無くソースビルドになるため、ビルド結果を
-  # Hestia でラン間キャッシュする。公開キャッシュ由来の path は保存せず、
-  # GitHub Actions のキャッシュ枠をこのリポジトリ固有の成果物へ使う。
-  build-linux:
+  # x86_64-linux の checks を一度だけ評価し、未キャッシュの group だけを
+  # build-linux-matrix へ渡す。.#checks 全体には aarch64-linux / darwin も
+  # 含まれるため、対象 system はここで明示的に限定する。
+  build-linux-eval:
+    name: build-linux / evaluate
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      any-jobs: ${{ steps.matrix.outputs.any-jobs }}
+      manifest-version: ${{ steps.matrix.outputs.manifest-version }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
         with:
           enable_kvm: false
-      - uses: Mic92/hestia@fb239a2f72d4b6e26eec5425f289dea23b27a527 # v2.0.0
+          nix_conf: &linux-nix-conf |
+            extra-substituters = ${{ env.NIX_EXTRA_SUBSTITUTERS }}
+            extra-trusted-public-keys = ${{ env.NIX_EXTRA_TRUSTED_PUBLIC_KEYS }}
+      - uses: Mic92/hestia@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320 # v3.0.0
         with:
-          version: v2.0.0
+          version: ${{ env.HESTIA_VERSION }}
           upstream-cache-filter: true
-          upstream-cache-key-names: cache.nixos.org-1 niks3.numtide.com-1 nix-community.cachix.org-1
-      # 軽量なテストを先に完了させ、後続の全checkでは同じstore pathを再利用する。
-      - name: Build fast checks
-        run: >-
-          nix build
-          .#checks.x86_64-linux.bats-tests
-          .#checks.x86_64-linux.agent-command-shellfirm-catalog
-          .#checks.x86_64-linux.rust-advisories
-          .#checks.x86_64-linux.rust-clippy
-          .#checks.x86_64-linux.rust-tests
-          --print-build-logs
-      - run: nix flake check --print-build-logs
+          upstream-cache-key-names: ${{ env.HESTIA_UPSTREAM_CACHE_KEY_NAMES }}
+      - name: Install matrix evaluator
+        run: nix profile add --inputs-from . nixpkgs#nix-eval-jobs
+      - id: matrix
+        uses: Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320 # v3.0.0
+        with:
+          flake: ".#checks.x86_64-linux"
+
+  # eval job が登録した drv closure を取得し、Nix の再評価なしで group ごとに
+  # 並列ビルドする。依存 output は通常の substituter から取得するため、flakeの
+  # nixConfigを読まないこのjobでも公開cacheを明示的に維持する。
+  build-linux-matrix:
+    name: build-linux / ${{ matrix.name }}
+    needs: build-linux-eval
+    if: needs.build-linux-eval.outputs.any-jobs == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix: ${{ fromJSON(needs.build-linux-eval.outputs.matrix) }}
+    steps:
+      - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
+        with:
+          enable_kvm: false
+          nix_conf: *linux-nix-conf
+      - uses: Mic92/hestia@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320 # v3.0.0
+        with:
+          version: ${{ env.HESTIA_VERSION }}
+          upstream-cache-filter: true
+          upstream-cache-key-names: ${{ env.HESTIA_UPSTREAM_CACHE_KEY_NAMES }}
+          wait-manifest-version: ${{ needs.build-linux-eval.outputs.manifest-version }}
+      - name: Verify binary substituters
+        run: |
+          set -euo pipefail
+          substituters="$(nix config show substituters)"
+          read -r -a public_substituters <<< "$NIX_EXTRA_SUBSTITUTERS"
+          for expected in \
+            https://cache.nixos.org \
+            "${public_substituters[@]}" \
+            http://127.0.0.1:; do
+            if [[ "$substituters" != *"$expected"* ]]; then
+              echo "missing substituter: $expected" >&2
+              echo "configured substituters: $substituters" >&2
+              exit 1
+            fi
+          done
+      - name: Prefetch derivation closure and build
+        env:
+          INSTALLABLES: ${{ matrix.installables }}
+        run: |
+          set -euo pipefail
+          read -r -a installables <<< "$INSTALLABLES"
+          if (( ${#installables[@]} == 0 )); then
+            echo "matrix group has no installables" >&2
+            exit 1
+          fi
+          hashes="$(
+            printf '%s\n' "${installables[@]}" \
+              | awk -F/ '{printf "%s%s", (NR > 1 ? "," : ""), substr($NF, 1, 32)}'
+          )"
+          curl -fsS "http://$HESTIA_LISTEN/closure/$hashes" | nix-store --import
+          nix build "${installables[@]}"
+
+  # matrix の行数はcache状態で変わるため、既存の安定したcheck名を集約jobとして
+  # 維持し、eval失敗・部分的なbuild失敗・全件cache hitを一箇所で判定する。
+  build-linux:
+    needs:
+      - build-linux-eval
+      - build-linux-matrix
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify Linux matrix result
+        env:
+          ANY_JOBS: ${{ needs.build-linux-eval.outputs.any-jobs }}
+          EVAL_RESULT: ${{ needs.build-linux-eval.result }}
+          MATRIX_RESULT: ${{ needs.build-linux-matrix.result }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVAL_RESULT" != success ]]; then
+            echo "Linux check evaluation failed: $EVAL_RESULT" >&2
+            exit 1
+          fi
+          if [[ "$ANY_JOBS" == true ]]; then
+            if [[ "$MATRIX_RESULT" != success ]]; then
+              echo "Linux matrix build failed: $MATRIX_RESULT" >&2
+              exit 1
+            fi
+          elif [[ "$ANY_JOBS" == false ]]; then
+            if [[ "$MATRIX_RESULT" != skipped ]]; then
+              echo "unexpected empty matrix result: $MATRIX_RESULT" >&2
+              exit 1
+            fi
+          else
+            echo "invalid any-jobs output: $ANY_JOBS" >&2
+            exit 1
+          fi
 
   # darwin 構成の実ビルド。eval だけでは hash 切れや darwin 専用パッケージの
   # ビルド破損が素通りするため (build-linux と同じ理由の macOS 版)。
@@ -78,13 +185,13 @@ jobs:
   build-darwin:
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
         with:
           enable_kvm: false
-      - uses: Mic92/hestia@fb239a2f72d4b6e26eec5425f289dea23b27a527 # v2.0.0
+      - uses: Mic92/hestia@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320 # v3.0.0
         with:
-          version: v2.0.0
+          version: ${{ env.HESTIA_VERSION }}
           upstream-cache-filter: true
-          upstream-cache-key-names: cache.nixos.org-1 niks3.numtide.com-1 nix-community.cachix.org-1
+          upstream-cache-key-names: ${{ env.HESTIA_UPSTREAM_CACHE_KEY_NAMES }}
       - run: nix flake check --print-build-logs

@@ -14,6 +14,7 @@ let
   repoRoot = ../..;
   testSuffix = ".test.nix";
   failureTestSuffix = ".failure.test.nix";
+  cacheSettings = import ../lib/cache-settings.nix;
   cleanupPolicy = import ../lib/nh-clean-policy.nix;
   hostArch = if pkgs.stdenv.hostPlatform.isx86_64 then "x86_64" else "aarch64";
   expectedNixosWslTarget = if hostArch == "x86_64" then "wsl" else "wsl-aarch64";
@@ -846,12 +847,23 @@ let
       name = "workflow-policy-tests";
       testFiles = [ "tests/update-pins-smoke-workflow.bats" ];
       sourceFiles = [
+        ".github/workflows/cache-gc.yaml"
         ".github/workflows/ci.yaml"
         ".github/workflows/update-pins-smoke.yaml"
       ];
       nativeBuildInputs = [ pkgs.yq-go ];
-      environment = { };
-      requiredEnvironment = [ ];
+      environment = {
+        CACHE_NIX_COMMUNITY_SUBSTITUTER = cacheSettings.nixCommunitySubstituter;
+        CACHE_NIX_COMMUNITY_TRUSTED_PUBLIC_KEY = cacheSettings.nixCommunityTrustedPublicKey;
+        CACHE_NUMTIDE_SUBSTITUTER = cacheSettings.numtideSubstituter;
+        CACHE_NUMTIDE_TRUSTED_PUBLIC_KEY = cacheSettings.numtideTrustedPublicKey;
+      };
+      requiredEnvironment = [
+        "CACHE_NIX_COMMUNITY_SUBSTITUTER"
+        "CACHE_NIX_COMMUNITY_TRUSTED_PUBLIC_KEY"
+        "CACHE_NUMTIDE_SUBSTITUTER"
+        "CACHE_NUMTIDE_TRUSTED_PUBLIC_KEY"
+      ];
       platformPredicate = _platform: true;
     }
   ];

@@ -4,6 +4,8 @@ setup() {
   REPO_ROOT=$(cd "$BATS_TEST_DIRNAME/.." && pwd)
   WORKFLOW="$REPO_ROOT/.github/workflows/update-pins-smoke.yaml"
   CI_WORKFLOW="$REPO_ROOT/.github/workflows/ci.yaml"
+  CACHE_GC_WORKFLOW="$REPO_ROOT/.github/workflows/cache-gc.yaml"
+  CACHE_SETTINGS="$REPO_ROOT/nix/lib/cache-settings.nix"
 }
 
 normalize_lines() {
@@ -19,6 +21,30 @@ normalize_lines() {
 step_script() {
   local name=$1
   yq -r ".jobs.smoke.steps[] | select(.name == \"$name\") | .run" "$WORKFLOW"
+}
+
+ci_step_script() {
+  local job=$1
+  local name=$2
+  yq -r ".jobs.\"$job\".steps[] | select(.name == \"$name\") | .run" "$CI_WORKFLOW"
+}
+
+cache_setting() {
+  local name=$1
+  local environment_name
+  case "$name" in
+    nixCommunitySubstituter) environment_name=CACHE_NIX_COMMUNITY_SUBSTITUTER ;;
+    nixCommunityTrustedPublicKey) environment_name=CACHE_NIX_COMMUNITY_TRUSTED_PUBLIC_KEY ;;
+    numtideSubstituter) environment_name=CACHE_NUMTIDE_SUBSTITUTER ;;
+    numtideTrustedPublicKey) environment_name=CACHE_NUMTIDE_TRUSTED_PUBLIC_KEY ;;
+    *) return 1 ;;
+  esac
+
+  if [[ -n "${!environment_name:-}" ]]; then
+    printf '%s\n' "${!environment_name}"
+  else
+    sed -n "s/^[[:space:]]*$name = \"\([^\"]*\)\";.*/\1/p" "$CACHE_SETTINGS"
+  fi
 }
 
 @test "upstream smoke workflow is weekly and manual only" {
@@ -50,7 +76,7 @@ step_script() {
     )][0].env.UPDATE_PINS_CHECKOUT)
       == "${{ runner.temp }}/update-pins-check"
     and .jobs.smoke.steps[0].uses
-      == "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0"
+      == "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
     and .jobs.smoke.steps[0].with."persist-credentials" == false
   ' "$WORKFLOW"
   [ "$status" -eq 0 ]
@@ -69,6 +95,159 @@ step_script() {
     [[ "$action" =~ ^[^@]+@[0-9a-f]{40}$ ]] || return 1
     grep -Fq "uses: $action" "$CI_WORKFLOW" || return 1
   done
+}
+
+@test "Hestia workflow inputs stay aligned with the CI defaults" {
+  local version
+  local upstream_key_names
+  version=$(yq -r '.env.HESTIA_VERSION' "$CI_WORKFLOW")
+  upstream_key_names=$(yq -r '.env.HESTIA_UPSTREAM_CACHE_KEY_NAMES' "$CI_WORKFLOW")
+
+  [ "$(yq -r '.jobs.smoke.steps[] | select(.uses == "Mic92/hestia@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320") | .with.version' "$WORKFLOW")" = "$version" ]
+  [ "$(yq -r '.jobs.smoke.steps[] | select(.uses == "Mic92/hestia@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320") | .with."upstream-cache-filter"' "$WORKFLOW")" = true ]
+  [ "$(yq -r '.jobs.smoke.steps[] | select(.uses == "Mic92/hestia@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320") | .with."upstream-cache-key-names"' "$WORKFLOW")" = "$upstream_key_names" ]
+  [ "$(yq -r '.jobs.gc.steps[] | select(.uses == "Mic92/hestia@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320") | .with.version' "$CACHE_GC_WORKFLOW")" = "$version" ]
+}
+
+@test "Linux checks are evaluated once for the Hestia matrix" {
+  run yq -e '
+    .jobs."build-linux-eval".runs-on == "ubuntu-latest"
+    and .jobs."build-linux-eval".outputs.matrix
+      == "${{ steps.matrix.outputs.matrix }}"
+    and .jobs."build-linux-eval".outputs."any-jobs"
+      == "${{ steps.matrix.outputs.any-jobs }}"
+    and .jobs."build-linux-eval".outputs."manifest-version"
+      == "${{ steps.matrix.outputs.manifest-version }}"
+    and ([.jobs."build-linux-eval".steps[] | select(.id == "matrix")]
+      | length) == 1
+    and ([.jobs."build-linux-eval".steps[] | select(.id == "matrix")][0].uses)
+      == "Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320"
+    and ([.jobs."build-linux-eval".steps[] | select(.id == "matrix")][0].with.flake)
+      == ".#checks.x86_64-linux"
+    and ([.jobs."build-linux-eval".steps[] | select(
+      .name == "Install matrix evaluator"
+    )][0].run) == "nix profile add --inputs-from . nixpkgs#nix-eval-jobs"
+  ' "$CI_WORKFLOW"
+  [ "$status" -eq 0 ]
+}
+
+@test "Linux matrix waits for and builds the evaluated derivations" {
+  run yq -e '
+    .jobs."build-linux-matrix".needs == "build-linux-eval"
+    and .jobs."build-linux-matrix".if
+      == "needs.build-linux-eval.outputs.any-jobs == '\''true'\''"
+    and .jobs."build-linux-matrix".strategy."fail-fast" == false
+    and .jobs."build-linux-matrix".strategy."max-parallel" == 5
+    and .jobs."build-linux-matrix".strategy.matrix
+      == "${{ fromJSON(needs.build-linux-eval.outputs.matrix) }}"
+    and ([.jobs."build-linux-matrix".steps[] | select(
+      .uses == "Mic92/hestia@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320"
+    )][0].with."wait-manifest-version")
+      == "${{ needs.build-linux-eval.outputs.manifest-version }}"
+    and ([.jobs."build-linux-matrix".steps[] | select(
+      .name == "Prefetch derivation closure and build"
+    )][0].env.INSTALLABLES) == "${{ matrix.installables }}"
+    and ([.jobs."build-linux-matrix".steps[] | select(
+      .name == "Prefetch derivation closure and build"
+    )][0].run | contains("/closure/$hashes"))
+    and ([.jobs."build-linux-matrix".steps[] | select(
+      .name == "Prefetch derivation closure and build"
+    )][0].run | contains("nix-store --import"))
+    and ([.jobs."build-linux-matrix".steps[] | select(
+      .name == "Prefetch derivation closure and build"
+    )][0].run | contains("nix build"))
+  ' "$CI_WORKFLOW"
+  [ "$status" -eq 0 ]
+}
+
+@test "Linux matrix keeps public substituters and a stable aggregate result" {
+  local numtide_substituter
+  local numtide_key
+  local nix_community_substituter
+  local nix_community_key
+  local expected_substituters
+  local expected_keys
+  local expected_hestia_key_names
+  numtide_substituter=$(cache_setting numtideSubstituter)
+  numtide_key=$(cache_setting numtideTrustedPublicKey)
+  nix_community_substituter=$(cache_setting nixCommunitySubstituter)
+  nix_community_key=$(cache_setting nixCommunityTrustedPublicKey)
+  expected_substituters="$numtide_substituter $nix_community_substituter"
+  expected_keys="$numtide_key $nix_community_key"
+  expected_hestia_key_names="cache.nixos.org-1 ${numtide_key%%:*} ${nix_community_key%%:*}"
+
+  run env \
+    EXPECTED_SUBSTITUTERS="$expected_substituters" \
+    EXPECTED_KEYS="$expected_keys" \
+    EXPECTED_HESTIA_KEY_NAMES="$expected_hestia_key_names" \
+    yq -e '
+      .env.NIX_EXTRA_SUBSTITUTERS == strenv(EXPECTED_SUBSTITUTERS)
+      and .env.NIX_EXTRA_TRUSTED_PUBLIC_KEYS == strenv(EXPECTED_KEYS)
+      and .env.HESTIA_VERSION == "v3.0.0"
+      and .env.HESTIA_UPSTREAM_CACHE_KEY_NAMES
+        == strenv(EXPECTED_HESTIA_KEY_NAMES)
+    ' "$CI_WORKFLOW"
+  [ "$status" -eq 0 ]
+
+  grep -Fq 'nix_conf: &linux-nix-conf |' "$CI_WORKFLOW"
+  [ "$(grep -Fc 'nix_conf: *linux-nix-conf' "$CI_WORKFLOW")" -eq 1 ]
+
+  run yq -e '
+    explode(.) |
+    ([
+      .jobs."build-linux-eval".steps[],
+      .jobs."build-linux-matrix".steps[]
+    ] | map(select(.uses
+      == "nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c"))
+      | length) == 2
+    and ([
+      .jobs."build-linux-eval".steps[],
+      .jobs."build-linux-matrix".steps[]
+    ] | map(select(.uses
+      == "nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c"))
+      | map(select(.with.nix_conf | contains("${{ env.NIX_EXTRA_SUBSTITUTERS }}")))
+      | length) == 2
+    and ([
+      .jobs."build-linux-eval".steps[],
+      .jobs."build-linux-matrix".steps[]
+    ] | map(select(.uses
+      == "nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c"))
+      | map(select(.with.nix_conf | contains("${{ env.NIX_EXTRA_TRUSTED_PUBLIC_KEYS }}")))
+      | length) == 2
+    and ([
+      .jobs[].steps[]?
+    ] | map(select(
+      .uses == "Mic92/hestia@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320"
+      and .with.version == "${{ env.HESTIA_VERSION }}"
+      and .with."upstream-cache-filter" == true
+      and .with."upstream-cache-key-names"
+        == "${{ env.HESTIA_UPSTREAM_CACHE_KEY_NAMES }}"
+    )) | length) == 3
+    and (.jobs."build-linux".needs | join(","))
+      == "build-linux-eval,build-linux-matrix"
+    and .jobs."build-linux".if == "always()"
+  ' "$CI_WORKFLOW"
+  [ "$status" -eq 0 ]
+}
+
+@test "Linux aggregate result rejects missing or failed matrix states" {
+  local script
+  script=$(ci_step_script "build-linux" "Verify Linux matrix result")
+
+  run env EVAL_RESULT=success ANY_JOBS=true MATRIX_RESULT=success bash -c "$script"
+  [ "$status" -eq 0 ]
+
+  run env EVAL_RESULT=success ANY_JOBS=false MATRIX_RESULT=skipped bash -c "$script"
+  [ "$status" -eq 0 ]
+
+  run env EVAL_RESULT=failure ANY_JOBS=false MATRIX_RESULT=skipped bash -c "$script"
+  [ "$status" -ne 0 ]
+
+  run env EVAL_RESULT=success ANY_JOBS=true MATRIX_RESULT=failure bash -c "$script"
+  [ "$status" -ne 0 ]
+
+  run env EVAL_RESULT=success ANY_JOBS= MATRIX_RESULT=skipped bash -c "$script"
+  [ "$status" -ne 0 ]
 }
 
 @test "private and production smoke steps run in the required order" {
