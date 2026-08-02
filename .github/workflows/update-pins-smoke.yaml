@@ -27,7 +27,7 @@ jobs:
         with:
           version: v2.0.0
           upstream-cache-filter: true
-          upstream-cache-key-names: cache.nixos.org-1 niks3.numtide.com-1
+          upstream-cache-key-names: cache.nixos.org-1 niks3.numtide.com-1 nix-community.cachix.org-1
       - name: Build private smoke executable
         id: build
         run: |

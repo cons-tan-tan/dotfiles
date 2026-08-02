@@ -5,19 +5,21 @@ let
   flakeConfig = (import ../../flake.nix).nixConfig;
 in
 {
-  testFlakeNixConfigContainsNumtideSubstituter = {
+  testFlakeNixConfigContainsSubstituters = {
     expr = flakeConfig.extra-substituters;
     expected = [
       "https://cache.nixos.org"
       cache.numtideSubstituter
+      cache.nixCommunitySubstituter
     ];
   };
 
-  testFlakeNixConfigContainsNumtideKey = {
+  testFlakeNixConfigContainsKeys = {
     expr = flakeConfig.extra-trusted-public-keys;
     expected = [
       "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
       cache.numtideTrustedPublicKey
+      cache.nixCommunityTrustedPublicKey
     ];
   };
 }

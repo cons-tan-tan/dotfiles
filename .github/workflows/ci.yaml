@@ -58,7 +58,7 @@ jobs:
         with:
           version: v2.0.0
           upstream-cache-filter: true
-          upstream-cache-key-names: cache.nixos.org-1 niks3.numtide.com-1
+          upstream-cache-key-names: cache.nixos.org-1 niks3.numtide.com-1 nix-community.cachix.org-1
       # 軽量なテストを先に完了させ、後続の全checkでは同じstore pathを再利用する。
       - name: Build fast checks
         run: >-
@@ -86,5 +86,5 @@ jobs:
         with:
           version: v2.0.0
           upstream-cache-filter: true
-          upstream-cache-key-names: cache.nixos.org-1 niks3.numtide.com-1
+          upstream-cache-key-names: cache.nixos.org-1 niks3.numtide.com-1 nix-community.cachix.org-1
       - run: nix flake check --print-build-logs
