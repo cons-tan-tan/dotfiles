@@ -136,7 +136,13 @@ jobs:
             printf '%s\n' "${installables[@]}" \
               | awk -F/ '{printf "%s%s", (NR > 1 ? "," : ""), substr($NF, 1, 32)}'
           )"
-          curl -fsS "http://$HESTIA_LISTEN/closure/$hashes" | nix-store --import
+          # upstream cacheにある参照はHestiaのclosureから省かれるが、
+          # nix-store --import自体は不足した参照をsubstituteしない。
+          # prefetchは最適化に留め、通常のnix buildを最終判定にする。
+          if ! curl -fsS "http://$HESTIA_LISTEN/closure/$hashes" \
+            | nix-store --import; then
+            echo "::warning::Hestia closure prefetch failed; falling back to normal Nix substitution"
+          fi
           nix build "${installables[@]}"
 
   # matrixの行数はcache状態で変わるため、systemに依存しない安定したcheck名で

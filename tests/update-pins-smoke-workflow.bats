@@ -1,5 +1,7 @@
 #!/usr/bin/env bats
 
+source "$BATS_TEST_DIRNAME/test-helper.bash"
+
 setup() {
   REPO_ROOT=$(cd "$BATS_TEST_DIRNAME/.." && pwd)
   WORKFLOW="$REPO_ROOT/.github/workflows/update-pins-smoke.yaml"
@@ -27,6 +29,44 @@ ci_step_script() {
   local job=$1
   local name=$2
   yq -r ".jobs.\"$job\".steps[] | select(.name == \"$name\") | .run" "$CI_WORKFLOW"
+}
+
+run_ci_build_step() {
+  local curl_status=$1
+  local import_status=$2
+  local build_status=$3
+  local stub_dir="$BATS_TEST_TMPDIR/ci-build-stubs"
+  local calls="$BATS_TEST_TMPDIR/ci-build-calls"
+  local installable=/nix/store/00000000000000000000000000000000-test.drv^\*
+  local script
+
+  mkdir -p "$stub_dir"
+  write_bash_stub "$stub_dir/curl" <<'SH'
+printf 'closure'
+exit "$CI_CURL_STATUS"
+SH
+  write_bash_stub "$stub_dir/nix-store" <<'SH'
+cat >/dev/null
+printf 'nix-store\n' >>"$CI_BUILD_CALLS"
+exit "$CI_IMPORT_STATUS"
+SH
+  write_bash_stub "$stub_dir/nix" <<'SH'
+printf 'nix' >>"$CI_BUILD_CALLS"
+printf ' <%s>' "$@" >>"$CI_BUILD_CALLS"
+printf '\n' >>"$CI_BUILD_CALLS"
+exit "$CI_BUILD_STATUS"
+SH
+  script=$(ci_step_script "build-matrix" "Prefetch derivation closure and build")
+
+  run env \
+    PATH="$stub_dir:$PATH" \
+    CI_BUILD_CALLS="$calls" \
+    CI_BUILD_STATUS="$build_status" \
+    CI_CURL_STATUS="$curl_status" \
+    CI_IMPORT_STATUS="$import_status" \
+    HESTIA_LISTEN=127.0.0.1:37515 \
+    INSTALLABLES="$installable" \
+    bash -euo pipefail -c "$script"
 }
 
 cache_setting() {
@@ -197,9 +237,8 @@ cache_setting() {
       == ".#hydraJobs.ci"
     and ([.jobs."build-eval".steps[] | select(.id == "matrix")][0].with."attr-prefix")
       == "hydraJobs.ci"
-    and ([.jobs."build-eval".steps[] | select(
-      .name == "Install matrix evaluator"
-    )][0].run) == "nix profile add --inputs-from . nixpkgs#nix-eval-jobs"
+    and ([.jobs."build-eval".steps[] | select(.id == "matrix")][0].with."nix-eval-jobs")
+      == "nix run nixpkgs#nix-eval-jobs --inputs-from . -- --workers 1 --max-memory-size 12288"
   ' "$CI_WORKFLOW"
   [ "$status" -eq 0 ]
 }
@@ -232,6 +271,30 @@ cache_setting() {
     )][0].run | contains("nix build"))
   ' "$CI_WORKFLOW"
   [ "$status" -eq 0 ]
+}
+
+@test "matrix build falls back after closure import failure" {
+  run_ci_build_step 0 1 0
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"::warning::Hestia closure prefetch failed"* ]]
+  [ "$(cat "$BATS_TEST_TMPDIR/ci-build-calls")" = $'nix-store\nnix <build> </nix/store/00000000000000000000000000000000-test.drv^*>' ]
+}
+
+@test "matrix build falls back after closure download failure" {
+  run_ci_build_step 22 0 0
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"::warning::Hestia closure prefetch failed"* ]]
+  [ "$(cat "$BATS_TEST_TMPDIR/ci-build-calls")" = $'nix-store\nnix <build> </nix/store/00000000000000000000000000000000-test.drv^*>' ]
+}
+
+@test "matrix build failure remains fatal after successful prefetch" {
+  run_ci_build_step 0 0 42
+
+  [ "$status" -eq 42 ]
+  [[ "$output" != *"::warning::"* ]]
+  [ "$(cat "$BATS_TEST_TMPDIR/ci-build-calls")" = $'nix-store\nnix <build> </nix/store/00000000000000000000000000000000-test.drv^*>' ]
 }
 
 @test "multi-system matrix keeps public substituters and a stable aggregate result" {

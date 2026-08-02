@@ -869,6 +869,7 @@ let
         ".github/workflows/cache-gc.yaml"
         ".github/workflows/ci.yaml"
         ".github/workflows/update-pins-smoke.yaml"
+        "tests/test-helper.bash"
       ];
       nativeBuildInputs = [ pkgs.yq-go ];
       environment = {
