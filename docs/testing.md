@@ -37,7 +37,7 @@ nix flake check --no-build --all-systems
 nix run .#fmt -- --ci
 ```
 
-Rust全体は、catalogから生成した3つのcheckを使う。
+各systemで利用可能なRust project全体は、catalogから生成した3つのcheckを使う。次はx86_64-linuxの例であり、Darwin専用crateはaarch64-darwinの同名checkに含まれる。
 
 ```bash
 nix build --no-link .#checks.x86_64-linux.rust-tests

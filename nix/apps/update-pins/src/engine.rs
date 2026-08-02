@@ -61,7 +61,7 @@ where
     let mut ledger = Ledger::default();
 
     let result = targets.iter().copied().try_for_each(|target| {
-        println!("== {}", target.name());
+        println!("{}", target_heading(target));
         update(target, invocation.policy, &mut transaction, &mut ledger)?;
         Ok::<(), UpdateError>(())
     });
@@ -101,18 +101,27 @@ fn finalize_apply<R: CommandRunner>(
     }
     let changed = !ledger.is_empty();
     print_report(report);
+    println!("{}", apply_summary(target, changed));
+    Ok(())
+}
+
+fn target_heading(target: Target) -> String {
+    format!("== {}", target.name())
+}
+
+fn apply_summary(target: Target, changed: bool) -> String {
     match (target, changed) {
-        (Target::All, true) => println!(
+        (Target::All, true) => {
             "Pins updated. Review with 'git diff', verify with 'nix run .#build', then commit."
-        ),
-        (Target::All, false) => println!("All pins up to date."),
-        (_, true) => println!(
+                .to_owned()
+        }
+        (Target::All, false) => "All pins up to date.".to_owned(),
+        (_, true) => format!(
             "{} updated. Review with 'git diff', verify with 'nix run .#build', then commit.",
             target.name()
         ),
-        (_, false) => println!("{} is up to date.", target.name()),
+        (_, false) => format!("{} is up to date.", target.name()),
     }
-    Ok(())
 }
 
 fn finalize_check<R: CommandRunner>(
@@ -213,7 +222,9 @@ mod tests {
 
     use tempfile::TempDir;
 
-    use super::{run_in_repository, selected_managed_paths, selected_targets};
+    use super::{
+        apply_summary, run_in_repository, selected_managed_paths, selected_targets, target_heading,
+    };
     use crate::cli::{Invocation, PublishMode, Target};
     use crate::command::SystemCommandRunner;
     use crate::error::UpdateError;
@@ -398,6 +409,19 @@ mod tests {
                 .iter()
                 .any(|spec| spec.managed_paths.contains(path))
         }));
+    }
+
+    #[test]
+    fn all_target_output_contract_is_derived_from_registry() {
+        let targets = selected_targets(Target::All).expect("all targets are implemented");
+        let headings = targets.into_iter().map(target_heading).collect::<Vec<_>>();
+        let expected = TARGET_SPECS
+            .iter()
+            .map(|spec| format!("== {}", spec.name))
+            .collect::<Vec<_>>();
+
+        assert_eq!(headings, expected);
+        assert_eq!(apply_summary(Target::All, false), "All pins up to date.");
     }
 
     #[test]
