@@ -3,7 +3,8 @@
 source "$BATS_TEST_DIRNAME/test-helper.bash"
 
 setup() {
-  : "${AWS_LOGIN_TEST_PACKAGE:?}"
+  require_nix_fixture AWS_LOGIN_TEST_PACKAGE "aws-login package"
+
   TEST_TMPDIR="$(mktemp -d)"
   export TEST_TMPDIR
   HOME="$TEST_TMPDIR/home"

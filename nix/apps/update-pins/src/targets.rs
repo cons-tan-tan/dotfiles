@@ -790,25 +790,34 @@ mod tests {
     use std::cell::{Cell, RefCell};
     use std::fs::File;
     use std::path::{Path, PathBuf};
+    use std::process::Command;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Condvar, Mutex, mpsc};
     use std::time::Duration;
 
     use flate2::Compression;
     use flate2::write::GzEncoder;
+    use tempfile::TempDir;
 
     use super::{
         MUTATING_COMMAND_OUTPUT_LIMIT, MUTATING_COMMAND_TIMEOUT, is_implemented, paired_version,
         read_npm_package_json, read_npm_package_json_with_limits, refresh_assets_with,
-        replace_paired_version, run_mutating_command_once, validate_npm_identity,
+        replace_paired_version, run_mutating_command_once, run_target, validate_npm_identity,
         validate_unscoped_npm_package_name,
     };
     use crate::cli::Target;
-    use crate::command::{CommandOutput, CommandRunner, CommandSpec};
+    use crate::command::{CommandOutput, CommandRunner, CommandSpec, SystemCommandRunner};
     use crate::error::UpdateError;
+    use crate::ledger::Ledger;
     use crate::policy::RunPolicy;
     use crate::prefetch::TarPreflightLimits;
-    use crate::registry::{AssetNaming, target_spec};
+    use crate::registry::{AssetNaming, TARGET_SPECS, TargetKind, TargetSpec, target_spec};
+    use crate::transaction::{Repository, Transaction};
+
+    const CURRENT_VERSION: &str = "1.2.3";
+    const CURRENT_HASH: &str = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+    const CURRENT_CODEX_URL: &str =
+        "https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-arm64-1.2.3.zip";
     use crate::upstream::latest_tag;
 
     struct RecordingRunner {
@@ -848,6 +857,85 @@ mod tests {
         stdout_limit: Cell<usize>,
         stderr_limit: Cell<usize>,
         timeout: Cell<Duration>,
+    }
+
+    struct CurrentMetadataRunner {
+        commands: Mutex<Vec<CommandSpec>>,
+    }
+
+    impl CurrentMetadataRunner {
+        fn new() -> Self {
+            Self {
+                commands: Mutex::new(Vec::new()),
+            }
+        }
+
+        fn take_programs(&self) -> Vec<String> {
+            std::mem::take(&mut *self.commands.lock().expect("metadata commands lock"))
+                .into_iter()
+                .map(|command| command.program.to_string_lossy().into_owned())
+                .collect()
+        }
+    }
+
+    impl CommandRunner for CurrentMetadataRunner {
+        fn run(&self, command: &CommandSpec) -> Result<CommandOutput, UpdateError> {
+            if command.program == "git" {
+                return SystemCommandRunner.run(command);
+            }
+
+            self.commands
+                .lock()
+                .expect("metadata commands lock")
+                .push(command.clone());
+            if command.program == "gh" {
+                return Ok(CommandOutput {
+                    status: Some(0),
+                    stdout: format!(
+                        "HTTP/2.0 200 OK\r\ncontent-type: application/json\r\n\r\n{{\"tag_name\":\"v{CURRENT_VERSION}\"}}"
+                    )
+                    .into_bytes(),
+                    stderr: Vec::new(),
+                });
+            }
+            if command.program == "curl" {
+                let output_index = command
+                    .args
+                    .iter()
+                    .position(|argument| argument == "--output")
+                    .expect("curl output argument");
+                let output_path = PathBuf::from(&command.args[output_index + 1]);
+                let url = command.args.last().expect("curl URL").to_string_lossy();
+                let body = if url.ends_with("/difit/latest") {
+                    format!("{{\"version\":\"{CURRENT_VERSION}\"}}")
+                } else if url == crate::codex_app::APPCAST_URL {
+                    format!(
+                        "<rss><channel><item><title>{CURRENT_VERSION}</title><enclosure url=\"{CURRENT_CODEX_URL}\"/></item></channel></rss>"
+                    )
+                } else {
+                    "{}".to_owned()
+                };
+                std::fs::write(&output_path, body)
+                    .map_err(|source| UpdateError::io(&output_path, source))?;
+                return Ok(CommandOutput {
+                    status: Some(0),
+                    stdout: b"200".to_vec(),
+                    stderr: Vec::new(),
+                });
+            }
+            if command.program == "nix" {
+                return Ok(CommandOutput {
+                    status: Some(0),
+                    stdout: format!("{{\"hash\":\"{CURRENT_HASH}\"}}").into_bytes(),
+                    stderr: Vec::new(),
+                });
+            }
+            panic!("unexpected no-op command {}", command.display());
+        }
+
+        fn is_available(&self, program: &Path) -> bool {
+            program == Path::new("gh")
+        }
     }
 
     impl CommandRunner for BoundedOnlyRunner {
@@ -992,6 +1080,79 @@ mod tests {
             !is_implemented(Target::All),
             "all should remain outside concrete target dispatch"
         );
+    }
+
+    #[test]
+    fn production_dispatch_is_stable_for_every_current_target() {
+        for spec in TARGET_SPECS {
+            let repository = current_target_repository(spec);
+            let runner = CurrentMetadataRunner::new();
+            let originals = spec
+                .managed_paths
+                .iter()
+                .map(|relative| {
+                    let path = repository.path().join(relative);
+                    (
+                        *relative,
+                        std::fs::read(&path).expect("managed bytes"),
+                        std::fs::metadata(&path)
+                            .expect("managed metadata")
+                            .permissions(),
+                    )
+                })
+                .collect::<Vec<_>>();
+
+            for attempt in 1..=2 {
+                let repository_handle =
+                    Repository::discover_in(&SystemCommandRunner, repository.path())
+                        .expect("repository");
+                let mut transaction =
+                    Transaction::begin_scoped(repository_handle, &runner, spec.managed_paths)
+                        .expect("transaction");
+                let mut ledger = Ledger::default();
+
+                run_target(
+                    spec.target,
+                    RunPolicy::default(),
+                    &runner,
+                    &mut transaction,
+                    &mut ledger,
+                )
+                .unwrap_or_else(|error| {
+                    panic!("{} no-op attempt {attempt} failed: {error}", spec.name)
+                });
+
+                assert!(
+                    ledger.is_empty(),
+                    "{} no-op attempt {attempt} recorded changes",
+                    spec.name
+                );
+                for (relative, bytes, permissions) in &originals {
+                    let path = repository.path().join(relative);
+                    assert_eq!(
+                        std::fs::read(&path).expect("stable managed bytes"),
+                        *bytes,
+                        "{} changed {relative} on no-op attempt {attempt}",
+                        spec.name
+                    );
+                    assert_eq!(
+                        std::fs::metadata(&path)
+                            .expect("stable managed metadata")
+                            .permissions(),
+                        *permissions,
+                        "{} changed {relative} mode on no-op attempt {attempt}",
+                        spec.name
+                    );
+                }
+                transaction.commit().expect("commit no-op transaction");
+                assert_eq!(
+                    runner.take_programs(),
+                    expected_noop_programs(spec.kind),
+                    "{} invoked an unexpected no-op child on attempt {attempt}",
+                    spec.name
+                );
+            }
+        }
     }
 
     #[test]
@@ -1349,6 +1510,122 @@ mod tests {
         )
         .expect_err("entry paths must be bounded");
         assert!(error.to_string().contains("unsafe path"));
+    }
+
+    fn current_target_repository(spec: &TargetSpec) -> TempDir {
+        let repository = TempDir::new().expect("temporary current-target repository");
+        run_fixture_git(repository.path(), ["init", "-q"]);
+        run_fixture_git(
+            repository.path(),
+            ["config", "user.email", "test@example.invalid"],
+        );
+        run_fixture_git(
+            repository.path(),
+            ["config", "user.name", "update-pins no-op test"],
+        );
+        run_fixture_git(repository.path(), ["config", "commit.gpgsign", "false"]);
+        for relative in spec.managed_paths {
+            let path = repository.path().join(relative);
+            std::fs::create_dir_all(path.parent().expect("managed path parent"))
+                .expect("managed path parent directory");
+            std::fs::write(&path, current_managed_contents(spec, relative))
+                .expect("current managed contents");
+        }
+        run_fixture_git(repository.path(), ["add", "."]);
+        run_fixture_git(repository.path(), ["commit", "-q", "-m", "initial"]);
+        repository
+    }
+
+    fn current_managed_contents(spec: &TargetSpec, relative: &str) -> Vec<u8> {
+        let contents = match spec.kind {
+            TargetKind::PairedRelease {
+                repository, pin, ..
+            } => {
+                if relative == pin {
+                    "{}\n".to_owned()
+                } else if relative == "flake.nix" {
+                    format!("input.url = \"github:{repository}/v{CURRENT_VERSION}\";\n")
+                } else {
+                    "{}\n".to_owned()
+                }
+            }
+            TargetKind::Release { pin, .. } => {
+                assert_eq!(relative, pin);
+                format!("{{\"version\":\"{CURRENT_VERSION}\"}}\n")
+            }
+            TargetKind::UrlHash { pin } => {
+                assert_eq!(relative, pin);
+                format!(
+                    "{{\"url\":\"https://example.invalid/schema.json\",\"hash\":\"{CURRENT_HASH}\"}}\n"
+                )
+            }
+            TargetKind::Shellfirm {
+                pin,
+                lock,
+                guard_manifest,
+                guard_lock,
+                ..
+            } => {
+                if relative == pin {
+                    format!(
+                        "{{\"version\":\"{CURRENT_VERSION}\",\"srcHash\":\"{CURRENT_HASH}\"}}\n"
+                    )
+                } else if relative == lock {
+                    "version = 4\n".to_owned()
+                } else if relative == guard_manifest {
+                    format!(
+                        "[dependencies]\nshellfirm = {{ version = \"={CURRENT_VERSION}\", default-features = false }}\n"
+                    )
+                } else if relative == guard_lock {
+                    format!(
+                        "version = 4\n\n[[package]]\nname = \"agent-command-guard\"\nversion = \"0.1.0\"\ndependencies = [\n \"shellfirm\",\n]\n\n[[package]]\nname = \"shellfirm\"\nversion = \"{CURRENT_VERSION}\"\nsource = \"registry+https://github.com/rust-lang/crates.io-index\"\nchecksum = \"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"\n"
+                    )
+                } else {
+                    panic!("unexpected Shellfirm managed path {relative}");
+                }
+            }
+            TargetKind::PublishedNodePackage(package) => {
+                if relative == package.pin {
+                    "{}\n".to_owned()
+                } else if relative == "flake.nix" {
+                    let repository = package.dependencies.source().repository;
+                    format!("input.url = \"github:{repository}/v{CURRENT_VERSION}\";\n")
+                } else {
+                    "{}\n".to_owned()
+                }
+            }
+            TargetKind::CodexApp { pin } => {
+                assert_eq!(relative, pin);
+                format!(
+                    "{{\"appcast\":\"{}\",\"version\":\"{CURRENT_VERSION}\",\"url\":\"{CURRENT_CODEX_URL}\",\"hash\":\"{CURRENT_HASH}\",\"appName\":\"ChatGPT.app\",\"bundleIdentifier\":\"com.openai.codex\",\"displayName\":\"ChatGPT\"}}\n",
+                    crate::codex_app::APPCAST_URL
+                )
+            }
+            TargetKind::Unimplemented => panic!("{} is not implemented", spec.name),
+        };
+        contents.into_bytes()
+    }
+
+    fn expected_noop_programs(kind: TargetKind) -> Vec<String> {
+        match kind {
+            TargetKind::PairedRelease { .. }
+            | TargetKind::Release { .. }
+            | TargetKind::Shellfirm { .. } => vec!["gh".to_owned()],
+            TargetKind::PublishedNodePackage(_) | TargetKind::CodexApp { .. } => {
+                vec!["curl".to_owned()]
+            }
+            TargetKind::UrlHash { .. } => vec!["curl".to_owned(), "nix".to_owned()],
+            TargetKind::Unimplemented => Vec::new(),
+        }
+    }
+
+    fn run_fixture_git<const N: usize>(directory: &Path, arguments: [&str; N]) {
+        let status = Command::new("git")
+            .args(arguments)
+            .current_dir(directory)
+            .status()
+            .expect("run fixture git");
+        assert!(status.success(), "fixture git command failed");
     }
 
     fn asset_test_pin() -> crate::pins::PinDocument {

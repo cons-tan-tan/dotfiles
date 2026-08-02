@@ -12,18 +12,27 @@ let
   nixRoot = ../.;
   repoRoot = ../..;
   testSuffix = ".test.nix";
+  failureTestSuffix = ".failure.test.nix";
+  cleanupPolicy = import ../lib/nh-clean-policy.nix;
   hostArch = if pkgs.stdenv.hostPlatform.isx86_64 then "x86_64" else "aarch64";
   expectedNixosWslTarget = if hostArch == "x86_64" then "wsl" else "wsl-aarch64";
 
   # 評価だけで完結するテストは実装の隣に置き、ファイル名から checks の
   # 名前を生成する。
-  testFiles = builtins.filter (path: lib.hasSuffix testSuffix (baseNameOf path)) (
-    lib.filesystem.listFilesRecursive nixRoot
-  );
+  discoveredNixFiles = lib.filesystem.listFilesRecursive nixRoot;
+  failureTestFiles = builtins.filter (
+    path: lib.hasSuffix failureTestSuffix (baseNameOf path)
+  ) discoveredNixFiles;
+  testFiles = builtins.filter (
+    path:
+    lib.hasSuffix testSuffix (baseNameOf path) && !lib.hasSuffix failureTestSuffix (baseNameOf path)
+  ) discoveredNixFiles;
 
   testStem = path: lib.removeSuffix testSuffix (baseNameOf path);
   checkName = path: "${testStem path}-tests";
-  discoveredCheckNames = map checkName testFiles;
+  failureStem = path: lib.removeSuffix failureTestSuffix (baseNameOf path);
+  failureCheckName = path: "${failureStem path}-failure-tests";
+  discoveredCheckNames = (map checkName testFiles) ++ (map failureCheckName failureTestFiles);
   checkNames = discoveredCheckNames ++ builtins.attrNames fixedChecks ++ reservedCheckNames;
   duplicateCheckNames = builtins.filter (
     name: builtins.length (builtins.filter (other: other == name) checkNames) > 1
@@ -90,25 +99,245 @@ let
     };
 
   evalChecks = lib.listToAttrs (map mkEvalCheck testFiles);
-  updatePinsCore = pkgs.callPackage ../apps/update-pins { };
-  updatePinsSmoke = pkgs.callPackage ../apps/update-pins/smoke.nix { };
-  applySecretsCore = pkgs.callPackage ../apps/apply-secrets { };
-  applyNixSettingsCore = pkgs.callPackage ../apps/apply-nix-settings { };
+
+  loadFailureSuite = path: import path;
+
+  validateFailureSuite =
+    path: suite: suiteArgs: cases:
+    let
+      names = if builtins.isAttrs cases then builtins.attrNames cases else [ ];
+      invalidNames = builtins.filter (name: builtins.match "^[a-z][A-Za-z0-9]*$" name == null) names;
+      invalidCases = builtins.filter (
+        name:
+        let
+          testCase = cases.${name};
+        in
+        !(builtins.isAttrs testCase && testCase ? expression && testCase ? expectedFragment)
+      ) names;
+      invalidFragments = builtins.filter (
+        name:
+        let
+          fragment = cases.${name}.expectedFragment;
+        in
+        !(
+          builtins.isString fragment
+          && builtins.match "[[:space:]]*" fragment == null
+          && !lib.hasInfix "\n" fragment
+          && builtins.stringLength fragment <= 256
+        )
+      ) names;
+    in
+    if !builtins.isFunction suite then
+      throw "${toString path} must return a function"
+    else if
+      builtins.attrNames suiteArgs != [
+        "caseName"
+        "nixpkgsPath"
+        "repoRoot"
+      ]
+    then
+      throw "${toString path} must accept exactly caseName, nixpkgsPath, and repoRoot"
+    else if !builtins.isAttrs cases then
+      throw "${toString path} must return its failure cases when caseName is null"
+    else if names == [ ] then
+      throw "${toString path} does not define any failure cases"
+    else if invalidNames != [ ] then
+      throw "${toString path} contains invalid failure case names: ${builtins.toJSON invalidNames}"
+    else if invalidCases != [ ] then
+      throw "${toString path} contains invalid failure cases: ${builtins.toJSON invalidCases}"
+    else if invalidFragments != [ ] then
+      throw "${toString path} contains invalid diagnostic fragments for cases: ${builtins.toJSON invalidFragments}"
+    else
+      null;
+
+  mkFailureCheck =
+    path:
+    let
+      suite = loadFailureSuite path;
+      suiteArgs = if builtins.isFunction suite then builtins.functionArgs suite else { };
+      suiteArgsValid =
+        builtins.attrNames suiteArgs == [
+          "caseName"
+          "nixpkgsPath"
+          "repoRoot"
+        ];
+      # null はmetadata列挙専用。case attrsetを返しても、expression fieldは
+      # 遅延値なので親 evaluator では強制されない。
+      cases =
+        if builtins.isFunction suite && suiteArgsValid then
+          suite {
+            caseName = null;
+            nixpkgsPath = pkgs.path;
+            inherit repoRoot;
+          }
+        else
+          null;
+      validation = validateFailureSuite path suite suiteArgs cases;
+      name = failureCheckName path;
+      suiteRelativePath = lib.removePrefix "${toString repoRoot}/" (toString path);
+      nixpkgsArgument = "${pkgs.path}";
+      repoRootArgument = "${repoRoot}";
+      suitePath = "${repoRootArgument}/${suiteRelativePath}";
+      runCases = lib.concatMapStringsSep "\n" (
+        caseName:
+        let
+          expectedFragment = cases.${caseName}.expectedFragment;
+          caseLabel = "${failureStem path}/${caseName}";
+        in
+        ''
+          case_label=${lib.escapeShellArg caseLabel}
+          expected_fragment=${lib.escapeShellArg expectedFragment}
+          stdout_file="$TMPDIR/${caseName}.stdout"
+          stderr_file="$TMPDIR/${caseName}.stderr"
+          diagnostic_file="$TMPDIR/${caseName}.diagnostic"
+          parse_error_file="$TMPDIR/${caseName}.parse-error"
+
+          status=0
+          if ${pkgs.nix}/bin/nix-instantiate \
+            --log-format internal-json \
+            --eval \
+            --strict \
+            ${lib.escapeShellArg suitePath} \
+            --argstr caseName ${lib.escapeShellArg caseName} \
+            --arg nixpkgsPath ${lib.escapeShellArg nixpkgsArgument} \
+            --arg repoRoot ${lib.escapeShellArg repoRootArgument} \
+            >"$stdout_file" 2>"$stderr_file"; then
+            status=0
+          else
+            status="$?"
+          fi
+
+          if [[ "$status" -eq 0 ]]; then
+            printf 'expected evaluation failure but succeeded: %s\n' "$case_label" >&2
+            exit 1
+          fi
+
+          if ! ${pkgs.jq}/bin/jq --raw-input --raw-output --slurp '
+            split("\n")
+            | map(select(length > 0)) as $lines
+            | if ($lines | length) == 0 then
+                error("Nix did not emit a structured diagnostic")
+              elif all($lines[]; startswith("@nix ")) then
+                $lines
+              else
+                error("Nix emitted a non-structured diagnostic line")
+              end
+            | map(ltrimstr("@nix ") | fromjson)
+            | map(select(
+                .action == "msg"
+                and .level == 0
+                and (.raw_msg | type) == "string"
+              ))
+            | if length == 1 then
+                .[0].raw_msg
+              else
+                error("expected exactly one root Nix diagnostic")
+              end
+            | gsub("\u001b\\[[0-9;]*m"; "")
+          ' "$stderr_file" >"$diagnostic_file" 2>"$parse_error_file"; then
+            printf 'could not extract root evaluation diagnostic: %s\n' "$case_label" >&2
+            ${pkgs.coreutils}/bin/head -c 1024 "$parse_error_file" >&2
+            printf '\nbounded stderr follows:\n' >&2
+            ${pkgs.coreutils}/bin/head -c 4096 "$stderr_file" >&2
+            printf '\n' >&2
+            exit 1
+          fi
+
+          if ! ${pkgs.ripgrep}/bin/rg \
+            --fixed-strings \
+            --quiet \
+            -- "$expected_fragment" \
+            "$diagnostic_file"; then
+            printf 'unexpected evaluation failure: %s\n' "$case_label" >&2
+            printf 'expected diagnostic fragment: %s\n' "$expected_fragment" >&2
+            printf 'bounded stderr follows:\n' >&2
+            ${pkgs.coreutils}/bin/head -c 4096 "$stderr_file" >&2
+            printf '\n' >&2
+            exit 1
+          fi
+        ''
+      ) (builtins.attrNames cases);
+    in
+    {
+      inherit name;
+      value = builtins.seq validation (
+        pkgs.runCommand name { } ''
+          set -euo pipefail
+          export HOME="$TMPDIR/home"
+          export LC_ALL=C
+          export NIX_STATE_DIR="$TMPDIR/nix-state"
+          mkdir -p "$HOME" "$NIX_STATE_DIR/profiles/per-user"
+          ${runCases}
+          touch "$out"
+        ''
+      );
+    };
+
+  failureChecks = lib.listToAttrs (map mkFailureCheck failureTestFiles);
+  rustCatalog = import ./rust-projects.nix { inherit lib pkgs; };
+  rustProjects = rustCatalog.projects;
+  rustProjectsByName = lib.listToAttrs (
+    map (project: lib.nameValuePair project.name project) rustProjects
+  );
+  rustProject = name: rustProjectsByName.${name};
+  applicableRustProjects = builtins.filter (
+    project: project.platformPredicate pkgs.stdenv.hostPlatform
+  ) rustProjects;
+  rustBuildVariants = lib.concatMap (project: project.buildVariants) applicableRustProjects;
+  rustClippyVariants = lib.concatMap (project: project.clippyVariants) applicableRustProjects;
+  rustPath = path: nixRoot + "/${path}";
+  discoveredRustManifests = map (path: lib.removePrefix "${toString nixRoot}/" (toString path)) (
+    builtins.filter (path: baseNameOf path == "Cargo.toml") (lib.filesystem.listFilesRecursive nixRoot)
+  );
+  discoveredRustLockfiles = map (path: lib.removePrefix "${toString nixRoot}/" (toString path)) (
+    builtins.filter (path: baseNameOf path == "Cargo.lock") (lib.filesystem.listFilesRecursive nixRoot)
+  );
+  rustInventory = rustCatalog.inventory {
+    discoveredManifests = discoveredRustManifests;
+    discoveredLockfiles = discoveredRustLockfiles;
+  };
+  emptyRustInventory = {
+    manifests = {
+      missing = [ ];
+      stale = [ ];
+      duplicate = [ ];
+    };
+    lockfiles = {
+      missing = [ ];
+      stale = [ ];
+      duplicate = [ ];
+    };
+  };
+  rustInventoryValidation =
+    if rustInventory == emptyRustInventory then
+      null
+    else
+      throw "rust project inventory mismatch: ${builtins.toJSON rustInventory}";
+  rustLockfiles = map (project: project.lock // { path = rustPath project.lock.path; }) rustProjects;
+
+  updatePinsCore = (rustProject "update-pins").packages.default;
+  applySecretsCore = (rustProject "apply-secrets").packages.default;
+  applyNixSettingsCore = (rustProject "apply-nix-settings").packages.default;
+
+  agentCommandGuard = (rustProject "agent-command-guard").packages.default;
+  awsConfigHelper = (rustProject "aws-config-helper").packages.default;
+  safeFetch = (rustProject "safe-fetch").packages;
   nhCleanUser = pkgs.callPackage ../packages/nh-clean-user { };
   nhCleanArgumentProbe = pkgs.writeShellApplication {
     name = "nh";
     text = ''
       expected=(
-        clean
-        user
-        --keep
-        5
-        --keep-since
-        1d
-        --no-gcroots
-        --no-direnv
-        --dry
-        --no-gc
+        ${lib.escapeShellArgs (
+          [
+            "clean"
+            "user"
+          ]
+          ++ cleanupPolicy.arguments
+          ++ [
+            "--dry"
+            "--no-gc"
+          ]
+        )}
       )
       actual=("$@")
 
@@ -140,8 +369,6 @@ let
     nh = nhCleanArgumentProbe;
     nix = nhCleanNixProbe;
   };
-  agentConfigHelper = pkgs.callPackage ../libexec/agent-config-helper { };
-  agentCommandGuard = pkgs.dotfilesPackages.agent-command-guard;
   agentCommandPolicy = import ../lib/agent-command-policy { inherit lib; };
   agentCommandGuardHook = import ../lib/agent-command-policy/mk-guard.nix {
     inherit lib pkgs;
@@ -168,24 +395,8 @@ let
       lib.escapeShellArgs (rule.argvPrefix ++ [ "__policy_probe__" ])
     }"
   ) agentCommandPolicy.prefixRules;
-  awsConfigHelper = pkgs.callPackage ../packages/aws/config-helper { };
-  safeFetch = pkgs.callPackage ../packages/safe-fetch { };
   curlFetch = pkgs.dotfilesPackages.curl-fetch;
   ghApiGet = pkgs.dotfilesPackages.gh-api-get;
-  safeFetchCheck = pkgs.linkFarm "safe-fetch-rust" [
-    {
-      name = "core";
-      path = safeFetch.core;
-    }
-    {
-      name = "curl-fetch";
-      path = curlFetch;
-    }
-    {
-      name = "gh-api-get";
-      path = ghApiGet;
-    }
-  ];
 
   mkRustClippyCheck =
     {
@@ -214,156 +425,31 @@ let
       '';
     };
 
-  rustClippyChecks = {
-    apply-secrets = mkRustClippyCheck {
-      name = "apply-secrets";
-      package = applySecretsCore;
-      flags = [
-        "--all-targets"
-        "--all-features"
-      ];
-    };
-    apply-nix-settings = mkRustClippyCheck {
-      name = "apply-nix-settings";
-      package = applyNixSettingsCore;
-      flags = [
-        "--all-targets"
-        "--all-features"
-      ];
-    };
-    safe-fetch = mkRustClippyCheck {
-      name = "safe-fetch";
-      package = safeFetch.core;
-      flags = [
-        "--all-targets"
-        "--all-features"
-      ];
-    };
-    agent-config-helper = mkRustClippyCheck {
-      name = "agent-config-helper";
-      package = agentConfigHelper;
-      flags = [
-        "--all-targets"
-        "--all-features"
-      ];
-    };
-    agent-command-guard = mkRustClippyCheck {
-      name = "agent-command-guard";
-      package = agentCommandGuard;
-      flags = [
-        "--all-targets"
-        "--all-features"
-      ];
-    };
-    aws-config-helper = mkRustClippyCheck {
-      name = "aws-config-helper";
-      package = awsConfigHelper;
-      flags = [
-        "--all-targets"
-        "--all-features"
-      ];
-    };
-    update-pins = mkRustClippyCheck {
-      name = "update-pins";
-      package = updatePinsCore;
-      flags = [
-        "--all-targets"
-        "--features"
-        "smoke"
-      ];
-    };
-    update-pins-smoke = mkRustClippyCheck {
-      name = "update-pins-smoke";
-      package = updatePinsSmoke;
-      flags = [
-        "--all-targets"
-        "--no-default-features"
-        "--features"
-        "smoke"
-      ];
-    };
-  }
-  // lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
-    sleepctl = mkRustClippyCheck {
-      name = "sleepctl";
-      package = pkgs.callPackage ../packages/sleepctl { };
-      flags = [ "--all-targets" ];
-    };
-  };
+  rustBuildChecks = lib.listToAttrs (
+    map (variant: lib.nameValuePair variant.checkName variant.package) rustBuildVariants
+  );
+
+  rustTests = pkgs.linkFarm "rust-tests" (
+    map (variant: {
+      name = variant.checkName;
+      path = variant.package;
+    }) rustBuildVariants
+  );
+
+  rustClippyChecks = lib.listToAttrs (
+    map (
+      variant:
+      lib.nameValuePair variant.checkName (mkRustClippyCheck {
+        name = variant.checkName;
+        package = variant.package;
+        flags = variant.clippyFlags;
+      })
+    ) rustClippyVariants
+  );
 
   rustClippy = pkgs.linkFarm "rust-clippy" (
     lib.mapAttrsToList (name: path: { inherit name path; }) rustClippyChecks
   );
-
-  rustLockfiles = [
-    {
-      owner = "update-pins";
-      path = ../apps/update-pins/Cargo.lock;
-      ignoredAdvisories = [ ];
-    }
-    {
-      owner = "apply-secrets";
-      path = ../apps/apply-secrets/Cargo.lock;
-      ignoredAdvisories = [ ];
-    }
-    {
-      owner = "apply-nix-settings";
-      path = ../apps/apply-nix-settings/Cargo.lock;
-      ignoredAdvisories = [ ];
-    }
-    {
-      owner = "safe-fetch";
-      path = ../packages/safe-fetch/Cargo.lock;
-      ignoredAdvisories = [ ];
-    }
-    {
-      owner = "agent-command-guard";
-      path = ../packages/agent-command-guard/Cargo.lock;
-      ignoredAdvisories = [ ];
-    }
-    {
-      owner = "agent-config-helper";
-      path = ../libexec/agent-config-helper/Cargo.lock;
-      ignoredAdvisories = [ ];
-    }
-    {
-      owner = "aws-config-helper";
-      path = ../packages/aws/config-helper/Cargo.lock;
-      ignoredAdvisories = [ ];
-    }
-    {
-      owner = "shellfirm";
-      path = ../packages/shellfirm/Cargo.lock;
-      ignoredAdvisories = [
-        {
-          id = "RUSTSEC-2026-0002";
-          reviewedAt = "2026-07-24";
-          # 2026-11-01T00:00:00Z. ratatui 0.29 is the only lru consumer and
-          # does not call the affected LruCache::iter_mut API. Remove this
-          # exception when shellfirm upgrades to ratatui with lru >= 0.16.3.
-          expiresAt = 1793491200;
-        }
-      ];
-    }
-    {
-      owner = "sleepctl";
-      path = ../packages/sleepctl/Cargo.lock;
-      ignoredAdvisories = [ ];
-    }
-  ];
-
-  discoveredRustLockfiles = builtins.filter (path: baseNameOf path == "Cargo.lock") (
-    lib.filesystem.listFilesRecursive nixRoot
-  );
-  declaredRustLockfiles = map (lock: lock.path) rustLockfiles;
-  rustLockfileInventoryValidation =
-    if
-      lib.sort lib.lessThan (map toString discoveredRustLockfiles)
-      == lib.sort lib.lessThan (map toString declaredRustLockfiles)
-    then
-      null
-    else
-      throw "rust advisory lockfile inventory is incomplete";
 
   ignoredRustAdvisories = lib.concatMap (
     lock: map (advisory: advisory // { inherit (lock) owner; }) lock.ignoredAdvisories
@@ -394,43 +480,41 @@ let
     else
       throw "rust advisory exceptions expired for pinned DB: ${builtins.toJSON expired}";
 
-  rustAdvisories = builtins.seq rustLockfileInventoryValidation (
-    builtins.seq rustAdvisoryExpiryContractValidation (
-      builtins.seq rustAdvisoryExpiryValidation (
-        pkgs.runCommand "rust-advisories"
-          {
-            nativeBuildInputs = [ pkgs.cargo-audit ];
-          }
-          ''
-            export CARGO_HOME="$TMPDIR/cargo-home"
-            export CARGO_NET_OFFLINE=true
-            mkdir -p "$CARGO_HOME"
+  rustAdvisories = builtins.seq rustAdvisoryExpiryContractValidation (
+    builtins.seq rustAdvisoryExpiryValidation (
+      pkgs.runCommand "rust-advisories"
+        {
+          nativeBuildInputs = [ pkgs.cargo-audit ];
+        }
+        ''
+          export CARGO_HOME="$TMPDIR/cargo-home"
+          export CARGO_NET_OFFLINE=true
+          mkdir -p "$CARGO_HOME"
 
-            ${lib.concatMapStringsSep "\n" (
-              lock:
-              # Yanked status requires a crates.io registry index, which is not
-              # pinned here, so this reproducible gate excludes it. RustSec
-              # vulnerabilities and unsound warnings fail. Unmaintained warnings
-              # remain visible without being denied.
-              ''
-                echo "Auditing ${lock.owner}: ${lock.path}"
-                cargo-audit audit \
-                  --color never \
-                  --db ${advisoryDb} \
-                  --deny unsound \
-                  --no-fetch \
-                  --no-yanked \
-                  ${
-                    lib.concatMapStringsSep " " (
-                      advisory: "--ignore ${lib.escapeShellArg advisory.id}"
-                    ) lock.ignoredAdvisories
-                  } \
-                  --file ${lock.path}
-              '') rustLockfiles}
+          ${lib.concatMapStringsSep "\n" (
+            lock:
+            # Yanked status requires a crates.io registry index, which is not
+            # pinned here, so this reproducible gate excludes it. RustSec
+            # vulnerabilities and unsound warnings fail. Unmaintained warnings
+            # remain visible without being denied.
+            ''
+              echo "Auditing ${lock.owner}: ${lock.path}"
+              cargo-audit audit \
+                --color never \
+                --db ${advisoryDb} \
+                --deny unsound \
+                --no-fetch \
+                --no-yanked \
+                ${
+                  lib.concatMapStringsSep " " (
+                    advisory: "--ignore ${lib.escapeShellArg advisory.id}"
+                  ) lock.ignoredAdvisories
+                } \
+                --file ${lock.path}
+            '') rustLockfiles}
 
-            touch "$out"
-          ''
-      )
+          touch "$out"
+        ''
     )
   );
 
@@ -595,7 +679,12 @@ let
         "nix/packages/agent-command-guard/Cargo.lock"
         "nix/packages/agent-command-guard/Cargo.toml"
         "nix/packages/shellfirm/Cargo.lock"
-        "nix/pins"
+        "nix/pins/agent-browser.json"
+        "nix/pins/codex-app.json"
+        "nix/pins/difit.json"
+        "nix/pins/hcom.json"
+        "nix/pins/shellfirm.json"
+        "tests/test-helper.bash"
       ];
       nativeBuildInputs = [
         pkgs.git
@@ -618,7 +707,7 @@ let
         "tests/curl-fetch.bats"
         "tests/gh-api-get.bats"
       ];
-      sourceFiles = [ ];
+      sourceFiles = [ "tests/test-helper.bash" ];
       nativeBuildInputs = [
         ghApiGet
         safeFetch.core
@@ -646,7 +735,7 @@ let
         "tests/apply-nix-settings.bats"
         "tests/apply-secrets.bats"
       ];
-      sourceFiles = [ ];
+      sourceFiles = [ "tests/test-helper.bash" ];
       nativeBuildInputs = [
         applyNixSettingsCore
         applySecretsCore
@@ -866,15 +955,7 @@ let
   );
   batsShardNames = map (shard: shard.name) applicableBatsShardSpecs;
 
-  fixedChecks = {
-    update-pins-rust = updatePinsCore;
-    update-pins-smoke = updatePinsSmoke;
-    apply-secrets-rust = applySecretsCore;
-    apply-nix-settings-rust = applyNixSettingsCore;
-    agent-config-helper-rust = agentConfigHelper;
-    agent-command-guard-rust = agentCommandGuard;
-    aws-config-helper-rust = awsConfigHelper;
-    safe-fetch-rust = safeFetchCheck;
+  fixedChecksWithoutRust = {
     pi-package-layout = pkgs.runCommand "pi-package-layout" { } ''
       test -f ${pkgs.pi}/libexec/pi/package.json
       test -x ${pkgs.pi}/libexec/pi/pi
@@ -1127,6 +1208,7 @@ let
         '';
     rust-clippy = rustClippy;
     rust-advisories = rustAdvisories;
+    rust-tests = rustTests;
 
     workflow-lint-tests =
       pkgs.runCommand "workflow-lint-tests"
@@ -1201,10 +1283,20 @@ let
     '';
   }
   // batsChecks;
+  rustBuildCheckCollisions = lib.intersectLists (builtins.attrNames rustBuildChecks) (
+    builtins.attrNames fixedChecksWithoutRust
+  );
+  fixedChecks =
+    if rustBuildCheckCollisions == [ ] then
+      rustBuildChecks // fixedChecksWithoutRust
+    else
+      throw "Rust build check names collide with existing checks: ${builtins.toJSON rustBuildCheckCollisions}";
 in
 # checks は右辺優先で結合されるため、呼び出し元の予約名も含めて検査し、
 # suite や既存 gate が暗黙に上書きされる前に失敗させる。
 if duplicateCheckNames != [ ] then
   throw "duplicate test check names: ${builtins.toJSON duplicateCheckNames}"
 else
-  builtins.seq batsInventoryValidation (evalChecks // fixedChecks)
+  builtins.seq rustInventoryValidation (
+    builtins.seq batsInventoryValidation (evalChecks // failureChecks // fixedChecks)
+  )

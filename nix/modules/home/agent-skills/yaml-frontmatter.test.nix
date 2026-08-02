@@ -6,7 +6,6 @@ let
 
   withFm = "---\nname: demo\n---\nbody line\n";
   noFm = "body only\n---\nnot frontmatter\n";
-  failsToEvaluate = value: !(builtins.tryEval (builtins.deepSeq value true)).success;
 in
 {
   testSplitWithFrontmatter = {
@@ -46,11 +45,6 @@ in
       frontmatter = "---\nname: demo\n---\n";
       body = "";
     };
-  };
-
-  testSplitRejectsUnterminatedFrontmatter = {
-    expr = failsToEvaluate (fm.splitFrontmatter "---\nname: demo\nbody\n");
-    expected = true;
   };
 
   testFoldYamlBlockLines = {
@@ -246,20 +240,6 @@ in
       "name"
       "description"
     ];
-  };
-
-  testFrontmatterFieldNamesRejectsUnsupportedTopLevelSyntax = {
-    expr = failsToEvaluate (
-      fm.frontmatterFieldNames ''
-        ---
-        name: demo
-        description: Demo.
-        <<: *defaults
-        ---
-        body
-      ''
-    );
-    expected = true;
   };
 
   # YAML merge key など、許可fieldの継続行ではない構文は保持しない。

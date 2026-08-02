@@ -717,6 +717,19 @@ mod tests {
     }
 
     #[test]
+    fn rolled_back_report_has_its_own_exact_heading() {
+        let mut ledger = Ledger::default();
+        ledger.extend([change(Target::Hcom, ChangeKind::Version)]);
+
+        let rendered = ledger.rolled_back().render().expect("rollback report");
+        assert_eq!(
+            rendered,
+            "Rolled back candidate changes:\n  hcom:\n    - version: changed"
+        );
+        assert!(!rendered.contains("Applied changes:"));
+    }
+
+    #[test]
     fn candidate_report_is_ordered_and_redacted() {
         let secret_hash = "sha256-secret-value";
         let secret_url = "https://user:password@example.invalid/app.zip?token=secret";

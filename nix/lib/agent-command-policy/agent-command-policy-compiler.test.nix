@@ -91,11 +91,6 @@ let
     };
   };
 
-  failsToCompile = module: !(builtins.tryEval (builtins.deepSeq (evalPolicy module) true)).success;
-  failsUncheckedCompile =
-    policy:
-    !(builtins.tryEval (builtins.deepSeq (import ./compiler.nix ({ inherit lib; } // policy)) true))
-    .success;
 in
 {
   testOneCommandTerminalFeedsNativeAndSemanticBackends = {
@@ -186,19 +181,6 @@ in
         }
       ];
     };
-  };
-
-  testRuleDslRejectsUnknownNamedConditions = {
-    expr =
-      !(builtins.tryEval (
-        builtins.deepSeq (guardedDsl fixtureProfile {
-          deny.missing = {
-            reason = "Blocked by the fixture.";
-            alternatives = [ "Use the safe fixture command." ];
-          };
-        }) true
-      )).success;
-    expected = true;
   };
 
   testShellfirmSelectorPrecedenceDataIsPreserved = {
@@ -294,42 +276,4 @@ in
     };
   };
 
-  testCompilerRejectsInvalidCommandBoundaries = {
-    expr = [
-      (failsToCompile { commands."*" = true; })
-      (failsToCompile { commands.safe."two words" = true; })
-      (failsUncheckedCompile {
-        commands.demo = {
-          decision = true;
-          optionSyntax = { };
-          deny = [ ];
-        };
-      })
-      (failsUncheckedCompile {
-        commands.demo = (semanticCommand [ "-x" ]) // {
-          guidance = "";
-        };
-      })
-    ];
-    expected = [
-      true
-      true
-      true
-      true
-    ];
-  };
-
-  testCompilerRejectsEmptyAndUnimplementedShellPolicies = {
-    expr = [
-      (failsToCompile { })
-      (failsUncheckedCompile {
-        commands.safe = true;
-        shell.process.substitution = true;
-      })
-    ];
-    expected = [
-      true
-      true
-    ];
-  };
 }

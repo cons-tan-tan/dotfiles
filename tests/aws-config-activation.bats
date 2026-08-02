@@ -3,7 +3,8 @@
 source "$BATS_TEST_DIRNAME/test-helper.bash"
 
 setup() {
-  : "${AWS_CONFIG_RECONCILE_TEST_PACKAGE:?}"
+  require_nix_fixture AWS_CONFIG_RECONCILE_TEST_PACKAGE "aws-config-reconcile package"
+
   TEST_TMPDIR="$(mktemp -d)"
   HOME="$TEST_TMPDIR/home"
   export HOME
