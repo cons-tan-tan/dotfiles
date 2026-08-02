@@ -68,12 +68,18 @@ jobs:
           version: ${{ env.HESTIA_VERSION }}
           upstream-cache-filter: true
           upstream-cache-key-names: ${{ env.HESTIA_UPSTREAM_CACHE_KEY_NAMES }}
-      - name: Install matrix evaluator
-        run: nix profile add --inputs-from . nixpkgs#nix-eval-jobs
       - id: matrix
         uses: Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320 # v3.0.0
         with:
           flake: ".#hydraJobs.ci"
+          # 16 GB runner上で評価workerの再起動を避けつつ、OSとNix daemon用に4 GB残す。
+          nix-eval-jobs: >-
+            nix run
+            nixpkgs#nix-eval-jobs
+            --inputs-from .
+            --
+            --workers 1
+            --max-memory-size 12288
           attr-prefix: "hydraJobs.ci"
 
   # 評価済みのdrv closureを引き継ぎ、評価とbuildが別のderivationを選ぶ余地を
