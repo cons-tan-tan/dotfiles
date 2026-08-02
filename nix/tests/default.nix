@@ -400,6 +400,9 @@ let
   ) agentCommandPolicy.prefixRules;
   curlFetch = pkgs.dotfilesPackages.curl-fetch;
   ghApiGet = pkgs.dotfilesPackages.gh-api-get;
+  ghaLintClosure = pkgs.closureInfo {
+    rootPaths = [ pkgs.dotfilesPackages.gha-lint ];
+  };
 
   mkRustClippyCheck =
     {
@@ -1225,25 +1228,34 @@ let
     rust-tests = rustTests;
 
     workflow-lint-tests =
+      assert lib.assertMsg (lib.versionAtLeast pkgs.zizmor.version "1.28.0")
+        "workflow-lint-tests requires zizmor 1.28.0 or newer";
       pkgs.runCommand "workflow-lint-tests"
         {
+          GHA_LINT_ACTION_SCHEMA = pkgs.dotfilesPackages.gha-lint.testSchemas.action;
+          GHA_LINT_WORKFLOW_SCHEMA = pkgs.dotfilesPackages.gha-lint.testSchemas.workflow;
           nativeBuildInputs = [
-            pkgs.actionlint
-            pkgs.shellcheck
+            pkgs.dotfilesPackages.gha-lint
+            pkgs.zizmor
           ];
         }
         ''
-          actionlint ${repoRoot}/.github/workflows/*.yaml
+          cd ${repoRoot}
+          gha-lint
+          zizmor --offline --collect=workflows --persona=regular .
           touch "$out"
         '';
 
     package-smoke-tests =
       pkgs.runCommand "package-smoke-tests"
         {
+          GHA_LINT_ACTION_SCHEMA = pkgs.dotfilesPackages.gha-lint.testSchemas.action;
+          GHA_LINT_WORKFLOW_SCHEMA = pkgs.dotfilesPackages.gha-lint.testSchemas.workflow;
           nativeBuildInputs = [
             pkgs.dotfilesPackages.agent-browser
             pkgs.dotfilesPackages.agent-slack
             pkgs.dotfilesPackages.difit
+            pkgs.dotfilesPackages.gha-lint
           ];
         }
         ''
@@ -1255,6 +1267,22 @@ let
 
           test "$(difit --version)" = "${pkgs.dotfilesPackages.difit.version}"
           difit --help >/dev/null
+
+          test "$(gha-lint --version)" = "${pkgs.dotfilesPackages.gha-lint.version}"
+          gha-lint --help >/dev/null
+          gha-lint ${repoRoot}/nix/packages/gha-lint/tests/fixtures/valid-workflow.yaml
+          gha-lint ${repoRoot}/nix/packages/gha-lint/tests/fixtures/valid-action/action.yml
+
+          ${pkgs.gnugrep}/bin/grep -qi shellcheck ${ghaLintClosure}/store-paths
+          if ${pkgs.gnugrep}/bin/grep -Fxq ${pkgs.dotfilesPackages.gha-lint.testSchemas.workflow} ${ghaLintClosure}/store-paths \
+            || ${pkgs.gnugrep}/bin/grep -Fxq ${pkgs.dotfilesPackages.gha-lint.testSchemas.action} ${ghaLintClosure}/store-paths; then
+            echo "gha-lint runtime closure contains a fixed test schema" >&2
+            exit 1
+          fi
+          if ${pkgs.gnugrep}/bin/grep -Eqi '/(node(js)?|bun|check-json(schema)?)-' ${ghaLintClosure}/store-paths; then
+            echo "gha-lint runtime closure contains a forbidden runtime" >&2
+            exit 1
+          fi
 
           # The service starts the package directly, so every subprocess must
           # remain available without inheriting the activating user's PATH.

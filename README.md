@@ -61,6 +61,16 @@ wsl --install --from-file .\nixos.wsl --name NixOS
 | `nix run .#markdownlint` | リポジトリ管理の技術文書モードで markdownlint 実行 |
 | `nix run .#textlint` | リポジトリ管理の日本語向け技術文書モードで textlint 実行 |
 
+`nix run .#switch`で導入される`gha-lint`は、任意のrepositoryでGitHub Actionsのworkflowとaction metadataを検査する。
+
+```bash
+gha-lint
+gha-lint --format json .github/workflows/ci.yaml
+zizmor --offline --collect=workflows --persona=regular .
+```
+
+`gha-lint`の引数を省略すると、`.github/workflows`直下のYAMLと、repository rootから深さ0〜3にある`action.yml`または`action.yaml`を検出する。GitHub公式language service、実行時に取得する最新のSchemaStore schema、ShellCheckを使う。SchemaStoreの取得に失敗した場合は検査成功にせず、内部エラーとして終了する。zizmorはsecurity検査を担当するため、workflowの構造検査とは別に実行する。
+
 `--jobs`は、GitHub Releasesにあるassetのprefetch数だけを制御する。値は1〜4で、既定値は1のため、並列化する場合は明示的に指定する。同時に実行するasset prefetchは`--jobs`の指定数までで、retryはassetごとに行う。したがって、1 targetあたりのasset downloadの最大試行数は、asset数×`--retry`の指定回数になる。上流metadataの取得、source hashのprefetch、flake inputの更新、依存hashの計算、package buildは逐次実行する。
 
 `--check`は、更新候補の取得、hash計算、package build、検証までを通常の更新と同じtransactionで実行し、成功後に管理fileを元の内容・mode・存在状態へ戻す。network access、download cache、Nix storeへのbuild結果は発生するため、副作用のないdry-runではない。同じversionも含めて配布物とbuild contractを再検証する場合は、`--force --check <target>`を使う。

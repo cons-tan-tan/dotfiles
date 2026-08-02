@@ -11,6 +11,8 @@
 | Rust process integration | CLI parse、実行ファイルのstdin・stdout・終了status、child process境界 | crateのintegration test |
 | Nix-backed Bats | Nix-built public binary、Nix store wiring、real Git、host portability | `bats-tests` aggregate |
 | Raw Bats | repository内のsource scriptを素早く確認する補助テスト | `bats --print-output-on-failure tests/` |
+| Workflow lint | GitHub固有構文、SchemaStore構造、inline shell、security | `workflow-lint-tests` |
+| Workflow policy | cache、Hestia、credential、smoke順序などrepository固有の契約 | `workflow-policy-tests` |
 | Scheduled live test | upstream API、配布物、network contract | 定期workflow |
 
 Raw Batsでは、Nix packageだけで成立するテストを理由付きでskipする。そのため、raw実行の成功はpackage integrationの成功を意味しない。
@@ -56,6 +58,17 @@ Batsの正規gateは、Nixがfixtureとpublic binaryを注入するaggregateで�
 ```bash
 nix build --no-link .#checks.x86_64-linux.bats-tests
 ```
+
+GitHub Actionsの検査は、汎用validatorとrepository固有policyを分けて実行する。
+
+```bash
+nix build --no-link .#checks.x86_64-linux.workflow-lint-tests
+nix build --no-link .#checks.x86_64-linux.workflow-policy-tests
+```
+
+`workflow-lint-tests`は`gha-lint`とzizmorを再現可能な環境で実行する。通常の`gha-lint`は実行時に最新のSchemaStore schemaを取得するが、Nix gateでは固定したschema fixtureを注入する。GitHub公式language serviceは式やcontext、matrix、local reusable workflow、parallel/background構文を検査する。AjvとSchemaStoreは構造を独立して検査する。ShellCheckはworkflowとcomposite actionのinline shellを担当する。zizmorはpermissions、credential、template injection、action pinなどを検査する。
+
+`workflow-policy-tests`は、このrepositoryのcache設定、Hestia matrix、checkout credential、update-pins smokeの順序をBatsで検査する。汎用validatorのdiagnostic文言は、この層で再検査しない。
 
 `bats --print-output-on-failure tests/`は、source-onlyテストを素早く回すための補助コマンドである。Nix fixtureを必要とするテストはskipされるため、このコマンドだけでcommit gateを代替しない。
 

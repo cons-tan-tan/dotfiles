@@ -1,0 +1,14 @@
+{
+  "repository": "https://github.com/SchemaStore/schemastore",
+  "revision": "60cfa479d5901714547053ecee643a0a4c3a76fe",
+  "purpose": "Reproducible Nix build and test fixture; normal executions fetch the current SchemaStore schemas",
+  "license": "Apache-2.0",
+  "schemas": {
+    "github-workflow": "src/schemas/json/github-workflow.json",
+    "github-action": "src/schemas/json/github-action.json"
+  },
+  "sha256": {
+    "github-workflow": "7a952fdb7c1b130732e40ccea9db9bced906c1198e97834f8a49ae3b411f3161",
+    "github-action": "83bd3bf0c4122ceb764927bc189d9e3794931306b53cdf89816f6f3472cadf88"
+  }
+}

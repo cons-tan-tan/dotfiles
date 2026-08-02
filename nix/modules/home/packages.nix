@@ -29,6 +29,7 @@ in
       # Git
       git-cliff
       pinact
+      zizmor
 
       # Secret
       sops
@@ -68,6 +69,7 @@ in
       agent-browser
       agent-slack
       difit
+      gha-lint
       shellfirm
     ])
     ++ lib.optionals config.dotfiles.hcom.enable [

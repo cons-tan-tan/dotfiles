@@ -8,6 +8,7 @@ let
     "curl-fetch"
     "difit"
     "gh-api-get"
+    "gha-lint"
     "ghq-fetch-all"
     "shellfirm"
   ];

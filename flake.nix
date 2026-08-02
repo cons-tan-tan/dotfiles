@@ -427,6 +427,8 @@
           settings = {
             # nixf の修正で生じたレイアウト差分を同じ実行内で nixfmt に渡す。
             formatter.nixf-diagnose.priority = -1;
+            # bun2nix が生成する引数一覧は依存形状によって未使用になり得る。
+            formatter.nixf-diagnose.excludes = [ "nix/packages/**/bun.nix" ];
             global.excludes = [
               ".direnv/**"
               ".git/**"

@@ -55,6 +55,9 @@ in
   gh-api-get = pkgs.callPackage ./gh-api-get {
     safeFetchCore = safeFetch.core;
   };
+  gha-lint = pkgs.callPackage ./gha-lint {
+    bun2nix = inputs.bun2nix.packages.${hostPlatform.system}.default;
+  };
   ghq-fetch-all = pkgs.callPackage ./ghq-fetch-all { };
   hunk = import ./hunk {
     inherit (pkgs) callPackage stdenv;

@@ -1,0 +1,24 @@
+{
+  "name": "gha-lint",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "module": "src/main.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@actions/expressions": "0.3.60",
+    "@actions/languageservice": "0.3.60",
+    "@actions/workflow-parser": "0.3.60",
+    "ajv": "8.20.0",
+    "vscode-languageserver-textdocument": "1.0.7",
+    "vscode-languageserver-types": "3.17.2",
+    "yaml": "2.9.0"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.14",
+    "typescript": "5.9.3"
+  }
+}
