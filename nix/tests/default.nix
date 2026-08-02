@@ -12,6 +12,7 @@ let
   nixRoot = ../.;
   repoRoot = ../..;
   testSuffix = ".test.nix";
+  cleanupPolicy = import ../lib/nh-clean-policy.nix;
   hostArch = if pkgs.stdenv.hostPlatform.isx86_64 then "x86_64" else "aarch64";
   expectedNixosWslTarget = if hostArch == "x86_64" then "wsl" else "wsl-aarch64";
 
@@ -143,16 +144,17 @@ let
     name = "nh";
     text = ''
       expected=(
-        clean
-        user
-        --keep
-        5
-        --keep-since
-        1d
-        --no-gcroots
-        --no-direnv
-        --dry
-        --no-gc
+        ${lib.escapeShellArgs (
+          [
+            "clean"
+            "user"
+          ]
+          ++ cleanupPolicy.arguments
+          ++ [
+            "--dry"
+            "--no-gc"
+          ]
+        )}
       )
       actual=("$@")
 
