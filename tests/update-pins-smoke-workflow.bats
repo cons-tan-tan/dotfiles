@@ -292,7 +292,7 @@ cache_setting() {
   [ "$status" -ne 0 ]
 }
 
-@test "private and production smoke steps run in the required order" {
+@test "private and production smoke checks overlap after setup" {
   run yq -e '
     ([.jobs.smoke.steps[] | select(
       .name == "Build private smoke executable"
@@ -336,11 +336,24 @@ cache_setting() {
     | (.jobs.smoke.steps | to_entries | map(select(
       .value.name == "Verify repository remained unchanged"
     ))[0].key) as $final
+    | (.jobs.smoke.steps | to_entries | map(select(
+      .value.name == "Wait for live upstream contracts"
+    ))[0].key) as $wait
     | [
         ($build < $private),
         ($private < $clone),
         ($clone < $production),
-        ($production < $final),
+        ($production < $wait),
+        ($wait < $final),
+        ([.jobs.smoke.steps[] | select(
+          .name == "Check live upstream contracts"
+        )][0].id == "live-upstream"),
+        ([.jobs.smoke.steps[] | select(
+          .name == "Check live upstream contracts"
+        )][0].background == true),
+        ([.jobs.smoke.steps[] | select(
+          .name == "Wait for live upstream contracts"
+        )][0].wait == "live-upstream"),
         ($final == ($count - 1))
       ]
       | all
