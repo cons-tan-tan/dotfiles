@@ -97,6 +97,44 @@ cache_setting() {
   done
 }
 
+@test "all workflow checkouts disable credential persistence" {
+  local workflow
+  local count=0
+  for workflow in "$CI_WORKFLOW" "$CACHE_GC_WORKFLOW" "$WORKFLOW"; do
+    run yq -e '
+      [.jobs[].steps[]? | select(
+        (.uses // "") | test("^actions/checkout@")
+      )] as $checkouts
+      | ($checkouts | length) > 0
+        and ([$checkouts[] | .with."persist-credentials" == false] | all)
+    ' "$workflow"
+    [ "$status" -eq 0 ]
+    checkout_count="$(yq -r '[.jobs[].steps[]? | select(
+      (.uses // "") | test("^actions/checkout@")
+    )] | length' "$workflow")"
+    count=$((count + checkout_count))
+  done
+  [ "$count" -gt 0 ]
+}
+
+@test "live contract executable crosses the expression boundary through env" {
+  run yq -e '
+    [
+      ([.jobs.smoke.steps[] | select(
+        .name == "Check live upstream contracts"
+      )][0].env.UPDATE_PINS_SMOKE
+        == "${{ steps.build.outputs.path }}/bin/update-pins-smoke"),
+      ([.jobs.smoke.steps[] | select(
+        .name == "Check live upstream contracts"
+      )][0].run | contains("${{ steps.build.outputs.path }}") | not),
+      ([.jobs.smoke.steps[] | select(
+        .name == "Check live upstream contracts"
+      )][0].run | contains("\"$UPDATE_PINS_SMOKE\""))
+    ] | all
+  ' "$WORKFLOW"
+  [ "$status" -eq 0 ]
+}
+
 @test "Hestia workflow inputs stay aligned with the CI defaults" {
   local version
   local upstream_key_names
@@ -189,11 +227,7 @@ cache_setting() {
     ' "$CI_WORKFLOW"
   [ "$status" -eq 0 ]
 
-  grep -Fq 'nix_conf: &linux-nix-conf |' "$CI_WORKFLOW"
-  [ "$(grep -Fc 'nix_conf: *linux-nix-conf' "$CI_WORKFLOW")" -eq 1 ]
-
   run yq -e '
-    explode(.) |
     ([
       .jobs."build-linux-eval".steps[],
       .jobs."build-linux-matrix".steps[]
@@ -315,7 +349,8 @@ cache_setting() {
   [[ "$build_script" == *".#checks.x86_64-linux.update-pins-smoke"* ]]
   [[ "$build_script" == *'--no-link'* ]]
   [[ "$build_script" == *'--no-write-lock-file'* ]]
-  [[ "$private_script" == *'/bin/update-pins-smoke'* ]]
+  [[ "$private_script" == *'"$UPDATE_PINS_SMOKE"'* ]]
+  [ "$(yq -r '.jobs.smoke.steps[] | select(.name == "Check live upstream contracts") | .env.UPDATE_PINS_SMOKE' "$WORKFLOW")" = '${{ steps.build.outputs.path }}/bin/update-pins-smoke' ]
 }
 
 @test "production updater runs in a bounded disposable checkout" {

@@ -44,9 +44,11 @@ jobs:
           )"
           printf 'path=%s\n' "$smoke_path" >> "$GITHUB_OUTPUT"
       - name: Check live upstream contracts
+        env:
+          UPDATE_PINS_SMOKE: ${{ steps.build.outputs.path }}/bin/update-pins-smoke
         run: |
-          cd "$RUNNER_TEMP"
-          "${{ steps.build.outputs.path }}/bin/update-pins-smoke"
+          cd "$RUNNER_TEMP" || exit 1
+          "$UPDATE_PINS_SMOKE"
       - name: Create disposable updater checkout
         env:
           UPDATE_PINS_CHECKOUT: ${{ runner.temp }}/update-pins-check
