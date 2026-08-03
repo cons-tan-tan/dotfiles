@@ -18,9 +18,9 @@
 #   identical_write_* assert bytes, permissions, ownership, lock release,
 #   restore+unlock error retention, and inode/mtime stability; the Hcom process
 #   test retains the real process boundary.
-# - flake input update: targets::paired_flake_version_* asserts byte-preserving
-#   source replacement and mutating_commands_* asserts bounded argv; the Difit
-#   and Agent Browser tests retain real `nix flake update` argv and publication.
+# - flake input update: targets::paired_input_version_* asserts byte-preserving
+#   source replacement for root and module authorities; mutating_commands_*
+#   asserts bounded argv, and process tests retain generator/update ordering.
 # - release/multi-asset: targets::asset_jobs_* and asset_batch_failure_* assert
 #   reverse-completion ordering, bounded concurrency, and no partial pin
 #   publication; the Agent Browser test retains a paired multi-asset E2E.
@@ -73,6 +73,8 @@ make_source_tarball() {
 
 setup() {
   require_nix_fixture UPDATE_PINS_TEST_BIN "built update-pins binary"
+  require_nix_fixture UPDATE_PINS_FUTURE_LAYOUT_TEST_BIN \
+    "built future-layout update-pins fixture binary"
 
   REPO_ROOT="$(git rev-parse --show-toplevel)"
   BASH_BIN="$(command -v bash)"
@@ -113,8 +115,15 @@ setup() {
     return 1
     ;;
   esac
+  case "$UPDATE_PINS_FUTURE_LAYOUT_TEST_BIN" in
+  /*) ;;
+  *)
+    echo "UPDATE_PINS_FUTURE_LAYOUT_TEST_BIN must be an absolute path" >&2
+    return 1
+    ;;
+  esac
   UPDATE_PINS_ZIP_BIN="$(command -v zip)"
-  export UPDATE_PINS_TEST_BIN UPDATE_PINS_ZIP_BIN
+  export UPDATE_PINS_TEST_BIN UPDATE_PINS_FUTURE_LAYOUT_TEST_BIN UPDATE_PINS_ZIP_BIN
 
   export UPDATE_PINS_FAKE_ROOT="$WORK"
   export UPDATE_PINS_COMMAND_LOG="$WORK/command.log"
@@ -377,6 +386,38 @@ LOCK
   exit 0
 fi
 
+if [ "$#" -eq 2 ] && [ "$1" = "run" ] && [ "$2" = ".#write-flake" ]; then
+  if [ "${UPDATE_PINS_FAIL_GENERATOR:-0}" = 1 ]; then
+    printf 'partial generated flake\n' >"$UPDATE_PINS_FAKE_ROOT/flake.nix"
+    chmod 0777 "$UPDATE_PINS_FAKE_ROOT/flake.nix"
+    echo "fixture generator failed" >&2
+    exit 1
+  fi
+  version=$(sed -n 's|.*github:owner/example/v\([^\"]*\)";|\1|p' \
+    "$UPDATE_PINS_FAKE_ROOT/modules/features/example.nix")
+  cat >"$UPDATE_PINS_FAKE_ROOT/flake.nix" <<FLAKE
+{
+  inputs = {
+    example-src = {
+      url = "github:owner/example/v$version";
+    };
+  };
+}
+FLAKE
+  exit 0
+fi
+
+if [ "$#" -eq 3 ] \
+  && [ "$1" = "build" ] \
+  && [ "$2" = "--no-link" ] \
+  && [ "$3" = ".#future-layout-candidate" ]; then
+  if [ "${UPDATE_PINS_FAIL_FUTURE_CANDIDATE:-0}" = 1 ]; then
+    echo "fixture candidate failed" >&2
+    exit 1
+  fi
+  exit 0
+fi
+
 if [ "$1" = "build" ] \
   && [ "${2:-}" = "--impure" ] \
   && [ "${3:-}" = "--expr" ] \
@@ -449,6 +490,19 @@ if [ "$1" = "flake" ] && [ "${2:-}" = "update" ]; then
   hcom-src) repo=aannoo/hcom ;;
   agent-browser-skill) repo=vercel-labs/agent-browser ;;
   difit-src) repo=yoshiko-pg/difit ;;
+  example-src)
+    if [ "${UPDATE_PINS_FAIL_FUTURE_LOCK:-0}" = 1 ]; then
+      printf 'partial lock\n' >"$UPDATE_PINS_FAKE_ROOT/flake.lock"
+      chmod 0777 "$UPDATE_PINS_FAKE_ROOT/flake.lock"
+      echo "fixture lock update failed" >&2
+      exit 1
+    fi
+    version=$(sed -n 's|.*github:owner/example/v\([^\"]*\)";|\1|p' \
+      "$UPDATE_PINS_FAKE_ROOT/flake.nix")
+    printf '{\n  "version": "%s"\n}\n' "$version" \
+      >"$UPDATE_PINS_FAKE_ROOT/flake.lock"
+    exit 0
+    ;;
   *)
     echo "unexpected flake input: $input" >&2
     exit 1
@@ -481,6 +535,56 @@ teardown() {
 
 run_update_pins() {
   run bash -eu -o pipefail -c 'cd "$UPDATE_PINS_FAKE_ROOT"; exec "$UPDATE_PINS_TEST_BIN" "$@" 2>&1' update-pins-test "$@"
+}
+
+setup_future_layout() {
+  FUTURE_WORK="$WORK/future-layout"
+  rm -rf "$FUTURE_WORK"
+  mkdir -p "$FUTURE_WORK"
+  cp -R "$REPO_ROOT/tests/fixtures/update-pins/future-layout/." "$FUTURE_WORK/"
+  chmod 0640 "$FUTURE_WORK/modules/features/example.nix"
+  chmod 0600 "$FUTURE_WORK/flake.nix"
+  chmod 0644 "$FUTURE_WORK/flake.lock"
+  chmod 0440 "$FUTURE_WORK/nix/pins/example.json"
+  (
+    cd "$FUTURE_WORK"
+    git init -q
+    git config user.email update-pins-test@example.invalid
+    git config user.name "update-pins future-layout test"
+    git config commit.gpgsign false
+    git add .
+    git commit -q -m "initial future layout"
+  )
+  export UPDATE_PINS_FAKE_ROOT="$FUTURE_WORK"
+  rm -f "$UPDATE_PINS_COMMAND_LOG" "$UPDATE_PINS_FLAKE_UPDATE_LOG"
+  unset UPDATE_PINS_FAIL_GENERATOR UPDATE_PINS_FAIL_FUTURE_LOCK \
+    UPDATE_PINS_FAIL_FUTURE_CANDIDATE
+}
+
+run_future_layout_update() {
+  run bash -eu -o pipefail -c \
+    'cd "$UPDATE_PINS_FAKE_ROOT"; exec "$UPDATE_PINS_FUTURE_LAYOUT_TEST_BIN" 2>&1'
+}
+
+save_future_layout() {
+  local dst=$1
+  mkdir -p "$dst/modules/features" "$dst/nix/pins"
+  cp -p "$FUTURE_WORK/modules/features/example.nix" "$dst/modules/features/example.nix"
+  cp -p "$FUTURE_WORK/flake.nix" "$dst/flake.nix"
+  cp -p "$FUTURE_WORK/flake.lock" "$dst/flake.lock"
+  cp -p "$FUTURE_WORK/nix/pins/example.json" "$dst/nix/pins/example.json"
+}
+
+assert_future_layout_matches() {
+  local expected=$1 path
+  for path in \
+    modules/features/example.nix \
+    flake.nix \
+    flake.lock \
+    nix/pins/example.json; do
+    cmp -s "$FUTURE_WORK/$path" "$expected/$path"
+    [ "$(file_mode "$FUTURE_WORK/$path")" = "$(file_mode "$expected/$path")" ]
+  done
 }
 
 save_managed() {
@@ -553,6 +657,112 @@ report_section() {
 assert_check_lock_reacquirable() {
   run_update_pins --check codex-app
   [ "$status" -eq 0 ]
+}
+
+@test "future module authority regenerates flake and updates one lock transaction" {
+  setup_future_layout
+
+  run_future_layout_update
+
+  [ "$status" -eq 0 ]
+  grep -Fq 'github:owner/example/v9.9.9' \
+    "$FUTURE_WORK/modules/features/example.nix"
+  grep -Fq 'github:owner/example/v9.9.9' "$FUTURE_WORK/flake.nix"
+  [ "$(jq -r .version "$FUTURE_WORK/flake.lock")" = 9.9.9 ]
+  [ "$(jq -r .version "$FUTURE_WORK/nix/pins/example.json")" = 9.9.9 ]
+  generator_line=$(grep -n '^nix run \.#write-flake$' "$UPDATE_PINS_COMMAND_LOG" | cut -d: -f1)
+  lock_line=$(grep -n '^nix flake update example-src$' "$UPDATE_PINS_COMMAND_LOG" | cut -d: -f1)
+  candidate_line=$(grep -n '^nix build --no-link \.#future-layout-candidate$' \
+    "$UPDATE_PINS_COMMAND_LOG" | cut -d: -f1)
+  [ "$generator_line" -lt "$lock_line" ]
+  [ "$lock_line" -lt "$candidate_line" ]
+}
+
+@test "future module authority allows unrelated dirt but rejects managed dirt before commands" {
+  setup_future_layout
+  printf 'unrelated\n' >"$FUTURE_WORK/notes.txt"
+
+  run_future_layout_update
+
+  [ "$status" -eq 0 ]
+  [ "$(cat "$FUTURE_WORK/notes.txt")" = unrelated ]
+
+  setup_future_layout
+  printf '\n# unstaged managed change\n' >>"$FUTURE_WORK/modules/features/example.nix"
+
+  run_future_layout_update
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"managed files already have unstaged changes"* ]]
+  [ ! -e "$UPDATE_PINS_COMMAND_LOG" ]
+
+  setup_future_layout
+  printf '\n# staged managed change\n' >>"$FUTURE_WORK/modules/features/example.nix"
+  git -C "$FUTURE_WORK" add modules/features/example.nix
+
+  run_future_layout_update
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"managed files already have staged changes"* ]]
+  [ ! -e "$UPDATE_PINS_COMMAND_LOG" ]
+}
+
+@test "future module authority restores source generated flake lock and pin on every late failure" {
+  local failure variable original
+  for failure in generator lock candidate; do
+    setup_future_layout
+    original="$WORK/future-original-$failure"
+    save_future_layout "$original"
+    case "$failure" in
+    generator) variable=UPDATE_PINS_FAIL_GENERATOR ;;
+    lock) variable=UPDATE_PINS_FAIL_FUTURE_LOCK ;;
+    candidate) variable=UPDATE_PINS_FAIL_FUTURE_CANDIDATE ;;
+    esac
+    export "$variable=1"
+
+    run_future_layout_update
+
+    [ "$status" -eq 1 ]
+    assert_future_layout_matches "$original"
+    assert_no_staging_files
+  done
+}
+
+@test "future module authority rejects zero or duplicate declarations before mutation" {
+  local shape original
+  for shape in zero duplicate; do
+    setup_future_layout
+    if [ "$shape" = zero ]; then
+      cat >"$FUTURE_WORK/modules/features/example.nix" <<'NIX'
+flake-file.inputs.other-src = {
+  url = "github:owner/other/v1.2.3";
+};
+NIX
+    else
+      cat >"$FUTURE_WORK/modules/features/example.nix" <<'NIX'
+flake-file.inputs.example-src = {
+  url = "github:owner/example/v1.2.3";
+};
+flake-file.inputs.example-src = {
+  url = "github:owner/example/v1.2.3";
+};
+NIX
+    fi
+    (
+      cd "$FUTURE_WORK"
+      git add modules/features/example.nix
+      git commit -q -m "$shape declaration fixture"
+    )
+    original="$WORK/future-original-$shape"
+    save_future_layout "$original"
+
+    run_future_layout_update
+
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"expected one input declaration for example-src"* ]]
+    [ ! -e "$UPDATE_PINS_COMMAND_LOG" ]
+    assert_future_layout_matches "$original"
+  done
 }
 
 @test "Nix-built public binary preserves help, parse, and exit contracts" {

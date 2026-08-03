@@ -329,6 +329,9 @@ let
   rustLockfiles = map (project: project.lock // { path = rustPath project.lock.path; }) rustProjects;
 
   updatePinsCore = (rustProject "update-pins").packages.default;
+  updatePinsFutureLayoutFixture = pkgs.callPackage ../apps/update-pins {
+    futureLayoutFixture = true;
+  };
   applySecretsCore = (rustProject "apply-secrets").packages.default;
   applyNixSettingsCore = (rustProject "apply-nix-settings").packages.default;
 
@@ -702,6 +705,10 @@ let
         "nix/pins/difit.json"
         "nix/pins/hcom.json"
         "nix/pins/shellfirm.json"
+        "tests/fixtures/update-pins/future-layout/flake.lock"
+        "tests/fixtures/update-pins/future-layout/flake.nix"
+        "tests/fixtures/update-pins/future-layout/modules/features/example.nix"
+        "tests/fixtures/update-pins/future-layout/nix/pins/example.json"
         "tests/test-helper.bash"
       ];
       nativeBuildInputs = [
@@ -711,11 +718,16 @@ let
         pkgs.jq
         pkgs.zip
         updatePinsCore
+        updatePinsFutureLayoutFixture
       ];
       environment = {
+        UPDATE_PINS_FUTURE_LAYOUT_TEST_BIN = lib.getExe updatePinsFutureLayoutFixture;
         UPDATE_PINS_TEST_BIN = lib.getExe updatePinsCore;
       };
-      requiredEnvironment = [ "UPDATE_PINS_TEST_BIN" ];
+      requiredEnvironment = [
+        "UPDATE_PINS_FUTURE_LAYOUT_TEST_BIN"
+        "UPDATE_PINS_TEST_BIN"
+      ];
       initializeGit = true;
       platformPredicate = _platform: true;
     }
