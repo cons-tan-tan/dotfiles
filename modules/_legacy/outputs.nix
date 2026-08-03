@@ -318,11 +318,13 @@ in
             inherit lib pkgs systems;
             inherit (self)
               apps
+              checks
               darwinConfigurations
               devShells
               formatter
               homeConfigurations
               nixosConfigurations
+              packages
               ;
             rootPackagesPresent = self ? packages;
           }

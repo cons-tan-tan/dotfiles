@@ -1,11 +1,13 @@
 {
   apps,
+  checks,
   darwinConfigurations,
   devShells,
   formatter,
   homeConfigurations,
   lib,
   nixosConfigurations,
+  packages,
   pkgs,
   rootPackagesPresent,
   systems,
@@ -36,6 +38,15 @@ let
     "default"
     "rust"
   ]);
+  expectedFlakeFilePackages = [
+    "write-flake"
+    "write-inputs"
+    "write-lock"
+  ];
+  expectedFlakeFileCheckTargets = {
+    aarch64-darwin = "repo-quality";
+    x86_64-linux = "repo-quality";
+  };
 
   appNames = lib.mapAttrs (_: value: builtins.attrNames value) apps;
   devShellNames = lib.mapAttrs (_: value: builtins.attrNames value) devShells;
@@ -66,6 +77,22 @@ let
   invalidFormatters = lib.concatLists (
     lib.mapAttrsToList (system: value: lib.optional (!lib.isDerivation value) system) formatter
   );
+  invalidFlakeFileChecks = builtins.filter (
+    system:
+    let
+      check = checks.${system}.check-flake-file or null;
+    in
+    !lib.isDerivation check
+    || (check.meta.dotfiles.hestia.targets or null) != expectedFlakeFileCheckTargets
+  ) expectedSystems;
+  invalidFlakeFilePackages = lib.concatMap (
+    system:
+    lib.concatLists (
+      lib.mapAttrsToList (
+        name: package: lib.optional (!lib.isDerivation package) "${system}.${name}"
+      ) packages.${system}
+    )
+  ) (builtins.attrNames packages);
 
   actual = {
     systems = sort systems;
@@ -77,11 +104,15 @@ let
     formatterSystems = builtins.attrNames formatter;
     homeConfigurations = builtins.attrNames homeConfigurations;
     inherit
+      invalidFlakeFileChecks
+      invalidFlakeFilePackages
       invalidApps
       invalidDevShells
       invalidFormatters
       rootPackagesPresent
       ;
+    packageNames = lib.mapAttrs (_: value: builtins.attrNames value) packages;
+    packageSystems = builtins.attrNames packages;
     nixosConfigurations = builtins.attrNames nixosConfigurations;
   };
   expected = {
@@ -98,10 +129,14 @@ let
       "constantan@wsl-aarch64"
       "constantan@wsl-x86_64"
     ];
+    invalidFlakeFileChecks = [ ];
+    invalidFlakeFilePackages = [ ];
     invalidApps = [ ];
     invalidDevShells = [ ];
     invalidFormatters = [ ];
-    rootPackagesPresent = false;
+    packageNames = lib.genAttrs expectedSystems (_: expectedFlakeFilePackages);
+    packageSystems = expectedSystems;
+    rootPackagesPresent = true;
     nixosConfigurations = [
       "wsl"
       "wsl-aarch64"

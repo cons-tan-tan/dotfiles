@@ -1,7 +1,6 @@
 { lib, llmAgents }:
 
-# flake.nix の nixConfig は直接の attrset を要求するため、対象リスト全体が
-# cache-settings.nix と乖離していないことを通常の Nix import で検証する。
+# 生成された flake.nix の nixConfig が module authority と一致することを検証する。
 let
   cache = import ./cache-settings.nix;
   flakeConfig = (import ../../flake.nix).nixConfig;
