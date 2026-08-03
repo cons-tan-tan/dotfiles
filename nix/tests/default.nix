@@ -15,33 +15,33 @@
 let
   nixRoot = ../.;
   repoRoot = ../..;
-  testSuffix = ".test.nix";
-  failureTestSuffix = ".failure.test.nix";
+  modulesRoot = repoRoot + "/modules";
+  testDiscovery = import ./test-discovery.nix { inherit lib; };
   cacheSettings = import ../lib/cache-settings.nix;
   cleanupPolicy = import ../lib/nh-clean-policy.nix;
   hostArch = if pkgs.stdenv.hostPlatform.isx86_64 then "x86_64" else "aarch64";
   expectedNixosWslTarget = if hostArch == "x86_64" then "wsl" else "wsl-aarch64";
 
-  # 評価だけで完結するテストは実装の隣に置き、ファイル名から checks の
-  # 名前を生成する。
-  discoveredNixFiles = lib.filesystem.listFilesRecursive nixRoot;
-  failureTestFiles = builtins.filter (
-    path: lib.hasSuffix failureTestSuffix (baseNameOf path)
-  ) discoveredNixFiles;
-  testFiles = builtins.filter (
-    path:
-    lib.hasSuffix testSuffix (baseNameOf path) && !lib.hasSuffix failureTestSuffix (baseNameOf path)
-  ) discoveredNixFiles;
-
-  testStem = path: lib.removeSuffix testSuffix (baseNameOf path);
-  checkName = path: "${testStem path}-tests";
-  failureStem = path: lib.removeSuffix failureTestSuffix (baseNameOf path);
-  failureCheckName = path: "${failureStem path}-failure-tests";
+  # Pure tests live beside ordinary nix code or below Dendritic support
+  # directories. The source-root list keeps discovery explicit while the
+  # official /_ import-tree boundary remains the only module exclusion rule.
+  discoveredNixFiles = testDiscovery.discover [
+    {
+      path = nixRoot;
+      include = _: true;
+    }
+    {
+      path = modulesRoot;
+      include = path: lib.hasInfix "/_tests/" (toString path) || lib.hasInfix "/_lib/" (toString path);
+    }
+  ];
+  classifiedTests = testDiscovery.classify discoveredNixFiles;
+  inherit (classifiedTests) failureTestFiles testFiles;
+  inherit (testDiscovery) checkName failureCheckName;
+  failureStem = path: lib.removeSuffix ".failure.test.nix" (baseNameOf path);
   discoveredCheckNames = (map checkName testFiles) ++ (map failureCheckName failureTestFiles);
   checkNames = discoveredCheckNames ++ builtins.attrNames fixedChecks ++ reservedCheckNames;
-  duplicateCheckNames = builtins.filter (
-    name: builtins.length (builtins.filter (other: other == name) checkNames) > 1
-  ) (lib.unique checkNames);
+  duplicateCheckNames = testDiscovery.duplicateNames checkNames;
 
   testContext = {
     inherit
