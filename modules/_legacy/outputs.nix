@@ -1,14 +1,9 @@
 {
   inputs,
   pkgsFor,
-  systems,
 }:
 let
-  inherit (inputs)
-    home-manager
-    nixpkgs
-    self
-    ;
+  inherit (inputs) nixpkgs self;
   lib = nixpkgs.lib;
   username = "constantan";
 
@@ -113,51 +108,4 @@ in
     ${darwinSystem} = self.checks.${darwinSystem};
   };
 
-  checks = lib.genAttrs systems (
-    system:
-    let
-      pkgs = pkgsFor.${system};
-      baseChecks = lib.optionalAttrs (system == "x86_64-linux") {
-        den-capability-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
-          import ../../nix/checks/den-capabilities.nix {
-            inherit inputs lib pkgs;
-          }
-        );
-        flake-public-api-contract = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
-          import ../../nix/checks/flake-public-api-contract.nix {
-            inherit lib pkgs systems;
-            inherit (self)
-              apps
-              checks
-              darwinConfigurations
-              devShells
-              formatter
-              homeConfigurations
-              nixosConfigurations
-              packages
-              ;
-            rootPackagesPresent = self ? packages;
-          }
-        );
-      };
-      testChecks = import ../../nix/tests {
-        inherit
-          ciCheck
-          inputs
-          lib
-          pkgs
-          username
-          ;
-        advisoryDb = inputs.rustsec-advisory-db;
-        advisoryDbLastModified = inputs.rustsec-advisory-db.lastModified;
-        flake = self;
-        homeManager = home-manager;
-        llmAgents = inputs.llm-agents;
-        publicApps = self.apps.${system};
-        reservedCheckNames = builtins.attrNames baseChecks;
-      };
-      allChecks = baseChecks // testChecks;
-    in
-    allChecks
-  );
 }
