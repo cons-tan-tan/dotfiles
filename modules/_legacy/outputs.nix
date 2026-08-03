@@ -158,61 +158,6 @@ in
   # 全 system で同一の app 集合になるよう genAttrs で生成する
   apps = lib.genAttrs systems (system: appsFor.${system}.apps);
 
-  # 作業用ツール (テスト・lint・secrets 編集) の宣言的な入口。
-  # 構成の build / switch には不要 — apps だけで完結する。
-  devShells = lib.genAttrs systems (
-    system:
-    let
-      pkgs = pkgsFor.${system};
-      updatePinsCore = pkgs.callPackage ../../nix/apps/update-pins { };
-      applySecretsCore = pkgs.callPackage ../../nix/apps/apply-secrets { };
-      applyNixSettingsCore = pkgs.callPackage ../../nix/apps/apply-nix-settings { };
-      safeFetch = pkgs.callPackage ../../nix/packages/safe-fetch { };
-      curlFetch = pkgs.dotfilesPackages.curl-fetch;
-      ghApiGet = pkgs.dotfilesPackages.gh-api-get;
-    in
-    {
-      default = pkgs.mkShell {
-        APPLY_SECRETS_TEST_BIN = lib.getExe applySecretsCore;
-        APPLY_NIX_SETTINGS_TEST_BIN = lib.getExe applyNixSettingsCore;
-        CURL_FETCH_PUBLIC_BIN = lib.getExe curlFetch;
-        CURL_FETCH_TEST_BIN = "${safeFetch.core}/bin/curl-fetch";
-        GH_API_GET_EXTENSION_ROOT = ghApiGet;
-        GH_API_GET_PUBLIC_BIN = lib.getExe ghApiGet;
-        GH_API_GET_TEST_BIN = "${safeFetch.core}/bin/gh-api-get";
-        UPDATE_PINS_TEST_BIN = lib.getExe updatePinsCore;
-        packages = with pkgs; [
-          applySecretsCore
-          applyNixSettingsCore
-          bats
-          cargo
-          clippy
-          ghApiGet
-          shellcheck
-          jq
-          rustc
-          rustfmt
-          curlFetch
-          sops
-          reuse
-          updatePinsCore
-          yq-go
-          zip
-        ];
-      };
-
-      rust = pkgs.mkShell {
-        packages = with pkgs; [
-          cargo
-          clippy
-          git
-          rustc
-          rustfmt
-        ];
-      };
-    }
-  );
-
   # CI専用gateを別定義するとlocal checksと対象が乖離するため、同じ
   # derivationから導出する。native runnerを用意していないaarch64-linuxは、
   # 実build対象へ見せかけず全system評価だけに留める。
