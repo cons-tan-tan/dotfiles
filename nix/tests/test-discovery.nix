@@ -34,4 +34,6 @@ in
     builtins.filter (name: builtins.length (builtins.filter (other: other == name) names) > 1) (
       lib.unique names
     );
+
+  collidingNames = left: right: lib.intersectLists (lib.unique left) (lib.unique right);
 }

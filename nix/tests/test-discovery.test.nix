@@ -30,4 +30,18 @@ in
     ];
     expected = [ "shared-tests" ];
   };
+
+  testFindsCheckClusterCollisionsBeforeMerge = {
+    expr =
+      discovery.collidingNames
+        [
+          "package-smoke-tests"
+          "reuse-lint"
+        ]
+        [
+          "reuse-lint"
+          "safe-fetch-e2e"
+        ];
+    expected = [ "reuse-lint" ];
+  };
 }

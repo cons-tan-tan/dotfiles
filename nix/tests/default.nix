@@ -994,27 +994,32 @@ let
   applicableBatsShardSpecs = builtins.filter (
     shard: shard.platformPredicate pkgs.stdenv.hostPlatform
   ) batsShardSpecs;
-  batsChecks = lib.listToAttrs (
-    map (
-      shard:
-      lib.nameValuePair shard.name (
-        ciCheck.annotate (shard.ciTargets or (ciCheck.targets.both "rust-and-bats")) (
-          mkBatsCheck (
-            removeAttrs shard [
-              "ciTargets"
-              "platformPredicate"
-            ]
-            // {
-              inherit (shard) platformPredicate;
-            }
-          )
-        )
-      )
-    ) applicableBatsShardSpecs
-  );
   batsShardNames = map (shard: shard.name) applicableBatsShardSpecs;
+  duplicateBatsShardNames = testDiscovery.duplicateNames batsShardNames;
+  batsChecks =
+    if duplicateBatsShardNames != [ ] then
+      throw "duplicate Bats shard names: ${builtins.toJSON duplicateBatsShardNames}"
+    else
+      lib.listToAttrs (
+        map (
+          shard:
+          lib.nameValuePair shard.name (
+            ciCheck.annotate (shard.ciTargets or (ciCheck.targets.both "rust-and-bats")) (
+              mkBatsCheck (
+                removeAttrs shard [
+                  "ciTargets"
+                  "platformPredicate"
+                ]
+                // {
+                  inherit (shard) platformPredicate;
+                }
+              )
+            )
+          )
+        ) applicableBatsShardSpecs
+      );
 
-  fixedChecksWithoutRust = {
+  fixedChecksWithoutRustBase = {
     pi-package-layout = ciCheck.annotate (ciCheck.targets.both "package-smoke") (
       pkgs.runCommand "pi-package-layout" { } ''
         test -f ${pkgs.pi}/libexec/pi/package.json
@@ -1401,8 +1406,13 @@ let
           touch "$out"
         ''
     );
-  }
-  // batsChecks;
+  };
+  batsCheckCollisions = testDiscovery.collidingNames (builtins.attrNames fixedChecksWithoutRustBase) batsShardNames;
+  fixedChecksWithoutRust =
+    if batsCheckCollisions == [ ] then
+      fixedChecksWithoutRustBase // batsChecks
+    else
+      throw "Bats shard names collide with existing checks: ${builtins.toJSON batsCheckCollisions}";
   rustBuildCheckCollisions = lib.intersectLists (builtins.attrNames rustBuildChecks) (
     builtins.attrNames fixedChecksWithoutRust
   );
