@@ -68,6 +68,11 @@ in
     ];
   };
 
+  testScriptsRemainAddressableByAppName = {
+    expr = lib.getName fixture.scriptsByName.second;
+    expected = "second-fixture-app";
+  };
+
   testExtraAppsMergedButNotInScripts = {
     expr = {
       appNames = builtins.attrNames fixtureWithExtra.apps;
@@ -101,11 +106,16 @@ in
   testAppSetsMergeAppsAndScripts = {
     expr = {
       appNames = builtins.attrNames mergedFixture.apps;
+      scriptAttributeNames = builtins.attrNames mergedFixture.scriptsByName;
       scriptNames = map lib.getName mergedFixture.scripts;
     };
     expected = {
       appNames = [
         "extra"
+        "fixture"
+        "other"
+      ];
+      scriptAttributeNames = [
         "fixture"
         "other"
       ];

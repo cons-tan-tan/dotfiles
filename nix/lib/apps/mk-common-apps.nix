@@ -1,7 +1,7 @@
 # darwin / linux 共通の flake apps。ホスト固有の build / switch / apply-winget
 # は flake.nix 側で合成する。
-# 戻り値は { apps, scripts }: scripts は writeShellApplication derivation の
-# リストで、checks に束ねてビルド時 shellcheck を CI で強制する。
+# 戻り値は { apps, scripts, scriptsByName, groups }。groups は Den feature が
+# 所有する app だけを選べる境界で、全体の apps/scripts は同じ group から導出する。
 { inputs, username }:
 {
   pkgs,
@@ -82,52 +82,63 @@ let
       exec ${lib.getExe applyNixSettingsCore} "$@"
     '';
   };
+  groups = {
+    maintenance = appSet.mkAppSet {
+      entries = {
+        update = {
+          description = "Update flake.lock to the latest input revisions";
+          script = updateScript;
+        };
+
+        fmt = {
+          description = "Format the repository with treefmt";
+          script = fmtScript;
+        };
+
+        apply-nix-settings = {
+          description = "Sync root-level Nix daemon settings into /etc/nix/nix.custom.conf";
+          script = applyNixSettingsScript;
+        };
+      };
+    };
+
+    update-pins = appSet.mkAppSet {
+      entries.update-pins = {
+        description = "Sync nix/pins/*.json to the latest upstream state";
+        script = updatePinsScript;
+      };
+    };
+
+    secrets = appSet.mkAppSet {
+      entries.apply-secrets = {
+        description = "Decrypt sops-managed secrets into place (skips gracefully without the GPG key)";
+        script = applySecretsScript;
+      };
+    };
+
+    lint = appSet.mkAppSet {
+      entries = { };
+      extraApps = {
+        pptx = import ../../apps/pptx {
+          inherit pkgs;
+          inherit (inputs)
+            anthropic-skills
+            pyproject-build-systems
+            pyproject-nix
+            uv2nix
+            ;
+        };
+
+        markdownlint = import ../../apps/markdownlint { inherit pkgs; };
+
+        textlint = import ../../apps/textlint { inherit pkgs; };
+      };
+    };
+  };
+
+  combined = appSet.mergeAppSets (builtins.attrValues groups);
 in
-appSet.mkAppSet {
-  entries = {
-    update = {
-      description = "Update flake.lock to the latest input revisions";
-      script = updateScript;
-    };
-
-    fmt = {
-      description = "Format the repository with treefmt";
-      script = fmtScript;
-    };
-
-    # pin を upstream と同期する。Rust core は root の packages 出力へ公開せず、
-    # 既存の app 名を保つ薄い wrapper からだけ起動する。
-    update-pins = {
-      description = "Sync nix/pins/*.json to the latest upstream state";
-      script = updatePinsScript;
-    };
-
-    # sops secrets の明示適用 (案 B: switch と完全分離し、GPG 鍵未導入でも
-    # 環境構築が secrets に依存しないことを保証する)。secrets/README.md 参照。
-    apply-secrets = {
-      description = "Decrypt sops-managed secrets into place (skips gracefully without the GPG key)";
-      script = applySecretsScript;
-    };
-
-    apply-nix-settings = {
-      description = "Sync root-level Nix daemon settings into /etc/nix/nix.custom.conf";
-      script = applyNixSettingsScript;
-    };
-  };
-
-  extraApps = {
-    pptx = import ../../apps/pptx {
-      inherit pkgs;
-      inherit (inputs)
-        anthropic-skills
-        pyproject-build-systems
-        pyproject-nix
-        uv2nix
-        ;
-    };
-
-    markdownlint = import ../../apps/markdownlint { inherit pkgs; };
-
-    textlint = import ../../apps/textlint { inherit pkgs; };
-  };
+combined
+// {
+  inherit groups;
 }

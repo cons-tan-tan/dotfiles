@@ -21,6 +21,7 @@
             program = lib.getExe entry.script;
           }) entries
           // extraApps;
+        scriptsByName = lib.mapAttrs (_: entry: entry.script) entries;
         scripts = lib.mapAttrsToList (_: entry: entry.script) entries;
       };
 
@@ -37,6 +38,7 @@
     else
       {
         apps = lib.foldl' (acc: appSet: acc // appSet.apps) { } appSets;
+        scriptsByName = lib.foldl' (acc: appSet: acc // appSet.scriptsByName) { } appSets;
         scripts = lib.concatMap (appSet: appSet.scripts) appSets;
       };
 }

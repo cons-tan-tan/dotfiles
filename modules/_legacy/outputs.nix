@@ -2,6 +2,7 @@ inputs@{
   self,
   nixpkgs,
   home-manager,
+  appScriptsFor,
   ...
 }:
 let
@@ -104,9 +105,6 @@ let
     }) nixosWslMatrix
   );
 
-  mkCommonApps = import ../../nix/lib/apps/mk-common-apps.nix { inherit inputs username; };
-  appSet = import ../../nix/lib/apps/mk-app-set.nix { inherit lib; };
-
   mkDarwinHostApps = import ../../nix/lib/apps/mk-darwin-apps.nix {
     inherit inputs darwinHostname;
   };
@@ -118,15 +116,6 @@ let
       ;
   };
 
-  # apps と checks は同じ { apps, scripts } 束を使うため、
-  # system ごとに一度だけ組み立てて共有する
-  commonAppsFor = lib.genAttrs systems (
-    system:
-    mkCommonApps {
-      pkgs = pkgsFor.${system};
-      treefmtWrapper = self.formatter.${system};
-    }
-  );
   hostAppsFor = lib.genAttrs systems (
     system:
     if system == darwinSystem then
@@ -144,19 +133,13 @@ let
         }/bin/nixos-rebuild";
       }
   );
-  appsFor = lib.genAttrs systems (
-    system:
-    appSet.mergeAppSets [
-      commonAppsFor.${system}
-      hostAppsFor.${system}
-    ]
-  );
 in
 {
   inherit darwinConfigurations homeConfigurations nixosConfigurations;
 
-  # 全 system で同一の app 集合になるよう genAttrs で生成する
-  apps = lib.genAttrs systems (system: appsFor.${system}.apps);
+  # Common apps are emitted by Den features. This bridge retains only the
+  # host-dependent apps until their configuration ownership moves as well.
+  apps = lib.genAttrs systems (system: hostAppsFor.${system}.apps);
 
   # CI専用gateを別定義するとlocal checksと対象が乖離するため、同じ
   # derivationから導出する。native runnerを用意していないaarch64-linuxは、
@@ -209,7 +192,7 @@ in
             (
               pkgs.symlinkJoin {
                 name = "app-scripts";
-                paths = appsFor.${system}.scripts;
+                paths = hostAppsFor.${system}.scripts ++ appScriptsFor system;
               }
             );
       }
