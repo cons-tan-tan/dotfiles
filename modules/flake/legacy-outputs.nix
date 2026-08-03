@@ -10,6 +10,5 @@
     inherit inputs;
     systems = config.systems;
     pkgsFor = lib.genAttrs config.systems (system: withSystem system ({ pkgs, ... }: pkgs));
-    appScriptsFor = system: withSystem system ({ config, ... }: config.dotfiles.appScripts);
   };
 }

@@ -8,6 +8,7 @@ let
   fixture = inputs.flake-parts.lib.mkFlake { inherit inputs; } {
     imports = [
       inputs.den.flakeModule
+      ../../modules/flake/den-output-routing.nix
       ../../modules/flake/systems.nix
       ../../modules/features/nixpkgs.nix
       ../../modules/features/formatting.nix

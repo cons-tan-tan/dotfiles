@@ -1,5 +1,4 @@
 {
-  appScriptsFor,
   inputs,
   pkgsFor,
   systems,
@@ -143,117 +142,100 @@ in
           }
         else
           null;
-      baseChecks = {
-        # app wrapperが別の依存から偶然buildされた時だけ検査される状態を
-        # 避け、すべてのwrapperへbuild時shellcheckを適用する。
-        app-scripts =
-          ciCheck.annotate
-            # On Darwin, keep the app closure with host configurations so
-            # their shared packages are not rebuilt by a cold-cache runner.
-            (ciCheck.targets.bySystem {
-              darwin = "configurations";
-              linux = "repo-quality";
-            })
-            (
-              pkgs.symlinkJoin {
-                name = "app-scripts";
-                paths = appScriptsFor system;
-              }
-            );
-      }
-      // lib.optionalAttrs (system == "x86_64-linux") {
-        den-capability-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
-          import ../../nix/checks/den-capabilities.nix {
-            inherit inputs lib pkgs;
-          }
-        );
-        flake-public-api-contract = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
-          import ../../nix/checks/flake-public-api-contract.nix {
-            inherit lib pkgs systems;
-            inherit (self)
-              apps
-              checks
-              darwinConfigurations
-              devShells
-              formatter
-              homeConfigurations
-              nixosConfigurations
-              packages
-              ;
-            rootPackagesPresent = self ? packages;
-          }
-        );
-        configuration-ownership-contract = ciCheck.annotate (ciCheck.targets.linux "configurations") (
-          import ../../nix/checks/configuration-ownership-contract.nix {
-            inherit (self)
-              darwinConfigurations
-              homeConfigurations
-              nixosConfigurations
-              ;
-            inherit
-              lib
-              pkgs
-              username
-              ;
-          }
-        );
-      }
-      // ciCheck.annotateSet (ciCheck.targets.darwin "configurations") (
-        lib.optionalAttrs (system == darwinSystem) {
-          darwin-system = darwinConfigurations.${darwinHostname}.system;
-          # hcom はデフォルト無効でも、opt-in 経路を CI で継続的に評価・build する。
-          darwin-system-hcom-enabled =
-            (darwinConfigurations.${darwinHostname}.extendModules {
-              modules = [
-                { home-manager.users.${username}.dotfiles.hcom.enable = true; }
-              ];
-            }).system;
-          darwin-nh-cleanup-contract = import ../../nix/checks/darwin-nh-cleanup-contract.nix {
-            inherit lib pkgs username;
-            config = darwinConfigurations.${darwinHostname}.config;
-          };
-        }
-      )
-      // ciCheck.annotateSet (ciCheck.targets.linux "configurations") (
-        lib.optionalAttrs (lib.hasSuffix "-linux" system) {
-          nixos-wsl-system = nixosWslConfiguration.config.system.build.toplevel;
-          nixos-wsl-tarball-builder = nixosWslConfiguration.config.system.build.tarballBuilder;
-          nixos-wsl-contract = import ../../nix/checks/nixos-wsl-contract.nix {
-            inherit
-              lib
-              linuxHomedir
-              pkgs
-              username
-              windowsHomedir
-              windowsUsername
-              ;
-            config = nixosWslConfiguration.config;
-            sourcePath = toString self.outPath;
-          };
-          claude-userprofile-contract = import ../../nix/checks/claude-userprofile-contract.nix {
-            inherit lib pkgs windowsHomedir;
-            linuxSettings = linuxHomeConfiguration.config.home.file.".claude/settings.json".source;
-            wslSettings = wslHomeConfiguration.config.home.file.".claude/settings.json".source;
-          };
-        }
-      )
-      // ciCheck.annotateSet (ciCheck.targets.linux "configurations") (
-        lib.listToAttrs (
-          lib.concatMap (entry: [
-            {
-              name = "home-${entry.hostKind}";
-              value = homeConfigurations.${linuxConfigName entry}.activationPackage;
+      baseChecks =
+        lib.optionalAttrs (system == "x86_64-linux") {
+          den-capability-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
+            import ../../nix/checks/den-capabilities.nix {
+              inherit inputs lib pkgs;
             }
-            {
-              name = "home-${entry.hostKind}-hcom-enabled";
-              value =
-                (homeConfigurations.${linuxConfigName entry}.extendModules {
-                  modules = [ { dotfiles.hcom.enable = true; } ];
-                }).activationPackage;
+          );
+          flake-public-api-contract = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
+            import ../../nix/checks/flake-public-api-contract.nix {
+              inherit lib pkgs systems;
+              inherit (self)
+                apps
+                checks
+                darwinConfigurations
+                devShells
+                formatter
+                homeConfigurations
+                nixosConfigurations
+                packages
+                ;
+              rootPackagesPresent = self ? packages;
             }
-          ]) (builtins.filter (entry: entry.system == system) linuxHostMatrix)
+          );
+          configuration-ownership-contract = ciCheck.annotate (ciCheck.targets.linux "configurations") (
+            import ../../nix/checks/configuration-ownership-contract.nix {
+              inherit (self)
+                darwinConfigurations
+                homeConfigurations
+                nixosConfigurations
+                ;
+              inherit
+                lib
+                pkgs
+                username
+                ;
+            }
+          );
+        }
+        // ciCheck.annotateSet (ciCheck.targets.darwin "configurations") (
+          lib.optionalAttrs (system == darwinSystem) {
+            darwin-system = darwinConfigurations.${darwinHostname}.system;
+            # hcom はデフォルト無効でも、opt-in 経路を CI で継続的に評価・build する。
+            darwin-system-hcom-enabled =
+              (darwinConfigurations.${darwinHostname}.extendModules {
+                modules = [
+                  { home-manager.users.${username}.dotfiles.hcom.enable = true; }
+                ];
+              }).system;
+            darwin-nh-cleanup-contract = import ../../nix/checks/darwin-nh-cleanup-contract.nix {
+              inherit lib pkgs username;
+              config = darwinConfigurations.${darwinHostname}.config;
+            };
+          }
         )
-      );
+        // ciCheck.annotateSet (ciCheck.targets.linux "configurations") (
+          lib.optionalAttrs (lib.hasSuffix "-linux" system) {
+            nixos-wsl-system = nixosWslConfiguration.config.system.build.toplevel;
+            nixos-wsl-tarball-builder = nixosWslConfiguration.config.system.build.tarballBuilder;
+            nixos-wsl-contract = import ../../nix/checks/nixos-wsl-contract.nix {
+              inherit
+                lib
+                linuxHomedir
+                pkgs
+                username
+                windowsHomedir
+                windowsUsername
+                ;
+              config = nixosWslConfiguration.config;
+              sourcePath = toString self.outPath;
+            };
+            claude-userprofile-contract = import ../../nix/checks/claude-userprofile-contract.nix {
+              inherit lib pkgs windowsHomedir;
+              linuxSettings = linuxHomeConfiguration.config.home.file.".claude/settings.json".source;
+              wslSettings = wslHomeConfiguration.config.home.file.".claude/settings.json".source;
+            };
+          }
+        )
+        // ciCheck.annotateSet (ciCheck.targets.linux "configurations") (
+          lib.listToAttrs (
+            lib.concatMap (entry: [
+              {
+                name = "home-${entry.hostKind}";
+                value = homeConfigurations.${linuxConfigName entry}.activationPackage;
+              }
+              {
+                name = "home-${entry.hostKind}-hcom-enabled";
+                value =
+                  (homeConfigurations.${linuxConfigName entry}.extendModules {
+                    modules = [ { dotfiles.hcom.enable = true; } ];
+                  }).activationPackage;
+              }
+            ]) (builtins.filter (entry: entry.system == system) linuxHostMatrix)
+          )
+        );
       testChecks = import ../../nix/tests {
         inherit
           ciCheck

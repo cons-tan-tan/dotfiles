@@ -21,6 +21,7 @@ in
   ];
 
   den.aspects.formatting.treefmt = {
+    flakeCheck = false;
     projectRootFile = "flake.nix";
     programs = {
       nixf-diagnose = {
@@ -43,18 +44,17 @@ in
     };
   };
 
+  den.aspects.formatting-check.checks =
+    { config, ... }:
+    {
+      treefmt = ciCheck.annotate (ciCheck.targets.linux "repo-quality") (
+        config.treefmt.build.check config.treefmt.projectRoot
+      );
+    };
+
   den.schema.flake-parts.includes = [
     den.policies.treefmt-to-flake-parts
     den.aspects.formatting
+    den.aspects.formatting-check
   ];
-
-  perSystem =
-    { config, ... }:
-    {
-      checks.treefmt = lib.mkForce (
-        ciCheck.annotate (ciCheck.targets.linux "repo-quality") (
-          config.treefmt.build.check config.treefmt.projectRoot
-        )
-      );
-    };
 }

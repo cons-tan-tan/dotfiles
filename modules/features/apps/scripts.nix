@@ -6,6 +6,7 @@
 }:
 let
   validateScriptEntries = import ../../../nix/lib/apps/validate-script-entries.nix { inherit lib; };
+  ciCheck = import ../../../nix/lib/ci-check.nix { inherit lib; };
 in
 {
   options.perSystem = flake-parts-lib.mkPerSystemOption {
@@ -46,9 +47,27 @@ in
         );
       };
 
+    den.aspects.app-script-check.checks =
+      { config, pkgs, ... }:
+      {
+        app-scripts =
+          ciCheck.annotate
+            (ciCheck.targets.bySystem {
+              darwin = "configurations";
+              linux = "repo-quality";
+            })
+            (
+              pkgs.symlinkJoin {
+                name = "app-scripts";
+                paths = config.dotfiles.appScripts;
+              }
+            );
+      };
+
     den.schema.flake-parts.includes = [
       den.policies.app-script-gate-to-flake-parts
       den.aspects.app-script-consumer
+      den.aspects.app-script-check
     ];
   };
 }
