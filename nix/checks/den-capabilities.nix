@@ -18,7 +18,7 @@ let
     let
       locked = denCiLock.nodes.${name}.locked;
     in
-    builtins.fetchTarball {
+    fetchTarball {
       url = "https://github.com/${locked.owner}/${locked.repo}/archive/${locked.rev}.zip";
       sha256 = locked.narHash;
     };
@@ -29,7 +29,7 @@ let
     let
       locked = genSchemaCiLock.nodes.gen-algebra.locked;
     in
-    builtins.fetchTarball {
+    fetchTarball {
       url = "https://github.com/${locked.owner}/${locked.repo}/archive/${locked.rev}.zip";
       sha256 = locked.narHash;
     };
