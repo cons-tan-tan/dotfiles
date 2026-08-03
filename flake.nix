@@ -19,6 +19,19 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
 
+    den.url = "github:denful/den/2040b61346a7215fd7b7f51d4a457544b6e597d0";
+
+    flake-file.url = "github:denful/flake-file/v0.6.0";
+
+    flake-parts = {
+      url = "github:hercules-ci/flake-parts";
+      inputs.nixpkgs-lib.follows = "nixpkgs-lib";
+    };
+
+    import-tree.url = "github:vic/import-tree/v0.2.0";
+
+    nixpkgs-lib.follows = "nixpkgs";
+
     nix-darwin = {
       url = "github:LnL7/nix-darwin";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -482,6 +495,11 @@
                 );
           }
           // lib.optionalAttrs (system == "x86_64-linux") {
+            den-capability-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
+              import ./nix/checks/den-capabilities.nix {
+                inherit inputs lib pkgs;
+              }
+            );
             flake-public-api-contract = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
               import ./nix/checks/flake-public-api-contract.nix {
                 inherit lib pkgs systems;
