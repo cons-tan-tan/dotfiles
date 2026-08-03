@@ -47,9 +47,12 @@ wsl --install --from-file .\nixos.wsl --name NixOS
 | `nix run .#build` | ホスト構成を適用せずビルドのみ |
 | `nix run .#update` | flake.lock を更新 |
 | `nix run .#update-pins -- --help` | upstream同期の対象とオプションを表示 |
+| `nix run .#write-flake` | input moduleから`flake.nix`を再生成 |
 | `nix run .#apply-winget` | `switch`後にWindows側のpackage構成を適用（WSLのみ） |
 
 そのほかの公開appは`nix flake show`で確認する。
+
+`modules/flake/inputs/`を直接変更した場合は、`nix run .#write-flake`で`flake.nix`を再生成する。`update-pins`によるupstream同期では自動的に再生成される。
 
 `switch`で導入される`gha-lint`は、任意のrepositoryでGitHub Actionsのworkflowとaction metadataを検査できる。
 
