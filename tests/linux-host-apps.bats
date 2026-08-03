@@ -221,4 +221,10 @@ run_linux_host_build() {
   grep -E '^export HM_BIN=/nix/store/.+-home-manager/bin/home-manager$' "$switch_script"
   grep -Fqx "export NIXOS_TARGET=$HOST_EXPECTED_NIXOS_WSL" "$switch_script"
   grep -E '^export NIXOS_REBUILD_BIN=/nix/store/.+/bin/nixos-rebuild$' "$switch_script"
+  grep -F 'nix build ".#nixosConfigurations.\"$NIXOS_TARGET\".config.system.build.toplevel"' \
+    "$build_script"
+  grep -F 'nix build ".#homeConfigurations.\"$target\".activationPackage"' "$build_script"
+  grep -F '"$sudo_bin" "$NIXOS_REBUILD_BIN" switch --flake ".#$NIXOS_TARGET"' \
+    "$switch_script"
+  grep -F '"$HM_BIN" switch -b hm-backup --flake ".#$target"' "$switch_script"
 }

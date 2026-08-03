@@ -481,6 +481,36 @@
                   }
                 );
           }
+          // lib.optionalAttrs (system == "x86_64-linux") {
+            flake-public-api-contract = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
+              import ./nix/checks/flake-public-api-contract.nix {
+                inherit lib pkgs systems;
+                inherit (self)
+                  apps
+                  darwinConfigurations
+                  devShells
+                  formatter
+                  homeConfigurations
+                  nixosConfigurations
+                  ;
+                rootPackagesPresent = self ? packages;
+              }
+            );
+            configuration-ownership-contract = ciCheck.annotate (ciCheck.targets.linux "configurations") (
+              import ./nix/checks/configuration-ownership-contract.nix {
+                inherit (self)
+                  darwinConfigurations
+                  homeConfigurations
+                  nixosConfigurations
+                  ;
+                inherit
+                  lib
+                  pkgs
+                  username
+                  ;
+              }
+            );
+          }
           // ciCheck.annotateSet (ciCheck.targets.darwin "configurations") (
             lib.optionalAttrs (system == darwinSystem) {
               darwin-system = darwinConfigurations.${darwinHostname}.system;
@@ -548,7 +578,7 @@
             advisoryDbLastModified = inputs.rustsec-advisory-db.lastModified;
             homeManager = home-manager;
             llmAgents = inputs.llm-agents;
-            publicApps = appsFor.${system}.apps;
+            publicApps = self.apps.${system};
             reservedCheckNames = builtins.attrNames baseChecks;
           };
           allChecks = baseChecks // testChecks;

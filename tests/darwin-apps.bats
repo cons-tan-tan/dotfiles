@@ -116,6 +116,9 @@ teardown() {
 
   grep -Fx "export DARWIN_HOSTNAME=constantan" "$build_script"
   grep -Fx "export DARWIN_HOSTNAME=constantan" "$switch_script"
+  grep -F 'nix build ".#darwinConfigurations.${DARWIN_HOSTNAME}.system"' "$build_script"
+  grep -F 'exec sudo "$DARWIN_REBUILD_BIN" switch --flake ".#${DARWIN_HOSTNAME}"' \
+    "$switch_script"
   grep -E '^export DARWIN_REBUILD_BIN=/nix/store/.+-darwin-rebuild/bin/darwin-rebuild$' \
     "$switch_script"
 }

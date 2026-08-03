@@ -3,12 +3,21 @@ let
   ciCheck = import ./ci-check.nix { inherit lib; };
   linuxSystem = "x86_64-linux";
   darwinSystem = "aarch64-darwin";
+  evaluationOnlySystem = "aarch64-linux";
   fakeCheck = {
     drvPath = "/nix/store/00000000000000000000000000000000-ci-check.drv";
     meta.description = "preserved metadata";
     system = linuxSystem;
   };
   evaluates = value: (builtins.tryEval (builtins.deepSeq value true)).success;
+  fakeFor =
+    name: system:
+    fakeCheck
+    // {
+      drvPath = "/nix/store/00000000000000000000000000000000-${name}.drv";
+      meta.description = "${name} metadata";
+      inherit system;
+    };
 in
 {
   testAnnotationPreservesMetadata = {
@@ -57,6 +66,58 @@ in
       expr = builtins.attrNames checks;
       expected = [ "included" ];
     };
+
+  testCanonicalSelectionPreservesMetadata =
+    let
+      bothTargets = ciCheck.targets.both "eval-tests";
+      linuxTargets = ciCheck.targets.linux "repo-quality";
+      darwinTargets = ciCheck.targets.darwin "configurations";
+      jobs = ciCheck.mkHestiaJobs {
+        ${linuxSystem} = {
+          both = ciCheck.annotate bothTargets (fakeFor "both-linux" linuxSystem);
+          linuxOnly = ciCheck.annotate linuxTargets (fakeFor "linux-only" linuxSystem);
+        };
+        ${darwinSystem} = {
+          both = ciCheck.annotate bothTargets (fakeFor "both-darwin" darwinSystem);
+          darwinOnly = ciCheck.annotate darwinTargets (fakeFor "darwin-only" darwinSystem);
+        };
+      };
+    in
+    {
+      expr = {
+        linuxNames = builtins.attrNames jobs.${linuxSystem};
+        darwinNames = builtins.attrNames jobs.${darwinSystem};
+        linuxGroup = jobs.${linuxSystem}.linuxOnly.meta.hestia.group;
+        darwinGroup = jobs.${darwinSystem}.darwinOnly.meta.hestia.group;
+        description = jobs.${linuxSystem}.both.meta.description;
+        targets = jobs.${darwinSystem}.both.meta.dotfiles.hestia.targets;
+      };
+      expected = {
+        linuxNames = [
+          "both"
+          "linuxOnly"
+        ];
+        darwinNames = [
+          "both"
+          "darwinOnly"
+        ];
+        linuxGroup = "linux-repo-quality";
+        darwinGroup = "darwin-configurations";
+        description = "both-linux metadata";
+        targets = bothTargets;
+      };
+    };
+
+  testAdditionalHestiaBuildSystemFails = {
+    expr = evaluates (
+      ciCheck.mkHestiaJobs {
+        ${linuxSystem} = { };
+        ${darwinSystem} = { };
+        ${evaluationOnlySystem} = { };
+      }
+    );
+    expected = false;
+  };
 
   testMissingAnnotationFails = {
     expr = evaluates (
