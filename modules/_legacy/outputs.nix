@@ -1,11 +1,15 @@
-inputs@{
-  self,
-  nixpkgs,
-  home-manager,
+{
   appScriptsFor,
-  ...
+  inputs,
+  pkgsFor,
+  systems,
 }:
 let
+  inherit (inputs)
+    home-manager
+    nixpkgs
+    self
+    ;
   lib = nixpkgs.lib;
   username = "constantan";
 
@@ -19,14 +23,7 @@ let
   windowsUsername = "zhouc";
   windowsHomedir = "/mnt/c/Users/${windowsUsername}";
 
-  systems = import inputs.supported-systems;
   ciCheck = import ../../nix/lib/ci-check.nix { inherit lib; };
-
-  mkPkgs = import ../../nix/lib/mk-pkgs.nix { inherit inputs; };
-
-  # nixpkgs の import + overlay 適用は重いので system ごとに一度だけ行い、
-  # 全出力とホスト構成で同じインスタンスを共有する。
-  pkgsFor = lib.genAttrs systems mkPkgs;
 
   mkHost = import ../../nix/lib/mk-host.nix {
     inherit

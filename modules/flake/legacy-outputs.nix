@@ -1,9 +1,15 @@
-{ inputs, withSystem, ... }:
 {
-  flake = import ../_legacy/outputs.nix (
-    inputs
-    // {
-      appScriptsFor = system: withSystem system ({ config, ... }: config.dotfiles.appScripts);
-    }
-  );
+  config,
+  inputs,
+  lib,
+  withSystem,
+  ...
+}:
+{
+  flake = import ../_legacy/outputs.nix {
+    inherit inputs;
+    systems = config.systems;
+    pkgsFor = lib.genAttrs config.systems (system: withSystem system ({ pkgs, ... }: pkgs));
+    appScriptsFor = system: withSystem system ({ config, ... }: config.dotfiles.appScripts);
+  };
 }
