@@ -59,11 +59,37 @@ pub struct PairedSource {
     pub authority: InputAuthority,
 }
 
-const ROOT_FLAKE_AUTHORITY: InputAuthority = InputAuthority {
-    source_path: "flake.nix",
+const FLAKE_FILE_GENERATOR: GeneratorCommand = GeneratorCommand {
+    program: "nix",
+    args: &["run", ".#write-flake"],
+};
+
+const HCOM_INPUT_AUTHORITY: InputAuthority = InputAuthority {
+    source_path: "modules/flake/inputs/hcom-src.nix",
     generated_flake_path: "flake.nix",
     lock_path: "flake.lock",
-    generator: None,
+    generator: Some(FLAKE_FILE_GENERATOR),
+};
+
+const AGENT_SLACK_INPUT_AUTHORITY: InputAuthority = InputAuthority {
+    source_path: "modules/flake/inputs/agent-slack-skill.nix",
+    generated_flake_path: "flake.nix",
+    lock_path: "flake.lock",
+    generator: Some(FLAKE_FILE_GENERATOR),
+};
+
+const AGENT_BROWSER_INPUT_AUTHORITY: InputAuthority = InputAuthority {
+    source_path: "modules/flake/inputs/agent-browser-skill.nix",
+    generated_flake_path: "flake.nix",
+    lock_path: "flake.lock",
+    generator: Some(FLAKE_FILE_GENERATOR),
+};
+
+const DIFIT_INPUT_AUTHORITY: InputAuthority = InputAuthority {
+    source_path: "modules/flake/inputs/difit-src.nix",
+    generated_flake_path: "flake.nix",
+    lock_path: "flake.lock",
+    generator: Some(FLAKE_FILE_GENERATOR),
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -188,10 +214,15 @@ pub static TARGET_SPECS: &[TargetSpec] = &[
             source: PairedSource {
                 repository: "aannoo/hcom",
                 input: "hcom-src",
-                authority: ROOT_FLAKE_AUTHORITY,
+                authority: HCOM_INPUT_AUTHORITY,
             },
         },
-        managed_paths: &["nix/pins/hcom.json", "flake.nix", "flake.lock"],
+        managed_paths: &[
+            "nix/pins/hcom.json",
+            "modules/flake/inputs/hcom-src.nix",
+            "flake.nix",
+            "flake.lock",
+        ],
     },
     TargetSpec {
         target: Target::AgentSlack,
@@ -201,10 +232,15 @@ pub static TARGET_SPECS: &[TargetSpec] = &[
             source: PairedSource {
                 repository: "stablyai/agent-slack",
                 input: "agent-slack-skill",
-                authority: ROOT_FLAKE_AUTHORITY,
+                authority: AGENT_SLACK_INPUT_AUTHORITY,
             },
         },
-        managed_paths: &["nix/pins/agent-slack.json", "flake.nix", "flake.lock"],
+        managed_paths: &[
+            "nix/pins/agent-slack.json",
+            "modules/flake/inputs/agent-slack-skill.nix",
+            "flake.nix",
+            "flake.lock",
+        ],
     },
     TargetSpec {
         target: Target::AgentBrowser,
@@ -214,10 +250,15 @@ pub static TARGET_SPECS: &[TargetSpec] = &[
             source: PairedSource {
                 repository: "vercel-labs/agent-browser",
                 input: "agent-browser-skill",
-                authority: ROOT_FLAKE_AUTHORITY,
+                authority: AGENT_BROWSER_INPUT_AUTHORITY,
             },
         },
-        managed_paths: &["nix/pins/agent-browser.json", "flake.nix", "flake.lock"],
+        managed_paths: &[
+            "nix/pins/agent-browser.json",
+            "modules/flake/inputs/agent-browser-skill.nix",
+            "flake.nix",
+            "flake.lock",
+        ],
     },
     TargetSpec {
         target: Target::Watchexec,
@@ -272,7 +313,7 @@ pub static TARGET_SPECS: &[TargetSpec] = &[
                 source: PairedSource {
                     repository: "yoshiko-pg/difit",
                     input: "difit-src",
-                    authority: ROOT_FLAKE_AUTHORITY,
+                    authority: DIFIT_INPUT_AUTHORITY,
                 },
                 lock_path: "pnpm-lock.yaml",
                 workspace_path: "pnpm-workspace.yaml",
@@ -286,7 +327,12 @@ pub static TARGET_SPECS: &[TargetSpec] = &[
                 dependency_hash_field: "pnpmDepsHash",
             },
         }),
-        managed_paths: &["nix/pins/difit.json", "flake.nix", "flake.lock"],
+        managed_paths: &[
+            "nix/pins/difit.json",
+            "modules/flake/inputs/difit-src.nix",
+            "flake.nix",
+            "flake.lock",
+        ],
     },
     TargetSpec {
         target: Target::ClaudeCodeSettingsSchema,
@@ -435,7 +481,12 @@ mod tests {
                     assert!(spec.managed_paths.contains(&source.authority.lock_path));
                     assert_eq!(
                         spec.managed_paths,
-                        &["nix/pins/difit.json", "flake.nix", "flake.lock"]
+                        &[
+                            "nix/pins/difit.json",
+                            "modules/flake/inputs/difit-src.nix",
+                            "flake.nix",
+                            "flake.lock"
+                        ]
                     );
                     assert_eq!(
                         package.artifact,
@@ -450,7 +501,7 @@ mod tests {
                             source: super::PairedSource {
                                 repository: "yoshiko-pg/difit",
                                 input: "difit-src",
-                                authority: super::ROOT_FLAKE_AUTHORITY,
+                                authority: super::DIFIT_INPUT_AUTHORITY,
                             },
                             lock_path: "pnpm-lock.yaml",
                             workspace_path: "pnpm-workspace.yaml",

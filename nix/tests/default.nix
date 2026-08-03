@@ -697,6 +697,10 @@ let
       sourceFiles = [
         "flake.lock"
         "flake.nix"
+        "modules/flake/inputs/agent-browser-skill.nix"
+        "modules/flake/inputs/agent-slack-skill.nix"
+        "modules/flake/inputs/difit-src.nix"
+        "modules/flake/inputs/hcom-src.nix"
         "nix/packages/agent-command-guard/Cargo.lock"
         "nix/packages/agent-command-guard/Cargo.toml"
         "nix/packages/shellfirm/Cargo.lock"

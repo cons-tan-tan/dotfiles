@@ -50,6 +50,13 @@ MANAGED_PIN_NAMES=(
   shellfirm
 )
 
+PAIRED_INPUT_MODULES=(
+  agent-browser-skill.nix
+  agent-slack-skill.nix
+  difit-src.nix
+  hcom-src.nix
+)
+
 make_difit_tarball() {
   local version=$1
   mkdir -p "$WORK/difit-tar/package"
@@ -79,10 +86,14 @@ setup() {
   REPO_ROOT="$(git rev-parse --show-toplevel)"
   BASH_BIN="$(command -v bash)"
   WORK="$(mktemp -d)"
-  mkdir -p "$WORK/nix/pins" "$WORK/nix/packages/shellfirm" \
+  mkdir -p "$WORK/modules/flake/inputs" "$WORK/nix/pins" "$WORK/nix/packages/shellfirm" \
     "$WORK/nix/packages/agent-command-guard"
   for pin_name in "${MANAGED_PIN_NAMES[@]}"; do
     cp "$REPO_ROOT/nix/pins/$pin_name.json" "$WORK/nix/pins/$pin_name.json"
+  done
+  for module_name in "${PAIRED_INPUT_MODULES[@]}"; do
+    cp "$REPO_ROOT/modules/flake/inputs/$module_name" \
+      "$WORK/modules/flake/inputs/$module_name"
   done
   cp "$REPO_ROOT/nix/packages/shellfirm/Cargo.lock" "$WORK/nix/packages/shellfirm/Cargo.lock"
   cp "$REPO_ROOT/nix/packages/agent-command-guard/Cargo.toml" \
@@ -98,7 +109,8 @@ setup() {
     git config user.email update-pins-test@example.invalid
     git config user.name "update-pins test"
     git config commit.gpgsign false
-    git add flake.nix flake.lock nix/packages/shellfirm/Cargo.lock \
+    git add flake.nix flake.lock modules/flake/inputs/*.nix \
+      nix/packages/shellfirm/Cargo.lock \
       nix/packages/agent-command-guard/Cargo.toml \
       nix/packages/agent-command-guard/Cargo.lock nix/pins/*.json
     git commit -q -m "initial managed files"
@@ -393,9 +405,13 @@ if [ "$#" -eq 2 ] && [ "$1" = "run" ] && [ "$2" = ".#write-flake" ]; then
     echo "fixture generator failed" >&2
     exit 1
   fi
-  version=$(sed -n 's|.*github:owner/example/v\([^\"]*\)";|\1|p' \
-    "$UPDATE_PINS_FAKE_ROOT/modules/features/example.nix")
-  cat >"$UPDATE_PINS_FAKE_ROOT/flake.nix" <<FLAKE
+  if [ "${UPDATE_PINS_STALE_GENERATOR:-0}" = 1 ]; then
+    exit 0
+  fi
+  if [ -f "$UPDATE_PINS_FAKE_ROOT/modules/features/example.nix" ]; then
+    version=$(sed -n 's|.*github:owner/example/v\([^\"]*\)";|\1|p' \
+      "$UPDATE_PINS_FAKE_ROOT/modules/features/example.nix")
+    cat >"$UPDATE_PINS_FAKE_ROOT/flake.nix" <<FLAKE
 {
   inputs = {
     example-src = {
@@ -404,6 +420,23 @@ if [ "$#" -eq 2 ] && [ "$1" = "run" ] && [ "$2" = ".#write-flake" ]; then
   };
 }
 FLAKE
+    exit 0
+  fi
+
+  while read -r module_name repository; do
+    version=$(sed -n "s|.*github:$repository/v\\([^\"]*\\)\";|\\1|p" \
+      "$UPDATE_PINS_FAKE_ROOT/modules/flake/inputs/$module_name")
+    [ -n "$version" ]
+    sed "s|github:$repository/v[^\"]*|github:$repository/v$version|" \
+      "$UPDATE_PINS_FAKE_ROOT/flake.nix" \
+      >"$UPDATE_PINS_FAKE_ROOT/flake.nix.generated"
+    mv "$UPDATE_PINS_FAKE_ROOT/flake.nix.generated" "$UPDATE_PINS_FAKE_ROOT/flake.nix"
+  done <<'SOURCES'
+agent-browser-skill.nix vercel-labs/agent-browser
+agent-slack-skill.nix stablyai/agent-slack
+difit-src.nix yoshiko-pg/difit
+hcom-src.nix aannoo/hcom
+SOURCES
   exit 0
 fi
 
@@ -488,6 +521,7 @@ if [ "$1" = "flake" ] && [ "${2:-}" = "update" ]; then
   printf '%s\n' "$input" >>"$UPDATE_PINS_FLAKE_UPDATE_LOG"
   case "$input" in
   hcom-src) repo=aannoo/hcom ;;
+  agent-slack-skill) repo=stablyai/agent-slack ;;
   agent-browser-skill) repo=vercel-labs/agent-browser ;;
   difit-src) repo=yoshiko-pg/difit ;;
   example-src)
@@ -589,8 +623,9 @@ assert_future_layout_matches() {
 
 save_managed() {
   local dst=$1
-  mkdir -p "$dst/nix/pins" "$dst/nix/packages/shellfirm" \
+  mkdir -p "$dst/modules/flake/inputs" "$dst/nix/pins" "$dst/nix/packages/shellfirm" \
     "$dst/nix/packages/agent-command-guard"
+  cp -p "$WORK"/modules/flake/inputs/*.nix "$dst/modules/flake/inputs/"
   cp -p "$WORK/flake.nix" "$dst/flake.nix"
   cp -p "$WORK/flake.lock" "$dst/flake.lock"
   cp -p "$WORK"/nix/pins/*.json "$dst/nix/pins/"
@@ -610,7 +645,12 @@ file_mode() {
 }
 
 assert_managed_matches() {
-  local expected=$1 pin name
+  local expected=$1 module pin name
+  for module in "$expected"/modules/flake/inputs/*.nix; do
+    name=$(basename "$module")
+    cmp -s "$WORK/modules/flake/inputs/$name" "$module"
+    [ "$(file_mode "$WORK/modules/flake/inputs/$name")" = "$(file_mode "$module")" ]
+  done
   cmp -s "$WORK/flake.nix" "$expected/flake.nix"
   [ "$(file_mode "$WORK/flake.nix")" = "$(file_mode "$expected/flake.nix")" ]
   cmp -s "$WORK/flake.lock" "$expected/flake.lock"
@@ -796,6 +836,7 @@ NIX
 
 @test "check reports a candidate and restores bytes, modes, and lock" {
   chmod 0440 "$WORK/nix/pins/hcom.json"
+  chmod 0660 "$WORK/modules/flake/inputs/hcom-src.nix"
   chmod 0640 "$WORK/flake.nix"
   chmod 0600 "$WORK/flake.lock"
   original="$WORK/original"
@@ -815,6 +856,28 @@ NIX
   assert_check_lock_reacquirable
 }
 
+@test "stale generated flake stops before lock update and restores module transaction" {
+  chmod 0440 "$WORK/nix/pins/hcom.json"
+  chmod 0660 "$WORK/modules/flake/inputs/hcom-src.nix"
+  chmod 0640 "$WORK/flake.nix"
+  chmod 0600 "$WORK/flake.lock"
+  original="$WORK/original"
+  save_managed "$original"
+  export UPDATE_PINS_HCOM_TAG=v9.9.9
+  export UPDATE_PINS_STALE_GENERATOR=1
+
+  run_update_pins hcom
+
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"flake.nix: generated input hcom-src"* ]]
+  [[ "$output" == *"expected v9.9.9"* ]]
+  grep -q '^nix run \.#write-flake$' "$UPDATE_PINS_COMMAND_LOG"
+  ! grep -q '^nix flake update ' "$UPDATE_PINS_COMMAND_LOG"
+  [ ! -e "$UPDATE_PINS_FLAKE_UPDATE_LOG" ]
+  assert_managed_matches "$original"
+  assert_no_staging_files
+}
+
 @test "Difit update preserves real child argv, hash refresh order, and provenance" {
   original="$WORK/original"
   save_managed "$original"
@@ -828,15 +891,21 @@ NIX
   [ "$(jq -r .pnpmDepsHash "$WORK/nix/pins/difit.json")" = "sha256-32X0K6wkLW2x9cJJJ6J+cu5HOM2+oTZe5AEqLRHvpPM=" ]
   jq -e 'keys == ["pnpmDepsHash", "srcHash"]' "$WORK/nix/pins/difit.json"
   grep -Fq 'url = "github:yoshiko-pg/difit/v9.9.9";' "$WORK/flake.nix"
+  grep -Fq 'url = "github:yoshiko-pg/difit/v9.9.9";' \
+    "$WORK/modules/flake/inputs/difit-src.nix"
   [ "$(flake_lock_ref difit-src)" = "v9.9.9" ]
   [ "$(cat "$UPDATE_PINS_DIFIT_BUILD_COUNT")" -eq 2 ]
+  generator_line=$(grep -n '^nix run \.#write-flake$' "$UPDATE_PINS_COMMAND_LOG" | cut -d: -f1)
   flake_update_line=$(grep -n '^nix flake update difit-src$' "$UPDATE_PINS_COMMAND_LOG" | cut -d: -f1)
   candidate_build_line=$(grep -n '^candidate-build-env difit difitPin pnpmDepsHash$' "$UPDATE_PINS_COMMAND_LOG" | cut -d: -f1)
+  [ "$generator_line" -lt "$flake_update_line" ]
   [ "$flake_update_line" -lt "$candidate_build_line" ]
   ! grep -q '^npm ' "$UPDATE_PINS_COMMAND_LOG"
   [ ! -e "$WORK/nix/packages/difit/package-lock.json" ]
 
   cp "$WORK/nix/pins/difit.json" "$original/nix/pins/difit.json"
+  cp "$WORK/modules/flake/inputs/difit-src.nix" \
+    "$original/modules/flake/inputs/difit-src.nix"
   cp "$WORK/flake.nix" "$original/flake.nix"
   cp "$WORK/flake.lock" "$original/flake.lock"
   assert_managed_matches "$original"
@@ -890,10 +959,14 @@ NIX
   jq -e 'all(.assets[]; .hash == "sha256-1ZOG4K5DXikvvg6825VLde1fs5IgkSd8sZ95j8XVBxg=")' \
     "$WORK/nix/pins/agent-browser.json"
   grep -Fq 'url = "github:vercel-labs/agent-browser/v9.9.9";' "$WORK/flake.nix"
+  grep -Fq 'url = "github:vercel-labs/agent-browser/v9.9.9";' \
+    "$WORK/modules/flake/inputs/agent-browser-skill.nix"
   [ "$(flake_lock_ref agent-browser-skill)" = "v9.9.9" ]
   [ "$(cat "$UPDATE_PINS_FLAKE_UPDATE_LOG")" = "agent-browser-skill" ]
 
   cp "$WORK/nix/pins/agent-browser.json" "$original/nix/pins/agent-browser.json"
+  cp "$WORK/modules/flake/inputs/agent-browser-skill.nix" \
+    "$original/modules/flake/inputs/agent-browser-skill.nix"
   cp "$WORK/flake.nix" "$original/flake.nix"
   cp "$WORK/flake.lock" "$original/flake.lock"
   assert_managed_matches "$original"

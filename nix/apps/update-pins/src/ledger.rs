@@ -479,6 +479,7 @@ fn record_paired_version(
             new: DisplayValue::Text(new),
         });
         represented.insert(path);
+        represented.insert(source.authority.generated_flake_path);
     }
 }
 
@@ -778,12 +779,14 @@ mod tests {
                 br#"{"assets":{"aarch64-darwin":{"hash":"sha256-old"}}}"#,
             ),
             state(
-                "flake.nix",
-                br#"inputs = {
-  hcom-src = {
-    url = "github:aannoo/hcom/v1.0.0";
-  };
+                "modules/flake/inputs/hcom-src.nix",
+                br#"flake-file.inputs.hcom-src = {
+  url = "github:aannoo/hcom/v1.0.0";
 };"#,
+            ),
+            state(
+                "flake.nix",
+                br#"inputs.hcom-src.url = "github:aannoo/hcom/v1.0.0";"#,
             ),
             state("flake.lock", br#"{"nodes":{"old":{}}}"#),
         ];
@@ -793,12 +796,14 @@ mod tests {
                 br#"{"assets":{"aarch64-darwin":{"hash":"sha256-new"}}}"#,
             ),
             state(
-                "flake.nix",
-                br#"inputs = {
-  hcom-src = {
-    url = "github:aannoo/hcom/v2.0.0";
-  };
+                "modules/flake/inputs/hcom-src.nix",
+                br#"flake-file.inputs.hcom-src = {
+  url = "github:aannoo/hcom/v2.0.0";
 };"#,
+            ),
+            state(
+                "flake.nix",
+                br#"inputs.hcom-src.url = "github:aannoo/hcom/v2.0.0";"#,
             ),
             state("flake.lock", br#"{"nodes":{"new":{}}}"#),
         ];
@@ -906,12 +911,14 @@ mod tests {
                 br#"{"srcHash":"sha256-old","pnpmDepsHash":"sha256-old"}"#,
             ),
             state(
-                "flake.nix",
-                br#"inputs = {
-  difit-src = {
-    url = "github:yoshiko-pg/difit/v1.0.0";
-  };
+                "modules/flake/inputs/difit-src.nix",
+                br#"flake-file.inputs.difit-src = {
+  url = "github:yoshiko-pg/difit/v1.0.0";
 };"#,
+            ),
+            state(
+                "flake.nix",
+                br#"inputs.difit-src.url = "github:yoshiko-pg/difit/v1.0.0";"#,
             ),
             state("flake.lock", br#"{"nodes":{"old":{}}}"#),
         ];
@@ -921,12 +928,14 @@ mod tests {
                 br#"{"srcHash":"sha256-new","pnpmDepsHash":"sha256-new"}"#,
             ),
             state(
-                "flake.nix",
-                br#"inputs = {
-  difit-src = {
-    url = "github:yoshiko-pg/difit/v2.0.0";
-  };
+                "modules/flake/inputs/difit-src.nix",
+                br#"flake-file.inputs.difit-src = {
+  url = "github:yoshiko-pg/difit/v2.0.0";
 };"#,
+            ),
+            state(
+                "flake.nix",
+                br#"inputs.difit-src.url = "github:yoshiko-pg/difit/v2.0.0";"#,
             ),
             state("flake.lock", br#"{"nodes":{"new":{}}}"#),
         ];
@@ -1020,7 +1029,6 @@ mod tests {
             [
                 ChangeKind::Version,
                 ChangeKind::FlakeInput("example-src".into()),
-                ChangeKind::ManagedFile("flake.nix".into()),
             ]
         );
     }
