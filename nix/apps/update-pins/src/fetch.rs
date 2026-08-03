@@ -33,6 +33,7 @@ impl Default for FetchLimits {
     }
 }
 
+#[cfg(feature = "smoke")]
 impl FetchLimits {
     pub(crate) const fn new(
         connect_timeout: Duration,

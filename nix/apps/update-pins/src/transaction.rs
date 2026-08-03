@@ -7,15 +7,7 @@ use tempfile::Builder;
 
 use crate::command::{CommandRunner, CommandSpec, require_success, run_checked};
 use crate::error::UpdateError;
-
-const GLOBAL_MANAGED_PATHS: [&str; 6] = [
-    ":(glob)nix/pins/*.json",
-    "flake.nix",
-    "flake.lock",
-    "nix/packages/shellfirm/Cargo.lock",
-    "nix/packages/agent-command-guard/Cargo.toml",
-    "nix/packages/agent-command-guard/Cargo.lock",
-];
+use crate::registry::TARGET_SPECS;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Repository {
@@ -140,11 +132,11 @@ impl<'a, R: CommandRunner> Transaction<'a, R> {
             }
         }
 
-        let global_pathspecs = GLOBAL_MANAGED_PATHS.map(PathBuf::from);
+        let global_pathspecs = global_managed_pathspecs();
         let pathspecs = managed_paths
             .as_ref()
             .map(|paths| paths.iter().cloned().collect::<Vec<_>>())
-            .unwrap_or_else(|| global_pathspecs.to_vec());
+            .unwrap_or(global_pathspecs);
         check_managed_files_clean(&repository.root, runner, &pathspecs)?;
         let managed = match &managed_paths {
             Some(paths) => paths.clone(),
@@ -516,16 +508,30 @@ fn validate_relative_path(path: &Path) -> Result<(), UpdateError> {
 
 fn ensure_managed_path(path: &Path) -> Result<(), UpdateError> {
     validate_relative_path(path)?;
-    let is_pin = path.parent() == Some(Path::new("nix/pins"))
-        && path
-            .extension()
-            .is_some_and(|extension| extension == "json");
-    let is_fixed = [Path::new("flake.nix"), Path::new("flake.lock")].contains(&path);
-    if is_pin || is_fixed {
+    let is_registered = TARGET_SPECS.iter().any(|spec| {
+        spec.managed_paths
+            .iter()
+            .any(|registered| Path::new(registered) == path)
+    });
+    if is_registered {
         Ok(())
     } else {
         Err(UpdateError::UnmanagedPath(path.to_owned()))
     }
+}
+
+fn global_managed_pathspecs() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    for path in TARGET_SPECS
+        .iter()
+        .flat_map(|spec| spec.managed_paths.iter().copied())
+    {
+        let path = PathBuf::from(path);
+        if !paths.contains(&path) {
+            paths.push(path);
+        }
+    }
+    paths
 }
 
 fn ensure_safe_repository_path(root: &Path, relative: &Path) -> Result<(), UpdateError> {
@@ -712,7 +718,7 @@ mod tests {
             );
             std::fs::create_dir_all(directory.path().join("nix/pins")).expect("pin directory");
             std::fs::write(
-                directory.path().join("nix/pins/example.json"),
+                directory.path().join("nix/pins/hcom.json"),
                 b"{\"hash\":\"old\"}\n",
             )
             .expect("pin");
@@ -740,7 +746,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt as _;
 
         let repository = TestRepository::new();
-        let pin = repository.path().join("nix/pins/example.json");
+        let pin = repository.path().join("nix/pins/hcom.json");
         std::fs::set_permissions(&pin, Permissions::from_mode(0o440)).expect("restrict pin");
 
         {
@@ -749,7 +755,7 @@ mod tests {
                 Transaction::begin(repository.repository(), &runner).expect("begin transaction");
             assert!(
                 transaction
-                    .replace("nix/pins/example.json", b"{\"hash\":\"new\"}\n")
+                    .replace("nix/pins/hcom.json", b"{\"hash\":\"new\"}\n")
                     .expect("replace pin")
             );
             assert_eq!(
@@ -784,9 +790,9 @@ mod tests {
         const REQUESTED_MODE: u32 = 0o4750;
 
         let repository = TestRepository::new();
-        let pin = repository.path().join("nix/pins/example.json");
+        let pin = repository.path().join("nix/pins/hcom.json");
         std::fs::set_permissions(&pin, Permissions::from_mode(0o750)).expect("make pin executable");
-        run_git(repository.path(), ["add", "nix/pins/example.json"]);
+        run_git(repository.path(), ["add", "nix/pins/hcom.json"]);
         run_git(
             repository.path(),
             ["commit", "-q", "-m", "make fixture executable"],
@@ -815,7 +821,7 @@ mod tests {
         let mut transaction =
             Transaction::begin(repository.repository(), &runner).expect("begin transaction");
         transaction
-            .replace("nix/pins/example.json", b"{\"hash\":\"new\"}\n")
+            .replace("nix/pins/hcom.json", b"{\"hash\":\"new\"}\n")
             .expect("replace pin");
 
         assert_eq!(
@@ -834,7 +840,7 @@ mod tests {
         use std::os::unix::fs::MetadataExt as _;
 
         let repository = TestRepository::new();
-        let pin = repository.path().join("nix/pins/example.json");
+        let pin = repository.path().join("nix/pins/hcom.json");
         let runner = SystemCommandRunner;
         let mut transaction =
             Transaction::begin(repository.repository(), &runner).expect("begin transaction");
@@ -843,7 +849,7 @@ mod tests {
 
         assert!(
             !transaction
-                .write_if_changed("nix/pins/example.json", b"{\"hash\":\"old\"}\n")
+                .write_if_changed("nix/pins/hcom.json", b"{\"hash\":\"old\"}\n")
                 .expect("identical write")
         );
 
@@ -862,11 +868,11 @@ mod tests {
         let repo = repository.repository();
         let mut transaction = Transaction::begin(repo.clone(), &runner).expect("begin transaction");
         transaction
-            .replace("nix/pins/example.json", b"{\"hash\":\"new\"}\n")
+            .replace("nix/pins/hcom.json", b"{\"hash\":\"new\"}\n")
             .expect("replace pin");
         transaction.commit().expect("commit transaction");
 
-        run_git(repository.path(), ["add", "nix/pins/example.json"]);
+        run_git(repository.path(), ["add", "nix/pins/hcom.json"]);
         run_git(repository.path(), ["commit", "-q", "-m", "updated"]);
         Transaction::begin(repo, &runner).expect("lock should be released");
     }
@@ -877,7 +883,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt as _;
 
         let repository = TestRepository::new();
-        let pin = repository.path().join("nix/pins/example.json");
+        let pin = repository.path().join("nix/pins/hcom.json");
         std::fs::set_permissions(&pin, Permissions::from_mode(0o440)).expect("restrict pin");
         let runner = SystemCommandRunner;
         let mut transaction =
@@ -906,12 +912,12 @@ mod tests {
     #[test]
     fn failed_commit_remains_active_for_explicit_rollback() {
         let repository = TestRepository::new();
-        let pin = repository.path().join("nix/pins/example.json");
+        let pin = repository.path().join("nix/pins/hcom.json");
         let runner = SystemCommandRunner;
         let mut transaction =
             Transaction::begin(repository.repository(), &runner).expect("begin transaction");
         transaction
-            .write_if_changed("nix/pins/example.json", b"{\"hash\":\"new\"}\n")
+            .write_if_changed("nix/pins/hcom.json", b"{\"hash\":\"new\"}\n")
             .expect("replace pin");
 
         let error = transaction
@@ -933,12 +939,12 @@ mod tests {
     #[test]
     fn rollback_preserves_restore_and_unlock_failures() {
         let repository = TestRepository::new();
-        let pin = repository.path().join("nix/pins/example.json");
+        let pin = repository.path().join("nix/pins/hcom.json");
         let runner = SystemCommandRunner;
         let mut transaction =
             Transaction::begin(repository.repository(), &runner).expect("begin transaction");
         transaction
-            .write_if_changed("nix/pins/example.json", b"{\"hash\":\"new\"}\n")
+            .write_if_changed("nix/pins/hcom.json", b"{\"hash\":\"new\"}\n")
             .expect("replace pin");
         std::fs::remove_file(&pin).expect("remove candidate file");
         std::fs::create_dir(&pin).expect("block restoration with a directory");
@@ -969,11 +975,11 @@ mod tests {
         transaction.commit().expect("commit transaction");
 
         assert!(matches!(
-            transaction.write_if_changed("nix/pins/example.json", b"changed\n"),
+            transaction.write_if_changed("nix/pins/hcom.json", b"changed\n"),
             Err(UpdateError::TransactionFinalized)
         ));
         assert!(matches!(
-            transaction.remove("nix/pins/example.json"),
+            transaction.remove("nix/pins/hcom.json"),
             Err(UpdateError::TransactionFinalized)
         ));
         assert!(matches!(
@@ -990,17 +996,17 @@ mod tests {
     fn rollback_removes_created_files_and_restores_deleted_files() {
         let repository = TestRepository::new();
         let runner = SystemCommandRunner;
-        let existing = repository.path().join("nix/pins/example.json");
-        let created = repository.path().join("nix/pins/created.json");
+        let existing = repository.path().join("nix/pins/hcom.json");
+        let created = repository.path().join("nix/pins/agent-browser.json");
 
         {
             let mut transaction =
                 Transaction::begin(repository.repository(), &runner).expect("begin transaction");
             transaction
-                .replace("nix/pins/created.json", b"{\"hash\":\"created\"}\n")
+                .replace("nix/pins/agent-browser.json", b"{\"hash\":\"created\"}\n")
                 .expect("create pin");
             transaction
-                .remove("nix/pins/example.json")
+                .remove("nix/pins/hcom.json")
                 .expect("delete pin");
             assert!(created.is_file());
             assert!(!existing.exists());
@@ -1021,13 +1027,13 @@ mod tests {
         let repo = repository.repository();
         let mut transaction = Transaction::begin(repo.clone(), &runner).expect("begin transaction");
         transaction
-            .replace("nix/pins/example.json", b"{\"hash\":\"new\"}\n")
+            .replace("nix/pins/hcom.json", b"{\"hash\":\"new\"}\n")
             .expect("replace pin");
 
         transaction.rollback().expect("explicit rollback");
 
         assert_eq!(
-            std::fs::read(repository.path().join("nix/pins/example.json")).expect("restored pin"),
+            std::fs::read(repository.path().join("nix/pins/hcom.json")).expect("restored pin"),
             b"{\"hash\":\"old\"}\n"
         );
         Transaction::begin(repo, &runner).expect("rollback should release lock");
@@ -1037,7 +1043,7 @@ mod tests {
     fn dirty_managed_files_are_rejected() {
         let repository = TestRepository::new();
         std::fs::write(
-            repository.path().join("nix/pins/example.json"),
+            repository.path().join("nix/pins/hcom.json"),
             b"{\"dirty\":true}\n",
         )
         .expect("dirty pin");
@@ -1061,7 +1067,7 @@ mod tests {
         let runner = SystemCommandRunner;
 
         let mut transaction =
-            Transaction::begin_scoped(repository.repository(), &runner, ["nix/pins/example.json"])
+            Transaction::begin_scoped(repository.repository(), &runner, ["nix/pins/hcom.json"])
                 .expect("unrelated dirty file is outside the selected scope");
         assert!(matches!(
             transaction.replace("flake.nix", b"{}\n"),
@@ -1081,9 +1087,9 @@ mod tests {
     #[test]
     fn staged_managed_files_are_rejected_and_failed_begin_releases_lock() {
         let repository = TestRepository::new();
-        let pin = repository.path().join("nix/pins/example.json");
+        let pin = repository.path().join("nix/pins/hcom.json");
         std::fs::write(&pin, b"{\"staged\":true}\n").expect("change pin");
-        run_git(repository.path(), ["add", "nix/pins/example.json"]);
+        run_git(repository.path(), ["add", "nix/pins/hcom.json"]);
         let runner = SystemCommandRunner;
 
         let error = Transaction::begin(repository.repository(), &runner)
@@ -1096,11 +1102,11 @@ mod tests {
 
         run_git(
             repository.path(),
-            ["reset", "-q", "HEAD", "--", "nix/pins/example.json"],
+            ["reset", "-q", "HEAD", "--", "nix/pins/hcom.json"],
         );
         run_git(
             repository.path(),
-            ["checkout", "-q", "--", "nix/pins/example.json"],
+            ["checkout", "-q", "--", "nix/pins/hcom.json"],
         );
         Transaction::begin(repository.repository(), &runner)
             .expect("failed begin should release lock");
@@ -1111,7 +1117,7 @@ mod tests {
         let error = check_managed_files_clean(
             Path::new("/unused"),
             &FailingDiffRunner,
-            &[PathBuf::from("nix/pins/example.json")],
+            &[PathBuf::from("nix/pins/hcom.json")],
         )
         .expect_err("git failure should propagate");
 
@@ -1128,7 +1134,7 @@ mod tests {
     #[test]
     fn rollback_restores_preexisting_untracked_pin() {
         let repository = TestRepository::new();
-        let pin = repository.path().join("nix/pins/untracked.json");
+        let pin = repository.path().join("nix/pins/agent-browser.json");
         std::fs::write(&pin, b"{\"hash\":\"original\"}\n").expect("untracked pin");
         let runner = SystemCommandRunner;
 
@@ -1160,6 +1166,10 @@ mod tests {
         let mut first = first;
         assert!(matches!(
             first.replace("README.md", b"no"),
+            Err(UpdateError::UnmanagedPath(_))
+        ));
+        assert!(matches!(
+            first.replace("nix/pins/unmanaged.json", b"no"),
             Err(UpdateError::UnmanagedPath(_))
         ));
         assert!(matches!(
@@ -1225,10 +1235,10 @@ mod tests {
 
         let target_repository = TestRepository::new();
         let outside = tempfile::tempdir().expect("outside directory");
-        let target = target_repository.path().join("nix/pins/example.json");
+        let target = target_repository.path().join("nix/pins/hcom.json");
         std::fs::remove_file(&target).expect("remove target");
         symlink(outside.path().join("outside.json"), &target).expect("target symlink");
-        run_git(target_repository.path(), ["add", "nix/pins/example.json"]);
+        run_git(target_repository.path(), ["add", "nix/pins/hcom.json"]);
         run_git(
             target_repository.path(),
             ["commit", "-q", "-m", "replace fixture with symlink"],
@@ -1240,10 +1250,7 @@ mod tests {
         ));
 
         let parent_repository = TestRepository::new();
-        run_git(
-            parent_repository.path(),
-            ["rm", "-q", "nix/pins/example.json"],
-        );
+        run_git(parent_repository.path(), ["rm", "-q", "nix/pins/hcom.json"]);
         run_git(
             parent_repository.path(),
             ["commit", "-q", "-m", "remove fixture pin"],
@@ -1254,7 +1261,7 @@ mod tests {
         let mut transaction =
             Transaction::begin(parent_repository.repository(), &runner).expect("begin transaction");
         assert!(matches!(
-            transaction.replace("nix/pins/created.json", b"no"),
+            transaction.replace("nix/pins/agent-browser.json", b"no"),
             Err(UpdateError::UnsafeManagedPath(_))
         ));
         assert!(!outside.path().join("created.json").exists());

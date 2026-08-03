@@ -4,8 +4,8 @@ use crate::cli::Target;
 use crate::command::CommandRunner;
 use crate::error::UpdateError;
 use crate::pins::PinDocument;
-use crate::registry::{AssetNaming, TargetKind, TargetSpec};
-use crate::targets::paired_version;
+use crate::registry::{AssetNaming, PairedSource, TargetKind, TargetSpec};
+use crate::targets::paired_input_version;
 use crate::transaction::Transaction;
 use crate::upstream::validate_release_version;
 use crate::value_validation::{validate_https_url, validate_sri_hash};
@@ -23,11 +23,7 @@ pub fn validate_target_input<R: CommandRunner>(
     transaction: &Transaction<'_, R>,
 ) -> Result<(), UpdateError> {
     match spec.kind {
-        TargetKind::PairedRelease {
-            repository,
-            pin,
-            input,
-        } => {
+        TargetKind::PairedRelease { pin, source } => {
             let document = load_pin(transaction, pin)?;
             validate_assets(
                 spec,
@@ -36,8 +32,7 @@ pub fn validate_target_input<R: CommandRunner>(
                 CANONICAL_SYSTEMS,
                 AssetNaming::NameField,
             )?;
-            let flake = transaction.read("flake.nix")?;
-            let version = paired_input_version(&flake, input, repository)?;
+            let version = validate_paired_source(source, transaction)?;
             validate_release_version(spec.name, &version)
         }
         TargetKind::Release {
@@ -106,8 +101,7 @@ pub fn validate_target_input<R: CommandRunner>(
                 &[package.build.dependency_hash_field],
             )?;
             let paired = package.dependencies.source();
-            let flake = transaction.read("flake.nix")?;
-            let version = paired_input_version(&flake, paired.input, paired.repository)?;
+            let version = validate_paired_source(paired, transaction)?;
             validate_release_version(spec.name, &version)
         }
         TargetKind::CodexApp { pin } => {
@@ -126,6 +120,34 @@ pub fn validate_target_input<R: CommandRunner>(
             spec.name
         ))),
     }
+}
+
+fn validate_paired_source<R: CommandRunner>(
+    source: PairedSource,
+    transaction: &Transaction<'_, R>,
+) -> Result<String, UpdateError> {
+    let authority = source.authority;
+    let source_bytes = transaction.read(authority.source_path)?;
+    let source_version = paired_input_version(
+        &source_bytes,
+        authority.source_path,
+        source.input,
+        source.repository,
+    )?;
+    let generated_bytes = transaction.read(authority.generated_flake_path)?;
+    let generated_version = paired_input_version(
+        &generated_bytes,
+        authority.generated_flake_path,
+        source.input,
+        source.repository,
+    )?;
+    if source_version != generated_version {
+        return Err(UpdateError::message(format!(
+            "{}: input {} has v{source_version}, but {} has v{generated_version}",
+            authority.source_path, source.input, authority.generated_flake_path
+        )));
+    }
+    Ok(source_version)
 }
 
 fn load_pin<R: CommandRunner>(
@@ -264,63 +286,9 @@ fn required_string<'a>(
     })
 }
 
-fn paired_input_version(
-    bytes: &[u8],
-    input: &str,
-    repository: &str,
-) -> Result<String, UpdateError> {
-    let text = std::str::from_utf8(bytes)
-        .map_err(|_| UpdateError::message("flake.nix: expected UTF-8"))?;
-    let marker = format!("{input} = {{");
-    let mut matches = Vec::new();
-    let mut offset = 0_usize;
-    for line in text.split_inclusive('\n') {
-        let line_without_newline = line.trim_end_matches(['\r', '\n']);
-        let trimmed = line_without_newline.trim_start();
-        if trimmed == marker {
-            matches.push(offset + line_without_newline.len() - trimmed.len());
-        }
-        offset += line.len();
-    }
-    if matches.len() != 1 {
-        return Err(UpdateError::message(format!(
-            "flake.nix: expected one input block for {input}, found {}",
-            matches.len()
-        )));
-    }
-    let block_start = matches[0];
-    let brace_start = block_start + marker.len() - 1;
-    let mut depth = 0_usize;
-    let mut block_end = None;
-    for (offset, character) in text[brace_start..].char_indices() {
-        match character {
-            '{' => depth += 1,
-            '}' => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    block_end = Some(brace_start + offset + character.len_utf8());
-                    break;
-                }
-            }
-            _ => {}
-        }
-    }
-    let block_end = block_end.ok_or_else(|| {
-        UpdateError::message(format!("flake.nix: unterminated input block for {input}"))
-    })?;
-    let block_version = paired_version(&bytes[block_start..block_end], repository)?;
-    let global_version = paired_version(bytes, repository)?;
-    if block_version != global_version {
-        return Err(UpdateError::message(format!(
-            "flake.nix: input {input} does not uniquely own github:{repository}"
-        )));
-    }
-    Ok(block_version)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::paired_input_version;
+    use crate::targets::paired_input_version;
 
     #[test]
     fn paired_repository_must_belong_to_the_declared_input() {
@@ -332,7 +300,8 @@ inputs = {
 };
 "#;
         assert_eq!(
-            paired_input_version(valid, "hcom-src", "aannoo/hcom").expect("paired input"),
+            paired_input_version(valid, "flake.nix", "hcom-src", "aannoo/hcom")
+                .expect("paired input"),
             "1.2.3"
         );
 
@@ -346,7 +315,7 @@ inputs = {
   };
 };
 "#;
-        assert!(paired_input_version(swapped, "hcom-src", "aannoo/hcom").is_err());
+        assert!(paired_input_version(swapped, "flake.nix", "hcom-src", "aannoo/hcom").is_err());
 
         let prefixed = br#"
 inputs = {
@@ -355,6 +324,6 @@ inputs = {
   };
 };
 "#;
-        assert!(paired_input_version(prefixed, "hcom-src", "aannoo/hcom").is_err());
+        assert!(paired_input_version(prefixed, "flake.nix", "hcom-src", "aannoo/hcom").is_err());
     }
 }

@@ -334,7 +334,8 @@ mod tests {
     };
     use crate::command::{CommandOutput, CommandSpec};
     use crate::registry::{
-        DependencyProvenance, DependencyScope, PackageBuildSpec, PairedSource, PnpmMajor,
+        DependencyProvenance, DependencyScope, InputAuthority, PackageBuildSpec, PairedSource,
+        PnpmMajor,
     };
 
     fn dependencies() -> DependencyProvenance {
@@ -342,6 +343,12 @@ mod tests {
             source: PairedSource {
                 repository: "owner/repo",
                 input: "demo-src",
+                authority: InputAuthority {
+                    source_path: "flake.nix",
+                    generated_flake_path: "flake.nix",
+                    lock_path: "flake.lock",
+                    generator: None,
+                },
             },
             lock_path: "pnpm-lock.yaml",
             workspace_path: "pnpm-workspace.yaml",

@@ -3,8 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::Value;
 
-use crate::registry::{TARGET_SPECS, Target, TargetKind, TargetSpec};
-use crate::targets::paired_version;
+use crate::registry::{PairedSource, TARGET_SPECS, Target, TargetKind, TargetSpec};
+use crate::targets::paired_input_version;
 use crate::validation::CANONICAL_SYSTEMS;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -186,19 +186,8 @@ pub fn diff_target(spec: &TargetSpec, before: &[FileState], after: &[FileState])
     let mut changes = Vec::new();
     let mut represented = BTreeSet::new();
     match spec.kind {
-        TargetKind::PairedRelease {
-            repository,
-            pin,
-            input,
-        } => {
-            record_paired_version(
-                spec,
-                repository,
-                before,
-                after,
-                &mut represented,
-                &mut changes,
-            );
+        TargetKind::PairedRelease { pin, source } => {
+            record_paired_version(spec, source, before, after, &mut represented, &mut changes);
             record_pin_changes(
                 spec,
                 pin,
@@ -210,8 +199,8 @@ pub fn diff_target(spec: &TargetSpec, before: &[FileState], after: &[FileState])
             );
             record_changed_file(
                 spec,
-                "flake.lock",
-                ChangeKind::FlakeInput(input.to_owned()),
+                source.authority.lock_path,
+                ChangeKind::FlakeInput(source.input.to_owned()),
                 before,
                 after,
                 &mut represented,
@@ -281,14 +270,7 @@ pub fn diff_target(spec: &TargetSpec, before: &[FileState], after: &[FileState])
             let crate::registry::PublishedArtifact::NpmRegistryTarball {
                 source_hash_field, ..
             } = package.artifact;
-            record_paired_version(
-                spec,
-                paired.repository,
-                before,
-                after,
-                &mut represented,
-                &mut changes,
-            );
+            record_paired_version(spec, paired, before, after, &mut represented, &mut changes);
             record_pin_changes(
                 spec,
                 package.pin,
@@ -303,7 +285,7 @@ pub fn diff_target(spec: &TargetSpec, before: &[FileState], after: &[FileState])
             );
             record_changed_file(
                 spec,
-                "flake.lock",
+                paired.authority.lock_path,
                 ChangeKind::FlakeInput(paired.input.to_owned()),
                 before,
                 after,
@@ -467,13 +449,13 @@ fn record_pin_changes(
 
 fn record_paired_version(
     spec: &TargetSpec,
-    repository: &str,
+    source: PairedSource,
     before: &[FileState],
     after: &[FileState],
     represented: &mut BTreeSet<&'static str>,
     changes: &mut Vec<Change>,
 ) {
-    let path = "flake.nix";
+    let path = source.authority.source_path;
     if !file_changed(path, before, after) {
         return;
     }
@@ -484,8 +466,8 @@ fn record_paired_version(
         return;
     };
     let (Ok(old), Ok(new)) = (
-        paired_version(old, repository),
-        paired_version(new, repository),
+        paired_input_version(old, path, source.input, source.repository),
+        paired_input_version(new, path, source.input, source.repository),
     ) else {
         return;
     };
@@ -631,7 +613,9 @@ fn target_order(target: Target) -> usize {
 #[cfg(test)]
 mod tests {
     use super::{Change, ChangeKind, DisplayValue, FileState, Ledger, Outcome, diff_target};
-    use crate::registry::{Target, target_spec};
+    use crate::registry::{
+        GeneratorCommand, InputAuthority, PairedSource, Target, TargetKind, TargetSpec, target_spec,
+    };
 
     fn change(target: Target, kind: ChangeKind) -> Change {
         Change {
@@ -793,7 +777,14 @@ mod tests {
                 "nix/pins/hcom.json",
                 br#"{"assets":{"aarch64-darwin":{"hash":"sha256-old"}}}"#,
             ),
-            state("flake.nix", br#"url = "github:aannoo/hcom/v1.0.0";"#),
+            state(
+                "flake.nix",
+                br#"inputs = {
+  hcom-src = {
+    url = "github:aannoo/hcom/v1.0.0";
+  };
+};"#,
+            ),
             state("flake.lock", br#"{"nodes":{"old":{}}}"#),
         ];
         let hcom_after = [
@@ -801,7 +792,14 @@ mod tests {
                 "nix/pins/hcom.json",
                 br#"{"assets":{"aarch64-darwin":{"hash":"sha256-new"}}}"#,
             ),
-            state("flake.nix", br#"url = "github:aannoo/hcom/v2.0.0";"#),
+            state(
+                "flake.nix",
+                br#"inputs = {
+  hcom-src = {
+    url = "github:aannoo/hcom/v2.0.0";
+  };
+};"#,
+            ),
             state("flake.lock", br#"{"nodes":{"new":{}}}"#),
         ];
         assert_eq!(
@@ -907,7 +905,14 @@ mod tests {
                 "nix/pins/difit.json",
                 br#"{"srcHash":"sha256-old","pnpmDepsHash":"sha256-old"}"#,
             ),
-            state("flake.nix", br#"url = "github:yoshiko-pg/difit/v1.0.0";"#),
+            state(
+                "flake.nix",
+                br#"inputs = {
+  difit-src = {
+    url = "github:yoshiko-pg/difit/v1.0.0";
+  };
+};"#,
+            ),
             state("flake.lock", br#"{"nodes":{"old":{}}}"#),
         ];
         let after = [
@@ -915,7 +920,14 @@ mod tests {
                 "nix/pins/difit.json",
                 br#"{"srcHash":"sha256-new","pnpmDepsHash":"sha256-new"}"#,
             ),
-            state("flake.nix", br#"url = "github:yoshiko-pg/difit/v2.0.0";"#),
+            state(
+                "flake.nix",
+                br#"inputs = {
+  difit-src = {
+    url = "github:yoshiko-pg/difit/v2.0.0";
+  };
+};"#,
+            ),
             state("flake.lock", br#"{"nodes":{"new":{}}}"#),
         ];
         let changes = diff_target(difit, &before, &after);
@@ -930,6 +942,85 @@ mod tests {
                 ChangeKind::SourceHash,
                 ChangeKind::DependencyHash,
                 ChangeKind::FlakeInput("difit-src".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn paired_diff_uses_dynamic_authority_generated_flake_and_lock_paths() {
+        const MANAGED_PATHS: &[&str] = &[
+            "nix/pins/example.json",
+            "modules/features/example.nix",
+            "flake.nix",
+            "locks/example.lock",
+        ];
+        let spec = TargetSpec {
+            target: Target::Hcom,
+            name: "future-layout",
+            kind: TargetKind::PairedRelease {
+                pin: "nix/pins/example.json",
+                source: PairedSource {
+                    repository: "owner/example",
+                    input: "example-src",
+                    authority: InputAuthority {
+                        source_path: "modules/features/example.nix",
+                        generated_flake_path: "flake.nix",
+                        lock_path: "locks/example.lock",
+                        generator: Some(GeneratorCommand {
+                            program: "nix",
+                            args: &["run", ".#write-flake"],
+                        }),
+                    },
+                },
+            },
+            managed_paths: MANAGED_PATHS,
+        };
+        let before = [
+            state("nix/pins/example.json", br#"{"hash":"unchanged"}"#),
+            state(
+                "modules/features/example.nix",
+                br#"flake-file.inputs.example-src = {
+  url = "github:owner/example/v1.2.3";
+};"#,
+            ),
+            state(
+                "flake.nix",
+                br#"inputs = {
+  example-src = {
+    url = "github:owner/example/v1.2.3";
+  };
+};"#,
+            ),
+            state("locks/example.lock", b"old lock"),
+        ];
+        let after = [
+            state("nix/pins/example.json", br#"{"hash":"unchanged"}"#),
+            state(
+                "modules/features/example.nix",
+                br#"flake-file.inputs.example-src = {
+  url = "github:owner/example/v2.0.0";
+};"#,
+            ),
+            state(
+                "flake.nix",
+                br#"inputs = {
+  example-src = {
+    url = "github:owner/example/v2.0.0";
+  };
+};"#,
+            ),
+            state("locks/example.lock", b"new lock"),
+        ];
+
+        assert_eq!(
+            diff_target(&spec, &before, &after)
+                .into_iter()
+                .map(|change| change.kind)
+                .collect::<Vec<_>>(),
+            [
+                ChangeKind::Version,
+                ChangeKind::FlakeInput("example-src".into()),
+                ChangeKind::ManagedFile("flake.nix".into()),
             ]
         );
     }

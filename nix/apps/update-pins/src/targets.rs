@@ -19,7 +19,8 @@ use crate::prefetch::{
     tar_preflight_limits,
 };
 use crate::registry::{
-    AssetNaming, PublishedArtifact, PublishedNodePackageSpec, TargetKind, TargetSpec, target_spec,
+    AssetNaming, PairedSource, PublishedArtifact, PublishedNodePackageSpec, TargetKind, TargetSpec,
+    target_spec,
 };
 use crate::transaction::Transaction;
 use crate::upstream::{latest_npm_version, latest_tag, validate_release_version};
@@ -56,11 +57,9 @@ pub fn run_target<R: CommandRunner + Sync>(
         })
         .collect::<Result<Vec<_>, _>>()?;
     let result = match spec.kind {
-        TargetKind::PairedRelease {
-            repository,
-            pin,
-            input,
-        } => update_paired_release(spec, repository, pin, input, policy, runner, transaction),
+        TargetKind::PairedRelease { pin, source } => {
+            update_paired_release(spec, source, pin, policy, runner, transaction)
+        }
         TargetKind::Release {
             repository,
             pin,
@@ -129,13 +128,13 @@ pub fn run_target<R: CommandRunner + Sync>(
 
 fn update_paired_release<R: CommandRunner + Sync>(
     spec: &TargetSpec,
-    repository: &str,
+    source: PairedSource,
     pin_path: &str,
-    input: &str,
     policy: RunPolicy,
     runner: &R,
     transaction: &mut Transaction<'_, R>,
 ) -> Result<bool, UpdateError> {
+    let repository = source.repository;
     let tag = latest_tag(policy, runner, transaction.root(), repository)?;
     let Some(version) = tag.strip_prefix('v') else {
         return Err(UpdateError::message(format!(
@@ -145,8 +144,13 @@ fn update_paired_release<R: CommandRunner + Sync>(
     };
     validate_release_version(spec.name, version)?;
 
-    let flake = transaction.read("flake.nix")?;
-    let current = paired_version(&flake, repository)?;
+    let authority = transaction.read(source.authority.source_path)?;
+    let current = paired_input_version(
+        &authority,
+        source.authority.source_path,
+        source.input,
+        repository,
+    )?;
     if version == current && !policy.force {
         println!("{}: {current} (up to date)", spec.name);
         return Ok(false);
@@ -172,7 +176,7 @@ fn update_paired_release<R: CommandRunner + Sync>(
     write_pin(transaction, pin_path, &pin)?;
 
     if version != current {
-        update_paired_flake_input(input, repository, version, &flake, runner, transaction)?;
+        update_paired_input(source, version, &authority, runner, transaction)?;
     }
     Ok(true)
 }
@@ -285,9 +289,14 @@ fn update_published_node_package<R: CommandRunner>(
     validate_unscoped_npm_package_name(spec.name, npm_package)?;
     let paired = package.dependencies.source();
     let pin_path = package.pin;
-    let flake = transaction.read("flake.nix")?;
+    let authority = transaction.read(paired.authority.source_path)?;
     let mut pin = load_pin(transaction, pin_path)?;
-    let current = paired_version(&flake, paired.repository)?;
+    let current = paired_input_version(
+        &authority,
+        paired.authority.source_path,
+        paired.input,
+        paired.repository,
+    )?;
     let version = latest_npm_version(policy, runner, transaction.root(), npm_package)?;
     validate_release_version(spec.name, &version)?;
     if version == current && !policy.force {
@@ -339,14 +348,7 @@ fn update_published_node_package<R: CommandRunner>(
     )?;
     pin.set_string(&[source_hash_field], source.hash)?;
     if version != current {
-        update_paired_flake_input(
-            paired.input,
-            paired.repository,
-            &version,
-            &flake,
-            runner,
-            transaction,
-        )?;
+        update_paired_input(paired, &version, &authority, runner, transaction)?;
     }
     let dependency_hash = compute_candidate_dependency_hash(
         spec.name,
@@ -537,16 +539,47 @@ fn validate_unscoped_npm_package_name(label: &str, package: &str) -> Result<(), 
     Ok(())
 }
 
-fn update_paired_flake_input<R: CommandRunner>(
-    input: &str,
-    repository: &str,
+pub(crate) fn update_paired_input<R: CommandRunner>(
+    source: PairedSource,
     version: &str,
-    flake: &[u8],
+    authority: &[u8],
     runner: &R,
     transaction: &mut Transaction<'_, R>,
 ) -> Result<(), UpdateError> {
-    let updated_flake = replace_paired_version(flake, repository, version)?;
-    transaction.write_if_changed("flake.nix", &updated_flake)?;
+    let input = source.input;
+    let repository = source.repository;
+    let authority_spec = source.authority;
+    let updated_authority = replace_paired_input_version(
+        authority,
+        authority_spec.source_path,
+        input,
+        repository,
+        version,
+    )?;
+    transaction.write_if_changed(authority_spec.source_path, &updated_authority)?;
+
+    if let Some(generator) = authority_spec.generator {
+        println!("{input}: regenerating candidate flake");
+        let command = CommandSpec::new(generator.program)
+            .args(generator.args.iter().copied())
+            .current_dir(transaction.root());
+        run_mutating_command_once(runner, &command)?;
+    }
+
+    let generated_flake = transaction.read(authority_spec.generated_flake_path)?;
+    let generated_version = paired_input_version(
+        &generated_flake,
+        authority_spec.generated_flake_path,
+        input,
+        repository,
+    )?;
+    if generated_version != version {
+        return Err(UpdateError::message(format!(
+            "{}: generated input {input} has v{generated_version}, expected v{version}",
+            authority_spec.generated_flake_path
+        )));
+    }
+
     println!("{input}: preparing candidate flake input v{version}");
     // Mutating commands are deliberately single-shot; bounded retry applies only to reads.
     let command = CommandSpec::new("nix")
@@ -734,55 +767,449 @@ pub(crate) fn write_pin<R: CommandRunner>(
     Ok(())
 }
 
-pub(crate) fn paired_version(bytes: &[u8], repository: &str) -> Result<String, UpdateError> {
-    let text = std::str::from_utf8(bytes)
-        .map_err(|_| UpdateError::message("update-pins: flake.nix is not valid UTF-8"))?;
-    let matches = paired_version_matches(text, repository);
-    if matches.len() != 1 {
-        return Err(UpdateError::message(format!(
-            "update-pins: expected one tagged flake input URL for {repository}, found {}",
-            matches.len()
-        )));
-    }
-    Ok(matches[0].2.to_owned())
+pub(crate) fn paired_input_version(
+    bytes: &[u8],
+    label: &str,
+    input: &str,
+    repository: &str,
+) -> Result<String, UpdateError> {
+    parse_paired_input(bytes, label, input, repository).map(|paired| paired.version.to_owned())
 }
 
-fn replace_paired_version(
+fn replace_paired_input_version(
     bytes: &[u8],
+    label: &str,
+    input: &str,
     repository: &str,
     version: &str,
 ) -> Result<Vec<u8>, UpdateError> {
+    validate_release_version(&format!("{label}: input {input} candidate"), version)?;
     let text = std::str::from_utf8(bytes)
-        .map_err(|_| UpdateError::message("update-pins: flake.nix is not valid UTF-8"))?;
-    let matches = paired_version_matches(text, repository);
-    if matches.len() != 1 {
-        return Err(UpdateError::message(format!(
-            "update-pins: expected one tagged flake input URL for {repository}, found {}",
-            matches.len()
-        )));
-    }
-    let (start, end, _) = matches[0];
-    let mut updated = String::with_capacity(text.len() - (end - start) + version.len());
-    updated.push_str(&text[..start]);
+        .map_err(|_| UpdateError::message(format!("{label}: expected UTF-8")))?;
+    let paired = parse_paired_input(bytes, label, input, repository)?;
+    let mut updated = String::with_capacity(
+        text.len() - (paired.version_end - paired.version_start) + version.len(),
+    );
+    updated.push_str(&text[..paired.version_start]);
     updated.push_str(version);
-    updated.push_str(&text[end..]);
+    updated.push_str(&text[paired.version_end..]);
     Ok(updated.into_bytes())
 }
 
-fn paired_version_matches<'a>(text: &'a str, repository: &str) -> Vec<(usize, usize, &'a str)> {
-    let prefix = format!("url = \"github:{repository}/v");
-    text.match_indices(&prefix)
-        .filter_map(|(match_start, _)| {
-            let version_start = match_start + prefix.len();
-            let tail = &text[version_start..];
-            let version_end = tail.find("\";")? + version_start;
-            Some((
-                version_start,
-                version_end,
-                &text[version_start..version_end],
-            ))
+#[derive(Clone, Copy, Debug)]
+struct PairedVersionMatch<'a> {
+    assignment_start: usize,
+    version_start: usize,
+    version_end: usize,
+    version: &'a str,
+}
+
+fn parse_paired_input<'a>(
+    bytes: &'a [u8],
+    label: &str,
+    input: &str,
+    repository: &str,
+) -> Result<PairedVersionMatch<'a>, UpdateError> {
+    let text = std::str::from_utf8(bytes)
+        .map_err(|_| UpdateError::message(format!("{label}: expected UTF-8")))?;
+    let nested_marker = format!("{input} = {{");
+    let flake_file_marker = format!("flake-file.inputs.{input} = {{");
+    let normal_code = normal_code_mask(text);
+    let brace_depths = normal_brace_depths(text, &normal_code);
+    let root_input_blocks = normal_block_ranges(text, "inputs = {", &normal_code)
+        .into_iter()
+        .filter(|(start, _)| is_root_input_block(text, *start, &normal_code, &brace_depths))
+        .collect::<Vec<_>>();
+    let mut declarations = Vec::new();
+    let mut line_offset = 0_usize;
+    for line in text.split_inclusive('\n') {
+        let line_without_newline = line.trim_end_matches(['\r', '\n']);
+        let trimmed = line_without_newline.trim_start();
+        let marker = if trimmed == nested_marker {
+            Some((nested_marker.as_str(), true))
+        } else if trimmed == flake_file_marker {
+            Some((flake_file_marker.as_str(), false))
+        } else {
+            None
+        };
+        if let Some((marker, needs_root_input_block)) = marker {
+            let declaration_start = line_offset + line_without_newline.len() - trimmed.len();
+            if !normal_code[declaration_start] {
+                line_offset += line.len();
+                continue;
+            }
+            let brace_start = declaration_start + marker.len() - 1;
+            let block_end = matching_brace_end(text, brace_start).ok_or_else(|| {
+                UpdateError::message(format!(
+                    "{label}: unterminated input declaration for {input}"
+                ))
+            })?;
+            if needs_root_input_block
+                && !root_input_blocks.iter().any(|(inputs_start, inputs_end)| {
+                    declaration_start > *inputs_start
+                        && block_end < *inputs_end
+                        && brace_depths[declaration_start] == brace_depths[*inputs_start] + 1
+                })
+            {
+                line_offset += line.len();
+                continue;
+            }
+            declarations.push((declaration_start, block_end));
+        }
+        line_offset += line.len();
+    }
+    if declarations.len() != 1 {
+        return Err(UpdateError::message(format!(
+            "{label}: expected one input declaration for {input}, found {}",
+            declarations.len()
+        )));
+    }
+
+    let matches = paired_version_matches(text, repository);
+    let (block_start, block_end) = declarations[0];
+    let block_matches = matches
+        .iter()
+        .filter(|paired| {
+            paired.version_start >= block_start
+                && paired.version_end <= block_end
+                && brace_depths[paired.assignment_start] == brace_depths[block_start] + 1
         })
-        .collect()
+        .copied()
+        .collect::<Vec<_>>();
+    if matches.len() != 1 || block_matches.len() != 1 {
+        return Err(UpdateError::message(format!(
+            "{label}: input {input} does not uniquely own github:{repository}"
+        )));
+    }
+    let paired = block_matches[0];
+    validate_release_version(&format!("{label}: input {input}"), paired.version)?;
+    Ok(paired)
+}
+
+fn normal_brace_depths(text: &str, normal_code: &[bool]) -> Vec<usize> {
+    let mut depths = vec![0; text.len()];
+    let mut depth = 0_usize;
+    for (index, byte) in text.bytes().enumerate() {
+        depths[index] = depth;
+        if normal_code[index] {
+            match byte {
+                b'{' => depth += 1,
+                b'}' => depth = depth.saturating_sub(1),
+                _ => {}
+            }
+        }
+    }
+    depths
+}
+
+fn is_root_input_block(
+    text: &str,
+    inputs_start: usize,
+    normal_code: &[bool],
+    brace_depths: &[usize],
+) -> bool {
+    match brace_depths[inputs_start] {
+        // Unit fixtures may omit the enclosing root attrset while preserving
+        // the exact root-level input declaration shape.
+        0 => true,
+        1 => {
+            let Some(parent) = enclosing_open_brace(text, inputs_start, normal_code) else {
+                return false;
+            };
+            text.bytes()
+                .enumerate()
+                .find(|(index, byte)| normal_code[*index] && !byte.is_ascii_whitespace())
+                .is_some_and(|(first, _)| first == parent)
+        }
+        _ => false,
+    }
+}
+
+fn enclosing_open_brace(text: &str, offset: usize, normal_code: &[bool]) -> Option<usize> {
+    let mut stack = Vec::new();
+    for (index, byte) in text.bytes().enumerate().take(offset) {
+        if !normal_code[index] {
+            continue;
+        }
+        match byte {
+            b'{' => stack.push(index),
+            b'}' => {
+                stack.pop()?;
+            }
+            _ => {}
+        }
+    }
+    stack.last().copied()
+}
+
+fn normal_block_ranges(text: &str, marker: &str, normal_code: &[bool]) -> Vec<(usize, usize)> {
+    let mut ranges = Vec::new();
+    let mut line_offset = 0_usize;
+    for line in text.split_inclusive('\n') {
+        let line_without_newline = line.trim_end_matches(['\r', '\n']);
+        let trimmed = line_without_newline.trim_start();
+        if trimmed == marker {
+            let start = line_offset + line_without_newline.len() - trimmed.len();
+            if normal_code[start] {
+                let brace_start = start + marker.len() - 1;
+                if let Some(end) = matching_brace_end(text, brace_start) {
+                    ranges.push((start, end));
+                }
+            }
+        }
+        line_offset += line.len();
+    }
+    ranges
+}
+
+fn matching_brace_end(text: &str, brace_start: usize) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut index = brace_start;
+    let mut depth = 0_usize;
+    let mut state = LexicalState::Normal;
+    while index < bytes.len() {
+        match state {
+            LexicalState::Normal => match bytes[index] {
+                b'{' => depth += 1,
+                b'}' => {
+                    depth = depth.checked_sub(1)?;
+                    if depth == 0 {
+                        return Some(index + 1);
+                    }
+                }
+                b'"' => state = LexicalState::String,
+                b'\'' if bytes.get(index + 1) == Some(&b'\'') => {
+                    state = LexicalState::IndentedString;
+                    index += 1;
+                }
+                b'#' => state = LexicalState::LineComment,
+                b'/' if bytes.get(index + 1) == Some(&b'*') => {
+                    state = LexicalState::BlockComment;
+                    index += 1;
+                }
+                _ => {}
+            },
+            LexicalState::String => match bytes[index] {
+                b'\\' => index += usize::from(index + 1 < bytes.len()),
+                b'"' => state = LexicalState::Normal,
+                _ => {}
+            },
+            LexicalState::IndentedString => {
+                if let Some(length) = indented_string_escape_length(bytes, index) {
+                    index += length - 1;
+                } else if indented_string_pair(bytes, index) {
+                    state = LexicalState::Normal;
+                    index += 1;
+                }
+            }
+            LexicalState::LineComment => {
+                if bytes[index] == b'\n' {
+                    state = LexicalState::Normal;
+                }
+            }
+            LexicalState::BlockComment => {
+                if bytes[index] == b'*' && bytes.get(index + 1) == Some(&b'/') {
+                    state = LexicalState::Normal;
+                    index += 1;
+                }
+            }
+        }
+        index += 1;
+    }
+    None
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LexicalState {
+    Normal,
+    String,
+    IndentedString,
+    LineComment,
+    BlockComment,
+}
+
+fn indented_string_pair(bytes: &[u8], index: usize) -> bool {
+    bytes.get(index) == Some(&b'\'') && bytes.get(index + 1) == Some(&b'\'')
+}
+
+fn indented_string_escape_length(bytes: &[u8], index: usize) -> Option<usize> {
+    if !indented_string_pair(bytes, index) {
+        return None;
+    }
+    match bytes.get(index + 2) {
+        Some(b'\'' | b'\\') => Some(3),
+        Some(b'$') if bytes.get(index + 3) == Some(&b'{') => Some(2),
+        _ => None,
+    }
+}
+
+fn normal_code_mask(text: &str) -> Vec<bool> {
+    let bytes = text.as_bytes();
+    let mut normal = vec![false; bytes.len()];
+    let mut index = 0_usize;
+    let mut state = LexicalState::Normal;
+    while index < bytes.len() {
+        match state {
+            LexicalState::Normal => {
+                normal[index] = true;
+                match bytes[index] {
+                    b'"' => {
+                        normal[index] = false;
+                        state = LexicalState::String;
+                    }
+                    b'\'' if bytes.get(index + 1) == Some(&b'\'') => {
+                        normal[index] = false;
+                        normal[index + 1] = false;
+                        state = LexicalState::IndentedString;
+                        index += 1;
+                    }
+                    b'#' => {
+                        normal[index] = false;
+                        state = LexicalState::LineComment;
+                    }
+                    b'/' if bytes.get(index + 1) == Some(&b'*') => {
+                        normal[index] = false;
+                        normal[index + 1] = false;
+                        state = LexicalState::BlockComment;
+                        index += 1;
+                    }
+                    _ => {}
+                }
+            }
+            LexicalState::String => match bytes[index] {
+                b'\\' => index += usize::from(index + 1 < bytes.len()),
+                b'"' => state = LexicalState::Normal,
+                _ => {}
+            },
+            LexicalState::IndentedString => {
+                if let Some(length) = indented_string_escape_length(bytes, index) {
+                    index += length - 1;
+                } else if indented_string_pair(bytes, index) {
+                    state = LexicalState::Normal;
+                    index += 1;
+                }
+            }
+            LexicalState::LineComment => {
+                if bytes[index] == b'\n' {
+                    normal[index] = true;
+                    state = LexicalState::Normal;
+                }
+            }
+            LexicalState::BlockComment => {
+                if bytes[index] == b'*' && bytes.get(index + 1) == Some(&b'/') {
+                    state = LexicalState::Normal;
+                    index += 1;
+                }
+            }
+        }
+        index += 1;
+    }
+    normal
+}
+
+fn paired_version_matches<'a>(text: &'a str, repository: &str) -> Vec<PairedVersionMatch<'a>> {
+    let bytes = text.as_bytes();
+    let prefix = format!("github:{repository}/v");
+    let mut matches = Vec::new();
+    let mut index = 0_usize;
+    let mut state = LexicalState::Normal;
+    let mut string_start = 0_usize;
+    while index < bytes.len() {
+        match state {
+            LexicalState::Normal => match bytes[index] {
+                b'"' => {
+                    state = LexicalState::String;
+                    string_start = index + 1;
+                }
+                b'\'' if bytes.get(index + 1) == Some(&b'\'') => {
+                    state = LexicalState::IndentedString;
+                    index += 1;
+                }
+                b'#' => state = LexicalState::LineComment,
+                b'/' if bytes.get(index + 1) == Some(&b'*') => {
+                    state = LexicalState::BlockComment;
+                    index += 1;
+                }
+                _ => {}
+            },
+            LexicalState::String => match bytes[index] {
+                b'\\' => index += usize::from(index + 1 < bytes.len()),
+                b'"' => {
+                    let contents = &text[string_start..index];
+                    if let Some(version) = contents.strip_prefix(&prefix)
+                        && !version.is_empty()
+                        && let Some(assignment_start) =
+                            url_assignment_start(text, string_start - 1, index)
+                    {
+                        matches.push(PairedVersionMatch {
+                            assignment_start,
+                            version_start: string_start + prefix.len(),
+                            version_end: index,
+                            version,
+                        });
+                    }
+                    state = LexicalState::Normal;
+                }
+                _ => {}
+            },
+            LexicalState::IndentedString => {
+                if let Some(length) = indented_string_escape_length(bytes, index) {
+                    index += length - 1;
+                } else if indented_string_pair(bytes, index) {
+                    state = LexicalState::Normal;
+                    index += 1;
+                }
+            }
+            LexicalState::LineComment => {
+                if bytes[index] == b'\n' {
+                    state = LexicalState::Normal;
+                }
+            }
+            LexicalState::BlockComment => {
+                if bytes[index] == b'*' && bytes.get(index + 1) == Some(&b'/') {
+                    state = LexicalState::Normal;
+                    index += 1;
+                }
+            }
+        }
+        index += 1;
+    }
+    matches
+}
+
+fn url_assignment_start(text: &str, quote_start: usize, quote_end: usize) -> Option<usize> {
+    let bytes = text.as_bytes();
+    let mut after = quote_end + 1;
+    while after < bytes.len() && bytes[after].is_ascii_whitespace() {
+        after += 1;
+    }
+    if bytes.get(after) != Some(&b';') {
+        return None;
+    }
+
+    let mut cursor = quote_start;
+    while cursor > 0 && bytes[cursor - 1].is_ascii_whitespace() {
+        cursor -= 1;
+    }
+    if cursor == 0 || bytes[cursor - 1] != b'=' {
+        return None;
+    }
+    cursor -= 1;
+    while cursor > 0 && bytes[cursor - 1].is_ascii_whitespace() {
+        cursor -= 1;
+    }
+    if cursor < 3 || &bytes[cursor - 3..cursor] != b"url" {
+        return None;
+    }
+    let attribute_start = cursor - 3;
+    let mut before = attribute_start;
+    while before > 0 && matches!(bytes[before - 1], b' ' | b'\t' | b'\r') {
+        before -= 1;
+    }
+    if before > 0 && !matches!(bytes[before - 1], b'\n' | b'{' | b';') {
+        return None;
+    }
+    Some(attribute_start)
 }
 
 #[cfg(test)]
@@ -800,10 +1227,10 @@ mod tests {
     use tempfile::TempDir;
 
     use super::{
-        MUTATING_COMMAND_OUTPUT_LIMIT, MUTATING_COMMAND_TIMEOUT, is_implemented, paired_version,
-        read_npm_package_json, read_npm_package_json_with_limits, refresh_assets_with,
-        replace_paired_version, run_mutating_command_once, run_target, validate_npm_identity,
-        validate_unscoped_npm_package_name,
+        MUTATING_COMMAND_OUTPUT_LIMIT, MUTATING_COMMAND_TIMEOUT, is_implemented,
+        paired_input_version, read_npm_package_json, read_npm_package_json_with_limits,
+        refresh_assets_with, replace_paired_input_version, run_mutating_command_once, run_target,
+        validate_npm_identity, validate_unscoped_npm_package_name,
     };
     use crate::cli::Target;
     use crate::command::{CommandOutput, CommandRunner, CommandSpec, SystemCommandRunner};
@@ -857,6 +1284,87 @@ mod tests {
         stdout_limit: Cell<usize>,
         stderr_limit: Cell<usize>,
         timeout: Cell<Duration>,
+    }
+
+    struct FutureLayoutRunner {
+        failure: Option<&'static str>,
+        commands: RefCell<Vec<CommandSpec>>,
+    }
+
+    impl CommandRunner for FutureLayoutRunner {
+        fn run(&self, command: &CommandSpec) -> Result<CommandOutput, UpdateError> {
+            if command.program == Path::new("git") {
+                SystemCommandRunner.run(command)
+            } else {
+                panic!("unexpected unbounded command {}", command.display());
+            }
+        }
+
+        fn run_limited_with_timeout(
+            &self,
+            command: &CommandSpec,
+            _stdout_limit: usize,
+            _stderr_limit: usize,
+            _timeout: Duration,
+        ) -> Result<CommandOutput, UpdateError> {
+            self.commands.borrow_mut().push(command.clone());
+            let args = command
+                .args
+                .iter()
+                .map(|argument| argument.to_string_lossy().into_owned())
+                .collect::<Vec<_>>();
+            let root = command.cwd.as_deref().expect("fixture command cwd");
+            if args == ["run", ".#write-flake"] {
+                if self.failure == Some("generator") {
+                    std::fs::write(root.join("flake.nix"), b"partial generated flake\n")
+                        .expect("partial generated flake");
+                    return Ok(CommandOutput {
+                        status: Some(1),
+                        stdout: Vec::new(),
+                        stderr: b"generator failed".to_vec(),
+                    });
+                }
+                let module = std::fs::read(root.join("modules/features/example.nix"))
+                    .expect("future authority module");
+                let version = paired_input_version(
+                    &module,
+                    "modules/features/example.nix",
+                    "example-src",
+                    "owner/example",
+                )
+                .expect("future authority version");
+                std::fs::write(
+                    root.join("flake.nix"),
+                    format!(
+                        "inputs = {{\n  example-src = {{\n    url = \"github:owner/example/v{version}\";\n  }};\n}};\n"
+                    ),
+                )
+                .expect("generated flake");
+            } else if args == ["flake", "update", "example-src"] {
+                if self.failure == Some("lock") {
+                    std::fs::write(root.join("flake.lock"), b"partial lock\n")
+                        .expect("partial lock");
+                    return Ok(CommandOutput {
+                        status: Some(1),
+                        stdout: Vec::new(),
+                        stderr: b"lock update failed".to_vec(),
+                    });
+                }
+                std::fs::write(root.join("flake.lock"), b"candidate lock\n")
+                    .expect("candidate lock");
+            } else {
+                panic!("unexpected future-layout command {}", command.display());
+            }
+            Ok(CommandOutput {
+                status: Some(0),
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+            })
+        }
+
+        fn is_available(&self, _program: &Path) -> bool {
+            false
+        }
     }
 
     struct CurrentMetadataRunner {
@@ -984,21 +1492,291 @@ mod tests {
         assert_eq!(runner.timeout.get(), MUTATING_COMMAND_TIMEOUT);
     }
 
+    fn future_layout_source() -> crate::registry::PairedSource {
+        crate::registry::PairedSource {
+            repository: "owner/example",
+            input: "example-src",
+            authority: crate::registry::InputAuthority {
+                source_path: "modules/features/example.nix",
+                generated_flake_path: "flake.nix",
+                lock_path: "flake.lock",
+                generator: Some(crate::registry::GeneratorCommand {
+                    program: "nix",
+                    args: &["run", ".#write-flake"],
+                }),
+            },
+        }
+    }
+
+    fn future_layout_repository() -> TempDir {
+        let repository = TempDir::new().expect("future-layout repository");
+        run_fixture_git(repository.path(), ["init", "-q"]);
+        run_fixture_git(
+            repository.path(),
+            ["config", "user.email", "test@example.invalid"],
+        );
+        run_fixture_git(
+            repository.path(),
+            ["config", "user.name", "future layout test"],
+        );
+        run_fixture_git(repository.path(), ["config", "commit.gpgsign", "false"]);
+        std::fs::create_dir_all(repository.path().join("modules/features"))
+            .expect("future module directory");
+        std::fs::write(
+            repository.path().join("modules/features/example.nix"),
+            b"{ ... }:\n{\n  flake-file.inputs.example-src = {\n    url = \"github:owner/example/v1.2.3\";\n  };\n}\n",
+        )
+        .expect("future authority");
+        std::fs::write(
+            repository.path().join("flake.nix"),
+            b"inputs = {\n  example-src = {\n    url = \"github:owner/example/v1.2.3\";\n  };\n};\n",
+        )
+        .expect("future generated flake");
+        std::fs::write(repository.path().join("flake.lock"), b"original lock\n")
+            .expect("future lock");
+        run_fixture_git(repository.path(), ["add", "."]);
+        run_fixture_git(repository.path(), ["commit", "-q", "-m", "initial"]);
+        repository
+    }
+
     #[test]
-    fn paired_flake_version_requires_exactly_one_match_and_preserves_bytes() {
-        let original =
-            b"inputs.demo = {\n  url = \"github:owner/repo/v1.2.3\";\n  flake = false;\n};\n";
+    fn future_module_authority_generates_flake_then_updates_lock_in_one_transaction() {
+        let repository = future_layout_repository();
+        let source = future_layout_source();
+        let runner = FutureLayoutRunner {
+            failure: None,
+            commands: RefCell::new(Vec::new()),
+        };
+        let repository_handle =
+            Repository::discover_in(&SystemCommandRunner, repository.path()).expect("repository");
+        let managed = [
+            source.authority.source_path,
+            source.authority.generated_flake_path,
+            source.authority.lock_path,
+        ];
+        let mut transaction =
+            Transaction::begin_scoped(repository_handle, &runner, managed).expect("transaction");
+        let authority = transaction
+            .read(source.authority.source_path)
+            .expect("authority bytes");
+
+        super::update_paired_input(source, "2.0.0", &authority, &runner, &mut transaction)
+            .expect("future paired update");
+
+        assert!(
+            std::fs::read_to_string(repository.path().join("modules/features/example.nix"))
+                .expect("updated authority")
+                .contains("v2.0.0")
+        );
+        assert!(
+            std::fs::read_to_string(repository.path().join("flake.nix"))
+                .expect("updated generated flake")
+                .contains("v2.0.0")
+        );
         assert_eq!(
-            paired_version(original, "owner/repo").expect("paired version"),
+            std::fs::read(repository.path().join("flake.lock")).expect("updated lock"),
+            b"candidate lock\n"
+        );
+        let commands = runner.commands.borrow();
+        assert_eq!(commands.len(), 2);
+        assert_eq!(commands[0].args, ["run", ".#write-flake"]);
+        assert_eq!(commands[1].args, ["flake", "update", "example-src"]);
+        drop(commands);
+        transaction.rollback().expect("rollback future update");
+        assert!(
+            std::fs::read_to_string(repository.path().join("modules/features/example.nix"))
+                .expect("restored authority")
+                .contains("v1.2.3")
+        );
+        assert!(
+            std::fs::read_to_string(repository.path().join("flake.nix"))
+                .expect("restored generated flake")
+                .contains("v1.2.3")
+        );
+        assert_eq!(
+            std::fs::read(repository.path().join("flake.lock")).expect("restored lock"),
+            b"original lock\n"
+        );
+    }
+
+    #[test]
+    fn future_module_authority_failures_restore_every_managed_file() {
+        for failure in ["generator", "lock", "candidate"] {
+            let repository = future_layout_repository();
+            let source = future_layout_source();
+            let runner = FutureLayoutRunner {
+                failure: Some(failure),
+                commands: RefCell::new(Vec::new()),
+            };
+            let repository_handle =
+                Repository::discover_in(&SystemCommandRunner, repository.path())
+                    .expect("repository");
+            let managed = [
+                source.authority.source_path,
+                source.authority.generated_flake_path,
+                source.authority.lock_path,
+            ];
+            let mut transaction = Transaction::begin_scoped(repository_handle, &runner, managed)
+                .expect("transaction");
+            let authority = transaction
+                .read(source.authority.source_path)
+                .expect("authority bytes");
+            let result =
+                super::update_paired_input(source, "2.0.0", &authority, &runner, &mut transaction)
+                    .and_then(|()| {
+                        if failure == "candidate" {
+                            Err(UpdateError::message("candidate build failed"))
+                        } else {
+                            Ok(())
+                        }
+                    });
+            assert!(result.is_err(), "{failure} failure must propagate");
+            transaction
+                .rollback()
+                .expect("rollback failed future update");
+            assert!(
+                std::fs::read_to_string(repository.path().join("modules/features/example.nix"))
+                    .expect("restored authority")
+                    .contains("v1.2.3"),
+                "{failure}: authority was not restored"
+            );
+            assert!(
+                std::fs::read_to_string(repository.path().join("flake.nix"))
+                    .expect("restored generated flake")
+                    .contains("v1.2.3"),
+                "{failure}: generated flake was not restored"
+            );
+            assert_eq!(
+                std::fs::read(repository.path().join("flake.lock")).expect("restored lock"),
+                b"original lock\n",
+                "{failure}: lock was not restored"
+            );
+        }
+    }
+
+    #[test]
+    fn paired_input_version_supports_current_and_flake_file_syntax() {
+        let original = b"inputs = {\n  demo = {\n    url = \"github:owner/repo/v1.2.3\";\n    flake = false;\n  };\n};\n";
+        assert_eq!(
+            paired_input_version(original, "flake.nix", "demo", "owner/repo")
+                .expect("current input version"),
             "1.2.3"
         );
         assert_eq!(
-            replace_paired_version(original, "owner/repo", "2.0.0").expect("replace version"),
-            b"inputs.demo = {\n  url = \"github:owner/repo/v2.0.0\";\n  flake = false;\n};\n"
+            replace_paired_input_version(
+                original,
+                "flake.nix",
+                "demo",
+                "owner/repo",
+                "2.0.0"
+            )
+            .expect("replace version"),
+            b"inputs = {\n  demo = {\n    url = \"github:owner/repo/v2.0.0\";\n    flake = false;\n  };\n};\n"
         );
-        assert!(paired_version(b"{}\n", "owner/repo").is_err());
-        let duplicate = [original.as_slice(), original.as_slice()].concat();
-        assert!(paired_version(&duplicate, "owner/repo").is_err());
+
+        let module = b"# github:owner/repo/v0.0.0\r\nflake-file.inputs.demo = {\r\n  url = \"github:owner/repo/v1.2.3\";\r\n  note = \"{ braces in strings are ignored }\";\r\n};\r\n";
+        let expected = b"# github:owner/repo/v0.0.0\r\nflake-file.inputs.demo = {\r\n  url = \"github:owner/repo/v2.0.0\";\r\n  note = \"{ braces in strings are ignored }\";\r\n};\r\n";
+        assert_eq!(
+            paired_input_version(module, "modules/features/demo.nix", "demo", "owner/repo")
+                .expect("module input version"),
+            "1.2.3"
+        );
+        assert_eq!(
+            replace_paired_input_version(
+                module,
+                "modules/features/demo.nix",
+                "demo",
+                "owner/repo",
+                "2.0.0"
+            )
+            .expect("replace module version"),
+            expected
+        );
+    }
+
+    #[test]
+    fn paired_input_version_rejects_ambiguous_or_mismatched_declarations() {
+        assert!(paired_input_version(b"{}\n", "source.nix", "demo", "owner/repo").is_err());
+        let duplicate = b"inputs = {\n  demo = {\n    url = \"github:owner/repo/v1.2.3\";\n  };\n  demo = {\n    url = \"github:owner/repo/v1.2.3\";\n  };\n};\n";
+        assert!(paired_input_version(duplicate, "source.nix", "demo", "owner/repo").is_err());
+        let wrong_repository = b"demo = {\n  url = \"github:someone/else/v1.2.3\";\n  note = \"github:owner/repo/v1.2.3\";\n};\n";
+        assert!(
+            paired_input_version(wrong_repository, "source.nix", "demo", "owner/repo").is_err()
+        );
+        let outside_inputs = b"demo = {\n  url = \"github:owner/repo/v1.2.3\";\n};\n";
+        assert!(paired_input_version(outside_inputs, "flake.nix", "demo", "owner/repo").is_err());
+        let globally_ambiguous = b"inputs = {\n  demo = {\n    url = \"github:owner/repo/v1.2.3\";\n  };\n  other = {\n    url = \"github:owner/repo/v1.2.3\";\n  };\n};\n";
+        assert!(
+            paired_input_version(globally_ambiguous, "flake.nix", "demo", "owner/repo").is_err()
+        );
+        let unsafe_version = b"inputs = {\n  demo = {\n    url = \"github:owner/repo/v1.2.3${builtins.readFile ./secret}\";\n  };\n};\n";
+        assert!(paired_input_version(unsafe_version, "flake.nix", "demo", "owner/repo").is_err());
+        let nested_input = b"inputs = {\n  other = {\n    demo = {\n      url = \"github:owner/repo/v1.2.3\";\n    };\n  };\n};\n";
+        assert!(paired_input_version(nested_input, "flake.nix", "demo", "owner/repo").is_err());
+        let nested_inputs = b"{\n  wrapper = {\n    inputs = {\n      demo = {\n        url = \"github:owner/repo/v1.2.3\";\n      };\n    };\n  };\n}\n";
+        assert!(paired_input_version(nested_inputs, "flake.nix", "demo", "owner/repo").is_err());
+        let nested_url =
+            b"inputs = {\n  demo = {\n    metadata.url = \"github:owner/repo/v1.2.3\";\n  };\n};\n";
+        assert!(paired_input_version(nested_url, "flake.nix", "demo", "owner/repo").is_err());
+        let concatenated_url =
+            b"inputs = {\n  demo = {\n    url = \"github:owner/repo/v1.2.3\" + suffix;\n  };\n};\n";
+        assert!(paired_input_version(concatenated_url, "flake.nix", "demo", "owner/repo").is_err());
+        assert!(
+            replace_paired_input_version(
+                b"inputs = {\n  demo = {\n    url = \"github:owner/repo/v1.2.3\";\n  };\n};\n",
+                "flake.nix",
+                "demo",
+                "owner/repo",
+                "2.0.0${builtins.readFile ./secret}",
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn paired_input_parser_ignores_comment_string_and_non_url_decoys() {
+        let source = br#"
+/*
+demo = {
+  url = "github:owner/repo/v0.0.1";
+};
+*/
+{
+  decoy = ''
+''${IGNORED}
+echo ''' escaped quote
+demo = {
+  url = "github:owner/repo/v0.0.2";
+};
+'';
+  inputs = {
+    demo = {
+    # github:owner/repo/v0.0.3
+    note = "github:owner/repo/v0.0.4";
+    url = "github:owner/repo/v1.2.3";
+    };
+  };
+}
+"#;
+
+        assert_eq!(
+            paired_input_version(source, "source.nix", "demo", "owner/repo")
+                .expect("real URL assignment"),
+            "1.2.3"
+        );
+        let updated =
+            replace_paired_input_version(source, "source.nix", "demo", "owner/repo", "2.0.0")
+                .expect("replace real URL assignment");
+        assert!(
+            std::str::from_utf8(&updated)
+                .expect("updated UTF-8")
+                .contains("url = \"github:owner/repo/v2.0.0\";")
+        );
+        assert!(
+            std::str::from_utf8(&updated)
+                .expect("updated UTF-8")
+                .contains("note = \"github:owner/repo/v0.0.4\";")
+        );
     }
 
     #[test]
@@ -1538,13 +2316,14 @@ mod tests {
 
     fn current_managed_contents(spec: &TargetSpec, relative: &str) -> Vec<u8> {
         let contents = match spec.kind {
-            TargetKind::PairedRelease {
-                repository, pin, ..
-            } => {
+            TargetKind::PairedRelease { pin, source } => {
                 if relative == pin {
                     "{}\n".to_owned()
-                } else if relative == "flake.nix" {
-                    format!("input.url = \"github:{repository}/v{CURRENT_VERSION}\";\n")
+                } else if relative == source.authority.source_path {
+                    format!(
+                        "inputs = {{\n  {} = {{\n    url = \"github:{}/v{CURRENT_VERSION}\";\n  }};\n}};\n",
+                        source.input, source.repository
+                    )
                 } else {
                     "{}\n".to_owned()
                 }
@@ -1587,9 +2366,12 @@ mod tests {
             TargetKind::PublishedNodePackage(package) => {
                 if relative == package.pin {
                     "{}\n".to_owned()
-                } else if relative == "flake.nix" {
-                    let repository = package.dependencies.source().repository;
-                    format!("input.url = \"github:{repository}/v{CURRENT_VERSION}\";\n")
+                } else if relative == package.dependencies.source().authority.source_path {
+                    let source = package.dependencies.source();
+                    format!(
+                        "inputs = {{\n  {} = {{\n    url = \"github:{}/v{CURRENT_VERSION}\";\n  }};\n}};\n",
+                        source.input, source.repository
+                    )
                 } else {
                     "{}\n".to_owned()
                 }

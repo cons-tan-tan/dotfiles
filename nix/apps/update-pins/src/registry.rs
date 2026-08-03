@@ -39,10 +39,32 @@ pub enum PublishedArtifact {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct GeneratorCommand {
+    pub program: &'static str,
+    pub args: &'static [&'static str],
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct InputAuthority {
+    pub source_path: &'static str,
+    pub generated_flake_path: &'static str,
+    pub lock_path: &'static str,
+    pub generator: Option<GeneratorCommand>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PairedSource {
     pub repository: &'static str,
     pub input: &'static str,
+    pub authority: InputAuthority,
 }
+
+const ROOT_FLAKE_AUTHORITY: InputAuthority = InputAuthority {
+    source_path: "flake.nix",
+    generated_flake_path: "flake.nix",
+    lock_path: "flake.lock",
+    generator: None,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PnpmMajor {
@@ -116,9 +138,8 @@ pub struct PublishedNodePackageSpec {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TargetKind {
     PairedRelease {
-        repository: &'static str,
         pin: &'static str,
-        input: &'static str,
+        source: PairedSource,
     },
     Release {
         repository: &'static str,
@@ -163,9 +184,12 @@ pub static TARGET_SPECS: &[TargetSpec] = &[
         target: Target::Hcom,
         name: "hcom",
         kind: TargetKind::PairedRelease {
-            repository: "aannoo/hcom",
             pin: "nix/pins/hcom.json",
-            input: "hcom-src",
+            source: PairedSource {
+                repository: "aannoo/hcom",
+                input: "hcom-src",
+                authority: ROOT_FLAKE_AUTHORITY,
+            },
         },
         managed_paths: &["nix/pins/hcom.json", "flake.nix", "flake.lock"],
     },
@@ -173,9 +197,12 @@ pub static TARGET_SPECS: &[TargetSpec] = &[
         target: Target::AgentSlack,
         name: "agent-slack",
         kind: TargetKind::PairedRelease {
-            repository: "stablyai/agent-slack",
             pin: "nix/pins/agent-slack.json",
-            input: "agent-slack-skill",
+            source: PairedSource {
+                repository: "stablyai/agent-slack",
+                input: "agent-slack-skill",
+                authority: ROOT_FLAKE_AUTHORITY,
+            },
         },
         managed_paths: &["nix/pins/agent-slack.json", "flake.nix", "flake.lock"],
     },
@@ -183,9 +210,12 @@ pub static TARGET_SPECS: &[TargetSpec] = &[
         target: Target::AgentBrowser,
         name: "agent-browser",
         kind: TargetKind::PairedRelease {
-            repository: "vercel-labs/agent-browser",
             pin: "nix/pins/agent-browser.json",
-            input: "agent-browser-skill",
+            source: PairedSource {
+                repository: "vercel-labs/agent-browser",
+                input: "agent-browser-skill",
+                authority: ROOT_FLAKE_AUTHORITY,
+            },
         },
         managed_paths: &["nix/pins/agent-browser.json", "flake.nix", "flake.lock"],
     },
@@ -242,6 +272,7 @@ pub static TARGET_SPECS: &[TargetSpec] = &[
                 source: PairedSource {
                     repository: "yoshiko-pg/difit",
                     input: "difit-src",
+                    authority: ROOT_FLAKE_AUTHORITY,
                 },
                 lock_path: "pnpm-lock.yaml",
                 workspace_path: "pnpm-workspace.yaml",
@@ -386,11 +417,22 @@ mod tests {
                 spec.name
             );
             match spec.kind {
-                super::TargetKind::PairedRelease { .. } => {
-                    assert!(spec.managed_paths.contains(&"flake.nix"));
-                    assert!(spec.managed_paths.contains(&"flake.lock"));
+                super::TargetKind::PairedRelease { source, .. } => {
+                    assert!(spec.managed_paths.contains(&source.authority.source_path));
+                    assert!(
+                        spec.managed_paths
+                            .contains(&source.authority.generated_flake_path)
+                    );
+                    assert!(spec.managed_paths.contains(&source.authority.lock_path));
                 }
                 super::TargetKind::PublishedNodePackage(package) => {
+                    let source = package.dependencies.source();
+                    assert!(spec.managed_paths.contains(&source.authority.source_path));
+                    assert!(
+                        spec.managed_paths
+                            .contains(&source.authority.generated_flake_path)
+                    );
+                    assert!(spec.managed_paths.contains(&source.authority.lock_path));
                     assert_eq!(
                         spec.managed_paths,
                         &["nix/pins/difit.json", "flake.nix", "flake.lock"]
@@ -408,6 +450,7 @@ mod tests {
                             source: super::PairedSource {
                                 repository: "yoshiko-pg/difit",
                                 input: "difit-src",
+                                authority: super::ROOT_FLAKE_AUTHORITY,
                             },
                             lock_path: "pnpm-lock.yaml",
                             workspace_path: "pnpm-workspace.yaml",
@@ -443,5 +486,44 @@ mod tests {
             }
         }
         assert!(unimplemented_target_names().is_empty());
+    }
+
+    #[test]
+    fn future_module_authority_has_a_narrow_generated_flake_transaction() {
+        let source = super::PairedSource {
+            repository: "owner/example",
+            input: "example-src",
+            authority: super::InputAuthority {
+                source_path: "modules/features/example.nix",
+                generated_flake_path: "flake.nix",
+                lock_path: "flake.lock",
+                generator: Some(super::GeneratorCommand {
+                    program: "nix",
+                    args: &["run", ".#write-flake"],
+                }),
+            },
+        };
+        let managed_paths = [
+            "nix/pins/example.json",
+            source.authority.source_path,
+            source.authority.generated_flake_path,
+            source.authority.lock_path,
+        ];
+
+        assert_eq!(source.authority.source_path, "modules/features/example.nix");
+        assert_eq!(
+            source.authority.generator.expect("generator"),
+            super::GeneratorCommand {
+                program: "nix",
+                args: &["run", ".#write-flake"],
+            }
+        );
+        assert!(managed_paths.iter().all(|path| {
+            let path = Path::new(path);
+            !path.is_absolute()
+                && path
+                    .components()
+                    .all(|component| matches!(component, Component::Normal(_)))
+        }));
     }
 }
