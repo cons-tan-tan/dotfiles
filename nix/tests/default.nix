@@ -2,7 +2,9 @@
   advisoryDb,
   advisoryDbLastModified,
   ciCheck,
+  flake,
   homeManager,
+  inputs,
   lib,
   llmAgents,
   pkgs,
@@ -44,7 +46,9 @@ let
   testContext = {
     inherit
       ciCheck
+      flake
       homeManager
+      inputs
       lib
       llmAgents
       pkgs

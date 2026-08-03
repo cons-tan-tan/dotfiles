@@ -403,12 +403,14 @@ in
       testChecks = import ../../nix/tests {
         inherit
           ciCheck
+          inputs
           lib
           pkgs
           username
           ;
         advisoryDb = inputs.rustsec-advisory-db;
         advisoryDbLastModified = inputs.rustsec-advisory-db.lastModified;
+        flake = self;
         homeManager = home-manager;
         llmAgents = inputs.llm-agents;
         publicApps = self.apps.${system};
