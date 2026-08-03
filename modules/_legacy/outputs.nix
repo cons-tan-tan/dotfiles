@@ -2,7 +2,6 @@ inputs@{
   self,
   nixpkgs,
   home-manager,
-  treefmt-nix,
   ...
 }:
 let
@@ -105,37 +104,6 @@ let
     }) nixosWslMatrix
   );
 
-  # treefmt: formatter 出力 (wrapper) と checks 出力 (check) の両方に使う
-  mkTreefmtEval =
-    pkgs:
-    treefmt-nix.lib.evalModule pkgs {
-      projectRootFile = "flake.nix";
-      programs = {
-        nixf-diagnose = {
-          enable = true;
-          autoFix = true;
-        };
-        nixfmt.enable = true;
-        rustfmt.enable = true;
-        shfmt.enable = true;
-      };
-      settings = {
-        # nixf の修正で生じたレイアウト差分を同じ実行内で nixfmt に渡す。
-        formatter.nixf-diagnose.priority = -1;
-        # bun2nix が生成する引数一覧は依存形状によって未使用になり得る。
-        formatter.nixf-diagnose.excludes = [ "nix/packages/**/bun.nix" ];
-        global.excludes = [
-          ".direnv/**"
-          ".git/**"
-          "*.lock"
-          "result"
-        ];
-      };
-    };
-  # treefmt の module 評価は重いので system ごとに 1 回だけ行い、
-  # apps / formatter / checks で同じ評価を共有する
-  treefmtEvalFor = lib.genAttrs systems (system: mkTreefmtEval pkgsFor.${system});
-
   mkCommonApps = import ../../nix/lib/apps/mk-common-apps.nix { inherit inputs username; };
   appSet = import ../../nix/lib/apps/mk-app-set.nix { inherit lib; };
 
@@ -151,12 +119,12 @@ let
   };
 
   # apps と checks は同じ { apps, scripts } 束を使うため、
-  # pkgsFor / treefmtEvalFor と同様に system ごとに一度だけ組み立てて共有する
+  # system ごとに一度だけ組み立てて共有する
   commonAppsFor = lib.genAttrs systems (
     system:
     mkCommonApps {
       pkgs = pkgsFor.${system};
-      treefmtWrapper = treefmtEvalFor.${system}.config.build.wrapper;
+      treefmtWrapper = self.formatter.${system};
     }
   );
   hostAppsFor = lib.genAttrs systems (
@@ -245,8 +213,6 @@ in
     }
   );
 
-  formatter = lib.genAttrs systems (system: treefmtEvalFor.${system}.config.build.wrapper);
-
   # CI専用gateを別定義するとlocal checksと対象が乖離するため、同じ
   # derivationから導出する。native runnerを用意していないaarch64-linuxは、
   # 実build対象へ見せかけず全system評価だけに留める。
@@ -285,11 +251,6 @@ in
         else
           null;
       baseChecks = {
-        # treefmtの結果はrepository bytesだけで決まり、Darwinで繰り返しても
-        # platform固有のsignalは増えない。
-        treefmt = ciCheck.annotate (ciCheck.targets.linux "repo-quality") (
-          treefmtEvalFor.${system}.config.build.check self
-        );
         # app wrapperが別の依存から偶然buildされた時だけ検査される状態を
         # 避け、すべてのwrapperへbuild時shellcheckを適用する。
         app-scripts =
