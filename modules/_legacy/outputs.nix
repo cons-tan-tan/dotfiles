@@ -105,41 +105,9 @@ let
     }) nixosWslMatrix
   );
 
-  mkDarwinHostApps = import ../../nix/lib/apps/mk-darwin-apps.nix {
-    inherit inputs darwinHostname;
-  };
-  mkLinuxHostApps = import ../../nix/lib/apps/mk-linux-apps.nix {
-    inherit
-      inputs
-      username
-      windowsHomedir
-      ;
-  };
-
-  hostAppsFor = lib.genAttrs systems (
-    system:
-    if system == darwinSystem then
-      mkDarwinHostApps {
-        inherit system;
-        pkgs = pkgsFor.${system};
-      }
-    else
-      mkLinuxHostApps {
-        inherit system;
-        pkgs = pkgsFor.${system};
-        nixosTarget = nixosWslConfigName { inherit system; };
-        nixosRebuildBin = "${
-          nixosConfigurations.${nixosWslConfigName { inherit system; }}.config.system.build.nixos-rebuild
-        }/bin/nixos-rebuild";
-      }
-  );
 in
 {
   inherit darwinConfigurations homeConfigurations nixosConfigurations;
-
-  # Common apps are emitted by Den features. This bridge retains only the
-  # host-dependent apps until their configuration ownership moves as well.
-  apps = lib.genAttrs systems (system: hostAppsFor.${system}.apps);
 
   # CI専用gateを別定義するとlocal checksと対象が乖離するため、同じ
   # derivationから導出する。native runnerを用意していないaarch64-linuxは、
@@ -192,7 +160,7 @@ in
             (
               pkgs.symlinkJoin {
                 name = "app-scripts";
-                paths = hostAppsFor.${system}.scripts ++ appScriptsFor system;
+                paths = appScriptsFor system;
               }
             );
       }

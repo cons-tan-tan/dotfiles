@@ -1,12 +1,11 @@
+{ darwinHostname }:
 {
-  inputs,
-  darwinHostname,
+  darwinRebuildBin,
+  pkgs,
 }:
-{ system, pkgs }:
 let
   inherit (pkgs.lib) escapeShellArg;
   appSet = import ./mk-app-set.nix { lib = pkgs.lib; };
-  darwinRebuild = "${inputs.darwin.packages.${system}.darwin-rebuild}/bin/darwin-rebuild";
 
   buildScript = pkgs.writeShellApplication {
     name = "darwin-build";
@@ -20,7 +19,7 @@ let
     name = "darwin-switch";
     text = ''
       export DARWIN_HOSTNAME=${escapeShellArg darwinHostname}
-      export DARWIN_REBUILD_BIN=${escapeShellArg darwinRebuild}
+      export DARWIN_REBUILD_BIN=${escapeShellArg darwinRebuildBin}
       ${builtins.readFile ../../apps/darwin-switch.sh}
     '';
   };
