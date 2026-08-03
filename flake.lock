@@ -112,7 +112,7 @@
           "brew-api"
         ],
         "nix-darwin": [
-          "nix-darwin"
+          "darwin"
         ],
         "nixpkgs": [
           "nixpkgs"
@@ -239,6 +239,26 @@
         "owner": "taku910",
         "repo": "crfpp",
         "rev": "c603ea6fc2cc8e5317d2754971bc787da383f7e5",
+        "type": "github"
+      }
+    },
+    "darwin": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1783395956,
+        "narHash": "sha256-AAbexQvDoK+6GFJdhY6kqjA+6ECKRkidgWxkn4gMwAA=",
+        "owner": "LnL7",
+        "repo": "nix-darwin",
+        "rev": "d5bd9cd77aea4c0a8f49e7fd85545671a208ed15",
+        "type": "github"
+      },
+      "original": {
+        "owner": "LnL7",
+        "repo": "nix-darwin",
         "type": "github"
       }
     },
@@ -539,26 +559,6 @@
         "type": "github"
       }
     },
-    "nix-darwin": {
-      "inputs": {
-        "nixpkgs": [
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1783395956,
-        "narHash": "sha256-AAbexQvDoK+6GFJdhY6kqjA+6ECKRkidgWxkn4gMwAA=",
-        "owner": "LnL7",
-        "repo": "nix-darwin",
-        "rev": "d5bd9cd77aea4c0a8f49e7fd85545671a208ed15",
-        "type": "github"
-      },
-      "original": {
-        "owner": "LnL7",
-        "repo": "nix-darwin",
-        "type": "github"
-      }
-    },
     "nix-index-database": {
       "inputs": {
         "nixpkgs": [
@@ -721,6 +721,7 @@
         "brew-nix": "brew-nix",
         "bun2nix": "bun2nix",
         "codex-plugin-cc": "codex-plugin-cc",
+        "darwin": "darwin",
         "den": "den",
         "difit-src": "difit-src",
         "drawio-skill": "drawio-skill",
@@ -733,7 +734,6 @@
         "improve-skill": "improve-skill",
         "llm-agents": "llm-agents",
         "mozuku": "mozuku",
-        "nix-darwin": "nix-darwin",
         "nix-index-database": "nix-index-database",
         "nixos-wsl": "nixos-wsl",
         "nixpkgs": "nixpkgs_3",

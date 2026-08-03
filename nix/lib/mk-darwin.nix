@@ -8,7 +8,7 @@
   system,
   hostFile,
 }:
-inputs.nix-darwin.lib.darwinSystem {
+inputs.darwin.lib.darwinSystem {
   inherit system;
   specialArgs = { inherit username homedir; };
   modules = [

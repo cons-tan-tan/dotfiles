@@ -6,7 +6,7 @@
 let
   inherit (pkgs.lib) escapeShellArg;
   appSet = import ./mk-app-set.nix { lib = pkgs.lib; };
-  darwinRebuild = "${inputs.nix-darwin.packages.${system}.darwin-rebuild}/bin/darwin-rebuild";
+  darwinRebuild = "${inputs.darwin.packages.${system}.darwin-rebuild}/bin/darwin-rebuild";
 
   buildScript = pkgs.writeShellApplication {
     name = "darwin-build";

@@ -32,7 +32,7 @@
 
     nixpkgs-lib.follows = "nixpkgs";
 
-    nix-darwin = {
+    darwin = {
       url = "github:LnL7/nix-darwin";
       inputs.nixpkgs.follows = "nixpkgs";
     };
@@ -173,7 +173,7 @@
     brew-nix = {
       url = "github:BatteredBunny/brew-nix";
       inputs.brew-api.follows = "brew-api";
-      inputs.nix-darwin.follows = "nix-darwin";
+      inputs.nix-darwin.follows = "darwin";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
