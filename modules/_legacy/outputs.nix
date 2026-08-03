@@ -3,7 +3,7 @@
   pkgsFor,
 }:
 let
-  inherit (inputs) nixpkgs self;
+  inherit (inputs) nixpkgs;
   lib = nixpkgs.lib;
   username = "constantan";
 
@@ -16,8 +16,6 @@ let
   # Windows companion (WSL host only)
   windowsUsername = "zhouc";
   windowsHomedir = "/mnt/c/Users/${windowsUsername}";
-
-  ciCheck = import ../../nix/lib/ci-check.nix { inherit lib; };
 
   mkHost = import ../../nix/lib/mk-host.nix {
     inherit
@@ -99,13 +97,5 @@ let
 in
 {
   inherit darwinConfigurations homeConfigurations nixosConfigurations;
-
-  # CI専用gateを別定義するとlocal checksと対象が乖離するため、同じ
-  # derivationから導出する。native runnerを用意していないaarch64-linuxは、
-  # 実build対象へ見せかけず全system評価だけに留める。
-  hydraJobs.ci = ciCheck.mkHestiaJobs {
-    x86_64-linux = self.checks.x86_64-linux;
-    ${darwinSystem} = self.checks.${darwinSystem};
-  };
 
 }
