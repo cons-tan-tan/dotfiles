@@ -8,6 +8,7 @@
   systemd,
   symlinkJoin,
   username,
+  util-linux,
   writeShellApplication,
   writeTextDir,
 }:
@@ -99,6 +100,7 @@ let
     runtimeInputs = [
       coreutils
       systemd
+      util-linux
     ];
     text = ''
       if (( EUID != 0 )); then
@@ -110,6 +112,11 @@ let
       readonly target_directory=/etc/systemd/system
       readonly gcroot=/nix/var/nix/gcroots/nh-cleanup-systemd
       readonly next_gcroot="$gcroot.next"
+      readonly lock_file=/run/lock/nh-cleanup-systemd.lock
+
+      umask 0077
+      exec 9>"$lock_file"
+      flock --exclusive 9
 
       install -d -m 0755 "$(dirname "$gcroot")"
       # Keep the old closure rooted until every unit has been installed and

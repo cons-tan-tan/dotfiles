@@ -48,3 +48,13 @@ setup() {
   root_switch_line=$(grep -n 'mv -Tf "\$next_gcroot" "\$gcroot"' "$INSTALLER" | cut -d: -f1)
   [ "$restart_line" -lt "$root_switch_line" ]
 }
+
+@test "installer serializes unit and GC root replacement" {
+  grep -Fqx 'readonly lock_file=/run/lock/nh-cleanup-systemd.lock' "$INSTALLER"
+  local umask_line lock_line root_update_line
+  umask_line=$(grep -n 'umask 0077' "$INSTALLER" | cut -d: -f1)
+  lock_line=$(grep -n 'flock --exclusive 9' "$INSTALLER" | cut -d: -f1)
+  root_update_line=$(grep -n 'ln -sfnT ' "$INSTALLER" | cut -d: -f1)
+  [ "$umask_line" -lt "$lock_line" ]
+  [ "$lock_line" -lt "$root_update_line" ]
+}
