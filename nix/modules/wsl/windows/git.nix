@@ -7,7 +7,7 @@
   ...
 }:
 let
-  gitLib = import ../../../lib/settings/git.nix { inherit lib pkgs; };
+  gitLib = import ../../../../modules/features/source-control/_lib/git.nix { inherit lib pkgs; };
   deploy = import ./deploy.nix { inherit lib; };
 
   windowsHomedir = config.my.windows.homedir;

@@ -44,7 +44,7 @@ let
     }
     // lib.optionalAttrs (dependsOn != [ ]) { inherit dependsOn; };
 
-  cliTools = import ../../../lib/settings/cli-tools.nix;
+  cliTools = import ../../../../modules/features/packages/_lib/cli-tools.nix;
   packages = map (tool: mkWinGetPackage tool.winget) cliTools;
 
   wingetConfig = {

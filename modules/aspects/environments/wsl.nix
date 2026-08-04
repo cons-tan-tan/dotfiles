@@ -1,4 +1,9 @@
-{ den, inputs, ... }:
+{
+  den,
+  features,
+  inputs,
+  ...
+}:
 let
   overlayPlan = import ../../../nix/lib/mk-overlays.nix { inherit inputs; } "x86_64-linux";
   commonHomeModule =
@@ -56,6 +61,10 @@ in
     includes = [
       den.aspects.environments.base
       den.aspects.environments.integrated-home-manager
+      features.registries-host
+      features.security-gpg-wsl
+      features.source-control-ghq-sync-systemd
+      features.trash-systemd
     ];
 
     nixos = {
@@ -81,6 +90,10 @@ in
     name = "dotfiles-standalone-wsl";
     includes = [
       den.aspects.environments.base
+      features.registries-home
+      features.security-gpg-wsl
+      features.source-control-ghq-sync-systemd
+      features.trash-systemd
     ];
     homeManager =
       { home, ... }:

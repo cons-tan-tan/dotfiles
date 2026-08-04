@@ -6,7 +6,7 @@
   ...
 }:
 let
-  inherit (import ../../../lib/settings/gpg.nix) cacheTtl sshKeygrips;
+  inherit (import ../../../../modules/features/security/_lib/gpg.nix) cacheTtl sshKeygrips;
   deploy = import ./deploy.nix { inherit lib; };
 
   windowsHomedir = config.my.windows.homedir;

@@ -27,28 +27,17 @@ let
     else
       [ path ];
 
-  describeHomeConfig =
-    config:
-    {
-      inherit (config.home) username homeDirectory;
-      hostKind = config.my.hostKind;
-      dotfilesDir = config.my.dotfilesDir;
-      standalone = config.my.standalone;
-      windows = config.my.windows;
-      nhCleanup = {
-        inherit (config.programs.nh.clean) dates enable extraArgs;
-      };
-      programs = {
-        git = config.programs.git.enable;
-        homeManager = config.programs.home-manager.enable;
-        nh = config.programs.nh.enable;
-      };
-      stateVersion = config.home.stateVersion;
-    }
-    // lib.optionalAttrs (config.my.hostKind != "linux") {
-      homeFiles = sort (builtins.attrNames config.home.file);
-      homePackages = sort (map lib.getName config.home.packages);
+  describeHomeConfig = config: {
+    inherit (config.home) username homeDirectory;
+    hostKind = config.my.hostKind;
+    dotfilesDir = config.my.dotfilesDir;
+    standalone = config.my.standalone;
+    windows = config.my.windows;
+    nhCleanup = {
+      inherit (config.programs.nh.clean) dates enable extraArgs;
     };
+    programs.nh = config.programs.nh.enable;
+  };
 
   linuxHome = outputs: name: outputs.homeConfigurations.${name}.config;
   linuxShellTransition =
@@ -56,34 +45,34 @@ let
     let
       old = linuxHome legacy name;
       new = linuxHome flake name;
-      oldFiles = sort (builtins.attrNames old.home.file);
-      newFiles = sort (builtins.attrNames new.home.file);
-      oldPackages = sort (map lib.getName old.home.packages);
-      newPackages = sort (map lib.getName new.home.packages);
-      added = before: after: builtins.filter (item: !(lib.elem item before)) after;
+      newFiles = builtins.attrNames new.home.file;
+      newPackages = map lib.getName new.home.packages;
     in
     {
       legacyEnabled = old.programs.zsh.enable;
       denEnabled = new.programs.zsh.enable;
-      addedFiles = added oldFiles newFiles;
-      removedFiles = added newFiles oldFiles;
-      addedPackages = added oldPackages newPackages;
-      removedPackages = added newPackages oldPackages;
+      zshFiles = lib.genAttrs [
+        "./.zprofile"
+        "./.zshenv"
+        "./.zshrc"
+      ] (name': builtins.elem name' newFiles);
+      zshPackages = lib.genAttrs [
+        "nix-zsh-completions"
+        "zsh"
+      ] (name': builtins.elem name' newPackages);
     };
   expectedLinuxShellTransition = {
     legacyEnabled = false;
     denEnabled = true;
-    addedFiles = [
-      "./.zprofile"
-      "./.zshenv"
-      "./.zshrc"
-    ];
-    removedFiles = [ ];
-    addedPackages = [
-      "nix-zsh-completions"
-      "zsh"
-    ];
-    removedPackages = [ ];
+    zshFiles = {
+      "./.zprofile" = true;
+      "./.zshenv" = true;
+      "./.zshrc" = true;
+    };
+    zshPackages = {
+      nix-zsh-completions = true;
+      zsh = true;
+    };
   };
 
   describeDarwinBatteryTransition =
@@ -203,7 +192,8 @@ let
       ];
     };
     # user-shell intentionally owns shell enablement at both OS and HM scope.
-    # The old Linux-only Home Manager constructor did not enable zsh itself.
+    # Feature output parity moved to home-feature-contract when the old import
+    # bundle stopped owning those modules; this retains the Battery transition.
     linuxShellTransition = lib.genAttrs [
       "${username}@linux-x86_64"
       "${username}@linux-aarch64"

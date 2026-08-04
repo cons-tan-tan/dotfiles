@@ -66,6 +66,12 @@ in
             inherit inputs lib pkgs;
           }
         );
+        home-feature-contract = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
+          import ../_tests/home-feature-contract.nix {
+            inherit inputs lib pkgs;
+            flake = config.flake;
+          }
+        );
         flake-public-api-contract = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
           import ../../../nix/checks/flake-public-api-contract.nix {
             inherit lib pkgs;

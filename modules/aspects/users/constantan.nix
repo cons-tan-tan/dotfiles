@@ -1,4 +1,9 @@
-{ den, lib, ... }:
+{
+  den,
+  features,
+  lib,
+  ...
+}:
 let
   darwinPrimaryUser =
     { host, user, ... }:
@@ -12,9 +17,9 @@ in
     name = "user/constantan";
     includes = [
       den.batteries.define-user
-      (den.batteries.user-shell "zsh")
       den.batteries.host-aspects
       darwinPrimaryUser
+      features.common-home
     ];
 
     # NixOS-WSL itself grants wheel to its default user. The Darwin-only guard

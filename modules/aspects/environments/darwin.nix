@@ -1,4 +1,9 @@
-{ den, inputs, ... }:
+{
+  den,
+  features,
+  inputs,
+  ...
+}:
 let
   overlayPlan = import ../../../nix/lib/mk-overlays.nix { inherit inputs; } "aarch64-darwin";
   homeModule =
@@ -23,6 +28,10 @@ in
     includes = [
       den.aspects.environments.base
       den.aspects.environments.integrated-home-manager
+      features.registries-host
+      features.security-gpg-darwin
+      features.source-control-ghq-sync-launchd
+      features.trash-darwin
     ];
 
     darwin = {

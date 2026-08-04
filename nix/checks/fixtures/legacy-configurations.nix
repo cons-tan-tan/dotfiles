@@ -21,6 +21,7 @@ let
         home = {
           inherit username;
           homeDirectory = linuxHome;
+          stateVersion = "24.11";
         };
         my = {
           inherit dotfilesDir hostKind standalone;
@@ -90,6 +91,7 @@ let
               home = {
                 inherit username;
                 homeDirectory = "/Users/${username}";
+                stateVersion = "24.11";
               };
               my = {
                 hostKind = "darwin";

@@ -1,4 +1,9 @@
-{ den, inputs, ... }:
+{
+  den,
+  features,
+  inputs,
+  ...
+}:
 let
   overlayPlan = import ../../../nix/lib/mk-overlays.nix { inherit inputs; } "x86_64-linux";
   homeModule =
@@ -22,6 +27,10 @@ in
     name = "dotfiles-linux";
     includes = [
       den.aspects.environments.base
+      features.registries-home
+      features.security-gpg-linux
+      features.source-control-ghq-sync-systemd
+      features.trash-systemd
     ];
 
     homeManager =

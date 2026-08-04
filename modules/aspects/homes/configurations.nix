@@ -1,11 +1,11 @@
-{ den, ... }:
+{ den, features, ... }:
 {
   den.aspects.homes.standalone-linux = {
     name = "home/standalone-linux";
     includes = [
       den.batteries.define-user
-      (den.batteries.user-shell "zsh")
       den.aspects.environments.linux
+      features.common-home
     ];
   };
 
@@ -13,8 +13,8 @@
     name = "home/standalone-wsl";
     includes = [
       den.batteries.define-user
-      (den.batteries.user-shell "zsh")
       den.aspects.environments.standalone-wsl
+      features.common-home
     ];
   };
 }
