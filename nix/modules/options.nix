@@ -1,5 +1,5 @@
 # my.* 名前空間: ホスト構成パラメータを specialArgs ではなく module options で
-# 配る。値は nix/lib/mk-home-modules.nix が設定し、各モジュールは config.my.*
+# 配る。移行中は environment aspect が値を設定し、各モジュールは config.my.*
 # を読む。
 { config, lib, ... }:
 let
@@ -22,6 +22,11 @@ in
     dotfilesDir = lib.mkOption {
       type = lib.types.str;
       description = "この dotfiles リポジトリの clone 先 (mkOutOfStoreSymlink の参照元)。";
+    };
+
+    standalone = lib.mkOption {
+      type = lib.types.bool;
+      description = "Den の standalone home scope から生成された構成かどうか。";
     };
 
     windows = {

@@ -1,16 +1,14 @@
 {
   config,
   lib,
-  osConfig,
   pkgs,
   ...
 }:
 let
   isSystemdHost = config.my.isLinux || config.my.isWsl;
-  isNixosIntegrated = osConfig != null;
   # Standalone WSL installs the cleanup policy as system units from the host
   # switch app, so it does not depend on the user manager or WSLg mount order.
-  enableUserCleanup = isSystemdHost && !config.my.isWsl && !isNixosIntegrated;
+  enableUserCleanup = isSystemdHost && !config.my.isWsl && config.my.standalone;
   enableUserResultRootCleanup = isSystemdHost && !config.my.isWsl;
   cleanupPolicy = import ../../../lib/nh-clean-policy.nix;
   cleanupArgs = lib.escapeShellArgs cleanupPolicy.arguments;

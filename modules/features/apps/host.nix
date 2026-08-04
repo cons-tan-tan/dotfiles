@@ -11,7 +11,7 @@ let
   linuxHomedir = "/home/${username}";
   windowsHomedir = "/mnt/c/Users/zhouc";
   configNames = import ../../../nix/lib/linux-config-name.nix { inherit username; };
-  mkDarwinApps = import ../../../nix/lib/apps/mk-darwin-apps.nix { inherit darwinHostname; };
+  darwinAppsFor = import ../../../nix/lib/apps/mk-darwin-apps.nix { inherit darwinHostname; };
   mkLinuxApps = import ../../../nix/lib/apps/mk-linux-apps.nix {
     inherit inputs username windowsHomedir;
     homedir = linuxHomedir;
@@ -22,7 +22,7 @@ let
       let
         darwinConfiguration = config.flake.darwinConfigurations.${darwinHostname};
       in
-      mkDarwinApps {
+      darwinAppsFor {
         inherit pkgs;
         darwinRebuildBin = "${darwinConfiguration.config.system.build.darwin-rebuild}/bin/darwin-rebuild";
       }

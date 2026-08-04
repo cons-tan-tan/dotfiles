@@ -1,6 +1,5 @@
 {
   lib,
-  pkgs,
   username,
   ...
 }:
@@ -29,11 +28,7 @@
   users.users.${username} = {
     linger = true;
     extraGroups = [ "docker" ];
-    shell = pkgs.zsh;
   };
-
-  # WSLではUbuntu由来のbash設定を引き継がず、Home Manager管理のzshへ移行する。
-  programs.zsh.enable = true;
 
   # Docker Desktopに依存せず、LinuxコンテナをNixOS内で完結させる。
   # Docker APIはTCP公開せず、ローカルのUnix socketをdocker groupから利用する。

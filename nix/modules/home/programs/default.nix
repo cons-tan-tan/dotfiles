@@ -1,7 +1,26 @@
+{ inputs, ... }:
+let
+  withInputs =
+    path:
+    {
+      config,
+      lib,
+      pkgs,
+      ...
+    }:
+    import path {
+      inherit
+        config
+        inputs
+        lib
+        pkgs
+        ;
+    };
+in
 {
   imports = [
     ./aws.nix
-    ./claude.nix
+    (withInputs ./claude.nix)
     ./codex.nix
     ./curl.nix
     ./direnv.nix
@@ -12,7 +31,7 @@
     ./git-wt.nix
     ./gpg.nix
     ./herdr.nix
-    ./hunk.nix
+    (withInputs ./hunk.nix)
     ./nh.nix
     ./opencode.nix
     ./pi.nix

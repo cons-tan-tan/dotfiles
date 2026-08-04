@@ -1,12 +1,30 @@
 { inputs, ... }:
+let
+  withInputs =
+    path:
+    {
+      config,
+      lib,
+      pkgs,
+      ...
+    }:
+    import path {
+      inherit
+        config
+        inputs
+        lib
+        pkgs
+        ;
+    };
+in
 {
   imports = [
     inputs.nix-index-database.homeModules.default
     ./agent-guidance
-    ./agent-skills
+    (withInputs ./agent-skills)
     ./hcom.nix
-    ./packages.nix
-    ./programs
+    (withInputs ./packages.nix)
+    (withInputs ./programs)
     ./registries.nix
     ./trash.nix
   ];

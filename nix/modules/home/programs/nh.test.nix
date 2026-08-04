@@ -12,6 +12,7 @@ let
       isLinux ? false,
       isWsl ? false,
       osConfig ? null,
+      standalone ? true,
     }:
     (homeManager.lib.homeManagerConfiguration {
       inherit pkgs;
@@ -30,11 +31,14 @@ let
                 type = lib.types.bool;
                 default = false;
               };
+              standalone = lib.mkOption {
+                type = lib.types.bool;
+              };
             };
 
             config = {
               my = {
-                inherit isLinux isWsl;
+                inherit isLinux isWsl standalone;
               };
               home = {
                 username = "test";
@@ -52,6 +56,16 @@ let
   evaluatedIntegratedWsl = mkEvaluatedConfig {
     isWsl = true;
     osConfig = { };
+    standalone = false;
+  };
+  evaluatedStandaloneLinuxWithOsConfig = mkEvaluatedConfig {
+    isLinux = true;
+    osConfig = { };
+    standalone = true;
+  };
+  evaluatedIntegratedLinuxWithoutOsConfig = mkEvaluatedConfig {
+    isLinux = true;
+    standalone = false;
   };
   evaluatedDarwin = mkEvaluatedConfig { };
 
@@ -222,6 +236,29 @@ in
       hasResultRootTimer = false;
       hasGrowthService = false;
       hasGrowthTimer = false;
+    };
+  };
+
+  testCleanupOwnershipUsesStandaloneMetadata = systemdPlatformTest {
+    expr = {
+      standaloneWithOsConfig = {
+        clean = evaluatedStandaloneLinuxWithOsConfig.programs.nh.clean.enable;
+        hasCleanupService = evaluatedStandaloneLinuxWithOsConfig.systemd.user.services ? nh-clean;
+      };
+      integratedWithoutOsConfig = {
+        clean = evaluatedIntegratedLinuxWithoutOsConfig.programs.nh.clean.enable;
+        hasCleanupService = evaluatedIntegratedLinuxWithoutOsConfig.systemd.user.services ? nh-clean;
+      };
+    };
+    expected = {
+      standaloneWithOsConfig = {
+        clean = true;
+        hasCleanupService = true;
+      };
+      integratedWithoutOsConfig = {
+        clean = false;
+        hasCleanupService = false;
+      };
     };
   };
 

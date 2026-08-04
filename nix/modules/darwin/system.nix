@@ -1,7 +1,5 @@
 {
   pkgs,
-  username,
-  homedir,
   ...
 }:
 {
@@ -15,12 +13,6 @@
   nix.enable = false;
 
   system.stateVersion = 5;
-
-  system.primaryUser = username;
-
-  users.users.${username} = {
-    home = homedir;
-  };
 
   fonts.packages = with pkgs; [
     hackgen-nf-font

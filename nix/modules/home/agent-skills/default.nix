@@ -8,6 +8,7 @@
 # 実装する。eval 時に読むのは flake input / リポジトリ内の純パスのみ。
 {
   config,
+  inputs,
   lib,
   pkgs,
   ...
@@ -82,7 +83,12 @@ in
 {
   imports = [
     ./options.nix
-    ./sources.nix
+    (
+      { config, lib, ... }:
+      import ./sources.nix {
+        inherit config inputs lib;
+      }
+    )
   ];
 
   home.file = deployTo ".claude/skills" // deployTo ".agents/skills";
