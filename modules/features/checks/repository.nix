@@ -36,6 +36,36 @@ in
             inherit inputs lib pkgs;
           }
         );
+        den-schema-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
+          import ../../../nix/checks/den-capabilities.nix {
+            inherit inputs lib pkgs;
+            checkName = "den-schema-tests";
+            fixturePath = ../../_tests/den-schema.nix;
+            schemaModule = ../../schema/entities.nix;
+          }
+        );
+        den-entity-topology-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
+          import ../../../nix/checks/den-entity-topology.nix {
+            inherit
+              den
+              inputs
+              lib
+              pkgs
+              ;
+            flake = config.flake;
+          }
+        );
+        den-legacy-parity-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
+          import ../../../nix/checks/den-legacy-parity.nix {
+            inherit inputs lib pkgs;
+            flake = config.flake;
+          }
+        );
+        den-unfree-capability-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
+          import ../../../nix/checks/den-unfree-capability.nix {
+            inherit inputs lib pkgs;
+          }
+        );
         flake-public-api-contract = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
           import ../../../nix/checks/flake-public-api-contract.nix {
             inherit lib pkgs;

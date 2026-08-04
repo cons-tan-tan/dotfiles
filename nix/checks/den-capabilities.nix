@@ -1,13 +1,18 @@
 {
+  checkName ? "den-capability-tests",
+  fixturePath ? ../../modules/_tests/den-capabilities.nix,
   inputs,
   lib,
   pkgs,
+  schemaModule ? null,
 }:
 let
-  fixturePath = ../../modules/_tests/den-capabilities.nix;
-  fixture = import fixturePath {
-    inherit inputs lib;
-  };
+  fixture = import fixturePath (
+    {
+      inherit inputs lib;
+    }
+    // lib.optionalAttrs (schemaModule != null) { inherit schemaModule; }
+  );
   positiveResult = lib.debug.throwTestFailures {
     failures = lib.debug.runTests fixture.tests;
   };
@@ -49,6 +54,7 @@ let
     in
     import ${fixturePath} {
       inherit caseName inputs lib;
+      ${lib.optionalString (schemaModule != null) "schemaModule = ${schemaModule};"}
     }
   '';
   runFailureCases = lib.concatMapStringsSep "\n" (
@@ -111,7 +117,7 @@ let
   ) failureCaseNames;
 in
 builtins.seq positiveResult (
-  pkgs.runCommand "den-capability-tests"
+  pkgs.runCommand checkName
     {
       nativeBuildInputs = [
         pkgs.jq
