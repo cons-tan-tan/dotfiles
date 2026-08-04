@@ -12,9 +12,11 @@ setup() {
   NIX_ARGS_FILE="$WORK/nix.args"
   HM_ARGS_FILE="$WORK/home-manager.args"
   NIXOS_REBUILD_ARGS_FILE="$WORK/nixos-rebuild.args"
+  WSL_INSTALLER_ARGS_FILE="$WORK/wsl-installer.args"
   SUDO_ARGS_FILE="$WORK/sudo.args"
   HM_STUB="$WORK/home-manager"
   NIXOS_REBUILD_STUB="$WORK/nixos-rebuild"
+  WSL_INSTALLER_STUB="$WORK/install-nh-cleanup-systemd"
 
   mkdir -p "$STUB_DIR"
 
@@ -46,6 +48,14 @@ EOS
 printf '%s\n' "$@" > "$NIXOS_REBUILD_STUB_ARGS_FILE"
 EOS
   chmod +x "$NIXOS_REBUILD_STUB"
+
+  cat > "$WSL_INSTALLER_STUB" <<'EOS'
+#!/bin/sh
+: "${WSL_INSTALLER_STUB_ARGS_FILE:?}"
+printf '%s\n' "$@" > "$WSL_INSTALLER_STUB_ARGS_FILE"
+exit "${WSL_INSTALLER_STUB_STATUS:-0}"
+EOS
+  chmod +x "$WSL_INSTALLER_STUB"
 }
 
 teardown() {
@@ -162,6 +172,10 @@ run_linux_host_build() {
     HM_TARGET_LINUX=alice@linux-aarch64 \
     HM_BIN="$HM_STUB" \
     HM_STUB_ARGS_FILE="$HM_ARGS_FILE" \
+    NH_CLEANUP_SYSTEMD_INSTALLER="$WSL_INSTALLER_STUB" \
+    WSL_INSTALLER_STUB_ARGS_FILE="$WSL_INSTALLER_ARGS_FILE" \
+    SUDO_BIN="$STUB_DIR/sudo" \
+    SUDO_STUB_ARGS_FILE="$SUDO_ARGS_FILE" \
     "$BASH_BIN" -eu -o pipefail "$SWITCH_SCRIPT"
 
   [ "$status" -eq 0 ]
@@ -173,6 +187,26 @@ run_linux_host_build() {
     "--flake" \
     ".#alice@wsl-aarch64")
   [ "$(cat "$HM_ARGS_FILE")" = "$expected" ]
+  [ "$(cat "$SUDO_ARGS_FILE")" = "$WSL_INSTALLER_STUB" ]
+  [ -z "$(cat "$WSL_INSTALLER_ARGS_FILE")" ]
+}
+
+@test "Ubuntu WSL switch stops before Home Manager when system timer installation fails" {
+  run env WSL_DISTRO_NAME=Ubuntu \
+    NIXOS_MARKER_PATH="$NIXOS_MARKER" \
+    HM_TARGET_WSL=alice@wsl-x86_64 \
+    HM_TARGET_LINUX=alice@linux-x86_64 \
+    HM_BIN="$HM_STUB" \
+    HM_STUB_ARGS_FILE="$HM_ARGS_FILE" \
+    NH_CLEANUP_SYSTEMD_INSTALLER="$WSL_INSTALLER_STUB" \
+    WSL_INSTALLER_STUB_ARGS_FILE="$WSL_INSTALLER_ARGS_FILE" \
+    WSL_INSTALLER_STUB_STATUS=49 \
+    SUDO_BIN="$STUB_DIR/sudo" \
+    SUDO_STUB_ARGS_FILE="$SUDO_ARGS_FILE" \
+    "$BASH_BIN" -eu -o pipefail "$SWITCH_SCRIPT"
+
+  [ "$status" -eq 49 ]
+  [ ! -e "$HM_ARGS_FILE" ]
 }
 
 @test "NixOS-WSL build fails before invoking nix when NIXOS_TARGET is missing" {
@@ -221,4 +255,5 @@ run_linux_host_build() {
   grep -E '^export HM_BIN=/nix/store/.+-home-manager/bin/home-manager$' "$switch_script"
   grep -Fqx "export NIXOS_TARGET=$HOST_EXPECTED_NIXOS_WSL" "$switch_script"
   grep -E '^export NIXOS_REBUILD_BIN=/nix/store/.+/bin/nixos-rebuild$' "$switch_script"
+  grep -E '^export NH_CLEANUP_SYSTEMD_INSTALLER=/nix/store/.+/bin/install-nh-cleanup-systemd$' "$switch_script"
 }

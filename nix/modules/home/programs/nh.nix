@@ -8,7 +8,10 @@
 let
   isSystemdHost = config.my.isLinux || config.my.isWsl;
   isNixosIntegrated = osConfig != null;
-  enableUserCleanup = isSystemdHost && !isNixosIntegrated;
+  # Standalone WSL installs the cleanup policy as system units from the host
+  # switch app, so it does not depend on the user manager or WSLg mount order.
+  enableUserCleanup = isSystemdHost && !config.my.isWsl && !isNixosIntegrated;
+  enableUserResultRootCleanup = isSystemdHost && !config.my.isWsl;
   cleanupPolicy = import ../../../lib/nh-clean-policy.nix;
   cleanupArgs = lib.escapeShellArgs cleanupPolicy.arguments;
   nixPackage =
@@ -34,7 +37,7 @@ in
   };
 
   systemd.user.services =
-    lib.optionalAttrs isSystemdHost {
+    lib.optionalAttrs enableUserResultRootCleanup {
       # The multi-user Nix daemon owns the auto-root registry, so a user service
       # expires the user's result symlinks and lets the next Nix GC drop the
       # resulting stale registrations.
@@ -56,7 +59,7 @@ in
       };
     };
 
-  systemd.user.timers = lib.optionalAttrs isSystemdHost {
+  systemd.user.timers = lib.optionalAttrs enableUserResultRootCleanup {
     nh-clean-result-roots = {
       Unit.Description = "Weekly cleanup of stale Nix build result roots";
       Timer = {

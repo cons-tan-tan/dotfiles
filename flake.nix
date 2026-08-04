@@ -322,6 +322,7 @@
           username
           windowsHomedir
           ;
+        homedir = linuxHomedir;
       };
 
       # apps と checks は同じ { apps, scripts } 束を使うため、

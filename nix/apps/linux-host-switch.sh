@@ -21,6 +21,13 @@ else
     target="$HM_TARGET_LINUX"
   fi
 
+  if [[ -n ${WSL_DISTRO_NAME:-} ]]; then
+    : "${NH_CLEANUP_SYSTEMD_INSTALLER:?NH_CLEANUP_SYSTEMD_INSTALLER must be set}"
+    sudo_bin=${SUDO_BIN:-sudo}
+    echo "Installing system-level Nix cleanup timer"
+    "$sudo_bin" "$NH_CLEANUP_SYSTEMD_INSTALLER"
+  fi
+
   echo "Switching to Home Manager configuration: $target"
   # 非管理ファイルと衝突した場合はバックアップを残して置換する。
   "$HM_BIN" switch -b hm-backup --flake ".#$target"

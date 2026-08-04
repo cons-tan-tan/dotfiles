@@ -1,4 +1,5 @@
 {
+  homedir,
   inputs,
   username,
   windowsHomedir,
@@ -23,6 +24,11 @@ let
     inherit system;
   };
   hmBin = "${inputs.home-manager.packages.${system}.default}/bin/home-manager";
+  nhCleanupSystemd = pkgs.callPackage ../../packages/nh-cleanup-systemd {
+    inherit homedir username;
+    nh = pkgs.nh;
+    nix = pkgs.nix;
+  };
 
   buildScript = pkgs.writeShellApplication {
     name = "linux-host-build";
@@ -42,6 +48,7 @@ let
       export HM_BIN=${escapeShellArg hmBin}
       export NIXOS_TARGET=${escapeShellArg nixosTarget}
       export NIXOS_REBUILD_BIN=${escapeShellArg nixosRebuildBin}
+      export NH_CLEANUP_SYSTEMD_INSTALLER=${escapeShellArg "${nhCleanupSystemd}/bin/install-nh-cleanup-systemd"}
       ${builtins.readFile ../../apps/linux-host-switch.sh}
     '';
   };

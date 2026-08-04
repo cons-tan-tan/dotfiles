@@ -172,16 +172,11 @@ in
 
   testWslUsesBoundedCleanupPolicy = systemdPlatformTest {
     expr = evaluatedWsl.programs.nh.clean;
-    expected = expectedCleanup;
+    expected = expectedDisabledSystemCleanup;
   };
 
   testLinuxCleanupUsesStoreClosedRunner = systemdPlatformTest {
     expr = finalRegularService evaluatedLinux;
-    expected = expectedFinalRegularService;
-  };
-
-  testWslCleanupUsesStoreClosedRunner = systemdPlatformTest {
-    expr = finalRegularService evaluatedWsl;
     expected = expectedFinalRegularService;
   };
 
@@ -190,9 +185,23 @@ in
     expected = expectedFinalRegularTimer;
   };
 
-  testWslFinalCleanupTimer = systemdPlatformTest {
-    expr = finalRegularTimer evaluatedWsl;
-    expected = expectedFinalRegularTimer;
+  testStandaloneWslLeavesCleanupToSystemUnits = systemdPlatformTest {
+    expr = {
+      hasCleanupService = evaluatedWsl.systemd.user.services ? nh-clean;
+      hasCleanupTimer = evaluatedWsl.systemd.user.timers ? nh-clean;
+      hasGrowthService = evaluatedWsl.systemd.user.services ? nh-clean-growth-check;
+      hasGrowthTimer = evaluatedWsl.systemd.user.timers ? nh-clean-growth-check;
+      hasResultRootService = evaluatedWsl.systemd.user.services ? nh-clean-result-roots;
+      hasResultRootTimer = evaluatedWsl.systemd.user.timers ? nh-clean-result-roots;
+    };
+    expected = {
+      hasCleanupService = false;
+      hasCleanupTimer = false;
+      hasGrowthService = false;
+      hasGrowthTimer = false;
+      hasResultRootService = false;
+      hasResultRootTimer = false;
+    };
   };
 
   testIntegratedWslDelegatesCleanupToNixos = systemdPlatformTest {
@@ -202,23 +211,22 @@ in
       hasUserCleanupTimer = evaluatedIntegratedWsl.systemd.user.timers ? nh-clean;
       hasResultRootService = evaluatedIntegratedWsl.systemd.user.services ? nh-clean-result-roots;
       hasResultRootTimer = evaluatedIntegratedWsl.systemd.user.timers ? nh-clean-result-roots;
+      hasGrowthService = evaluatedIntegratedWsl.systemd.user.services ? nh-clean-growth-check;
+      hasGrowthTimer = evaluatedIntegratedWsl.systemd.user.timers ? nh-clean-growth-check;
     };
     expected = {
       clean = expectedDisabledSystemCleanup;
       hasUserCleanupService = false;
       hasUserCleanupTimer = false;
-      hasResultRootService = true;
-      hasResultRootTimer = true;
+      hasResultRootService = false;
+      hasResultRootTimer = false;
+      hasGrowthService = false;
+      hasGrowthTimer = false;
     };
   };
 
   testLinuxFinalResultRootUnits = systemdPlatformTest {
     expr = finalResultRootUnit evaluatedLinux;
-    expected = expectedFinalResultRootUnit;
-  };
-
-  testWslFinalResultRootUnits = systemdPlatformTest {
-    expr = finalResultRootUnit evaluatedWsl;
     expected = expectedFinalResultRootUnit;
   };
 
