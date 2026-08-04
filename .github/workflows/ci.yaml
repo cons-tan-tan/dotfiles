@@ -34,6 +34,7 @@ env:
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -49,6 +50,7 @@ jobs:
   build-eval:
     name: build / evaluate
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
       any-jobs: ${{ steps.matrix.outputs.any-jobs }}
@@ -91,6 +93,7 @@ jobs:
       needs.build-eval.result == 'success'
       && needs.build-eval.outputs.any-jobs == 'true'
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.build-eval.outputs.matrix) }}
@@ -197,6 +200,7 @@ jobs:
       - build-matrix
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Verify matrix result
         env:
