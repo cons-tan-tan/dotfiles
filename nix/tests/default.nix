@@ -336,6 +336,47 @@ let
   awsConfigHelper = (rustProject "aws-config-helper").packages.default;
   safeFetch = (rustProject "safe-fetch").packages;
   nhCleanUser = pkgs.callPackage ../packages/nh-clean-user { };
+  nixStoreGrowthChecker = pkgs.callPackage ../packages/nix-store-growth-checker { };
+  growthCheckerProbe = pkgs.writeShellApplication {
+    name = "nix-store-growth-checker";
+    text = ''
+      printf '%s\n' "$@" >>"$GROWTH_CHECKER_ARGS"
+      if [[ $1 == record ]]; then
+        exit "''${GROWTH_RECORD_STATUS:-0}"
+      fi
+      exit "''${GROWTH_CHECKER_STATUS:-0}"
+    '';
+  };
+  growthCleanupProbe = pkgs.writeShellApplication {
+    name = "growth-cleanup-probe";
+    text = ''
+      printf '%s\n' "$@" >"$GROWTH_CLEANUP_ARGS"
+      exit "''${GROWTH_CLEANUP_STATUS:-0}"
+    '';
+  };
+  nhCleanGrowthRunnerContract = pkgs.callPackage ../packages/nh-clean-growth-runner {
+    checker = growthCheckerProbe;
+    cleanupCommand = lib.getExe growthCleanupProbe;
+    cleanupArguments = [
+      "--user"
+      "start"
+      "nh-clean.service"
+    ];
+    queryTimeout = "2s";
+    maximumAgeSeconds = 789;
+    retryIntervalSeconds = 456;
+    storePath = "/test/store";
+    thresholdBytes = 123;
+  };
+  nhCleanGrowthTimeoutRunnerContract = pkgs.callPackage ../packages/nh-clean-growth-runner {
+    checker = nixStoreGrowthChecker;
+    cleanupCommand = lib.getExe growthCleanupProbe;
+    queryTimeout = "1s";
+    maximumAgeSeconds = 789;
+    retryIntervalSeconds = 456;
+    storePath = "/tmp/nh-clean-growth-runner-timeout-store";
+    thresholdBytes = 123;
+  };
   nhCleanArgumentProbe = pkgs.writeShellApplication {
     name = "nh";
     text = ''
@@ -785,7 +826,9 @@ let
         "tests/ghq-fetch-all.bats"
         "tests/herdr-wrapper.bats"
         "tests/linux-host-apps.bats"
+        "tests/nh-clean-growth-runner.bats"
         "tests/nh-result-root-pruner.bats"
+        "tests/nix-store-growth-checker.bats"
         "tests/pi-package-manager.bats"
         "tests/pi-wrapper.bats"
         "tests/wsl-open.bats"
@@ -805,7 +848,9 @@ let
         "nix/packages/drawio-headless/drawio-wrapper.sh"
         "nix/packages/ghq-fetch-all/ghq-fetch-all.sh"
         "nix/packages/herdr/herdr-wrapper.sh"
+        "nix/packages/nh-clean-growth-runner/nh-clean-growth-runner.sh"
         "nix/packages/nh-result-root-pruner/nh-prune-result-roots.sh"
+        "nix/packages/nix-store-growth-checker/nix-store-growth-checker.sh"
         "nix/packages/pi/package-manager.sh"
         "nix/packages/pi/pi-wrapper.sh"
         "nix/packages/wsl-set-ssh-auth-sock/set-ssh-auth-sock.sh"
@@ -813,6 +858,10 @@ let
       ];
       nativeBuildInputs = [
         pkgs.git
+        pkgs.jq
+        nhCleanGrowthRunnerContract
+        nhCleanGrowthTimeoutRunnerContract
+        nixStoreGrowthChecker
         awsConfigReconcileTestPackage
         awsLoginTestPackage
         claudeWrapperTestPackage
@@ -836,6 +885,9 @@ let
         HOST_EXPECTED_HM_WSL = "${username}@wsl-${hostArch}";
         HOST_EXPECTED_NIXOS_WSL = expectedNixosWslTarget;
         HOST_SWITCH_PUBLIC_BIN = publicApps.switch.program;
+        NH_CLEAN_GROWTH_RUNNER_BIN = lib.getExe nhCleanGrowthRunnerContract;
+        NH_CLEAN_GROWTH_TIMEOUT_RUNNER_BIN = lib.getExe nhCleanGrowthTimeoutRunnerContract;
+        NIX_STORE_GROWTH_CHECKER_BIN = lib.getExe nixStoreGrowthChecker;
         PI_WRAPPER_TEST_PACKAGE = piWrapperTestPackage;
         WSL_OPEN_TEST_PACKAGE = wslOpenTestPackage;
       };
@@ -851,6 +903,9 @@ let
         "HOST_EXPECTED_HM_WSL"
         "HOST_EXPECTED_NIXOS_WSL"
         "HOST_SWITCH_PUBLIC_BIN"
+        "NH_CLEAN_GROWTH_RUNNER_BIN"
+        "NH_CLEAN_GROWTH_TIMEOUT_RUNNER_BIN"
+        "NIX_STORE_GROWTH_CHECKER_BIN"
         "PI_WRAPPER_TEST_PACKAGE"
         "WSL_OPEN_TEST_PACKAGE"
       ]
