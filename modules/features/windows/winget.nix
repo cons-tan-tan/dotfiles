@@ -61,7 +61,7 @@
         '';
       in
       {
-        config = lib.mkIf config.dotfiles.platform.windowsCompanion {
+        config = lib.mkIf config.dotfiles.platform.windows.enable {
           dotfiles.windows.deployments.winget = {
             directories = [ ".config" ];
             files = [

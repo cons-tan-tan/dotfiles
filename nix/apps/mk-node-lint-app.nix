@@ -1,7 +1,7 @@
-# importNpmLock ベースの node 製 lint CLI app の共通部品。
+# importNpmLock ベースの node 製 lint CLI data planeの共通部品。
 # node/ ディレクトリの lockfile から node_modules を構築し、NODE_PATH を通して
 # node_modules 配下の entry スクリプトを exec するシェル断片を提供する。
-# CLI (usage / mode 分岐) は各 app 側に残す。
+# CLI control plane (usage / mode 分岐) は各appのrunner factoryが所有する。
 { pkgs }:
 {
   name,

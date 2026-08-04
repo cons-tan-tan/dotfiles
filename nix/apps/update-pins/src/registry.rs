@@ -555,7 +555,7 @@ mod tests {
     }
 
     #[test]
-    fn future_module_authority_has_a_narrow_generated_flake_transaction() {
+    fn module_authority_has_a_narrow_generated_flake_transaction() {
         let source = super::PairedSource {
             repository: "owner/example",
             input: "example-src",

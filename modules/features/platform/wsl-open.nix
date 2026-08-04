@@ -4,11 +4,8 @@
     name = "feature/platform/wsl-open";
     homeManager =
       { pkgs, ... }:
-      let
-        wsl-open = pkgs.callPackage ./_lib/wsl-open-package.nix { };
-      in
       {
-        home.packages = [ wsl-open ];
+        home.packages = [ pkgs.dotfilesPackages.wsl-open ];
         home.sessionVariables.BROWSER = "wsl-open";
       };
   };

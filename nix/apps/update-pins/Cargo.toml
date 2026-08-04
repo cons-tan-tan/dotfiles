@@ -11,7 +11,6 @@ autobins = false
 default = ["mutating"]
 mutating = []
 smoke = []
-future-layout-fixture = ["mutating"]
 
 [[bin]]
 name = "update-pins"
@@ -22,11 +21,6 @@ required-features = ["mutating"]
 name = "update-pins-smoke"
 path = "src/bin/update-pins-smoke.rs"
 required-features = ["smoke"]
-
-[[bin]]
-name = "update-pins-future-layout-fixture"
-path = "src/bin/update-pins-future-layout-fixture.rs"
-required-features = ["future-layout-fixture"]
 
 [dependencies]
 base64 = "0.22"

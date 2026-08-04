@@ -92,6 +92,11 @@ let
   ];
 in
 {
+  # mozuku-lsp は cabocha / crfpp の C++ チェーンごと source build になり、
+  # binary cache にない。nixpkgs を follows するとその更新ごとに再ビルド
+  # されるため、upstream の pin を version authority とする。
+  flake-file.inputs.mozuku.url = "github:t3tra-dev/MoZuKu";
+
   flake-file.inputs.ax = {
     # The CLI and the skill use the same input as their version authority.
     url = "github:yusukebe/ax/v0.1.23";

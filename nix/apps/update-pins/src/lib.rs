@@ -22,8 +22,6 @@ mod error;
 pub mod fetch;
 #[cfg(not(feature = "mutating"))]
 mod fetch;
-#[cfg(feature = "future-layout-fixture")]
-pub mod future_layout_fixture;
 #[cfg(feature = "mutating")]
 pub mod ledger;
 #[cfg(feature = "mutating")]

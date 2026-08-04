@@ -6,8 +6,9 @@
   ...
 }:
 let
-  username = "constantan";
   ciCheck = import ../../../nix/lib/ci-check.nix { inherit lib; };
+  configurationTargets = import ../../entities/_lib/configuration-targets.nix { inherit lib; };
+  composeUniqueChecks = import ../../../nix/tests/compose.nix { inherit lib; };
   externallyOwnedCheckNames = [
     "app-scripts"
     "check-flake-file"
@@ -27,20 +28,42 @@ let
   ];
 in
 {
+  flake-file.inputs.rustsec-advisory-db = {
+    url = "github:RustSec/advisory-db";
+    flake = false;
+  };
+
   den.aspects.repository-checks.checks =
     { pkgs, system, ... }:
     let
+      entityContext = configurationTargets { inherit den system; };
+      username = entityContext.username;
+      entityContexts = {
+        darwin = configurationTargets {
+          inherit den;
+          system = "aarch64-darwin";
+        };
+        linuxX86 = configurationTargets {
+          inherit den;
+          system = "x86_64-linux";
+        };
+        linuxAarch64 = configurationTargets {
+          inherit den;
+          system = "aarch64-linux";
+        };
+      };
       baseChecks = lib.optionalAttrs (system == "x86_64-linux") {
         den-capability-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
-          import ../../../nix/checks/den-capabilities.nix {
+          import ../../../nix/tests/eval/den-suite-harness.nix {
             inherit inputs lib pkgs;
+            fixtureRoot = ../../..;
           }
         );
         den-schema-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
-          import ../../../nix/checks/den-capabilities.nix {
+          import ../../../nix/tests/eval/den-suite-harness.nix {
             inherit inputs lib pkgs;
             checkName = "den-schema-tests";
-            fixturePath = ../../_tests/den-schema.nix;
+            fixturePath = ../../_tests/den-schema.suite.nix;
             fixtureRoot = ../../..;
             schemaModule = ../../schema/entities.nix;
           }
@@ -62,52 +85,57 @@ in
           }
         );
         agent-den-dataflow-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
-          import ../../../nix/checks/den-capabilities.nix {
+          import ../../../nix/tests/eval/den-suite-harness.nix {
             inherit inputs lib pkgs;
             checkName = "agent-den-dataflow-tests";
-            fixturePath = ../agents/_tests/dataflow.nix;
+            fixturePath = ../agents/_tests/dataflow.suite.nix;
             fixtureRoot = ../../..;
           }
         );
         cli-tools-dataflow-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
-          import ../../../nix/checks/den-capabilities.nix {
+          import ../../../nix/tests/eval/den-suite-harness.nix {
             inherit inputs lib pkgs;
             checkName = "cli-tools-dataflow-tests";
-            fixturePath = ../packages/_tests/dataflow.nix;
+            fixturePath = ../packages/_tests/dataflow.suite.nix;
             fixtureRoot = ../../..;
           }
         );
         home-feature-contract = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
-          import ../_tests/home-feature-contract.nix {
-            inherit inputs lib pkgs;
+          import ../../../nix/checks/home-feature-contract.nix {
+            inherit
+              entityContexts
+              inputs
+              lib
+              pkgs
+              ;
             flake = config.flake;
           }
         );
         platform-feature-contract = ciCheck.annotate (ciCheck.targets.linux "configurations") (
-          import ../platform/_tests/contract.nix {
+          import ../../../nix/checks/platform-feature-contract.nix {
             inherit
+              entityContexts
               lib
               pkgs
-              username
               ;
             flake = config.flake;
           }
         );
         windows-class-contract =
           let
-            outputContract = import ../windows/_tests/class-contract.nix {
+            outputContract = import ../../../nix/checks/windows-class-contract.nix {
               inherit
+                entityContexts
                 inputs
                 lib
                 pkgs
-                username
                 ;
               flake = config.flake;
             };
-            dataflowContract = import ../../../nix/checks/den-capabilities.nix {
+            dataflowContract = import ../../../nix/tests/eval/den-suite-harness.nix {
               inherit inputs lib pkgs;
               checkName = "windows-class-dataflow-tests";
-              fixturePath = ../windows/_tests/dataflow.nix;
+              fixturePath = ../windows/_tests/dataflow.suite.nix;
               fixtureRoot = ../../..;
             };
           in
@@ -159,7 +187,19 @@ in
         reservedCheckNames = externallyOwnedCheckNames ++ builtins.attrNames baseChecks;
       };
     in
-    baseChecks // testChecks;
+    composeUniqueChecks {
+      producers = [
+        {
+          owner = "repository base checks";
+          checks = baseChecks;
+        }
+        {
+          owner = "repository test checks";
+          checks = testChecks;
+        }
+      ];
+      reservedCheckNames = externallyOwnedCheckNames;
+    };
 
   den.schema.flake-parts.includes = [ den.aspects.repository-checks ];
 }

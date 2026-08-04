@@ -75,6 +75,7 @@ in
 }
 // lib.optionalAttrs hostPlatform.isLinux {
   drawio-headless = pkgs.callPackage ./drawio-headless { };
+  wsl-open = pkgs.callPackage ./wsl-open { };
   wsl-set-ssh-auth-sock = pkgs.callPackage ./wsl-set-ssh-auth-sock { };
 }
 // lib.optionalAttrs hostPlatform.isDarwin {

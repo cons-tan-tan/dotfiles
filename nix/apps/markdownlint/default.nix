@@ -1,42 +1,33 @@
 { pkgs }:
 
 let
-  nodeLint = import ../mk-node-lint-app.nix { inherit pkgs; } {
-    name = "markdownlint";
-    nodeDir = ./node;
+  contract = import ./contract.nix;
+  runnerFactory = import ./runner.nix { inherit pkgs; };
+  validation = import ./validation.nix {
+    inherit contract pkgs runnerFactory;
   };
 
-  techDocConfig = ./configs/tech-doc.markdownlint.yaml;
-
-  runner = pkgs.writeShellApplication {
-    name = "markdownlint-run";
+  nodeLint = import ../mk-node-lint-app.nix { inherit pkgs; } {
+    name = "markdownlint";
+    inherit (contract) nodeDir;
+  };
+  lintEngine = pkgs.writeShellApplication {
+    name = "markdownlint-engine";
     text = ''
-      usage() {
-        cat >&2 <<'EOF'
-      usage: nix run dotfiles#markdownlint -- <files...>
-      EOF
-      }
-
-      if [ "$#" -eq 0 ]; then
-        usage
-        exit 64
-      fi
-
-      case "$1" in
-        -h|--help|help)
-          usage
-          exit 0
-          ;;
-      esac
-
-      ${nodeLint.mkExec "markdownlint-cli/markdownlint.js"} \
-        --config "${techDocConfig}" \
+      ${nodeLint.mkExec "${contract.packageName}/${contract.entry}"} \
         "$@"
     '';
   };
+  runner = runnerFactory {
+    inherit (contract) config;
+    lintExecutable = pkgs.lib.getExe lintEngine;
+  };
 in
 {
-  type = "app";
-  meta.description = "Run markdownlint with repository-managed technical documentation modes";
-  program = pkgs.lib.getExe runner;
+  app = {
+    type = "app";
+    meta.description = "Run markdownlint with repository-managed technical documentation modes";
+    program = pkgs.lib.getExe runner.package;
+  };
+  inherit validation;
 }

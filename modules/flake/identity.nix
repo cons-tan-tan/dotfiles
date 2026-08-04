@@ -2,7 +2,7 @@ let
   cache = import ../../nix/lib/cache-settings.nix;
 in
 {
-  flake-file.description = "constantan's home-manager configuration";
+  flake-file.description = "constantan's declarative Darwin, NixOS-WSL, and Home Manager dotfiles";
 
   flake-file.nixConfig = {
     extra-substituters = [

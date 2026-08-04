@@ -7,10 +7,15 @@
 }:
 
 let
+  contract = import ./contract.nix;
+  runnerFactory = import ./runner.nix { inherit pkgs; };
+  validation = import ./validation.nix {
+    inherit contract pkgs runnerFactory;
+  };
   pptxSkillDir = "${anthropic-skills}/skills/pptx";
 
   pythonWorkspace = uv2nix.lib.workspace.loadWorkspace {
-    workspaceRoot = ./python;
+    workspaceRoot = contract.pythonDir;
   };
 
   pythonSet =
@@ -55,7 +60,7 @@ let
 
   pptxNodeModules = import ../mk-node-modules.nix { inherit pkgs; } {
     name = "pptx";
-    nodeDir = ./node;
+    nodeDir = contract.nodeDir;
   };
 
   nodeWrapper = pkgs.runCommandLocal "pptx-node-wrapper" { } ''
@@ -103,21 +108,13 @@ let
       ];
   };
 
-  runner = pkgs.writeShellApplication {
-    name = "pptx-run";
-    text = ''
-      if [ "$#" -eq 0 ]; then
-        echo "usage: nix run dotfiles#pptx -- <command> [args...]" >&2
-        exit 64
-      fi
-
-      export PATH="${pptxTools}/bin:$PATH"
-      exec "$@"
-    '';
-  };
+  runner = runnerFactory { toolPath = pptxTools; };
 in
 {
-  type = "app";
-  meta.description = "Run commands in the repository-managed PPTX conversion toolchain";
-  program = pkgs.lib.getExe runner;
+  app = {
+    type = "app";
+    meta.description = "Run commands in the repository-managed PPTX conversion toolchain";
+    program = pkgs.lib.getExe runner.package;
+  };
+  inherit validation;
 }

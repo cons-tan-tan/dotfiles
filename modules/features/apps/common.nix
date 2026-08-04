@@ -1,19 +1,16 @@
-{ den, inputs, ... }:
+{
+  den,
+  inputs,
+  lib,
+  ...
+}:
 let
-  mkAspect = import ../../../nix/lib/apps/mk-common-den-aspect.nix {
-    inherit inputs;
-    username = "constantan";
+  mkAspect = import ./_lib/mk-common-den-aspect.nix {
+    inherit den inputs lib;
   };
 in
 {
-  den.aspects.common-apps = mkAspect {
-    group = "maintenance";
-    scriptNames = [
-      "apply-nix-settings"
-      "fmt"
-      "update"
-    ];
-  };
+  den.aspects.common-apps = mkAspect { group = "maintenance"; };
 
   den.schema.flake-parts.includes = [ den.aspects.common-apps ];
 }

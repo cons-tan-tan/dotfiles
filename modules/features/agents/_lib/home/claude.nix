@@ -6,8 +6,8 @@
   ...
 }:
 let
-  environment = config.dotfiles.agentEnvironment;
-  dotfilesDir = environment.source;
+  platform = config.dotfiles.platform;
+  dotfilesDir = platform.source;
   hcom = config.dotfiles.agentIntegrations.hcom;
 
   claudeHome = "${config.home.homeDirectory}/.claude";
@@ -35,8 +35,8 @@ let
 
   baseSettingsFile = jsonFormat.generate "claude-settings-base.json" (
     settingsLib.mkSettings {
-      isDarwin = environment.environment == "darwin";
-      wslUserProfile = if environment.environment == "wsl" then environment.windows.homedir else null;
+      isDarwin = platform.environment == "darwin";
+      wslUserProfile = if platform.environment == "wsl" then platform.windows.homedir else null;
       hcomPath = if hcom == null then null else "${hcom.package}/bin/hcom";
       guardCommand = guardHook.command;
     }

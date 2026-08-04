@@ -2,7 +2,6 @@
   lib,
   linuxSettings,
   pkgs,
-  windowsHomedir,
   wslSettings,
 }:
 pkgs.runCommand "claude-userprofile-contract"
@@ -11,7 +10,7 @@ pkgs.runCommand "claude-userprofile-contract"
   }
   ''
     actual="$(${lib.getExe pkgs.jq} --raw-output '.env.USERPROFILE // empty' ${wslSettings})"
-    if [ "$actual" != ${lib.escapeShellArg windowsHomedir} ]; then
+    if [ "$actual" != ${lib.escapeShellArg "/mnt/c/Users/zhouc"} ]; then
       echo "WSL Claude USERPROFILE mismatch: $actual" >&2
       exit 1
     fi

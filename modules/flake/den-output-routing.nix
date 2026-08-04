@@ -1,5 +1,8 @@
 { den, ... }:
 let
+  # Den標準policyがpackagesへ与える経路を、overlay済みのflake-parts pkgsを
+  # 必要とするapps/checks/devShellsにも補う。allModuleArgsを渡すことで、
+  # self'などのflake-parts module argumentを各aspectへ保つ。
   toFlakeParts = output: _: [
     (den.lib.policy.route {
       fromClass = output;

@@ -965,7 +965,7 @@ mod tests {
         ];
         let spec = TargetSpec {
             target: Target::Hcom,
-            name: "future-layout",
+            name: "module-authority",
             kind: TargetKind::PairedRelease {
                 pin: "nix/pins/example.json",
                 source: PairedSource {

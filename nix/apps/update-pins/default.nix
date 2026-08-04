@@ -6,18 +6,10 @@
   nix,
   rustPlatform,
   smoke ? false,
-  futureLayoutFixture ? false,
 }:
 
-assert !(smoke && futureLayoutFixture);
 rustPlatform.buildRustPackage {
-  pname =
-    if smoke then
-      "update-pins-smoke"
-    else if futureLayoutFixture then
-      "update-pins-future-layout-fixture"
-    else
-      "update-pins";
+  pname = if smoke then "update-pins-smoke" else "update-pins";
   version = "0.1.0";
 
   src = lib.fileset.toSource {
@@ -40,13 +32,6 @@ rustPlatform.buildRustPackage {
         "--bin"
         "update-pins-smoke"
       ]
-    else if futureLayoutFixture then
-      [
-        "--features"
-        "future-layout-fixture"
-        "--bin"
-        "update-pins-future-layout-fixture"
-      ]
     else
       [
         "--bin"
@@ -61,11 +46,6 @@ rustPlatform.buildRustPackage {
         "--no-default-features"
         "--features"
         "smoke"
-      ]
-    else if futureLayoutFixture then
-      [
-        "--features"
-        "future-layout-fixture"
       ]
     else
       [
@@ -90,17 +70,9 @@ rustPlatform.buildRustPackage {
     description =
       if smoke then
         "Check update-pins assumptions against live upstream metadata"
-      else if futureLayoutFixture then
-        "Exercise generated flake input updates in an isolated fixture"
       else
         "Synchronize repository pins with their upstream releases";
     license = lib.licenses.cc0;
-    mainProgram =
-      if smoke then
-        "update-pins-smoke"
-      else if futureLayoutFixture then
-        "update-pins-future-layout-fixture"
-      else
-        "update-pins";
+    mainProgram = if smoke then "update-pins-smoke" else "update-pins";
   };
 }

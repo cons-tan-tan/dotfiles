@@ -1,4 +1,5 @@
 {
+  features,
   inputs,
   ...
 }:
@@ -30,6 +31,7 @@
 
   features.agent-hunk-wsl = {
     name = "feature/agents/hunk/wsl";
+    includes = [ features.agent-hunk ];
     homeManager = { pkgs, ... }: {
       programs.hunk.package = pkgs.dotfilesPackages.hunk.wslRuntime;
     };

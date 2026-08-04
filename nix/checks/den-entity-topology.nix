@@ -62,7 +62,7 @@ let
     modules = [
       inputs.den.flakeOutputs.flake
       inputs.den.flakeModule
-      ../../modules/_tests/den-entity-topology.nix
+      ../../modules/_tests/den-entity-topology.fixture.nix
     ];
   };
   isolationHome = isolationEval.config.flake.homeConfigurations.synthetic-isolation-probe;

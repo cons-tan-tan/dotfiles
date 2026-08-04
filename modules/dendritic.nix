@@ -6,7 +6,8 @@
     (inputs.den.namespace "features" false)
 
     # https://github.com/denful/den/issues/632
-    # Add inputs.den.flakeModules.strict here after strictModeIssue632 in
-    # modules/_tests/den-capabilities.nix succeeds against a fixed revision.
+    # A fixed Den revision must make strictRejectsValidAspectClassIssue632 in
+    # modules/_tests/den-capabilities.suite.nix stop reproducing the rejection. Turn
+    # that fixture into a positive contract before importing strict here.
   ];
 }

@@ -5,13 +5,50 @@ let
 
   testStem = path: lib.removeSuffix testSuffix (baseNameOf path);
   failureStem = path: lib.removeSuffix failureTestSuffix (baseNameOf path);
+  selectSourceRootFiles = sourceRoot: files: builtins.filter sourceRoot.include files;
+  repositorySourceRoots =
+    {
+      modulesRoot,
+      nixRoot,
+    }:
+    [
+      {
+        path = nixRoot;
+        include = _: true;
+      }
+      {
+        path = modulesRoot;
+        include = path: lib.hasInfix "/_tests/" (toString path) || lib.hasInfix "/_lib/" (toString path);
+      }
+    ];
 in
 {
+  inherit repositorySourceRoots selectSourceRootFiles;
+
   discover =
     sourceRoots:
     lib.concatMap (
-      sourceRoot: builtins.filter sourceRoot.include (lib.filesystem.listFilesRecursive sourceRoot.path)
+      sourceRoot: selectSourceRootFiles sourceRoot (lib.filesystem.listFilesRecursive sourceRoot.path)
     ) sourceRoots;
+
+  discoverRepository =
+    roots:
+    let
+      sourceRoots = repositorySourceRoots roots;
+    in
+    {
+      inherit sourceRoots;
+      files = lib.concatMap (
+        sourceRoot: selectSourceRootFiles sourceRoot (lib.filesystem.listFilesRecursive sourceRoot.path)
+      ) sourceRoots;
+    };
+
+  excludePaths =
+    excludedPaths: files:
+    let
+      excluded = map toString excludedPaths;
+    in
+    builtins.filter (path: !builtins.elem (toString path) excluded) files;
 
   classify =
     files:

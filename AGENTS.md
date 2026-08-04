@@ -18,7 +18,7 @@ Run the narrowest relevant checks while iterating.
 
 Checks and development aids outside the flake gate:
 
-- `bats --print-output-on-failure tests/` is a source-only development aid; Nix package cases skip without their fixtures.
+- `bats --print-output-on-failure bats/` is a source-only development aid; Nix package cases skip without their fixtures.
 - `nix run .#markdownlint -- <files...>` checks Markdown structure.
 - `nix run .#textlint -- tech-jp <files...>` checks Japanese technical prose.
 

@@ -1,13 +1,32 @@
 {
   darwinConfigurations,
+  entityContexts,
   homeConfigurations,
   lib,
   nixosConfigurations,
   pkgs,
-  username,
 }:
 let
+  username = "constantan";
   linuxHomedir = "/home/${username}";
+  standaloneSubjects = {
+    "${username}@linux-aarch64" = {
+      target = entityContexts.linuxAarch64.home.linux;
+      system = "aarch64-linux";
+    };
+    "${username}@linux-x86_64" = {
+      target = entityContexts.linuxX86.home.linux;
+      system = "x86_64-linux";
+    };
+    "${username}@wsl-aarch64" = {
+      target = entityContexts.linuxAarch64.home.wsl;
+      system = "aarch64-linux";
+    };
+    "${username}@wsl-x86_64" = {
+      target = entityContexts.linuxX86.home.wsl;
+      system = "x86_64-linux";
+    };
+  };
   expectedStandalone = {
     "${username}@linux-aarch64" = "aarch64-linux";
     "${username}@linux-x86_64" = "x86_64-linux";
@@ -15,12 +34,12 @@ let
     "${username}@wsl-x86_64" = "x86_64-linux";
   };
   standaloneActual = lib.mapAttrs (
-    name: _expectedSystem:
-    if !(builtins.hasAttr name homeConfigurations) then
+    _name: subject:
+    if !(builtins.hasAttr subject.target homeConfigurations) then
       { exists = false; }
     else
       let
-        configuration = homeConfigurations.${name};
+        configuration = homeConfigurations.${subject.target};
         home = configuration.config or { };
         activationPackage = configuration.activationPackage or null;
         activationPackageIsDerivation = lib.isDerivation activationPackage;
@@ -40,7 +59,7 @@ let
         resultRootService = builtins.hasAttr "nh-clean-result-roots" services;
         resultRootTimer = builtins.hasAttr "nh-clean-result-roots" timers;
       }
-  ) expectedStandalone;
+  ) standaloneSubjects;
   standaloneExpected = lib.mapAttrs (
     name: system:
     let
@@ -65,16 +84,20 @@ let
     wsl = "x86_64-linux";
     wsl-aarch64 = "aarch64-linux";
   };
+  nixosSubjects = {
+    wsl = entityContexts.linuxX86;
+    wsl-aarch64 = entityContexts.linuxAarch64;
+  };
   nixosActual = lib.mapAttrs (
-    name: _expectedSystem:
-    if !(builtins.hasAttr name nixosConfigurations) then
+    _name: subject:
+    if !(builtins.hasAttr subject.nixosWsl nixosConfigurations) then
       { exists = false; }
     else
       let
-        configuration = nixosConfigurations.${name};
+        configuration = nixosConfigurations.${subject.nixosWsl};
         config = configuration.config or { };
         homeUsers = lib.attrByPath [ "home-manager" "users" ] { } config;
-        homeExists = builtins.hasAttr username homeUsers;
+        homeExists = builtins.hasAttr subject.username homeUsers;
       in
       if !homeExists then
         {
@@ -83,7 +106,7 @@ let
         }
       else
         let
-          home = homeUsers.${username};
+          home = homeUsers.${subject.username};
           services = lib.attrByPath [ "systemd" "user" "services" ] { } home;
           timers = lib.attrByPath [ "systemd" "user" "timers" ] { } home;
         in
@@ -105,7 +128,7 @@ let
           systemResultRootService = builtins.hasAttr "nh-clean-result-roots" config.systemd.services;
           systemResultRootTimer = builtins.hasAttr "nh-clean-result-roots" config.systemd.timers;
         }
-  ) expectedNixos;
+  ) nixosSubjects;
   nixosExpected = lib.mapAttrs (_: system: {
     exists = true;
     homeExists = true;
@@ -126,14 +149,14 @@ let
   }) expectedNixos;
 
   darwinActual =
-    if !(builtins.hasAttr username darwinConfigurations) then
+    if !(builtins.hasAttr entityContexts.darwin.darwin darwinConfigurations) then
       { exists = false; }
     else
       let
-        configuration = darwinConfigurations.${username};
+        configuration = darwinConfigurations.${entityContexts.darwin.darwin};
         config = configuration.config or { };
         homeUsers = lib.attrByPath [ "home-manager" "users" ] { } config;
-        homeExists = builtins.hasAttr username homeUsers;
+        homeExists = builtins.hasAttr entityContexts.darwin.username homeUsers;
       in
       if !homeExists then
         {
@@ -142,7 +165,7 @@ let
         }
       else
         let
-          home = homeUsers.${username};
+          home = homeUsers.${entityContexts.darwin.username};
           agents = lib.attrByPath [ "launchd" "agents" ] { } home;
         in
         {

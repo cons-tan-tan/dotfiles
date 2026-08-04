@@ -1,12 +1,7 @@
-{ features, ... }:
+{ ... }:
 {
-  features.registries = {
-    name = "feature/registries";
-  };
-
   features.registries-host = {
     name = "feature/registries/host";
-    includes = [ features.registries ];
     homeManager =
       { host, ... }:
       {
@@ -25,7 +20,6 @@
 
   features.registries-home = {
     name = "feature/registries/home";
-    includes = [ features.registries ];
     homeManager =
       { home, ... }:
       {

@@ -22,7 +22,6 @@ let
             environment = "linux";
             source = "/source/test";
             standalone = cleanupOwner == "home-manager";
-            windowsCompanion = false;
             nhCleanupOwner = cleanupOwner;
           };
           home = {

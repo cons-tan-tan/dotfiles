@@ -5,69 +5,83 @@
   ...
 }:
 let
-  validateScriptEntries = import ../../../nix/lib/apps/validate-script-entries.nix { inherit lib; };
+  mergeValidationProducers = import ./_lib/merge-validation-producers.nix { inherit lib; };
   ciCheck = import ../../../nix/lib/ci-check.nix { inherit lib; };
 in
 {
   options.perSystem = flake-parts-lib.mkPerSystemOption {
-    options.dotfiles.appScripts = lib.mkOption {
-      type = lib.types.listOf lib.types.package;
-      default = [ ];
+    options.dotfiles.appValidations = lib.mkOption {
+      type = lib.types.attrsOf lib.types.package;
+      default = { };
       internal = true;
-      description = "Validated app script derivations used by the shellcheck gate";
+      description = "Validation derivations paired with every public app";
     };
   };
 
   config = {
-    den.classes.appScriptGate = { };
-    den.quirks.app-scripts = {
-      description = "System-parametric app script derivations";
+    den.classes.appValidationGate = { };
+    # The record keeps its nested function opaque while Den collects the quirk;
+    # the consumer invokes it after flake-parts supplies per-system arguments.
+    den.quirks.app-validations = {
+      description = "Producers of system-parametric public app validation derivations";
     };
 
-    den.policies.app-script-gate-to-flake-parts = _: [
+    den.policies.app-validation-gate-to-flake-parts = _: [
       (den.lib.policy.route {
-        fromClass = "appScriptGate";
+        fromClass = "appValidationGate";
         intoClass = "flake-parts";
         path = [ "dotfiles" ];
         adaptArgs = { config, ... }: config.allModuleArgs;
       })
     ];
 
-    den.aspects.app-script-consumer.appScriptGate =
+    den.aspects.app-validation-consumer.appValidationGate =
       {
-        app-scripts,
+        app-validations,
         pkgs,
         self',
         system,
         ...
       }:
+      let
+        validations = mergeValidationProducers {
+          producers = app-validations;
+          args = { inherit pkgs self' system; };
+        };
+      in
       {
-        appScripts = map (entry: entry.mkDerivation { inherit pkgs self' system; }) (
-          validateScriptEntries app-scripts
-        );
+        appValidations = validations;
       };
 
-    den.aspects.app-script-check.checks =
+    den.aspects.app-validation-check.checks =
       { config, pkgs, ... }:
-      {
-        app-scripts =
-          ciCheck.annotate
-            (ciCheck.targets.bySystem {
-              darwin = "configurations";
-              linux = "repo-quality";
-            })
-            (
-              pkgs.symlinkJoin {
-                name = "app-scripts";
-                paths = config.dotfiles.appScripts;
-              }
-            );
-      };
+      let
+        appNames = builtins.attrNames config.apps;
+        validationNames = builtins.attrNames config.dotfiles.appValidations;
+        validationPaths = builtins.attrValues config.dotfiles.appValidations;
+        gate =
+          (pkgs.linkFarm "app-scripts" (
+            lib.mapAttrsToList (name: path: { inherit name path; }) config.dotfiles.appValidations
+          ))
+          // {
+            paths = validationPaths;
+            inherit validationNames;
+          };
+      in
+      if appNames != validationNames then
+        throw "public app and validation names must match exactly: apps=${builtins.toJSON appNames}, validations=${builtins.toJSON validationNames}"
+      else
+        {
+          app-scripts = ciCheck.annotate (ciCheck.targets.bySystem {
+            darwin = "configurations";
+            linux = "repo-quality";
+          }) gate;
+        };
 
     den.schema.flake-parts.includes = [
-      den.policies.app-script-gate-to-flake-parts
-      den.aspects.app-script-consumer
-      den.aspects.app-script-check
+      den.policies.app-validation-gate-to-flake-parts
+      den.aspects.app-validation-consumer
+      den.aspects.app-validation-check
     ];
   };
 }

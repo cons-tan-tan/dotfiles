@@ -6,11 +6,7 @@
   ...
 }:
 let
-  username = "constantan";
   darwinSystem = "aarch64-darwin";
-  linuxHomedir = "/home/${username}";
-  windowsUsername = "zhouc";
-  windowsHomedir = "/mnt/c/Users/${windowsUsername}";
   configurationTargets = import ../../entities/_lib/configuration-targets.nix { inherit lib; };
   ciCheck = import ../../../nix/lib/ci-check.nix { inherit lib; };
 in
@@ -19,6 +15,21 @@ in
     { pkgs, system, ... }:
     let
       targets = configurationTargets { inherit den system; };
+      username = targets.username;
+      entityContexts = {
+        darwin = configurationTargets {
+          inherit den;
+          system = "aarch64-darwin";
+        };
+        linuxX86 = configurationTargets {
+          inherit den;
+          system = "x86_64-linux";
+        };
+        linuxAarch64 = configurationTargets {
+          inherit den;
+          system = "aarch64-linux";
+        };
+      };
       inherit (config.flake)
         darwinConfigurations
         homeConfigurations
@@ -32,18 +43,18 @@ in
         if lib.hasSuffix "-linux" system then nixosConfigurations.${targets.nixosWsl} else null;
       homeConfiguration = environment: homeConfigurations.${targets.home.${environment}};
       hcomProfile =
-        homeConfiguration: import ../agents/_tests/hcom-profile.nix { inherit homeConfiguration; };
+        homeConfiguration: import ../agents/_tests/hcom-profile.factory.nix { inherit homeConfiguration; };
     in
     lib.optionalAttrs (system == "x86_64-linux") {
       configuration-ownership-contract = ciCheck.annotate (ciCheck.targets.linux "configurations") (
         import ../../../nix/checks/configuration-ownership-contract.nix {
           inherit
             darwinConfigurations
+            entityContexts
             homeConfigurations
             lib
             nixosConfigurations
             pkgs
-            username
             ;
         }
       );
@@ -70,17 +81,14 @@ in
         nixos-wsl-contract = import ../../../nix/checks/nixos-wsl-contract.nix {
           inherit
             lib
-            linuxHomedir
             pkgs
-            username
-            windowsHomedir
-            windowsUsername
             ;
+          entityContext = targets;
           config = nixosWslConfiguration.config;
           sourcePath = toString inputs.self.outPath;
         };
         claude-userprofile-contract = import ../../../nix/checks/claude-userprofile-contract.nix {
-          inherit lib pkgs windowsHomedir;
+          inherit lib pkgs;
           linuxSettings = (homeConfiguration "linux").config.home.file.".claude/settings.json".source;
           wslSettings = (homeConfiguration "wsl").config.home.file.".claude/settings.json".source;
         };

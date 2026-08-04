@@ -38,7 +38,6 @@
       features.network-curl
       features.security-gpg
       features.security-ssh
-      features.registries
       features.trash
     ];
   };

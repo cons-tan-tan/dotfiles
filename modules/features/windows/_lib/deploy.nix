@@ -1,6 +1,6 @@
 { lib, pkgs }:
 let
-  package = pkgs.callPackage ./deploy-package.nix { };
+  package = pkgs.callPackage ../../../../nix/packages/windows-companion-deploy { };
   mkActivation =
     {
       after,

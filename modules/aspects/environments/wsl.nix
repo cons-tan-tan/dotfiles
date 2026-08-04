@@ -8,7 +8,7 @@ let
   profileAssertion = import ./_lib/profile-assertion.nix;
   baseHomeModule =
     owner: cleanupOwner:
-    { config, ... }:
+    { ... }:
     {
       assertions = [
         (profileAssertion {
@@ -19,17 +19,8 @@ let
       dotfiles.platform = {
         inherit (owner.dotfiles) environment source;
         standalone = owner.dotfiles.standalone or false;
-        windowsCompanion = owner.dotfiles.windows.enable;
+        windows = owner.dotfiles.windows;
         nhCleanupOwner = cleanupOwner;
-      };
-      dotfiles.windows = {
-        inherit (owner.dotfiles.windows) enable username homedir;
-        inherit (owner.dotfiles) environment source;
-        linuxHomedir = config.home.homeDirectory;
-      };
-      dotfiles.agentEnvironment = {
-        inherit (owner.dotfiles) environment source;
-        windows.homedir = owner.dotfiles.windows.homedir;
       };
     };
 in

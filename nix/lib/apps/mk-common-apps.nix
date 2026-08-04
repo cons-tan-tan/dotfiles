@@ -1,7 +1,8 @@
-# darwin / linux 共通の flake apps。ホスト固有の build / switch / apply-winget
-# は flake.nix 側で合成する。
-# 戻り値は { apps, scripts, scriptsByName, groups }。groups は Den feature が
-# 所有する app だけを選べる境界で、全体の apps/scripts は同じ group から導出する。
+# darwin / linux 共通の flake apps。ホスト固有のappは
+# modules/features/apps/host.nix側で合成する。
+# 戻り値は { apps, validations, validationsByName, groups }。
+# groups は Den feature が所有する app だけを選べる境界で、全体の
+# apps/validations は同じ group から導出する。
 { inputs, username }:
 {
   pkgs,
@@ -117,8 +118,7 @@ let
     };
 
     lint = appSet.mkAppSet {
-      entries = { };
-      extraApps = {
+      entries = {
         pptx = import ../../apps/pptx {
           inherit pkgs;
           inherit (inputs)

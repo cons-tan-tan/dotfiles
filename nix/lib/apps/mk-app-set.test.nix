@@ -9,8 +9,18 @@ let
     name = "second-fixture-app";
     text = "true";
   };
+  customValidation = pkgs.writeText "custom-app-validation" "validated";
+  customApp = {
+    type = "app";
+    meta.description = "Custom fixture application";
+    program = "/bin/true";
+  };
   fixture = appSet.mkAppSet {
     entries = {
+      custom = {
+        app = customApp;
+        validation = customValidation;
+      };
       fixture = {
         description = "Fixture application";
         script = fixtureScript;
@@ -21,17 +31,6 @@ let
       };
     };
   };
-  fixtureExtraApp = {
-    type = "app";
-    program = "/bin/true";
-  };
-  fixtureWithExtra = appSet.mkAppSet {
-    entries.fixture = {
-      description = "Fixture application";
-      script = fixtureScript;
-    };
-    extraApps.extra = fixtureExtraApp;
-  };
   otherFixture = appSet.mkAppSet {
     entries.other = {
       description = "Other fixture application";
@@ -39,106 +38,143 @@ let
     };
   };
   mergedFixture = appSet.mergeAppSets [
-    fixtureWithExtra
+    fixture
     otherFixture
   ];
+  evaluationSucceeds = value: (builtins.tryEval value).success;
 in
 {
-  testAppsDeriveFromEntries = {
+  testAppsAndValidationsHaveExactNames = {
+    expr = builtins.attrNames fixture.apps == builtins.attrNames fixture.validationsByName;
+    expected = true;
+  };
+
+  testShellAppDerivesProgramAndDefaultValidation = {
     expr = {
       inherit (fixture.apps.fixture) type;
       inherit (fixture.apps.fixture.meta) description;
+      program = lib.hasSuffix "/bin/fixture-app" fixture.apps.fixture.program;
+      validation = fixture.validationsByName.fixture.drvPath;
     };
     expected = {
       type = "app";
       description = "Fixture application";
+      program = true;
+      validation = fixtureScript.drvPath;
     };
   };
 
-  testProgramPointsAtScript = {
-    expr = lib.hasSuffix "/bin/fixture-app" fixture.apps.fixture.program;
-    expected = true;
-  };
-
-  testScriptsMatchEntries = {
-    expr = map lib.getName fixture.scripts;
-    expected = [
-      "fixture-app"
-      "second-fixture-app"
-    ];
-  };
-
-  testScriptsRemainAddressableByAppName = {
-    expr = lib.getName fixture.scriptsByName.second;
-    expected = "second-fixture-app";
-  };
-
-  testExtraAppsMergedButNotInScripts = {
+  testCustomAppAndValidationRemainPaired = {
     expr = {
-      appNames = builtins.attrNames fixtureWithExtra.apps;
-      extraApp = fixtureWithExtra.apps.extra;
-      scriptCount = builtins.length fixtureWithExtra.scripts;
+      app = fixture.apps.custom;
+      validation = fixture.validationsByName.custom.drvPath;
     };
     expected = {
-      appNames = [
-        "extra"
-        "fixture"
-      ];
-      extraApp = fixtureExtraApp;
-      scriptCount = 1;
+      app = customApp;
+      validation = customValidation.drvPath;
     };
   };
 
-  testDuplicateAppNamesRejected = {
-    expr =
-      (builtins.tryEval (
-        appSet.mkAppSet {
-          entries.fixture = {
-            description = "Fixture application";
-            script = fixtureScript;
-          };
-          extraApps.fixture = fixtureExtraApp;
-        }
-      )).success;
+  testMissingCustomValidationIsRejected = {
+    expr = evaluationSucceeds (
+      (appSet.mkAppSet {
+        entries.invalid.app = customApp;
+      }).apps
+    );
     expected = false;
   };
 
-  testAppSetsMergeAppsAndScripts = {
+  testMixedShellAndCustomStrategiesAreRejected = {
+    expr = evaluationSucceeds (
+      (appSet.mkAppSet {
+        entries.invalid = {
+          app = customApp;
+          description = "Ambiguous fixture";
+          script = fixtureScript;
+          validation = customValidation;
+        };
+      }).apps
+    );
+    expected = false;
+  };
+
+  testShellAppWithUnknownFieldIsRejected = {
+    expr = evaluationSucceeds (
+      (appSet.mkAppSet {
+        entries.invalid = {
+          description = "Fixture application";
+          script = fixtureScript;
+          unexpected = true;
+        };
+      }).apps
+    );
+    expected = false;
+  };
+
+  testCustomAppWithUnknownFieldIsRejected = {
+    expr = evaluationSucceeds (
+      (appSet.mkAppSet {
+        entries.invalid = {
+          app = customApp;
+          validation = customValidation;
+          unexpected = true;
+        };
+      }).apps
+    );
+    expected = false;
+  };
+
+  testExtraAppsBypassIsRejected = {
+    expr = evaluationSucceeds (
+      (appSet.mkAppSet {
+        entries = { };
+        extraApps.extra = customApp;
+      }).apps
+    );
+    expected = false;
+  };
+
+  testAppSetsMergeExactAppsAndValidations = {
     expr = {
       appNames = builtins.attrNames mergedFixture.apps;
-      scriptAttributeNames = builtins.attrNames mergedFixture.scriptsByName;
-      scriptNames = map lib.getName mergedFixture.scripts;
+      exact = builtins.attrNames mergedFixture.apps == builtins.attrNames mergedFixture.validationsByName;
     };
     expected = {
       appNames = [
-        "extra"
+        "custom"
         "fixture"
         "other"
+        "second"
       ];
-      scriptAttributeNames = [
-        "fixture"
-        "other"
-      ];
-      scriptNames = [
-        "fixture-app"
-        "second-fixture-app"
-      ];
+      exact = true;
     };
   };
 
-  testDuplicateNamesAcrossAppSetsRejected = {
-    expr =
-      (builtins.tryEval (
-        appSet.mergeAppSets [
-          fixture
-          (appSet.mkAppSet {
-            entries.fixture = {
-              description = "Duplicate fixture application";
-              script = fixtureScript;
-            };
-          })
-        ]
-      )).success;
+  testDuplicateNamesAcrossAppSetsAreRejected = {
+    expr = evaluationSucceeds (
+      (appSet.mergeAppSets [
+        fixture
+        (appSet.mkAppSet {
+          entries.fixture = {
+            description = "Duplicate fixture application";
+            script = fixtureScript;
+          };
+        })
+      ]).apps
+    );
+    expected = false;
+  };
+
+  testMalformedMergedAppSetIsRejected = {
+    expr = evaluationSucceeds (
+      (appSet.mergeAppSets [
+        fixture
+        {
+          apps.unvalidated = customApp;
+          validationsByName = { };
+        }
+      ]).apps
+    );
     expected = false;
   };
 }

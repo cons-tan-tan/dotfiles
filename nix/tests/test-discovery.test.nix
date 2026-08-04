@@ -1,6 +1,13 @@
 { lib }:
 let
   discovery = import ./test-discovery.nix { inherit lib; };
+  composeUniqueChecks = import ./compose.nix { inherit lib; };
+  workflowDiscovery = import ./bats/workflows.nix { inherit lib; };
+  validateBatsCatalog = import ./bats/validate-catalog.nix { inherit lib; };
+  annotated = marker: {
+    inherit marker;
+    meta.dotfiles.hestia.targets = [ "fixture" ];
+  };
   classified = discovery.classify [
     "/repo/nix/alpha.test.nix"
     "/repo/modules/feature/_tests/beta.test.nix"
@@ -23,6 +30,44 @@ in
     };
   };
 
+  testSourceRootSelectionAppliesIncludePredicate = {
+    expr =
+      discovery.selectSourceRootFiles
+        {
+          include = path: lib.hasInfix "/_tests/" path;
+        }
+        [
+          "/repo/modules/feature/_tests/alpha.test.nix"
+          "/repo/modules/feature/alpha.nix"
+        ];
+    expected = [ "/repo/modules/feature/_tests/alpha.test.nix" ];
+  };
+
+  testFailureTestsAreNotAlsoPositiveTests = {
+    expr = {
+      positive = classified.testFiles;
+      failure = classified.failureTestFiles;
+    };
+    expected = {
+      positive = [
+        "/repo/nix/alpha.test.nix"
+        "/repo/modules/feature/_tests/beta.test.nix"
+      ];
+      failure = [ "/repo/modules/feature/_tests/gamma.failure.test.nix" ];
+    };
+  };
+
+  testBootstrapExclusionUsesCanonicalPath = {
+    expr =
+      discovery.excludePaths
+        [ "/repo/nix/shared.test.nix" ]
+        [
+          "/repo/nix/shared.test.nix"
+          "/repo/modules/feature/_tests/shared.test.nix"
+        ];
+    expected = [ "/repo/modules/feature/_tests/shared.test.nix" ];
+  };
+
   testRejectsDuplicateBasenamesAcrossSourceRoots = {
     expr = discovery.duplicateNames [
       (discovery.checkName "/repo/nix/shared.test.nix")
@@ -43,5 +88,191 @@ in
           "safe-fetch-e2e"
         ];
     expected = [ "reuse-lint" ];
+  };
+
+  testUniqueCheckOwnersCompose = {
+    expr = composeUniqueChecks {
+      producers = [
+        {
+          owner = "alpha";
+          checks.alpha = annotated 1;
+        }
+        {
+          owner = "beta";
+          checks.beta = annotated 2;
+        }
+      ];
+    };
+    expected = {
+      alpha = annotated 1;
+      beta = annotated 2;
+    };
+  };
+
+  testCheckOwnerCollisionIsRejected = {
+    expr =
+      (builtins.tryEval (composeUniqueChecks {
+        producers = [
+          {
+            owner = "alpha";
+            checks.shared = annotated 1;
+          }
+          {
+            owner = "beta";
+            checks.shared = annotated 2;
+          }
+        ];
+      })).success;
+    expected = false;
+  };
+
+  testReservedCheckCollisionIsRejected = {
+    expr =
+      (builtins.tryEval (composeUniqueChecks {
+        producers = [
+          {
+            owner = "alpha";
+            checks.shared = annotated 1;
+          }
+        ];
+        reservedCheckNames = [ "shared" ];
+      })).success;
+    expected = false;
+  };
+
+  testMissingHestiaMetadataIsRejected = {
+    expr =
+      (builtins.tryEval
+        (composeUniqueChecks {
+          producers = [
+            {
+              owner = "alpha";
+              checks.unannotated = {
+                marker = 1;
+              };
+            }
+          ];
+        }).unannotated
+      ).success;
+    expected = false;
+  };
+
+  testWorkflowDiscoverySelectsSortedYamlFiles = {
+    expr = workflowDiscovery.fromEntries {
+      "z.yaml" = "regular";
+      "a.yml" = "regular";
+      "ignored.txt" = "regular";
+      "nested.yaml" = "directory";
+    };
+    expected = [
+      ".github/workflows/a.yml"
+      ".github/workflows/z.yaml"
+    ];
+  };
+
+  testWorkflowDiscoveryRejectsEmptyDirectory = {
+    expr = (builtins.tryEval (workflowDiscovery.fromEntries { })).success;
+    expected = false;
+  };
+
+  testBatsCatalogAcceptsExactAssignment = {
+    expr = validateBatsCatalog {
+      discoveredFiles = [ "bats/a.bats" ];
+      shards = [
+        {
+          name = "fixture";
+          testFiles = [ "bats/a.bats" ];
+        }
+      ];
+    };
+    expected = true;
+  };
+
+  testBatsCatalogRejectsDuplicateFile = {
+    expr =
+      (builtins.tryEval (validateBatsCatalog {
+        discoveredFiles = [ "bats/a.bats" ];
+        shards = [
+          {
+            name = "first";
+            testFiles = [ "bats/a.bats" ];
+          }
+          {
+            name = "second";
+            testFiles = [ "bats/a.bats" ];
+          }
+        ];
+      })).success;
+    expected = false;
+  };
+
+  testBatsCatalogRejectsUnassignedDiscoveredFile = {
+    expr =
+      (builtins.tryEval (validateBatsCatalog {
+        discoveredFiles = [
+          "bats/a.bats"
+          "bats/b.bats"
+        ];
+        shards = [
+          {
+            name = "fixture";
+            testFiles = [ "bats/a.bats" ];
+          }
+        ];
+      })).success;
+    expected = false;
+  };
+
+  testBatsCatalogRejectsStaleDeclaredFile = {
+    expr =
+      (builtins.tryEval (validateBatsCatalog {
+        discoveredFiles = [ "bats/a.bats" ];
+        shards = [
+          {
+            name = "fixture";
+            testFiles = [
+              "bats/a.bats"
+              "bats/missing.bats"
+            ];
+          }
+        ];
+      })).success;
+    expected = false;
+  };
+
+  testBatsCatalogRejectsDuplicateShardName = {
+    expr =
+      (builtins.tryEval (validateBatsCatalog {
+        discoveredFiles = [
+          "bats/a.bats"
+          "bats/b.bats"
+        ];
+        shards = [
+          {
+            name = "fixture";
+            testFiles = [ "bats/a.bats" ];
+          }
+          {
+            name = "fixture";
+            testFiles = [ "bats/b.bats" ];
+          }
+        ];
+      })).success;
+    expected = false;
+  };
+
+  testBatsCatalogRejectsReservedAggregateName = {
+    expr =
+      (builtins.tryEval (validateBatsCatalog {
+        discoveredFiles = [ "bats/a.bats" ];
+        reservedNames = [ "bats-tests" ];
+        shards = [
+          {
+            name = "bats-tests";
+            testFiles = [ "bats/a.bats" ];
+          }
+        ];
+      })).success;
+    expected = false;
   };
 }

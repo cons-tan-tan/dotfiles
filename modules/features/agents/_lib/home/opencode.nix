@@ -61,7 +61,7 @@ in
   };
 
   home.file.".config/opencode/command".source =
-    config.lib.file.mkOutOfStoreSymlink "${config.dotfiles.agentEnvironment.source}/claude/commands";
+    config.lib.file.mkOutOfStoreSymlink "${config.dotfiles.platform.source}/claude/commands";
 
   home.file.".config/opencode/plugins/herdr-agent-state.js".source =
     "${herdrOpenCodeIntegration}/plugins/herdr-agent-state.js";

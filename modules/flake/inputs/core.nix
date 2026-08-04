@@ -21,17 +21,9 @@
     import-tree.url = "github:vic/import-tree/v0.2.0";
     nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
     nixpkgs-lib.follows = "nixpkgs";
-    rustsec-advisory-db = {
-      url = "github:RustSec/advisory-db";
-      flake = false;
-    };
     supported-systems = {
       url = "path:./nix/systems";
       flake = false;
-    };
-    treefmt-nix = {
-      url = "github:numtide/treefmt-nix";
-      inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 }

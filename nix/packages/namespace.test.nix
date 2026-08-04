@@ -12,6 +12,28 @@ let
     "ghq-fetch-all"
     "shellfirm"
   ];
+  familyNames = [
+    "aws"
+    "claude-code"
+    "codex"
+    "hcom"
+    "herdr"
+    "hunk"
+    "pi"
+  ];
+  platformNames =
+    if pkgs.stdenv.hostPlatform.isLinux then
+      [
+        "drawio-headless"
+        "wsl-open"
+        "wsl-set-ssh-auth-sock"
+      ]
+    else
+      [
+        "codex-app"
+        "sleepctl"
+      ];
+  expectedNames = pkgs.lib.sort builtins.lessThan (commonNames ++ familyNames ++ platformNames);
   packageValues = (map (name: builtins.getAttr name local) commonNames) ++ [
     local.claude-code.package
     local.hcom.package
@@ -30,6 +52,11 @@ in
     expected = true;
   };
 
+  testPackageInventoryIsExact = {
+    expr = pkgs.lib.sort builtins.lessThan (builtins.attrNames local);
+    expected = expectedNames;
+  };
+
   testRepresentativePackagesAreDerivations = {
     expr = builtins.all pkgs.lib.isDerivation packageValues;
     expected = true;
@@ -39,7 +66,9 @@ in
     expr =
       if pkgs.stdenv.hostPlatform.isLinux then
         local ? drawio-headless
+        && local ? wsl-open
         && local ? wsl-set-ssh-auth-sock
+        && pkgs.lib.isDerivation local.wsl-open
         && !(local ? codex-app)
         && !(local ? sleepctl)
       else
@@ -47,6 +76,7 @@ in
         && local ? sleepctl
         && pkgs.lib.isDerivation local.sleepctl
         && !(local ? drawio-headless)
+        && !(local ? wsl-open)
         && !(local ? wsl-set-ssh-auth-sock);
     expected = true;
   };

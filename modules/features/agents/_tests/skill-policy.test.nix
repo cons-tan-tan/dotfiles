@@ -1,5 +1,4 @@
-# skill-policy.nix の純関数テスト。nix/tests/default.nix が
-# *.test.nix を収集して lib.runTests を適用する。
+# skill-policy.nix の純関数の契約テスト。
 { lib }:
 let
   fm =

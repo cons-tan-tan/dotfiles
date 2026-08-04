@@ -49,11 +49,7 @@ in
         dotfiles.platform = {
           inherit (host.dotfiles) environment source;
           standalone = false;
-          windowsCompanion = false;
           nhCleanupOwner = "none";
-        };
-        dotfiles.agentEnvironment = {
-          inherit (host.dotfiles) environment source;
         };
       };
   };

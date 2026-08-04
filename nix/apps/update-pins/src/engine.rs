@@ -775,4 +775,50 @@ mod tests {
         repository.assert_no_staging_files();
         repository.assert_lock_reacquirable();
     }
+
+    #[test]
+    fn second_validation_failure_restores_all_managed_files_and_lock() {
+        let repository = TestRepository::new();
+        let runner = SystemCommandRunner;
+        let validations = Cell::new(0);
+        let updates = Cell::new(0);
+        let target_count = TARGET_SPECS.len();
+
+        let error = run_in_repository(
+            invocation(Target::All, PublishMode::Apply),
+            &runner,
+            repository.repository(),
+            |_targets, _transaction| Ok(()),
+            |target, _transaction| {
+                let call = validations.get();
+                validations.set(call + 1);
+                if call >= target_count && target == Target::CodexApp {
+                    Err(UpdateError::message("synthetic second validation failure"))
+                } else {
+                    Ok(())
+                }
+            },
+            |target, _policy, transaction, ledger| {
+                updates.set(updates.get() + 1);
+                for path in target_spec(target).expect("target spec").managed_paths {
+                    transaction
+                        .replace(path, format!("candidate {path}\n").as_bytes())
+                        .expect("candidate managed path");
+                }
+                record_change(target, ledger);
+                Ok(())
+            },
+        )
+        .expect_err("second validation must fail");
+
+        assert_eq!(error.to_string(), "synthetic second validation failure");
+        assert_eq!(updates.get(), target_count, "every update must run first");
+        assert!(
+            validations.get() > target_count,
+            "failure must occur during the second validation pass"
+        );
+        repository.assert_originals();
+        repository.assert_no_staging_files();
+        repository.assert_lock_reacquirable();
+    }
 }

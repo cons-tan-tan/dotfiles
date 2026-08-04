@@ -4,7 +4,7 @@
   pkgs,
 }:
 let
-  tests = import ../../modules/_tests/den-unfree-capability.nix {
+  tests = import ../../modules/_tests/den-unfree-capability.suite.nix {
     inherit inputs lib;
   };
   result = lib.debug.throwTestFailures {

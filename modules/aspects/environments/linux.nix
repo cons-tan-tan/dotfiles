@@ -33,11 +33,7 @@ in
         ];
         dotfiles.platform = {
           inherit (home.dotfiles) environment source standalone;
-          windowsCompanion = false;
           nhCleanupOwner = "home-manager";
-        };
-        dotfiles.agentEnvironment = {
-          inherit (home.dotfiles) environment source;
         };
         nixpkgs = {
           overlays = overlayPlan.overlays;

@@ -1,15 +1,17 @@
 {
   config,
+  entityContext,
   lib,
-  linuxHomedir,
   pkgs,
   sourcePath,
-  username,
-  windowsHomedir,
-  windowsUsername,
 }:
 let
-  home = config.home-manager.users.${username};
+  username = "constantan";
+  linuxHomedir = "/home/constantan";
+  windowsUsername = "zhouc";
+  windowsHomedir = "/mnt/c/Users/zhouc";
+  subjectUsername = entityContext.username;
+  home = config.home-manager.users.${subjectUsername};
   cleanupPolicy = import ../lib/nh-clean-policy.nix;
   growthChecker = pkgs.callPackage ../packages/nix-store-growth-checker {
     nix = config.nix.package;
@@ -34,7 +36,8 @@ let
   growthRunnerBin = lib.getExe growthRunner;
   cleanupLock = import ../lib/nh-clean-lock.nix {
     coreutils = pkgs.coreutils;
-    inherit lib username;
+    inherit lib;
+    username = subjectUsername;
   };
   flockBin = lib.getExe' pkgs.util-linux "flock";
   expectedGrowthCheckCommand = "${flockBin} --exclusive ${cleanupLock.cleanupFile} ${growthRunnerBin} check ${growthStatePath}";
@@ -48,13 +51,31 @@ let
   '';
 
   contracts = {
+    "entity-context" = {
+      actual = {
+        username = entityContext.username;
+        homeDirectory = entityContext.linuxHomedir;
+        source = entityContext.contexts.nixosWsl.source;
+        windows = entityContext.windows;
+      };
+      expected = {
+        inherit username;
+        homeDirectory = linuxHomedir;
+        source = sourcePath;
+        windows = {
+          enable = true;
+          username = windowsUsername;
+          homedir = windowsHomedir;
+        };
+      };
+    };
     "wsl-base" = {
       actual = {
         enabled = config.wsl.enable;
         defaultUser = config.wsl.defaultUser;
         interopRegistered = config.wsl.interop.register;
         hasInteropRegistration = config.boot.binfmt.registrations ? WSLInterop;
-        userLinger = config.users.users.${username}.linger;
+        userLinger = config.users.users.${subjectUsername}.linger;
         gettyEnabled = config.services.getty.enable;
         gettyTargetWants = config.systemd.targets.getty.wants;
       };
@@ -72,7 +93,7 @@ let
     "shell-integration" = {
       actual = {
         zshEnabled = config.programs.zsh.enable;
-        userShell = lib.getExe config.users.users.${username}.shell;
+        userShell = lib.getExe config.users.users.${subjectUsername}.shell;
         homeZshEnabled = home.programs.zsh.enable;
         zoxideEnabled = home.programs.zoxide.enable;
         direnvIntegrated = home.programs.direnv.enableZshIntegration;
@@ -100,7 +121,7 @@ let
       actual = {
         enabled = config.virtualisation.docker.enable;
         enableOnBoot = config.virtualisation.docker.enableOnBoot;
-        userInDockerGroup = lib.elem "docker" config.users.users.${username}.extraGroups;
+        userInDockerGroup = lib.elem "docker" config.users.users.${subjectUsername}.extraGroups;
         daemonHosts = config.virtualisation.docker.daemon.settings.hosts;
         listenOptions = config.virtualisation.docker.listenOptions;
         autoPruneEnabled = config.virtualisation.docker.autoPrune.enable;
@@ -274,7 +295,7 @@ let
       };
     };
 
-    # modules/features/platform/wsl.nixの暫定対応と対になるcontract。
+    # modules/features/platform/wsl/base.nixの暫定対応と対になるcontract。
     # microsoft/WSL#40519を含むreleaseで再発しないことを確認後、
     # 対応する設定とこのcontractを同時に削除する。
     "temporary-wsl-workarounds" = {
@@ -340,8 +361,8 @@ let
         homeDirectory = home.home.homeDirectory;
         hostKind = home.dotfiles.platform.environment;
         isWsl = home.dotfiles.platform.environment == "wsl";
-        windowsUsername = home.dotfiles.windows.username;
-        windowsHomedir = home.dotfiles.windows.homedir;
+        windowsUsername = home.dotfiles.platform.windows.username;
+        windowsHomedir = home.dotfiles.platform.windows.homedir;
         dotfilesDir = home.dotfiles.platform.source;
       };
       expected = {

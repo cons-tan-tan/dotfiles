@@ -9,7 +9,7 @@ let
 in
 {
   features.agents-base = {
-    name = "agents/base";
+    name = "feature/agents/base";
     includes = [ den.aspects.agent-command-policy-forward ];
 
     agentCommandPolicy =
@@ -40,27 +40,6 @@ in
           description = "Validated projections of the merged agent command policy.";
         };
 
-        options.dotfiles.agentEnvironment = lib.mkOption {
-          internal = true;
-          description = "Entity metadata required by agent Home Manager features.";
-          type = lib.types.submodule {
-            options = {
-              environment = lib.mkOption {
-                type = lib.types.enum [
-                  "darwin"
-                  "linux"
-                  "wsl"
-                ];
-              };
-              source = lib.mkOption { type = lib.types.str; };
-              windows.homedir = lib.mkOption {
-                type = lib.types.nullOr lib.types.str;
-                default = null;
-              };
-            };
-          };
-        };
-
         options.dotfiles.agentIntegrations.hcom = lib.mkOption {
           internal = true;
           default = null;
@@ -88,7 +67,7 @@ in
   };
 
   features.agents-default = {
-    name = "agents/default";
+    name = "feature/agents/default";
     includes = [
       features.agents-base
       features.agent-skills

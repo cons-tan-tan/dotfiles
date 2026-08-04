@@ -6,11 +6,12 @@
   ...
 }:
 let
-  username = "constantan";
-  linuxHomedir = "/home/${username}";
   configurationTargets = import ../../entities/_lib/configuration-targets.nix { inherit lib; };
   appsFor =
-    { pkgs, system, ... }:
+    { pkgs, ... }:
+    let
+      system = pkgs.stdenv.hostPlatform.system;
+    in
     if lib.hasSuffix "-darwin" system then
       let
         targets = configurationTargets { inherit den system; };
@@ -27,10 +28,11 @@ let
       let
         targets = configurationTargets { inherit den system; };
         nixosConfiguration = config.flake.nixosConfigurations.${targets.nixosWsl};
-        windowsHomedir = den.homes.${system}.${targets.entityNames.home.wsl}.dotfiles.windows.homedir;
         mkLinuxApps = import ../../../nix/lib/apps/mk-linux-apps.nix {
-          inherit inputs username windowsHomedir;
-          homedir = linuxHomedir;
+          inherit inputs;
+          homedir = targets.linuxHomedir;
+          username = targets.username;
+          windowsHomedir = targets.windows.homedir;
         };
       in
       assert config.flake.homeConfigurations ? ${targets.home.linux};
@@ -41,24 +43,15 @@ let
         nixosTarget = targets.nixosWsl;
         nixosRebuildBin = "${nixosConfiguration.config.system.build.nixos-rebuild}/bin/nixos-rebuild";
       };
-  scriptNamesFor =
-    system:
-    [
-      "build"
-      "switch"
-    ]
-    ++ lib.optional (lib.hasSuffix "-linux" system) "apply-winget";
-  mkScriptEntry = name: {
-    inherit name;
-    mkDerivation = args: (appsFor args).scriptsByName.${name};
-  };
 in
 {
   den.aspects.host-apps = {
     apps = args: (appsFor args).apps;
-    app-scripts =
-      { system, ... }:
-      map mkScriptEntry (scriptNamesFor system);
+    app-validations = [
+      {
+        produce = args: (appsFor args).validationsByName;
+      }
+    ];
   };
 
   den.schema.flake-parts.includes = [ den.aspects.host-apps ];

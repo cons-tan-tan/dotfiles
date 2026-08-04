@@ -1216,6 +1216,7 @@ fn url_assignment_start(text: &str, quote_start: usize, quote_end: usize) -> Opt
 mod tests {
     use std::cell::{Cell, RefCell};
     use std::fs::File;
+    use std::os::unix::fs::PermissionsExt as _;
     use std::path::{Path, PathBuf};
     use std::process::Command;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1245,6 +1246,24 @@ mod tests {
     const CURRENT_HASH: &str = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
     const CURRENT_CODEX_URL: &str =
         "https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-arm64-1.2.3.zip";
+    const MODULE_AUTHORITY_FILES: [(&str, &[u8]); 4] = [
+        (
+            "flake.lock",
+            include_bytes!("fixtures/module-authority/flake.lock"),
+        ),
+        (
+            "flake.nix",
+            include_bytes!("fixtures/module-authority/flake.nix"),
+        ),
+        (
+            "modules/features/example.nix",
+            include_bytes!("fixtures/module-authority/modules/features/example.nix"),
+        ),
+        (
+            "nix/pins/example.json",
+            include_bytes!("fixtures/module-authority/nix/pins/example.json"),
+        ),
+    ];
     use crate::upstream::latest_tag;
 
     struct RecordingRunner {
@@ -1286,12 +1305,12 @@ mod tests {
         timeout: Cell<Duration>,
     }
 
-    struct FutureLayoutRunner {
+    struct ModuleAuthorityRunner {
         failure: Option<&'static str>,
         commands: RefCell<Vec<CommandSpec>>,
     }
 
-    impl CommandRunner for FutureLayoutRunner {
+    impl CommandRunner for ModuleAuthorityRunner {
         fn run(&self, command: &CommandSpec) -> Result<CommandOutput, UpdateError> {
             if command.program == Path::new("git") {
                 SystemCommandRunner.run(command)
@@ -1325,14 +1344,14 @@ mod tests {
                     });
                 }
                 let module = std::fs::read(root.join("modules/features/example.nix"))
-                    .expect("future authority module");
+                    .expect("module authority module");
                 let version = paired_input_version(
                     &module,
                     "modules/features/example.nix",
                     "example-src",
                     "owner/example",
                 )
-                .expect("future authority version");
+                .expect("module authority version");
                 std::fs::write(
                     root.join("flake.nix"),
                     format!(
@@ -1353,7 +1372,7 @@ mod tests {
                 std::fs::write(root.join("flake.lock"), b"candidate lock\n")
                     .expect("candidate lock");
             } else {
-                panic!("unexpected future-layout command {}", command.display());
+                panic!("unexpected module-authority command {}", command.display());
             }
             Ok(CommandOutput {
                 status: Some(0),
@@ -1492,7 +1511,7 @@ mod tests {
         assert_eq!(runner.timeout.get(), MUTATING_COMMAND_TIMEOUT);
     }
 
-    fn future_layout_source() -> crate::registry::PairedSource {
+    fn module_authority_source() -> crate::registry::PairedSource {
         crate::registry::PairedSource {
             repository: "owner/example",
             input: "example-src",
@@ -1509,8 +1528,8 @@ mod tests {
         }
     }
 
-    fn future_layout_repository() -> TempDir {
-        let repository = TempDir::new().expect("future-layout repository");
+    fn module_authority_repository() -> TempDir {
+        let repository = TempDir::new().expect("module-authority repository");
         run_fixture_git(repository.path(), ["init", "-q"]);
         run_fixture_git(
             repository.path(),
@@ -1518,52 +1537,121 @@ mod tests {
         );
         run_fixture_git(
             repository.path(),
-            ["config", "user.name", "future layout test"],
+            ["config", "user.name", "module authority test"],
         );
         run_fixture_git(repository.path(), ["config", "commit.gpgsign", "false"]);
-        std::fs::create_dir_all(repository.path().join("modules/features"))
-            .expect("future module directory");
-        std::fs::write(
-            repository.path().join("modules/features/example.nix"),
-            b"{ ... }:\n{\n  flake-file.inputs.example-src = {\n    url = \"github:owner/example/v1.2.3\";\n  };\n}\n",
-        )
-        .expect("future authority");
-        std::fs::write(
-            repository.path().join("flake.nix"),
-            b"inputs = {\n  example-src = {\n    url = \"github:owner/example/v1.2.3\";\n  };\n};\n",
-        )
-        .expect("future generated flake");
-        std::fs::write(repository.path().join("flake.lock"), b"original lock\n")
-            .expect("future lock");
+        for (relative, bytes) in MODULE_AUTHORITY_FILES {
+            let path = repository.path().join(relative);
+            std::fs::create_dir_all(path.parent().expect("module-authority parent"))
+                .expect("module-authority directory");
+            std::fs::write(&path, bytes).expect("module-authority fixture");
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o640))
+                .expect("module-authority fixture mode");
+        }
         run_fixture_git(repository.path(), ["add", "."]);
         run_fixture_git(repository.path(), ["commit", "-q", "-m", "initial"]);
         repository
     }
 
+    fn module_authority_managed_paths(source: crate::registry::PairedSource) -> [&'static str; 4] {
+        [
+            "nix/pins/example.json",
+            source.authority.source_path,
+            source.authority.generated_flake_path,
+            source.authority.lock_path,
+        ]
+    }
+
+    fn module_authority_snapshot(
+        root: &Path,
+        managed: &[&'static str],
+    ) -> Vec<(&'static str, Vec<u8>, u32)> {
+        managed
+            .iter()
+            .map(|relative| {
+                let path = root.join(relative);
+                (
+                    *relative,
+                    std::fs::read(&path).expect("module-authority snapshot bytes"),
+                    std::fs::metadata(&path)
+                        .expect("module-authority snapshot metadata")
+                        .permissions()
+                        .mode()
+                        & 0o777,
+                )
+            })
+            .collect()
+    }
+
+    fn assert_module_authority_snapshot(root: &Path, snapshot: &[(&'static str, Vec<u8>, u32)]) {
+        for (relative, expected_bytes, expected_mode) in snapshot {
+            let path = root.join(relative);
+            assert_eq!(
+                std::fs::read(&path).expect("restored module-authority bytes"),
+                *expected_bytes,
+                "{relative}: bytes changed"
+            );
+            assert_eq!(
+                std::fs::metadata(&path)
+                    .expect("restored module-authority metadata")
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                *expected_mode,
+                "{relative}: mode changed"
+            );
+        }
+    }
+
+    fn assert_no_module_authority_staging_files(root: &Path, managed: &[&'static str]) {
+        for relative in managed {
+            let parent = root
+                .join(relative)
+                .parent()
+                .expect("module-authority managed parent")
+                .to_owned();
+            for entry in std::fs::read_dir(parent).expect("module-authority managed directory") {
+                let entry = entry.expect("module-authority directory entry");
+                assert!(
+                    !entry
+                        .file_name()
+                        .to_string_lossy()
+                        .contains(".update-pins."),
+                    "staging file remains at {}",
+                    entry.path().display()
+                );
+            }
+        }
+    }
+
     #[test]
-    fn future_module_authority_generates_flake_then_updates_lock_in_one_transaction() {
-        let repository = future_layout_repository();
-        let source = future_layout_source();
-        let runner = FutureLayoutRunner {
+    fn module_authority_generates_flake_then_updates_lock_in_one_transaction() {
+        let repository = module_authority_repository();
+        let source = module_authority_source();
+        let runner = ModuleAuthorityRunner {
             failure: None,
             commands: RefCell::new(Vec::new()),
         };
         let repository_handle =
             Repository::discover_in(&SystemCommandRunner, repository.path()).expect("repository");
-        let managed = [
-            source.authority.source_path,
-            source.authority.generated_flake_path,
-            source.authority.lock_path,
-        ];
+        let managed = module_authority_managed_paths(source);
+        let original = module_authority_snapshot(repository.path(), &managed);
         let mut transaction =
             Transaction::begin_scoped(repository_handle, &runner, managed).expect("transaction");
         let authority = transaction
             .read(source.authority.source_path)
             .expect("authority bytes");
 
+        transaction
+            .replace("nix/pins/example.json", b"{\n  \"version\": \"2.0.0\"\n}\n")
+            .expect("candidate pin");
         super::update_paired_input(source, "2.0.0", &authority, &runner, &mut transaction)
-            .expect("future paired update");
+            .expect("module-authority paired update");
 
+        assert_eq!(
+            std::fs::read(repository.path().join("nix/pins/example.json")).expect("updated pin"),
+            b"{\n  \"version\": \"2.0.0\"\n}\n"
+        );
         assert!(
             std::fs::read_to_string(repository.path().join("modules/features/example.nix"))
                 .expect("updated authority")
@@ -1583,45 +1671,35 @@ mod tests {
         assert_eq!(commands[0].args, ["run", ".#write-flake"]);
         assert_eq!(commands[1].args, ["flake", "update", "example-src"]);
         drop(commands);
-        transaction.rollback().expect("rollback future update");
-        assert!(
-            std::fs::read_to_string(repository.path().join("modules/features/example.nix"))
-                .expect("restored authority")
-                .contains("v1.2.3")
-        );
-        assert!(
-            std::fs::read_to_string(repository.path().join("flake.nix"))
-                .expect("restored generated flake")
-                .contains("v1.2.3")
-        );
-        assert_eq!(
-            std::fs::read(repository.path().join("flake.lock")).expect("restored lock"),
-            b"original lock\n"
-        );
+        transaction
+            .rollback()
+            .expect("rollback module-authority update");
+        assert_module_authority_snapshot(repository.path(), &original);
+        assert_no_module_authority_staging_files(repository.path(), &managed);
     }
 
     #[test]
-    fn future_module_authority_failures_restore_every_managed_file() {
+    fn module_authority_failures_restore_every_managed_file() {
         for failure in ["generator", "lock", "candidate"] {
-            let repository = future_layout_repository();
-            let source = future_layout_source();
-            let runner = FutureLayoutRunner {
+            let repository = module_authority_repository();
+            let source = module_authority_source();
+            let runner = ModuleAuthorityRunner {
                 failure: Some(failure),
                 commands: RefCell::new(Vec::new()),
             };
             let repository_handle =
                 Repository::discover_in(&SystemCommandRunner, repository.path())
                     .expect("repository");
-            let managed = [
-                source.authority.source_path,
-                source.authority.generated_flake_path,
-                source.authority.lock_path,
-            ];
+            let managed = module_authority_managed_paths(source);
+            let original = module_authority_snapshot(repository.path(), &managed);
             let mut transaction = Transaction::begin_scoped(repository_handle, &runner, managed)
                 .expect("transaction");
             let authority = transaction
                 .read(source.authority.source_path)
                 .expect("authority bytes");
+            transaction
+                .replace("nix/pins/example.json", b"{\n  \"version\": \"2.0.0\"\n}\n")
+                .expect("candidate pin");
             let result =
                 super::update_paired_input(source, "2.0.0", &authority, &runner, &mut transaction)
                     .and_then(|()| {
@@ -1634,24 +1712,65 @@ mod tests {
             assert!(result.is_err(), "{failure} failure must propagate");
             transaction
                 .rollback()
-                .expect("rollback failed future update");
+                .expect("rollback failed module-authority update");
+            assert_module_authority_snapshot(repository.path(), &original);
+            assert_no_module_authority_staging_files(repository.path(), &managed);
+        }
+    }
+
+    #[test]
+    fn module_authority_rejects_invalid_declarations_before_mutation() {
+        let invalid_authorities: [&[u8]; 3] = [
+            b"{ }\n",
+            b"{ ... }:\n{ flake-file.inputs.example-src.url = \"github:owner/example/v1.2.3\"; flake-file.inputs.example-src.url = \"github:owner/example/v1.2.3\"; }\n",
+            b"{ ... }:\n{ flake-file.inputs.example-src.url = \"github:someone/else/v1.2.3\"; }\n",
+        ];
+
+        for invalid_authority in invalid_authorities {
+            let repository = module_authority_repository();
+            let source = module_authority_source();
+            std::fs::write(
+                repository.path().join(source.authority.source_path),
+                invalid_authority,
+            )
+            .expect("invalid module authority");
+            run_fixture_git(repository.path(), ["add", source.authority.source_path]);
+            run_fixture_git(
+                repository.path(),
+                ["commit", "-q", "-m", "invalid authority fixture"],
+            );
+            let runner = ModuleAuthorityRunner {
+                failure: None,
+                commands: RefCell::new(Vec::new()),
+            };
+            let repository_handle =
+                Repository::discover_in(&SystemCommandRunner, repository.path())
+                    .expect("repository");
+            let managed = module_authority_managed_paths(source);
+            let original = module_authority_snapshot(repository.path(), &managed);
+            let mut transaction = Transaction::begin_scoped(repository_handle, &runner, managed)
+                .expect("transaction");
+
+            let error = super::update_paired_input(
+                source,
+                "2.0.0",
+                invalid_authority,
+                &runner,
+                &mut transaction,
+            )
+            .expect_err("invalid module authority must fail");
+            assert!(!error.to_string().is_empty());
             assert!(
-                std::fs::read_to_string(repository.path().join("modules/features/example.nix"))
-                    .expect("restored authority")
-                    .contains("v1.2.3"),
-                "{failure}: authority was not restored"
+                runner.commands.borrow().is_empty(),
+                "invalid authority ran a child command"
             );
-            assert!(
-                std::fs::read_to_string(repository.path().join("flake.nix"))
-                    .expect("restored generated flake")
-                    .contains("v1.2.3"),
-                "{failure}: generated flake was not restored"
-            );
-            assert_eq!(
-                std::fs::read(repository.path().join("flake.lock")).expect("restored lock"),
-                b"original lock\n",
-                "{failure}: lock was not restored"
-            );
+            assert_module_authority_snapshot(repository.path(), &original);
+            assert_no_module_authority_staging_files(repository.path(), &managed);
+            transaction
+                .rollback()
+                .expect("rollback rejected module authority");
+            assert_module_authority_snapshot(repository.path(), &original);
+            assert_no_module_authority_staging_files(repository.path(), &managed);
         }
     }
 

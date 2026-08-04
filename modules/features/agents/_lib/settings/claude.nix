@@ -1,6 +1,6 @@
-# Claude Code settings.json の共有生成器。現ホスト用
-# (modules/features/agents/_lib/home/claude.nix) と Windows companion 用
-# (modules/wsl/windows/claude.nix) で共有する。
+# Claude Code settings.json の共有生成器。canonical Claude feature
+# (modules/features/agents/claude.nix) が Home Manager / Windows 両方の
+# contribution からこの生成器を利用する。
 {
   lib,
   commandPolicy ? null,

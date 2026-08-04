@@ -17,7 +17,7 @@ let
         _:
         lib.mkIf (
           options ? dotfiles.windows
-          && config.dotfiles.platform.windowsCompanion
+          && config.dotfiles.platform.windows.enable
           && config.dotfiles.platform.environment == "wsl"
         );
     };
