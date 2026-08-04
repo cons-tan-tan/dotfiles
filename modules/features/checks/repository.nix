@@ -41,6 +41,7 @@ in
             inherit inputs lib pkgs;
             checkName = "den-schema-tests";
             fixturePath = ../../_tests/den-schema.nix;
+            fixtureRoot = ../../..;
             schemaModule = ../../schema/entities.nix;
           }
         );
@@ -143,6 +144,7 @@ in
       testChecks = import ../../../nix/tests {
         inherit
           ciCheck
+          den
           inputs
           lib
           pkgs

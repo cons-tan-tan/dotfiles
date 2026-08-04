@@ -142,8 +142,16 @@ let
     ("modules/" + "_legacy/")
     ("nix/" + "hosts/")
   ];
+  legacyTopologyExactPaths = [
+    ("modules/entities/_lib/configuration-" + "names.nix")
+    ("modules/entities/_lib/configuration-" + "names.test.nix")
+    ("nix/lib/linux-config-" + "name.nix")
+    ("nix/lib/linux-config-" + "name.test.nix")
+  ];
   legacyTopologyPaths = builtins.filter (
-    path: builtins.any (prefix: lib.hasPrefix prefix path) legacyTopologyPathPrefixes
+    path:
+    builtins.elem path legacyTopologyExactPaths
+    || builtins.any (prefix: lib.hasPrefix prefix path) legacyTopologyPathPrefixes
   ) architectureRelativePaths;
   hasLegacyExtraSpecialArgsInputs =
     contents:

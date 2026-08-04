@@ -19,27 +19,6 @@ let
     failures = lib.debug.runTests fixture.tests;
   };
   failureCaseNames = builtins.attrNames fixture.failureCases;
-  denCiLock = builtins.fromJSON (builtins.readFile (inputs.den.outPath + "/templates/ci/flake.lock"));
-  fetchDenDependency =
-    name:
-    let
-      locked = denCiLock.nodes.${name}.locked;
-    in
-    fetchTarball {
-      url = "https://github.com/${locked.owner}/${locked.repo}/archive/${locked.rev}.zip";
-      sha256 = locked.narHash;
-    };
-  genSchemaSource = fetchDenDependency "gen-schema";
-  nixEffectsSource = fetchDenDependency "nix-effects";
-  genSchemaCiLock = builtins.fromJSON (builtins.readFile (genSchemaSource + "/ci/flake.lock"));
-  genAlgebraSource =
-    let
-      locked = genSchemaCiLock.nodes.gen-algebra.locked;
-    in
-    fetchTarball {
-      url = "https://github.com/${locked.owner}/${locked.repo}/archive/${locked.rev}.zip";
-      sha256 = locked.narHash;
-    };
   failureRunner = builtins.toFile "den-capability-failure-case.nix" ''
     { caseName }:
     let
@@ -47,11 +26,11 @@ let
       pkgs = import ${inputs.nixpkgs.outPath} { system = "x86_64-linux"; };
       inputs = {
         den = import (${inputs.den.outPath} + "/nix");
-        "gen-schema".lib = import (${genSchemaSource} + "/nix/lib") {
+        "gen-schema".lib = import (${inputs.den-gen-schema.outPath} + "/nix/lib") {
           inherit lib;
-          inputs."gen-algebra" = import ${genAlgebraSource} { inherit lib; };
+          inputs."gen-algebra" = import ${inputs.den-gen-algebra.outPath} { inherit lib; };
         };
-        "nix-effects".lib = import ${nixEffectsSource} { inherit lib; };
+        "nix-effects".lib = import ${inputs.den-nix-effects.outPath} { inherit lib; };
         home-manager.lib = import (${inputs.home-manager.outPath} + "/lib") { inherit lib; };
         nixpkgs = {
           inherit lib;

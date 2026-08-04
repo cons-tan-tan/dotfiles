@@ -46,6 +46,10 @@ in
 {
   den.hosts.aarch64-darwin.constantan = {
     aspect = den.aspects.hosts.constantan;
+    intoAttr = [
+      "darwinConfigurations"
+      "constantan"
+    ];
     dotfiles = {
       environment = "darwin";
       source = "/Users/${username}/ghq/github.com/cons-tan-tan/dotfiles";
@@ -53,8 +57,18 @@ in
     users.${username} = mkUser den.aspects.users.constantan;
   };
 
-  den.hosts.x86_64-linux.wsl = mkWslHost den.aspects.hosts.wsl;
-  den.hosts.aarch64-linux.wsl-aarch64 = mkWslHost den.aspects.hosts.wsl-aarch64;
+  den.hosts.x86_64-linux.wsl = (mkWslHost den.aspects.hosts.wsl) // {
+    intoAttr = [
+      "nixosConfigurations"
+      "wsl"
+    ];
+  };
+  den.hosts.aarch64-linux.wsl-aarch64 = (mkWslHost den.aspects.hosts.wsl-aarch64) // {
+    intoAttr = [
+      "nixosConfigurations"
+      "wsl-aarch64"
+    ];
+  };
 
   den.homes.x86_64-linux."${username}@standalone-linux" = mkHome {
     aspect = den.aspects.homes.standalone-linux;

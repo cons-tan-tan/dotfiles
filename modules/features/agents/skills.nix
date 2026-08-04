@@ -57,6 +57,11 @@ in
       }:
       let
         aggregated = import (skillsLib + "/aggregate.nix") { inherit lib; } agent-skills;
+        # Producers cannot see the final Home Manager option values. Keep
+        # predicate evaluation here so every deployment target uses one filter.
+        enabledDefinitions = lib.filterAttrs (
+          name: _: aggregated.enablePredicates.${name} config
+        ) aggregated.definitions;
         skills = config.dotfiles.agentSkills.externalSkills;
         inherit (import (skillsLib + "/policy.nix") { inherit lib; })
           defaultInheritedFrontmatterFields
@@ -115,7 +120,7 @@ in
       in
       {
         imports = [ (skillsLib + "/options.nix") ];
-        dotfiles.agentSkills.externalSkills = aggregated.definitions;
+        dotfiles.agentSkills.externalSkills = enabledDefinitions;
         home.file = deployTo ".claude/skills" // deployTo ".agents/skills";
       };
   };

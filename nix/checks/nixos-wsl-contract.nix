@@ -32,7 +32,12 @@ let
       ;
   };
   growthRunnerBin = lib.getExe growthRunner;
-  expectedGrowthCheckCommand = "${growthRunnerBin} check ${growthStatePath}";
+  cleanupLock = import ../lib/nh-clean-lock.nix {
+    coreutils = pkgs.coreutils;
+    inherit lib username;
+  };
+  flockBin = lib.getExe' pkgs.util-linux "flock";
+  expectedGrowthCheckCommand = "${flockBin} --exclusive ${cleanupLock.cleanupFile} ${growthRunnerBin} check ${growthStatePath}";
   expectedInitScopeDropIn = ''
     [Scope]
     OOMPolicy=continue
@@ -206,6 +211,7 @@ let
         ioClass = config.systemd.services.nh-clean.serviceConfig.IOSchedulingClass;
         stateDirectory = config.systemd.services.nh-clean.serviceConfig.StateDirectory;
         stateDirectoryMode = config.systemd.services.nh-clean.serviceConfig.StateDirectoryMode;
+        lockPreparation = config.systemd.services.nh-clean.serviceConfig.ExecStartPre;
         command = config.systemd.services.nh-clean.serviceConfig.ExecStart;
         timeoutStart = config.systemd.services.nh-clean.serviceConfig.TimeoutStartSec;
         timerOnBoot = config.systemd.timers.nh-clean.timerConfig.OnBootSec;
@@ -222,6 +228,7 @@ let
         ioClass = "idle";
         stateDirectory = cleanupPolicy.growth.stateDirectory;
         stateDirectoryMode = "0750";
+        lockPreparation = cleanupLock.preparationCommands;
         command = expectedGrowthCheckCommand;
         timeoutStart = cleanupPolicy.growth.cleanupTimeout;
         timerOnBoot = cleanupPolicy.growth.checkInterval;
@@ -249,6 +256,7 @@ let
         systemServiceDefined = config.systemd.services ? nh-clean-result-roots;
         systemTimerDefined = config.systemd.timers ? nh-clean-result-roots;
         user = config.systemd.services.nh-clean-result-roots.serviceConfig.User;
+        lockPreparation = config.systemd.services.nh-clean-result-roots.serviceConfig.ExecStartPre;
         command = config.systemd.services.nh-clean-result-roots.serviceConfig.ExecStart;
         calendar = config.systemd.timers.nh-clean-result-roots.timerConfig.OnCalendar;
         persistent = config.systemd.timers.nh-clean-result-roots.timerConfig.Persistent;
@@ -259,7 +267,8 @@ let
         systemServiceDefined = true;
         systemTimerDefined = true;
         user = username;
-        command = "${lib.getExe resultRootPruner} --keep-minutes ${toString cleanupPolicy.resultRoots.keepMinutes}";
+        lockPreparation = cleanupLock.preparationCommands;
+        command = "${flockBin} --exclusive ${cleanupLock.cleanupFile} ${lib.getExe resultRootPruner} --keep-minutes ${toString cleanupPolicy.resultRoots.keepMinutes}";
         calendar = cleanupPolicy.resultRoots.dates;
         persistent = true;
       };

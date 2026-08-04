@@ -7,15 +7,17 @@
 }:
 let
   username = "constantan";
-  darwinHostname = username;
   linuxHomedir = "/home/${username}";
-  configNames = import ../../entities/_lib/configuration-names.nix { inherit username; };
-  darwinAppsFor = import ../../../nix/lib/apps/mk-darwin-apps.nix { inherit darwinHostname; };
+  configurationTargets = import ../../entities/_lib/configuration-targets.nix { inherit lib; };
   appsFor =
     { pkgs, system, ... }:
     if lib.hasSuffix "-darwin" system then
       let
-        darwinConfiguration = config.flake.darwinConfigurations.${darwinHostname};
+        targets = configurationTargets { inherit den system; };
+        darwinConfiguration = config.flake.darwinConfigurations.${targets.darwin};
+        darwinAppsFor = import ../../../nix/lib/apps/mk-darwin-apps.nix {
+          darwinHostname = targets.darwin;
+        };
       in
       darwinAppsFor {
         inherit pkgs;
@@ -23,26 +25,20 @@ let
       }
     else
       let
-        linuxTarget = configNames.forHost {
-          hostKind = "linux";
-          inherit system;
-        };
-        wslTarget = configNames.forHost {
-          hostKind = "wsl";
-          inherit system;
-        };
-        nixosTarget = configNames.forNixosWsl { inherit system; };
-        nixosConfiguration = config.flake.nixosConfigurations.${nixosTarget};
-        windowsHomedir = den.homes.${system}."${username}@standalone-wsl".dotfiles.windows.homedir;
+        targets = configurationTargets { inherit den system; };
+        nixosConfiguration = config.flake.nixosConfigurations.${targets.nixosWsl};
+        windowsHomedir = den.homes.${system}.${targets.entityNames.home.wsl}.dotfiles.windows.homedir;
         mkLinuxApps = import ../../../nix/lib/apps/mk-linux-apps.nix {
           inherit inputs username windowsHomedir;
           homedir = linuxHomedir;
         };
       in
-      assert config.flake.homeConfigurations ? ${linuxTarget};
-      assert config.flake.homeConfigurations ? ${wslTarget};
+      assert config.flake.homeConfigurations ? ${targets.home.linux};
+      assert config.flake.homeConfigurations ? ${targets.home.wsl};
       mkLinuxApps {
-        inherit nixosTarget pkgs system;
+        inherit pkgs system;
+        homeTargets = targets.home;
+        nixosTarget = targets.nixosWsl;
         nixosRebuildBin = "${nixosConfiguration.config.system.build.nixos-rebuild}/bin/nixos-rebuild";
       };
   scriptNamesFor =

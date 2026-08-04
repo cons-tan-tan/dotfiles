@@ -1,4 +1,5 @@
 {
+  den,
   flake,
   inputs,
   lib,
@@ -8,22 +9,19 @@
 let
   system = pkgs.stdenv.hostPlatform.system;
   expectedProgram = lib.getExe pkgs.dotfilesPackages.difit;
-  configNames = import ../../../modules/entities/_lib/configuration-names.nix { inherit username; };
+  targets = (import ../../../modules/entities/_lib/configuration-targets.nix { inherit lib; }) {
+    inherit den system;
+  };
   hostPkgs =
     if pkgs.stdenv.hostPlatform.isDarwin then
-      flake.darwinConfigurations.${username}.pkgs
+      flake.darwinConfigurations.${targets.darwin}.pkgs
     else
-      flake.nixosConfigurations.${configNames.forNixosWsl { inherit system; }}.pkgs;
+      flake.nixosConfigurations.${targets.nixosWsl}.pkgs;
   homePkgs =
     if pkgs.stdenv.hostPlatform.isDarwin then
       hostPkgs
     else
-      flake.homeConfigurations.${
-        configNames.forHost {
-          hostKind = "linux";
-          inherit system;
-        }
-      }.pkgs;
+      flake.homeConfigurations.${targets.home.linux}.pkgs;
   expectedCommonApps = (import ./mk-common-apps.nix { inherit inputs username; }) {
     inherit pkgs;
     treefmtWrapper = flake.formatter.${system};

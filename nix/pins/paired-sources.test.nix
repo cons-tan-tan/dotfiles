@@ -1,7 +1,15 @@
 { pkgs }:
 let
   lock = builtins.fromJSON (builtins.readFile ../../flake.lock);
-  lockedRef = name: lock.nodes.${name}.original.ref or null;
+  lockedRef =
+    name:
+    let
+      nodeName = lock.nodes.root.inputs.${name};
+    in
+    if builtins.isString nodeName then
+      lock.nodes.${nodeName}.original.ref or null
+    else
+      throw "${name} must be a direct root flake input";
 in
 {
   testAgentBrowserSkillMatchesPackageVersion = {

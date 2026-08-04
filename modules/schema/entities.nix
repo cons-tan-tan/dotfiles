@@ -48,6 +48,12 @@ let
       || (cfg.windows.enable && cfg.windows.username != null && cfg.windows.homedir != null);
     message = "dotfiles.environment = wsl requires an enabled Windows companion with username and homedir";
   };
+  nonWslAssertion = cfg: {
+    assertion =
+      cfg.environment == "wsl"
+      || (!cfg.windows.enable && cfg.windows.username == null && cfg.windows.homedir == null);
+    message = "non-WSL dotfiles.windows metadata must be disabled and empty";
+  };
 
   hostSchema =
     { config, ... }:
@@ -56,7 +62,10 @@ let
         type = environmentMetadataType;
         description = "Project metadata for this host.";
       };
-      config.assertions = [ (wslAssertion config.dotfiles) ];
+      config.assertions = [
+        (wslAssertion config.dotfiles)
+        (nonWslAssertion config.dotfiles)
+      ];
     };
 
   userSchema = {
@@ -96,7 +105,10 @@ let
         };
         description = "Project metadata for this standalone home.";
       };
-      config.assertions = [ (wslAssertion config.dotfiles) ];
+      config.assertions = [
+        (wslAssertion config.dotfiles)
+        (nonWslAssertion config.dotfiles)
+      ];
     };
 in
 {

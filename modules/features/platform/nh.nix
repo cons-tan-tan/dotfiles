@@ -89,6 +89,10 @@ in
         resultRootPruner = pkgs.callPackage ../../../nix/packages/nh-result-root-pruner { };
         username = config.wsl.defaultUser;
         homedir = config.users.users.${username}.home;
+        lock = import ../../../nix/lib/nh-clean-lock.nix {
+          coreutils = pkgs.coreutils;
+          inherit lib username;
+        };
         growth = cleanupPolicy.growth;
         statePath = "/var/lib/${growth.stateDirectory}";
         growthRunner = pkgs.callPackage ../../../nix/packages/nh-clean-growth-runner {
@@ -117,7 +121,8 @@ in
             IOSchedulingClass = "idle";
             StateDirectory = growth.stateDirectory;
             StateDirectoryMode = "0750";
-            ExecStart = "${lib.getExe growthRunner} check ${statePath}";
+            ExecStartPre = lock.preparationCommands;
+            ExecStart = "${lib.getExe' pkgs.util-linux "flock"} --exclusive ${lock.cleanupFile} ${lib.getExe growthRunner} check ${statePath}";
             TimeoutStartSec = growth.cleanupTimeout;
           };
         };
@@ -140,7 +145,8 @@ in
             WorkingDirectory = homedir;
             Nice = 10;
             IOSchedulingClass = "idle";
-            ExecStart = "${lib.getExe resultRootPruner} --keep-minutes ${toString cleanupPolicy.resultRoots.keepMinutes}";
+            ExecStartPre = lock.preparationCommands;
+            ExecStart = "${lib.getExe' pkgs.util-linux "flock"} --exclusive ${lock.cleanupFile} ${lib.getExe resultRootPruner} --keep-minutes ${toString cleanupPolicy.resultRoots.keepMinutes}";
           };
         };
         systemd.timers.nh-clean-result-roots = {

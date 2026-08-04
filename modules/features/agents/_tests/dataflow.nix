@@ -237,7 +237,7 @@ let
       }
     );
 
-    testHcomAspectMembershipControlsAllObservableArtifacts = evalTest (
+    testHcomOptionControlsAllObservableArtifacts = evalTest (
       {
         config,
         features,
@@ -252,6 +252,7 @@ let
             hcom = home.dotfiles.agentIntegrations.hcom;
           in
           {
+            enabled = home.dotfiles.hcom.enable;
             integration = if hcom == null then "absent" else "present";
             package = if hcom != null && lib.elem hcom.package home.home.packages then "present" else "absent";
             skills = {
@@ -294,10 +295,10 @@ let
           hcom = { };
         };
         den.aspects.plain.includes = [ features.agents-default ];
-        den.aspects.hcom.includes = [
-          features.agents-default
-          features.agent-hcom
-        ];
+        den.aspects.hcom = {
+          includes = [ features.agents-default ];
+          homeManager.dotfiles.hcom.enable = true;
+        };
 
         expr = {
           plain = removeAttrs plain [
@@ -315,6 +316,7 @@ let
         };
         expected = {
           plain = {
+            enabled = false;
             integration = "absent";
             package = "absent";
             skills = {
@@ -327,6 +329,7 @@ let
             };
           };
           hcom = {
+            enabled = true;
             integration = "present";
             package = "present";
             skills = {
@@ -403,6 +406,30 @@ let
           }
         )).expr;
       expectedFragments = [ "agent skill quirk entry has an invalid provenance" ];
+    };
+    invalidSkillEnablePredicate = {
+      expression = builtins.deepSeq (aggregateSkills [
+        {
+          name = "invalid";
+          definition.root = ./.;
+          provenance = "local";
+          enable = true;
+        }
+      ]) true;
+      expectedFragments = [ "agent skill quirk entry enable predicate must be a function" ];
+    };
+    nonBooleanSkillEnablePredicate = {
+      expression =
+        (aggregateSkills [
+          {
+            name = "invalid";
+            definition.root = ./.;
+            provenance = "local";
+            enable = _: "yes";
+          }
+        ]).enablePredicates.invalid
+          { };
+      expectedFragments = [ "agent skill quirk entry enable predicate must return a boolean" ];
     };
     invalidSkillDefinition = {
       expression =

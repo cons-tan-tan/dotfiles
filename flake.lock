@@ -278,6 +278,57 @@
         "type": "github"
       }
     },
+    "den-gen-algebra": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1779949157,
+        "narHash": "sha256-Lus/dMa/CjERJMySG12RDArQKW4G3A6X/UQUi7KNWfA=",
+        "owner": "sini",
+        "repo": "gen-algebra",
+        "rev": "dd682674edad388c439c6f2b08f84c31feec1b68",
+        "type": "github"
+      },
+      "original": {
+        "owner": "sini",
+        "repo": "gen-algebra",
+        "rev": "dd682674edad388c439c6f2b08f84c31feec1b68",
+        "type": "github"
+      }
+    },
+    "den-gen-schema": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1779986641,
+        "narHash": "sha256-KcZuS+hpaloICFcepNXNLpbehh6XoPjWPBteYpTqMRw=",
+        "owner": "sini",
+        "repo": "gen-schema",
+        "rev": "4bd0f6eb1799bf3c38eb3707419157b1f70eb1f5",
+        "type": "github"
+      },
+      "original": {
+        "owner": "sini",
+        "repo": "gen-schema",
+        "rev": "4bd0f6eb1799bf3c38eb3707419157b1f70eb1f5",
+        "type": "github"
+      }
+    },
+    "den-nix-effects": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1778686186,
+        "narHash": "sha256-oxjrcHFSV2+Rxg4LE4Hupa5HjleTvU1Ir6jp5SburLE=",
+        "owner": "denful",
+        "repo": "nix-effects",
+        "rev": "c3c68a45deb892d028711eeff8b80937e30a90dd",
+        "type": "github"
+      },
+      "original": {
+        "owner": "denful",
+        "repo": "nix-effects",
+        "rev": "c3c68a45deb892d028711eeff8b80937e30a90dd",
+        "type": "github"
+      }
+    },
     "difit-src": {
       "flake": false,
       "locked": {
@@ -723,6 +774,9 @@
         "codex-plugin-cc": "codex-plugin-cc",
         "darwin": "darwin",
         "den": "den",
+        "den-gen-algebra": "den-gen-algebra",
+        "den-gen-schema": "den-gen-schema",
+        "den-nix-effects": "den-nix-effects",
         "difit-src": "difit-src",
         "drawio-skill": "drawio-skill",
         "flake-file": "flake-file",

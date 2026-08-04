@@ -11,46 +11,28 @@ let
   linuxHomedir = "/home/${username}";
   windowsUsername = "zhouc";
   windowsHomedir = "/mnt/c/Users/${windowsUsername}";
-  configNames = import ../../entities/_lib/configuration-names.nix { inherit username; };
+  configurationTargets = import ../../entities/_lib/configuration-targets.nix { inherit lib; };
   ciCheck = import ../../../nix/lib/ci-check.nix { inherit lib; };
 in
 {
   den.aspects.configuration-checks.checks =
     { pkgs, system, ... }:
     let
+      targets = configurationTargets { inherit den system; };
       inherit (config.flake)
         darwinConfigurations
         homeConfigurations
         nixosConfigurations
         ;
-      homeEntries =
-        map
-          (hostKind: {
-            inherit hostKind;
-            name = configNames.forHost { inherit hostKind system; };
-          })
-          [
-            "linux"
-            "wsl"
-          ];
+      homeEntries = lib.mapAttrsToList (environment: name: {
+        hostKind = environment;
+        inherit name;
+      }) targets.home;
       nixosWslConfiguration =
-        if lib.hasSuffix "-linux" system then
-          nixosConfigurations.${configNames.forNixosWsl { inherit system; }}
-        else
-          null;
-      homeConfiguration =
-        hostKind: homeConfigurations.${configNames.forHost { inherit hostKind system; }};
+        if lib.hasSuffix "-linux" system then nixosConfigurations.${targets.nixosWsl} else null;
+      homeConfiguration = environment: homeConfigurations.${targets.home.${environment}};
       hcomProfile =
-        environment:
-        import ../agents/_tests/hcom-profile.nix {
-          inherit
-            environment
-            inputs
-            lib
-            system
-            ;
-          repoRoot = ../../..;
-        };
+        homeConfiguration: import ../agents/_tests/hcom-profile.nix { inherit homeConfiguration; };
     in
     lib.optionalAttrs (system == "x86_64-linux") {
       configuration-ownership-contract = ciCheck.annotate (ciCheck.targets.linux "configurations") (
@@ -68,11 +50,16 @@ in
     }
     // ciCheck.annotateSet (ciCheck.targets.darwin "configurations") (
       lib.optionalAttrs (system == darwinSystem) {
-        darwin-system = darwinConfigurations.${username}.system;
-        home-darwin-hcom-profile = hcomProfile "darwin";
+        darwin-system = darwinConfigurations.${targets.darwin}.system;
+        home-darwin-hcom-profile =
+          (darwinConfigurations.${targets.darwin}.extendModules {
+            modules = [
+              { home-manager.users.${username}.dotfiles.hcom.enable = true; }
+            ];
+          }).system;
         darwin-nh-cleanup-contract = import ../../../nix/checks/darwin-nh-cleanup-contract.nix {
           inherit lib pkgs username;
-          config = darwinConfigurations.${username}.config;
+          config = darwinConfigurations.${targets.darwin}.config;
         };
       }
     )
@@ -109,7 +96,7 @@ in
             }
             {
               name = "home-${entry.hostKind}-hcom-profile";
-              value = hcomProfile entry.hostKind;
+              value = hcomProfile homeConfigurations.${entry.name};
             }
           ]) homeEntries
         )

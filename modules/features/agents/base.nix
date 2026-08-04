@@ -64,7 +64,7 @@ in
         options.dotfiles.agentIntegrations.hcom = lib.mkOption {
           internal = true;
           default = null;
-          description = "hcom artifacts contributed by the opt-in Den aspect.";
+          description = "hcom artifacts available when dotfiles.hcom.enable is enabled.";
           type = lib.types.nullOr (
             lib.types.submodule {
               options = {
@@ -95,6 +95,7 @@ in
       features.agent-guidance
       features.agent-claude
       features.agent-codex
+      features.agent-hcom
       features.agent-herdr
       features.agent-hunk
       features.agent-opencode

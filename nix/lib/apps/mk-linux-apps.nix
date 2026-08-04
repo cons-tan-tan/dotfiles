@@ -7,6 +7,7 @@
 {
   system,
   pkgs,
+  homeTargets,
   nixosTarget,
   nixosRebuildBin,
 }:
@@ -14,15 +15,7 @@ let
   inherit (pkgs.lib) escapeShellArg;
   appSet = import ./mk-app-set.nix { lib = pkgs.lib; };
 
-  configNames = import ../../../modules/entities/_lib/configuration-names.nix { inherit username; };
-  wslTarget = configNames.forHost {
-    hostKind = "wsl";
-    inherit system;
-  };
-  linuxTarget = configNames.forHost {
-    hostKind = "linux";
-    inherit system;
-  };
+  inherit (homeTargets) linux wsl;
   hmBin = "${inputs.home-manager.packages.${system}.default}/bin/home-manager";
   nhCleanupSystemd = pkgs.callPackage ../../packages/nh-cleanup-systemd {
     inherit homedir username;
@@ -33,8 +26,8 @@ let
   buildScript = pkgs.writeShellApplication {
     name = "linux-host-build";
     text = ''
-      export HM_TARGET_WSL=${escapeShellArg wslTarget}
-      export HM_TARGET_LINUX=${escapeShellArg linuxTarget}
+      export HM_TARGET_WSL=${escapeShellArg wsl}
+      export HM_TARGET_LINUX=${escapeShellArg linux}
       export NIXOS_TARGET=${escapeShellArg nixosTarget}
       ${builtins.readFile ../../apps/linux-host-build.sh}
     '';
@@ -43,8 +36,8 @@ let
   switchScript = pkgs.writeShellApplication {
     name = "linux-host-switch";
     text = ''
-      export HM_TARGET_WSL=${escapeShellArg wslTarget}
-      export HM_TARGET_LINUX=${escapeShellArg linuxTarget}
+      export HM_TARGET_WSL=${escapeShellArg wsl}
+      export HM_TARGET_LINUX=${escapeShellArg linux}
       export HM_BIN=${escapeShellArg hmBin}
       export NIXOS_TARGET=${escapeShellArg nixosTarget}
       export NIXOS_REBUILD_BIN=${escapeShellArg nixosRebuildBin}

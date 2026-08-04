@@ -29,6 +29,12 @@ let
       ;
   };
   statePath = "/var/lib/${growth.stateDirectory}";
+  lock = import ../../lib/nh-clean-lock.nix {
+    inherit coreutils lib username;
+  };
+  lockPreparation = lib.concatMapStringsSep "\n" (
+    command: "ExecStartPre=${command}"
+  ) lock.preparationCommands;
   serviceUnit = writeTextDir "lib/systemd/system/nh-clean.service" ''
     [Unit]
     Description=Clean Nix store after growth or maximum age
@@ -44,7 +50,8 @@ let
     IOSchedulingClass=idle
     StateDirectory=${growth.stateDirectory}
     StateDirectoryMode=0750
-    ExecStart=${lib.getExe policyRunner} check ${statePath}
+    ${lockPreparation}
+    ExecStart=${lib.getExe' util-linux "flock"} --exclusive ${lock.cleanupFile} ${lib.getExe policyRunner} check ${statePath}
     TimeoutStartSec=${growth.cleanupTimeout}
   '';
   timerUnit = writeTextDir "lib/systemd/system/nh-clean.timer" ''
@@ -71,7 +78,8 @@ let
     WorkingDirectory=${homedir}
     Nice=10
     IOSchedulingClass=idle
-    ExecStart=${lib.getExe resultRootPruner} --keep-minutes ${toString cleanupPolicy.resultRoots.keepMinutes}
+    ${lockPreparation}
+    ExecStart=${lib.getExe' util-linux "flock"} --exclusive ${lock.cleanupFile} ${lib.getExe resultRootPruner} --keep-minutes ${toString cleanupPolicy.resultRoots.keepMinutes}
   '';
   resultRootTimerUnit = writeTextDir "lib/systemd/system/nh-clean-result-roots.timer" ''
     [Unit]
@@ -103,38 +111,17 @@ let
       util-linux
     ];
     text = ''
-      if (( EUID != 0 )); then
-        echo "install-nh-cleanup-systemd must run as root" >&2
-        exit 1
-      fi
-
+      readonly cleanup_user=${lib.escapeShellArg username}
       readonly source_directory=${lib.escapeShellArg "${unitTree}/lib/systemd/system"}
       readonly target_directory=/etc/systemd/system
       readonly gcroot=/nix/var/nix/gcroots/nh-cleanup-systemd
       readonly next_gcroot="$gcroot.next"
-      readonly lock_file=/run/lock/nh-cleanup-systemd.lock
-
-      umask 0077
-      exec 9>"$lock_file"
-      flock --exclusive 9
-
-      install -d -m 0755 "$(dirname "$gcroot")"
-      # Keep the old closure rooted until every unit has been installed and
-      # successfully reloaded. A failed update leaves both generations safe.
-      ln -sfnT ${lib.escapeShellArg unitTree} "$next_gcroot"
-      install -D -m 0644 "$source_directory/nh-clean.service" \
-        "$target_directory/nh-clean.service"
-      install -D -m 0644 "$source_directory/nh-clean.timer" \
-        "$target_directory/nh-clean.timer"
-      install -D -m 0644 "$source_directory/nh-clean-result-roots.service" \
-        "$target_directory/nh-clean-result-roots.service"
-      install -D -m 0644 "$source_directory/nh-clean-result-roots.timer" \
-        "$target_directory/nh-clean-result-roots.timer"
-      systemctl daemon-reload
-      systemctl enable nh-clean.timer nh-clean-result-roots.timer
-      systemctl restart nh-clean.timer nh-clean-result-roots.timer
-      mv -Tf "$next_gcroot" "$gcroot"
-    '';
+      readonly unit_tree=${lib.escapeShellArg unitTree}
+      readonly lock_directory=${lock.directory}
+      readonly cleanup_lock_file=${lock.cleanupFile}
+      readonly installer_lock_file=${lock.installerFile}
+    ''
+    + builtins.readFile ./install-nh-cleanup-systemd.sh;
   };
 in
 symlinkJoin {

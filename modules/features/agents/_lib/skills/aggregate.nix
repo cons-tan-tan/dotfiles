@@ -4,6 +4,7 @@ let
   inherit (import ./skill-policy.nix { inherit lib; }) isSkillName;
   allowedEntryAttrs = [
     "definition"
+    "enable"
     "name"
     "provenance"
   ];
@@ -25,9 +26,24 @@ let
       entry ? definition && builtins.isAttrs entry.definition
     ) "agent skill quirk entry requires an attribute-set definition";
     assert lib.assertMsg (
+      !entry ? enable || builtins.isFunction entry.enable
+    ) "agent skill quirk entry enable predicate must be a function";
+    assert lib.assertMsg (
       entry ? provenance && lib.elem entry.provenance validProvenance
     ) "agent skill quirk entry has an invalid provenance";
     entry;
+  enablePredicate =
+    entry:
+    if entry ? enable then
+      config:
+      let
+        enabled = entry.enable config;
+      in
+      assert lib.assertMsg (builtins.isBool enabled)
+        "agent skill quirk entry enable predicate must return a boolean";
+      enabled
+    else
+      _: true;
   checked = map validateEntry entries;
   names = map (entry: entry.name) checked;
   duplicateNames = builtins.filter (
@@ -43,5 +59,8 @@ assert lib.assertMsg (
   );
   provenance = builtins.listToAttrs (
     map (entry: lib.nameValuePair entry.name entry.provenance) checked
+  );
+  enablePredicates = builtins.listToAttrs (
+    map (entry: lib.nameValuePair entry.name (enablePredicate entry)) checked
   );
 }

@@ -5,10 +5,17 @@
   ...
 }:
 let
+  profileAssertion = import ./_lib/profile-assertion.nix;
   baseHomeModule =
     owner: cleanupOwner:
     { config, ... }:
     {
+      assertions = [
+        (profileAssertion {
+          expected = "wsl";
+          inherit owner;
+        })
+      ];
       dotfiles.platform = {
         inherit (owner.dotfiles) environment source;
         standalone = owner.dotfiles.standalone or false;
@@ -46,6 +53,12 @@ in
         overlayPlan = import ../../../nix/lib/mk-overlays.nix { inherit inputs; } host.system;
       in
       {
+        assertions = [
+          (profileAssertion {
+            expected = "wsl";
+            owner = host;
+          })
+        ];
         nixpkgs = {
           overlays = overlayPlan.overlays;
         };

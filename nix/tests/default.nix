@@ -2,6 +2,7 @@
   advisoryDb,
   advisoryDbLastModified,
   ciCheck,
+  den,
   flake,
   homeManager,
   inputs,
@@ -20,7 +21,17 @@ let
   cacheSettings = import ../lib/cache-settings.nix;
   cleanupPolicy = import ../lib/nh-clean-policy.nix;
   hostArch = if pkgs.stdenv.hostPlatform.isx86_64 then "x86_64" else "aarch64";
-  expectedNixosWslTarget = if hostArch == "x86_64" then "wsl" else "wsl-aarch64";
+  configurationTargets = import ../../modules/entities/_lib/configuration-targets.nix {
+    inherit lib;
+  };
+  currentTargets = configurationTargets {
+    inherit den;
+    system = pkgs.stdenv.hostPlatform.system;
+  };
+  linuxTargets = configurationTargets {
+    inherit den;
+    system = "${hostArch}-linux";
+  };
 
   # Pure tests live beside ordinary nix code or below Dendritic support
   # directories. The source-root list keeps discovery explicit while the
@@ -46,6 +57,7 @@ let
   testContext = {
     inherit
       ciCheck
+      den
       flake
       homeManager
       inputs
@@ -442,9 +454,9 @@ let
   };
   repositoryHome =
     if pkgs.stdenv.hostPlatform.isDarwin then
-      flake.darwinConfigurations.${username}.config.home-manager.users.${username}
+      flake.darwinConfigurations.${currentTargets.darwin}.config.home-manager.users.${username}
     else
-      flake.homeConfigurations."${username}@linux-${hostArch}".config;
+      flake.homeConfigurations.${currentTargets.home.linux}.config;
   agentCommandPolicy = repositoryHome.dotfiles.agentCommandPolicyCompiled;
   agentCommandGuardHook = import ../../modules/features/agents/_lib/command-policy/mk-guard.nix {
     inherit lib pkgs;
@@ -946,6 +958,7 @@ let
         "nix/packages/drawio-headless/drawio-wrapper.sh"
         "nix/packages/ghq-fetch-all/ghq-fetch-all.sh"
         "nix/packages/herdr/herdr-wrapper.sh"
+        "nix/packages/nh-cleanup-systemd/install-nh-cleanup-systemd.sh"
         "nix/packages/nh-clean-growth-runner/nh-clean-growth-runner.sh"
         "nix/packages/nh-result-root-pruner/nh-prune-result-roots.sh"
         "nix/packages/nix-store-growth-checker/nix-store-growth-checker.sh"
@@ -979,9 +992,9 @@ let
         HERDR_WRAPPER_TEST_PACKAGE = herdrWrapperTestPackage;
         HOST_APP_KIND = if pkgs.stdenv.hostPlatform.isDarwin then "darwin" else "linux-host";
         HOST_BUILD_PUBLIC_BIN = publicApps.build.program;
-        HOST_EXPECTED_HM_LINUX = "${username}@linux-${hostArch}";
-        HOST_EXPECTED_HM_WSL = "${username}@wsl-${hostArch}";
-        HOST_EXPECTED_NIXOS_WSL = expectedNixosWslTarget;
+        HOST_EXPECTED_HM_LINUX = linuxTargets.home.linux;
+        HOST_EXPECTED_HM_WSL = linuxTargets.home.wsl;
+        HOST_EXPECTED_NIXOS_WSL = linuxTargets.nixosWsl;
         HOST_SWITCH_PUBLIC_BIN = publicApps.switch.program;
         NH_CLEAN_GROWTH_RUNNER_BIN = lib.getExe nhCleanGrowthRunnerContract;
         NH_CLEAN_GROWTH_TIMEOUT_RUNNER_BIN = lib.getExe nhCleanGrowthTimeoutRunnerContract;
@@ -1006,14 +1019,16 @@ let
         "HOST_SWITCH_PUBLIC_BIN"
         "NH_CLEAN_GROWTH_RUNNER_BIN"
         "NH_CLEAN_GROWTH_TIMEOUT_RUNNER_BIN"
-        "NH_CLEANUP_SYSTEMD_PACKAGE"
         "NIX_STORE_GROWTH_CHECKER_BIN"
         "PI_WRAPPER_TEST_PACKAGE"
         "WSL_OPEN_TEST_PACKAGE"
         "WINDOWS_COMPANION_DEPLOY_TEST_BIN"
         "WINDOWS_COMPANION_DEPLOY_TEST_ROOT"
       ]
-      ++ lib.optional pkgs.stdenv.hostPlatform.isLinux "DRAWIO_WRAPPER_TEST_PACKAGE";
+      ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [
+        "DRAWIO_WRAPPER_TEST_PACKAGE"
+        "NH_CLEANUP_SYSTEMD_PACKAGE"
+      ];
       initializeGit = true;
       platformPredicate = _platform: true;
     }

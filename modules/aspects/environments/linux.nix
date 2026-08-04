@@ -4,6 +4,9 @@
   inputs,
   ...
 }:
+let
+  profileAssertion = import ./_lib/profile-assertion.nix;
+in
 {
   den.aspects.environments.linux = {
     name = "dotfiles-linux";
@@ -22,6 +25,12 @@
         overlayPlan = import ../../../nix/lib/mk-overlays.nix { inherit inputs; } home.system;
       in
       {
+        assertions = [
+          (profileAssertion {
+            expected = "linux";
+            owner = home;
+          })
+        ];
         dotfiles.platform = {
           inherit (home.dotfiles) environment source standalone;
           windowsCompanion = false;

@@ -1,4 +1,5 @@
 {
+  den,
   flake,
   inputs,
   lib,
@@ -69,28 +70,29 @@ let
     inherit pkgs;
     treefmtWrapper = flake.formatter.${system};
   };
-  configNames = import ../../../modules/entities/_lib/configuration-names.nix { inherit username; };
+  targets = (import ../../../modules/entities/_lib/configuration-targets.nix { inherit lib; }) {
+    inherit den system;
+  };
   expectedHostApps =
     if pkgs.stdenv.hostPlatform.isDarwin then
-      (import ./mk-darwin-apps.nix { darwinHostname = username; }) {
+      (import ./mk-darwin-apps.nix { darwinHostname = targets.darwin; }) {
         inherit pkgs;
         darwinRebuildBin = "${
-          flake.darwinConfigurations.${username}.config.system.build.darwin-rebuild
+          flake.darwinConfigurations.${targets.darwin}.config.system.build.darwin-rebuild
         }/bin/darwin-rebuild";
       }
     else
-      let
-        nixosTarget = configNames.forNixosWsl { inherit system; };
-      in
       (import ./mk-linux-apps.nix {
         inherit inputs username;
         homedir = "/home/${username}";
         windowsHomedir = "/mnt/c/Users/zhouc";
       })
         {
-          inherit nixosTarget pkgs system;
+          inherit pkgs system;
+          homeTargets = targets.home;
+          nixosTarget = targets.nixosWsl;
           nixosRebuildBin = "${
-            flake.nixosConfigurations.${nixosTarget}.config.system.build.nixos-rebuild
+            flake.nixosConfigurations.${targets.nixosWsl}.config.system.build.nixos-rebuild
           }/bin/nixos-rebuild";
         };
   expectedPrograms = lib.mapAttrs (_: app: app.program) expectedCommonApps.apps;

@@ -4,6 +4,9 @@
   inputs,
   ...
 }:
+let
+  profileAssertion = import ./_lib/profile-assertion.nix;
+in
 {
   den.aspects.environments.darwin = {
     name = "dotfiles-darwin";
@@ -23,6 +26,12 @@
         overlayPlan = import ../../../nix/lib/mk-overlays.nix { inherit inputs; } host.system;
       in
       {
+        assertions = [
+          (profileAssertion {
+            expected = "darwin";
+            owner = host;
+          })
+        ];
         nixpkgs = {
           overlays = overlayPlan.overlays;
         };
@@ -31,6 +40,12 @@
     homeManager =
       { host, ... }:
       {
+        assertions = [
+          (profileAssertion {
+            expected = "darwin";
+            owner = host;
+          })
+        ];
         dotfiles.platform = {
           inherit (host.dotfiles) environment source;
           standalone = false;
