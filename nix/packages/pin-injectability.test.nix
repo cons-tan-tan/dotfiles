@@ -85,7 +85,7 @@ let
 
   mkSchemaValidator =
     args:
-    import ../lib/mk-claude-settings-validator.nix (
+    import ../../modules/features/agents/_lib/settings/claude-validator.nix (
       {
         pkgs.fetchurl = attrs: attrs;
       }
@@ -246,7 +246,7 @@ in
   };
 
   testClaudeSettingsSchemaPinInjectable = {
-    expr = hasInjectablePin ../lib/mk-claude-settings-validator.nix "schemaPin";
+    expr = hasInjectablePin ../../modules/features/agents/_lib/settings/claude-validator.nix "schemaPin";
     expected = true;
   };
 

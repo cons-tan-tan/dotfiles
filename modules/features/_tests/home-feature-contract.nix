@@ -47,6 +47,16 @@ let
       trashActivation = config.home.activation.trashDirectory;
       ghExtensions = config.programs.gh.extensions;
       registry = config.nix.registry.dotfiles;
+      agentEnvironment = config.dotfiles.agentEnvironment;
+      commandPolicy = config.dotfiles.agentCommandPolicyCompiled;
+      claudeActivation = config.home.activation.claudeHooksDirectoryMigration;
+      codexActivation = config.home.activation.codexHooksConfig;
+      packageNames = map lib.getName packages;
+      skillNamesFor =
+        prefix:
+        map (lib.removePrefix prefix) (
+          builtins.filter (lib.hasPrefix prefix) (builtins.attrNames config.home.file)
+        );
       commonPackages =
         (with entryPkgs; [
           ast-grep
@@ -114,6 +124,59 @@ let
         direnvNix = config.programs.direnv.nix-direnv.enable;
         direnvZsh = config.programs.direnv.enableZshIntegration;
         gpgAgentZsh = config.services.gpg-agent.enableZshIntegration;
+      };
+      agents = {
+        environment = {
+          inherit (agentEnvironment) environment source;
+          hcomAbsent = config.dotfiles.agentIntegrations.hcom == null;
+        };
+        programs = {
+          claude = config.programs.claude-code.enable;
+          hunk = config.programs.hunk.enable;
+          opencode = config.programs.opencode.enable;
+        };
+        packages = {
+          claude = builtins.elem "claude-code" packageNames;
+          codex = builtins.elem "codex-wrapped" packageNames;
+          herdr = builtins.elem "herdr" packageNames;
+          hunk = hasPackage config.programs.hunk.package;
+          pi = builtins.elem "pi" packageNames;
+        };
+        files = {
+          claudeSettings = config.home.file ? ".claude/settings.json";
+          codexHooks = config.home.file ? ".codex/hooks.json";
+          guidance = config.home.file ? ".agents/context";
+          herdr = config.home.file ? ".config/herdr/config.toml";
+          opencode = config.home.file ? ".config/opencode/plugins/herdr-agent-state.js";
+          pi = config.home.file ? ".pi/agent/settings.json";
+        };
+        skills = {
+          agents = skillNamesFor ".agents/skills/";
+          claude = skillNamesFor ".claude/skills/";
+        };
+        policy = {
+          schemaVersion = commandPolicy.guardPolicy.schemaVersion;
+          allowsRg = lib.any (rule: rule.argvPrefix == [ "rg" ]) commandPolicy.prefixRules;
+          deniesTrashEmpty = lib.any (
+            rule: rule.argvPrefix == [ "trash-empty" ] && rule.decision == "deny"
+          ) commandPolicy.guardPolicy.exact;
+          inherit (commandPolicy.guardPolicy.unknown)
+            dynamicExecutable
+            dynamicRelevantOption
+            parseError
+            ;
+        };
+        activation = {
+          claudeBeforeCheckLinkTargets = claudeActivation.before == [ "checkLinkTargets" ];
+          codexAfterLinkGeneration = codexActivation.after == [ "linkGeneration" ];
+        };
+        hunkUsesPlatformRuntime =
+          config.programs.hunk.package == (
+            if agentEnvironment.environment == "wsl" then
+              entryPkgs.dotfilesPackages.hunk.wslRuntime
+            else
+              entryPkgs.dotfilesPackages.hunk.package
+          );
       };
       sourceControl = {
         signingKey = config.programs.git.signing.key;
@@ -245,6 +308,74 @@ let
     };
 
   commonExpected = {
+    agents = {
+      programs = {
+        claude = true;
+        hunk = true;
+        opencode = true;
+      };
+      packages = {
+        claude = true;
+        codex = true;
+        herdr = true;
+        hunk = true;
+        pi = true;
+      };
+      files = {
+        claudeSettings = true;
+        codexHooks = true;
+        guidance = true;
+        herdr = true;
+        opencode = true;
+        pi = true;
+      };
+      skills = {
+        agents = [
+          "agent-browser"
+          "agent-slack"
+          "ast-grep"
+          "ax"
+          "commit"
+          "difit"
+          "difit-review"
+          "drawio"
+          "frontend-design"
+          "hunk-review"
+          "improve"
+          "japanese-tech-writing"
+          "missing-tools"
+          "pptx"
+        ];
+        claude = [
+          "agent-browser"
+          "agent-slack"
+          "ast-grep"
+          "ax"
+          "commit"
+          "difit"
+          "difit-review"
+          "drawio"
+          "frontend-design"
+          "hunk-review"
+          "improve"
+          "japanese-tech-writing"
+          "missing-tools"
+          "pptx"
+        ];
+      };
+      policy = {
+        schemaVersion = 2;
+        allowsRg = true;
+        deniesTrashEmpty = true;
+        dynamicExecutable = "deny";
+        dynamicRelevantOption = "deny";
+        parseError = "deny";
+      };
+      activation = {
+        claudeBeforeCheckLinkTargets = true;
+        codexAfterLinkGeneration = true;
+      };
+    };
     programs = {
       comma = true;
       direnv = true;
@@ -332,6 +463,14 @@ let
     }:
     commonExpected
     // {
+      agents = commonExpected.agents // {
+        environment = {
+          inherit environment;
+          source = registryPath;
+          hcomAbsent = true;
+        };
+        hunkUsesPlatformRuntime = true;
+      };
       identity = {
         inherit homeDirectory system;
         username = username;

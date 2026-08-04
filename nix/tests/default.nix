@@ -440,8 +440,13 @@ let
     nh = nhCleanArgumentProbe;
     nix = nhCleanNixProbe;
   };
-  agentCommandPolicy = import ../lib/agent-command-policy { inherit lib; };
-  agentCommandGuardHook = import ../lib/agent-command-policy/mk-guard.nix {
+  repositoryHome =
+    if pkgs.stdenv.hostPlatform.isDarwin then
+      flake.darwinConfigurations.${username}.config.home-manager.users.${username}
+    else
+      flake.homeConfigurations."${username}@linux-${hostArch}".config;
+  agentCommandPolicy = repositoryHome.dotfiles.agentCommandPolicyCompiled;
+  agentCommandGuardHook = import ../../modules/features/agents/_lib/command-policy/mk-guard.nix {
     inherit lib pkgs;
     policy = agentCommandPolicy.guardPolicy;
   };
@@ -450,7 +455,7 @@ let
     guardPolicy = agentCommandGuardHook.policyFile;
   };
   codexCommandRules = pkgs.writeText "codex-command-policy.rules" agentCommandPolicy.codexRulesContent;
-  mixedAgentCommandPolicy = import ../lib/agent-command-policy/compiler.nix {
+  mixedAgentCommandPolicy = import ../../modules/features/agents/_lib/command-policy/compiler.nix {
     inherit lib;
     commands.jq = {
       danger = false;
@@ -752,14 +757,16 @@ let
       sourceFiles = [
         "flake.lock"
         "flake.nix"
-        "modules/flake/inputs/agent-browser-skill.nix"
-        "modules/flake/inputs/agent-slack-skill.nix"
-        "modules/flake/inputs/difit-src.nix"
-        "modules/flake/inputs/hcom-src.nix"
+        "modules/features/agents/inputs/agent-browser-skill.nix"
+        "modules/features/agents/inputs/agent-slack-skill.nix"
+        "modules/features/agents/inputs/difit-src.nix"
+        "modules/features/agents/inputs/hcom-src.nix"
+        "modules/features/agents/hunk.nix"
         "nix/packages/agent-command-guard/Cargo.lock"
         "nix/packages/agent-command-guard/Cargo.toml"
         "nix/packages/shellfirm/Cargo.lock"
         "nix/pins/agent-browser.json"
+        "nix/pins/agent-slack.json"
         "nix/pins/codex-app.json"
         "nix/pins/difit.json"
         "nix/pins/hcom.json"

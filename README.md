@@ -52,7 +52,7 @@ wsl --install --from-file .\nixos.wsl --name NixOS
 
 そのほかの公開appは`nix flake show`で確認する。
 
-`modules/flake/inputs/`を直接変更した場合は、`nix run .#write-flake`で`flake.nix`を再生成する。`update-pins`によるupstream同期では自動的に再生成される。
+`flake-file.inputs` を定義する module を直接変更した場合は、`nix run .#write-flake` で `flake.nix` を再生成する。`update-pins` による upstream 同期では自動的に再生成される。
 
 `switch`で導入される`gha-lint`は、任意のrepositoryでGitHub Actionsのworkflowとaction metadataを検査できる。
 

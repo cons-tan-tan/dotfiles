@@ -6,6 +6,7 @@
       den.batteries.define-user
       den.aspects.environments.linux
       features.common-home
+      features.agents-default
     ];
   };
 
@@ -15,6 +16,7 @@
       den.batteries.define-user
       den.aspects.environments.standalone-wsl
       features.common-home
+      features.agents-default
     ];
   };
 }

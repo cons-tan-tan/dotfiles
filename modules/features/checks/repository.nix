@@ -15,11 +15,11 @@ let
     "configuration-ownership-contract"
     "darwin-nh-cleanup-contract"
     "darwin-system"
-    "darwin-system-hcom-enabled"
     "home-linux"
-    "home-linux-hcom-enabled"
+    "home-darwin-hcom-profile"
+    "home-linux-hcom-profile"
     "home-wsl"
-    "home-wsl-hcom-enabled"
+    "home-wsl-hcom-profile"
     "nixos-wsl-contract"
     "nixos-wsl-system"
     "nixos-wsl-tarball-builder"
@@ -64,6 +64,14 @@ in
         den-unfree-capability-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
           import ../../../nix/checks/den-unfree-capability.nix {
             inherit inputs lib pkgs;
+          }
+        );
+        agent-den-dataflow-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
+          import ../../../nix/checks/den-capabilities.nix {
+            inherit inputs lib pkgs;
+            checkName = "agent-den-dataflow-tests";
+            fixturePath = ../agents/_tests/dataflow.nix;
+            fixtureRoot = ../../..;
           }
         );
         home-feature-contract = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (

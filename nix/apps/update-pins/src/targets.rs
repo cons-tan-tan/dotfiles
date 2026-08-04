@@ -588,7 +588,7 @@ pub(crate) fn update_paired_input<R: CommandRunner>(
     run_mutating_command_once(runner, &command)
 }
 
-fn run_mutating_command_once<R: CommandRunner>(
+pub(crate) fn run_mutating_command_once<R: CommandRunner>(
     runner: &R,
     command: &CommandSpec,
 ) -> Result<(), UpdateError> {
@@ -1503,6 +1503,7 @@ mod tests {
                 generator: Some(crate::registry::GeneratorCommand {
                     program: "nix",
                     args: &["run", ".#write-flake"],
+                    baseline: None,
                 }),
             },
         }

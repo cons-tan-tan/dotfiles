@@ -1,6 +1,7 @@
 {
   checkName ? "den-capability-tests",
   fixturePath ? ../../modules/_tests/den-capabilities.nix,
+  fixtureRoot ? null,
   inputs,
   lib,
   pkgs,
@@ -12,6 +13,7 @@ let
       inherit inputs lib;
     }
     // lib.optionalAttrs (schemaModule != null) { inherit schemaModule; }
+    // lib.optionalAttrs (fixtureRoot != null) { repoRoot = fixtureRoot; }
   );
   positiveResult = lib.debug.throwTestFailures {
     failures = lib.debug.runTests fixture.tests;
@@ -42,6 +44,7 @@ let
     { caseName }:
     let
       lib = import (${inputs.nixpkgs.outPath} + "/lib");
+      pkgs = import ${inputs.nixpkgs.outPath} { system = "x86_64-linux"; };
       inputs = {
         den = import (${inputs.den.outPath} + "/nix");
         "gen-schema".lib = import (${genSchemaSource} + "/nix/lib") {
@@ -49,12 +52,17 @@ let
           inputs."gen-algebra" = import ${genAlgebraSource} { inherit lib; };
         };
         "nix-effects".lib = import ${nixEffectsSource} { inherit lib; };
-        nixpkgs = { inherit lib; };
+        home-manager.lib = import (${inputs.home-manager.outPath} + "/lib") { inherit lib; };
+        nixpkgs = {
+          inherit lib;
+          legacyPackages.x86_64-linux = pkgs;
+        };
       };
     in
     import ${fixturePath} {
       inherit caseName inputs lib;
       ${lib.optionalString (schemaModule != null) "schemaModule = ${schemaModule};"}
+      ${lib.optionalString (fixtureRoot != null) "repoRoot = ${fixtureRoot};"}
     }
   '';
   runFailureCases = lib.concatMapStringsSep "\n" (

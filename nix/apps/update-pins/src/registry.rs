@@ -39,9 +39,15 @@ pub enum PublishedArtifact {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum GeneratorBaseline {
+    FlakeFileCheck,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct GeneratorCommand {
     pub program: &'static str,
     pub args: &'static [&'static str],
+    pub baseline: Option<GeneratorBaseline>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -62,31 +68,32 @@ pub struct PairedSource {
 const FLAKE_FILE_GENERATOR: GeneratorCommand = GeneratorCommand {
     program: "nix",
     args: &["run", ".#write-flake"],
+    baseline: Some(GeneratorBaseline::FlakeFileCheck),
 };
 
 const HCOM_INPUT_AUTHORITY: InputAuthority = InputAuthority {
-    source_path: "modules/flake/inputs/hcom-src.nix",
+    source_path: "modules/features/agents/inputs/hcom-src.nix",
     generated_flake_path: "flake.nix",
     lock_path: "flake.lock",
     generator: Some(FLAKE_FILE_GENERATOR),
 };
 
 const AGENT_SLACK_INPUT_AUTHORITY: InputAuthority = InputAuthority {
-    source_path: "modules/flake/inputs/agent-slack-skill.nix",
+    source_path: "modules/features/agents/inputs/agent-slack-skill.nix",
     generated_flake_path: "flake.nix",
     lock_path: "flake.lock",
     generator: Some(FLAKE_FILE_GENERATOR),
 };
 
 const AGENT_BROWSER_INPUT_AUTHORITY: InputAuthority = InputAuthority {
-    source_path: "modules/flake/inputs/agent-browser-skill.nix",
+    source_path: "modules/features/agents/inputs/agent-browser-skill.nix",
     generated_flake_path: "flake.nix",
     lock_path: "flake.lock",
     generator: Some(FLAKE_FILE_GENERATOR),
 };
 
 const DIFIT_INPUT_AUTHORITY: InputAuthority = InputAuthority {
-    source_path: "modules/flake/inputs/difit-src.nix",
+    source_path: "modules/features/agents/inputs/difit-src.nix",
     generated_flake_path: "flake.nix",
     lock_path: "flake.lock",
     generator: Some(FLAKE_FILE_GENERATOR),
@@ -195,6 +202,14 @@ impl TargetKind {
     pub fn is_implemented(self) -> bool {
         !matches!(self, Self::Unimplemented)
     }
+
+    pub fn paired_source(self) -> Option<PairedSource> {
+        match self {
+            Self::PairedRelease { source, .. } => Some(source),
+            Self::PublishedNodePackage(package) => Some(package.dependencies.source()),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -219,7 +234,7 @@ pub static TARGET_SPECS: &[TargetSpec] = &[
         },
         managed_paths: &[
             "nix/pins/hcom.json",
-            "modules/flake/inputs/hcom-src.nix",
+            "modules/features/agents/inputs/hcom-src.nix",
             "flake.nix",
             "flake.lock",
         ],
@@ -237,7 +252,7 @@ pub static TARGET_SPECS: &[TargetSpec] = &[
         },
         managed_paths: &[
             "nix/pins/agent-slack.json",
-            "modules/flake/inputs/agent-slack-skill.nix",
+            "modules/features/agents/inputs/agent-slack-skill.nix",
             "flake.nix",
             "flake.lock",
         ],
@@ -255,7 +270,7 @@ pub static TARGET_SPECS: &[TargetSpec] = &[
         },
         managed_paths: &[
             "nix/pins/agent-browser.json",
-            "modules/flake/inputs/agent-browser-skill.nix",
+            "modules/features/agents/inputs/agent-browser-skill.nix",
             "flake.nix",
             "flake.lock",
         ],
@@ -329,7 +344,7 @@ pub static TARGET_SPECS: &[TargetSpec] = &[
         }),
         managed_paths: &[
             "nix/pins/difit.json",
-            "modules/flake/inputs/difit-src.nix",
+            "modules/features/agents/inputs/difit-src.nix",
             "flake.nix",
             "flake.lock",
         ],
@@ -483,7 +498,7 @@ mod tests {
                         spec.managed_paths,
                         &[
                             "nix/pins/difit.json",
-                            "modules/flake/inputs/difit-src.nix",
+                            "modules/features/agents/inputs/difit-src.nix",
                             "flake.nix",
                             "flake.lock"
                         ]
@@ -551,6 +566,7 @@ mod tests {
                 generator: Some(super::GeneratorCommand {
                     program: "nix",
                     args: &["run", ".#write-flake"],
+                    baseline: None,
                 }),
             },
         };
@@ -567,6 +583,7 @@ mod tests {
             super::GeneratorCommand {
                 program: "nix",
                 args: &["run", ".#write-flake"],
+                baseline: None,
             }
         );
         assert!(managed_paths.iter().all(|path| {
@@ -576,5 +593,41 @@ mod tests {
                     .components()
                     .all(|component| matches!(component, Component::Normal(_)))
         }));
+    }
+
+    #[test]
+    fn paired_inputs_have_distinct_authority_files() {
+        let mut authority_paths = BTreeSet::new();
+
+        for spec in TARGET_SPECS {
+            let source = spec.kind.paired_source();
+
+            if let Some(source) = source {
+                assert!(
+                    authority_paths.insert(source.authority.source_path),
+                    "{} shares paired input authority {}",
+                    spec.name,
+                    source.authority.source_path
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn production_generators_have_read_only_baseline_checks() {
+        for spec in TARGET_SPECS {
+            let Some(source) = spec.kind.paired_source() else {
+                continue;
+            };
+            let Some(generator) = source.authority.generator else {
+                continue;
+            };
+            assert_eq!(
+                generator.baseline,
+                Some(super::GeneratorBaseline::FlakeFileCheck),
+                "{} has no read-only generator baseline",
+                spec.name
+            );
+        }
     }
 }

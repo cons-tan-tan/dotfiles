@@ -58,6 +58,9 @@ in
           dotfilesDir = host.dotfiles.source;
           standalone = false;
         };
+        dotfiles.agentEnvironment = {
+          inherit (host.dotfiles) environment source;
+        };
       };
   };
 }

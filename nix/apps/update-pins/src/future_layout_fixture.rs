@@ -18,6 +18,7 @@ const SOURCE: PairedSource = PairedSource {
         generator: Some(GeneratorCommand {
             program: "nix",
             args: &["run", ".#write-flake"],
+            baseline: None,
         }),
     },
 };

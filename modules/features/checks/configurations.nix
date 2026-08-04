@@ -40,6 +40,17 @@ in
           null;
       homeConfiguration =
         hostKind: homeConfigurations.${configNames.forHost { inherit hostKind system; }};
+      hcomProfile =
+        environment:
+        import ../agents/_tests/hcom-profile.nix {
+          inherit
+            environment
+            inputs
+            lib
+            system
+            ;
+          repoRoot = ../../..;
+        };
     in
     lib.optionalAttrs (system == "x86_64-linux") {
       configuration-ownership-contract = ciCheck.annotate (ciCheck.targets.linux "configurations") (
@@ -58,12 +69,7 @@ in
     // ciCheck.annotateSet (ciCheck.targets.darwin "configurations") (
       lib.optionalAttrs (system == darwinSystem) {
         darwin-system = darwinConfigurations.${username}.system;
-        darwin-system-hcom-enabled =
-          (darwinConfigurations.${username}.extendModules {
-            modules = [
-              { home-manager.users.${username}.dotfiles.hcom.enable = true; }
-            ];
-          }).system;
+        home-darwin-hcom-profile = hcomProfile "darwin";
         darwin-nh-cleanup-contract = import ../../../nix/checks/darwin-nh-cleanup-contract.nix {
           inherit lib pkgs username;
           config = darwinConfigurations.${username}.config;
@@ -102,11 +108,8 @@ in
               value = homeConfigurations.${entry.name}.activationPackage;
             }
             {
-              name = "home-${entry.hostKind}-hcom-enabled";
-              value =
-                (homeConfigurations.${entry.name}.extendModules {
-                  modules = [ { dotfiles.hcom.enable = true; } ];
-                }).activationPackage;
+              name = "home-${entry.hostKind}-hcom-profile";
+              value = hcomProfile entry.hostKind;
             }
           ]) homeEntries
         )

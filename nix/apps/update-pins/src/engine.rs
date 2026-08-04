@@ -1,9 +1,11 @@
 use crate::cli::{Invocation, PublishMode, Target};
-use crate::command::{CommandRunner, SystemCommandRunner};
+use crate::command::{CommandRunner, CommandSpec, SystemCommandRunner};
 use crate::error::UpdateError;
 use crate::ledger::Ledger;
-use crate::registry::{TARGET_SPECS, target_spec, unimplemented_target_names};
-use crate::targets::run_target;
+use crate::registry::{
+    GeneratorBaseline, InputAuthority, TARGET_SPECS, target_spec, unimplemented_target_names,
+};
+use crate::targets::{run_mutating_command_once, run_target};
 use crate::transaction::{Repository, Transaction};
 use crate::validation::validate_target_input;
 
@@ -23,6 +25,7 @@ pub fn run_with_runner<R: CommandRunner + Sync>(
         invocation,
         runner,
         repository,
+        |targets, transaction| validate_generator_baselines(targets, runner, transaction),
         |selected, transaction| {
             let spec =
                 target_spec(selected).expect("selected targets are concrete registry entries");
@@ -34,15 +37,17 @@ pub fn run_with_runner<R: CommandRunner + Sync>(
     )
 }
 
-fn run_in_repository<'runner, R, V, U>(
+fn run_in_repository<'runner, R, P, V, U>(
     invocation: Invocation,
     runner: &'runner R,
     repository: Repository,
+    mut preflight: P,
     mut validate: V,
     mut update: U,
 ) -> Result<(), UpdateError>
 where
     R: CommandRunner + Sync,
+    P: FnMut(&[Target], &mut Transaction<'runner, R>) -> Result<(), UpdateError>,
     V: FnMut(Target, &Transaction<'runner, R>) -> Result<(), UpdateError>,
     U: FnMut(
         Target,
@@ -55,15 +60,20 @@ where
     let targets = selected_targets(target)?;
     let managed_paths = selected_managed_paths(&targets);
     let mut transaction = Transaction::begin_scoped(repository, runner, &managed_paths)?;
-    for selected in &targets {
-        validate(*selected, &transaction)?;
-    }
     let mut ledger = Ledger::default();
 
-    let result = targets.iter().copied().try_for_each(|target| {
-        println!("{}", target_heading(target));
-        update(target, invocation.policy, &mut transaction, &mut ledger)?;
-        Ok::<(), UpdateError>(())
+    let result = preflight(&targets, &mut transaction).and_then(|()| {
+        for selected in &targets {
+            validate(*selected, &transaction)?;
+        }
+        Ok(())
+    });
+    let result = result.and_then(|()| {
+        targets.iter().copied().try_for_each(|target| {
+            println!("{}", target_heading(target));
+            update(target, invocation.policy, &mut transaction, &mut ledger)?;
+            Ok::<(), UpdateError>(())
+        })
     });
     let result = result.and_then(|()| {
         for selected in &targets {
@@ -213,6 +223,79 @@ fn selected_managed_paths(targets: &[Target]) -> Vec<&'static str> {
     paths
 }
 
+fn selected_generator_authorities(targets: &[Target]) -> Vec<InputAuthority> {
+    targets
+        .iter()
+        .filter_map(|target| {
+            target_spec(*target)
+                .expect("selected targets are concrete registry entries")
+                .kind
+                .paired_source()
+        })
+        .filter_map(|source| source.authority.generator.map(|_| source.authority))
+        .fold(Vec::new(), |mut authorities, authority| {
+            if !authorities.iter().any(|existing: &InputAuthority| {
+                existing.generator == authority.generator
+                    && existing.generated_flake_path == authority.generated_flake_path
+                    && existing.lock_path == authority.lock_path
+            }) {
+                authorities.push(authority);
+            }
+            authorities
+        })
+}
+
+fn validate_generator_baselines<R: CommandRunner>(
+    targets: &[Target],
+    runner: &R,
+    transaction: &Transaction<'_, R>,
+) -> Result<(), UpdateError> {
+    for authority in selected_generator_authorities(targets) {
+        let generator = authority
+            .generator
+            .expect("selected generator authority has a command");
+        let command = match generator.baseline {
+            Some(GeneratorBaseline::FlakeFileCheck) => {
+                let check = format!(".#checks.{}.check-flake-file", native_nix_system()?);
+                CommandSpec::new("nix")
+                    .args([
+                        "build",
+                        "--no-link",
+                        "--no-update-lock-file",
+                        "--no-write-lock-file",
+                    ])
+                    .arg(check)
+                    .current_dir(transaction.root())
+            }
+            None => {
+                return Err(UpdateError::message(format!(
+                    "update-pins: generator for {} has no read-only baseline check",
+                    authority.generated_flake_path
+                )));
+            }
+        };
+
+        println!(
+            "{}: validating generated baseline",
+            authority.generated_flake_path
+        );
+        run_mutating_command_once(runner, &command)?;
+    }
+    Ok(())
+}
+
+fn native_nix_system() -> Result<&'static str, UpdateError> {
+    match (std::env::consts::ARCH, std::env::consts::OS) {
+        ("aarch64", "linux") => Ok("aarch64-linux"),
+        ("x86_64", "linux") => Ok("x86_64-linux"),
+        ("aarch64", "macos") => Ok("aarch64-darwin"),
+        ("x86_64", "macos") => Ok("x86_64-darwin"),
+        (arch, os) => Err(UpdateError::message(format!(
+            "update-pins: unsupported native Nix system {arch}-{os}"
+        ))),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::cell::{Cell, RefCell};
@@ -223,7 +306,8 @@ mod tests {
     use tempfile::TempDir;
 
     use super::{
-        apply_summary, run_in_repository, selected_managed_paths, selected_targets, target_heading,
+        apply_summary, run_in_repository, selected_generator_authorities, selected_managed_paths,
+        selected_targets, target_heading,
     };
     use crate::cli::{Invocation, PublishMode, Target};
     use crate::command::SystemCommandRunner;
@@ -390,6 +474,21 @@ mod tests {
     }
 
     #[test]
+    fn generator_baselines_are_deduplicated_by_generated_transaction() {
+        assert_eq!(
+            selected_generator_authorities(&[Target::Hcom]),
+            selected_generator_authorities(&[
+                Target::Hcom,
+                Target::AgentSlack,
+                Target::AgentBrowser,
+                Target::Difit,
+            ])
+        );
+        assert_eq!(selected_generator_authorities(&[Target::Hcom]).len(), 1);
+        assert!(selected_generator_authorities(&[Target::Herdr]).is_empty());
+    }
+
+    #[test]
     fn all_managed_paths_are_a_deterministic_registry_union() {
         let targets = selected_targets(Target::All).expect("all targets are implemented");
         let expected = TARGET_SPECS
@@ -436,6 +535,7 @@ mod tests {
             invocation(Target::All, PublishMode::Apply),
             &runner,
             repository.repository(),
+            |_targets, _transaction| Ok(()),
             |target, _transaction| {
                 events
                     .borrow_mut()
@@ -500,6 +600,7 @@ mod tests {
             invocation(Target::All, PublishMode::Apply),
             &runner,
             repository.repository(),
+            |_targets, _transaction| Ok(()),
             |_target, _transaction| Ok(()),
             |target, _policy, transaction, ledger| {
                 let mut changed = false;
@@ -558,6 +659,7 @@ mod tests {
             invocation(Target::All, PublishMode::Apply),
             &runner,
             repository.repository(),
+            |_targets, _transaction| Ok(()),
             |target, _transaction| {
                 if target == Target::Shellfirm {
                     Err(UpdateError::message("synthetic preflight failure"))
@@ -607,6 +709,7 @@ mod tests {
             invocation(Target::Hcom, PublishMode::Check),
             &runner,
             repository.repository(),
+            |_targets, _transaction| Ok(()),
             |_target, _transaction| Ok(()),
             |target, _policy, transaction, ledger| {
                 for relative in target_spec(target).expect("target spec").managed_paths {
@@ -649,6 +752,7 @@ mod tests {
             invocation(Target::All, PublishMode::Apply),
             &runner,
             repository.repository(),
+            |_targets, _transaction| Ok(()),
             |_target, _transaction| Ok(()),
             |target, _policy, transaction, ledger| {
                 for path in target_spec(target).expect("target spec").managed_paths {

@@ -37,6 +37,10 @@ let
         inherit (owner.dotfiles.windows) username homedir;
       };
     };
+    dotfiles.agentEnvironment = {
+      inherit (owner.dotfiles) environment source;
+      windows.homedir = owner.dotfiles.windows.homedir;
+    };
   };
 
   standaloneHomeModule =
@@ -62,6 +66,7 @@ in
       den.aspects.environments.base
       den.aspects.environments.integrated-home-manager
       features.registries-host
+      features.agent-hunk-wsl
       features.security-gpg-wsl
       features.source-control-ghq-sync-systemd
       features.trash-systemd
@@ -91,6 +96,7 @@ in
     includes = [
       den.aspects.environments.base
       features.registries-home
+      features.agent-hunk-wsl
       features.security-gpg-wsl
       features.source-control-ghq-sync-systemd
       features.trash-systemd

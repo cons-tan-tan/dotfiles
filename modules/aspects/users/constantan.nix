@@ -20,6 +20,7 @@ in
       den.batteries.host-aspects
       darwinPrimaryUser
       features.common-home
+      features.agents-default
     ];
 
     # NixOS-WSL itself grants wheel to its default user. The Darwin-only guard

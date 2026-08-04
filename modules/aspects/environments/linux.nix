@@ -46,6 +46,9 @@ in
           dotfilesDir = home.dotfiles.source;
           standalone = home.dotfiles.standalone;
         };
+        dotfiles.agentEnvironment = {
+          inherit (home.dotfiles) environment source;
+        };
         nixpkgs = {
           config.allowUnfree = true;
           overlays = overlayPlan.overlays;

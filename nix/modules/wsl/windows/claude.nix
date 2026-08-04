@@ -7,8 +7,10 @@
   ...
 }:
 let
-  settingsLib = import ../../../lib/settings/claude.nix { inherit lib; };
-  settingsValidator = import ../../../lib/mk-claude-settings-validator.nix { inherit pkgs; };
+  settingsLib = import ../../../../modules/features/agents/_lib/settings/claude.nix { inherit lib; };
+  settingsValidator = import ../../../../modules/features/agents/_lib/settings/claude-validator.nix {
+    inherit pkgs;
+  };
   deploy = import ./deploy.nix { inherit lib; };
 
   windowsHomedir = config.my.windows.homedir;
