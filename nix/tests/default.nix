@@ -343,6 +343,16 @@ let
   awsConfigHelper = (rustProject "aws-config-helper").packages.default;
   safeFetch = (rustProject "safe-fetch").packages;
   nhCleanUser = pkgs.callPackage ../packages/nh-clean-user { };
+  nhCleanupSystemd =
+    if pkgs.stdenv.hostPlatform.isLinux then
+      pkgs.callPackage ../packages/nh-cleanup-systemd {
+        homedir = "/home/${username}";
+        inherit username;
+        nh = pkgs.nh;
+        nix = pkgs.nix;
+      }
+    else
+      null;
   nixStoreGrowthChecker = pkgs.callPackage ../packages/nix-store-growth-checker { };
   growthCheckerProbe = pkgs.writeShellApplication {
     name = "nix-store-growth-checker";
@@ -847,6 +857,7 @@ let
         "tests/herdr-wrapper.bats"
         "tests/linux-host-apps.bats"
         "tests/nh-clean-growth-runner.bats"
+        "tests/nh-cleanup-systemd.bats"
         "tests/nh-result-root-pruner.bats"
         "tests/nix-store-growth-checker.bats"
         "tests/pi-package-manager.bats"
@@ -907,6 +918,7 @@ let
         HOST_SWITCH_PUBLIC_BIN = publicApps.switch.program;
         NH_CLEAN_GROWTH_RUNNER_BIN = lib.getExe nhCleanGrowthRunnerContract;
         NH_CLEAN_GROWTH_TIMEOUT_RUNNER_BIN = lib.getExe nhCleanGrowthTimeoutRunnerContract;
+        NH_CLEANUP_SYSTEMD_PACKAGE = lib.optionalString pkgs.stdenv.hostPlatform.isLinux nhCleanupSystemd;
         NIX_STORE_GROWTH_CHECKER_BIN = lib.getExe nixStoreGrowthChecker;
         PI_WRAPPER_TEST_PACKAGE = piWrapperTestPackage;
         WSL_OPEN_TEST_PACKAGE = wslOpenTestPackage;
@@ -925,6 +937,7 @@ let
         "HOST_SWITCH_PUBLIC_BIN"
         "NH_CLEAN_GROWTH_RUNNER_BIN"
         "NH_CLEAN_GROWTH_TIMEOUT_RUNNER_BIN"
+        "NH_CLEANUP_SYSTEMD_PACKAGE"
         "NIX_STORE_GROWTH_CHECKER_BIN"
         "PI_WRAPPER_TEST_PACKAGE"
         "WSL_OPEN_TEST_PACKAGE"

@@ -2,13 +2,18 @@
   lib,
   nh,
   nix,
+  scope ? "user",
   writeShellApplication,
 }:
 let
   cleanupPolicy = import ../../lib/nh-clean-policy.nix;
 in
+assert lib.assertOneOf "nh cleanup scope" scope [
+  "all"
+  "user"
+];
 writeShellApplication {
-  name = "nh-clean-user";
+  name = "nh-clean-${scope}";
   runtimeInputs = [
     nh
     nix
@@ -18,6 +23,6 @@ writeShellApplication {
   # store path. Keep both tools in the wrapper closure so services do not
   # depend on an interactive or distribution-specific PATH.
   text = ''
-    exec nh clean user ${lib.escapeShellArgs cleanupPolicy.arguments} "$@"
+    exec nh clean ${lib.escapeShellArg scope} ${lib.escapeShellArgs cleanupPolicy.arguments} "$@"
   '';
 }

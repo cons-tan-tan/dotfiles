@@ -11,17 +11,28 @@
 let
   home = config.home-manager.users.${username};
   cleanupPolicy = import ../lib/nh-clean-policy.nix;
-  expectedSystemCleanupCommand = lib.escapeShellArgs (
-    [
-      "clean"
-      "all"
-    ]
-    ++ cleanupPolicy.arguments
-  );
-  expectedSystemCleanupExecutable = builtins.unsafeDiscardStringContext (
-    lib.getExe config.programs.nh.package
-  );
-  systemCleanupScript = config.systemd.services.nh-clean.script;
+  growthChecker = pkgs.callPackage ../packages/nix-store-growth-checker {
+    nix = config.nix.package;
+  };
+  cleanupRunner = pkgs.callPackage ../packages/nh-clean-user {
+    nh = config.programs.nh.package;
+    nix = config.nix.package;
+    scope = "all";
+  };
+  resultRootPruner = pkgs.callPackage ../packages/nh-result-root-pruner { };
+  growthStatePath = "/var/lib/${cleanupPolicy.growth.stateDirectory}";
+  growthRunner = pkgs.callPackage ../packages/nh-clean-growth-runner {
+    checker = growthChecker;
+    cleanupCommand = lib.getExe cleanupRunner;
+    inherit (cleanupPolicy.growth)
+      maximumAgeSeconds
+      queryTimeout
+      retryIntervalSeconds
+      thresholdBytes
+      ;
+  };
+  growthRunnerBin = lib.getExe growthRunner;
+  expectedGrowthCheckCommand = "${growthRunnerBin} check ${growthStatePath}";
   expectedInitScopeDropIn = ''
     [Scope]
     OOMPolicy=continue
@@ -168,54 +179,89 @@ let
         homeCleanupEnabled = home.programs.nh.clean.enable;
         homeCleanupServiceDefined = home.systemd.user.services ? nh-clean;
         homeCleanupTimerDefined = home.systemd.user.timers ? nh-clean;
+        homeGrowthServiceDefined = home.systemd.user.services ? nh-clean-growth-check;
+        homeGrowthTimerDefined = home.systemd.user.timers ? nh-clean-growth-check;
       };
       expected = {
         systemProgramEnabled = false;
-        systemCleanupEnabled = true;
+        systemCleanupEnabled = false;
         systemUser = "root";
         nixGcAutomatic = false;
         homeProgramEnabled = true;
         homeCleanupEnabled = false;
         homeCleanupServiceDefined = false;
         homeCleanupTimerDefined = false;
+        homeGrowthServiceDefined = false;
+        homeGrowthTimerDefined = false;
       };
     };
 
     "nh-cleanup-policy" = {
       actual = {
-        dates = config.programs.nh.clean.dates;
-        arguments = config.programs.nh.clean.extraArgs;
-        commandUsesExecutable = lib.hasInfix expectedSystemCleanupExecutable systemCleanupScript;
-        commandUsesArguments = lib.hasInfix expectedSystemCleanupCommand systemCleanupScript;
-        pathHasNix = lib.elem config.nix.package config.systemd.services.nh-clean.path;
+        description = config.systemd.services.nh-clean.description;
+        type = config.systemd.services.nh-clean.serviceConfig.Type;
+        after = config.systemd.services.nh-clean.after;
+        wants = config.systemd.services.nh-clean.wants;
         nice = config.systemd.services.nh-clean.serviceConfig.Nice;
         ioClass = config.systemd.services.nh-clean.serviceConfig.IOSchedulingClass;
-        timerOnCalendar = config.systemd.timers.nh-clean.timerConfig.OnCalendar;
-        timerPersistent = config.systemd.timers.nh-clean.timerConfig.Persistent;
+        stateDirectory = config.systemd.services.nh-clean.serviceConfig.StateDirectory;
+        stateDirectoryMode = config.systemd.services.nh-clean.serviceConfig.StateDirectoryMode;
+        command = config.systemd.services.nh-clean.serviceConfig.ExecStart;
+        timeoutStart = config.systemd.services.nh-clean.serviceConfig.TimeoutStartSec;
+        timerOnBoot = config.systemd.timers.nh-clean.timerConfig.OnBootSec;
+        timerOnActive = config.systemd.timers.nh-clean.timerConfig.OnUnitActiveSec;
+        timerAccuracy = config.systemd.timers.nh-clean.timerConfig.AccuracySec;
         timerWantedBy = config.systemd.timers.nh-clean.wantedBy;
       };
       expected = {
-        dates = cleanupPolicy.dates;
-        arguments = lib.escapeShellArgs cleanupPolicy.arguments;
-        commandUsesExecutable = true;
-        commandUsesArguments = true;
-        pathHasNix = true;
+        description = "Clean Nix store after growth or maximum age";
+        type = "oneshot";
+        after = [ "nix-daemon.socket" ];
+        wants = [ "nix-daemon.socket" ];
         nice = 10;
         ioClass = "idle";
-        timerOnCalendar = [ cleanupPolicy.dates ];
-        timerPersistent = true;
+        stateDirectory = cleanupPolicy.growth.stateDirectory;
+        stateDirectoryMode = "0750";
+        command = expectedGrowthCheckCommand;
+        timeoutStart = "infinity";
+        timerOnBoot = cleanupPolicy.growth.checkInterval;
+        timerOnActive = cleanupPolicy.growth.checkInterval;
+        timerAccuracy = "30s";
         timerWantedBy = [ "timers.target" ];
+      };
+    };
+
+    "nh-growth-cleanup" = {
+      actual = {
+        serviceDefined = config.systemd.services ? nh-clean-growth-check;
+        timerDefined = config.systemd.timers ? nh-clean-growth-check;
+      };
+      expected = {
+        serviceDefined = false;
+        timerDefined = false;
       };
     };
 
     "nh-result-roots" = {
       actual = {
-        serviceDefined = home.systemd.user.services ? nh-clean-result-roots;
-        timerDefined = home.systemd.user.timers ? nh-clean-result-roots;
+        homeServiceDefined = home.systemd.user.services ? nh-clean-result-roots;
+        homeTimerDefined = home.systemd.user.timers ? nh-clean-result-roots;
+        systemServiceDefined = config.systemd.services ? nh-clean-result-roots;
+        systemTimerDefined = config.systemd.timers ? nh-clean-result-roots;
+        user = config.systemd.services.nh-clean-result-roots.serviceConfig.User;
+        command = config.systemd.services.nh-clean-result-roots.serviceConfig.ExecStart;
+        calendar = config.systemd.timers.nh-clean-result-roots.timerConfig.OnCalendar;
+        persistent = config.systemd.timers.nh-clean-result-roots.timerConfig.Persistent;
       };
       expected = {
-        serviceDefined = true;
-        timerDefined = true;
+        homeServiceDefined = false;
+        homeTimerDefined = false;
+        systemServiceDefined = true;
+        systemTimerDefined = true;
+        user = username;
+        command = "${lib.getExe resultRootPruner} --keep-minutes ${toString cleanupPolicy.resultRoots.keepMinutes}";
+        calendar = cleanupPolicy.resultRoots.dates;
+        persistent = true;
       };
     };
 

@@ -8,11 +8,13 @@
 let
   username = "constantan";
   darwinHostname = username;
+  linuxHomedir = "/home/${username}";
   windowsHomedir = "/mnt/c/Users/zhouc";
   configNames = import ../../../nix/lib/linux-config-name.nix { inherit username; };
   mkDarwinApps = import ../../../nix/lib/apps/mk-darwin-apps.nix { inherit darwinHostname; };
   mkLinuxApps = import ../../../nix/lib/apps/mk-linux-apps.nix {
     inherit inputs username windowsHomedir;
+    homedir = linuxHomedir;
   };
   appsFor =
     { pkgs, system, ... }:
