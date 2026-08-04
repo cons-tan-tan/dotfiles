@@ -24,7 +24,6 @@
       in
       {
         nixpkgs = {
-          config.allowUnfree = true;
           overlays = overlayPlan.overlays;
         };
       };

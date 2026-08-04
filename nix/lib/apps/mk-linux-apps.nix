@@ -14,7 +14,7 @@ let
   inherit (pkgs.lib) escapeShellArg;
   appSet = import ./mk-app-set.nix { lib = pkgs.lib; };
 
-  configNames = import ../linux-config-name.nix { inherit username; };
+  configNames = import ../../../modules/entities/_lib/configuration-names.nix { inherit username; };
   wslTarget = configNames.forHost {
     hostKind = "wsl";
     inherit system;

@@ -1,4 +1,4 @@
-# Linux/WSL の構成名を flake outputs と switch/build スクリプトで共有する。
+# Linux/WSL の構成名を entity outputs と switch/build スクリプトで共有する。
 { username }:
 let
   shortArch = {

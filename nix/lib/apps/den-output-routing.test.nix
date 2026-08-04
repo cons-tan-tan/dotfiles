@@ -8,7 +8,7 @@
 let
   system = pkgs.stdenv.hostPlatform.system;
   expectedProgram = lib.getExe pkgs.dotfilesPackages.difit;
-  configNames = import ../linux-config-name.nix { inherit username; };
+  configNames = import ../../../modules/entities/_lib/configuration-names.nix { inherit username; };
   hostPkgs =
     if pkgs.stdenv.hostPlatform.isDarwin then
       flake.darwinConfigurations.${username}.pkgs

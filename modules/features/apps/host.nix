@@ -9,7 +9,7 @@ let
   username = "constantan";
   darwinHostname = username;
   linuxHomedir = "/home/${username}";
-  configNames = import ../../../nix/lib/linux-config-name.nix { inherit username; };
+  configNames = import ../../entities/_lib/configuration-names.nix { inherit username; };
   darwinAppsFor = import ../../../nix/lib/apps/mk-darwin-apps.nix { inherit darwinHostname; };
   appsFor =
     { pkgs, system, ... }:

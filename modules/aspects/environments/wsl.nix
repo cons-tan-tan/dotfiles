@@ -47,7 +47,6 @@ in
       in
       {
         nixpkgs = {
-          config.allowUnfree = true;
           overlays = overlayPlan.overlays;
         };
       };
@@ -76,7 +75,6 @@ in
       {
         imports = [ (baseHomeModule home "switch-app") ];
         nixpkgs = {
-          config.allowUnfree = true;
           overlays = overlayPlan.overlays;
         };
       };

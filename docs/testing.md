@@ -30,3 +30,9 @@ sourceを直接使うテストは短いfeedbackのための補助とし、packag
 負例は「失敗したこと」だけでなく、意図したerror identityを検査する。platform非対応のチェックはdummy passにせず、checkを生成しないか、実行側で理由付きskipにする。
 
 Live testは、再現可能なcommit gateへ混在させない。上流の状態を固定できない失敗とrepositoryの退行を区別できなくなるためである。
+
+## Dendritic moduleとテストの境界
+
+`modules/`では、pathに`/_`を含まないNixファイルを構成moduleとして自動importする。純粋関数、fixture、評価テストは`_lib/`または`_tests/`へ置き、構成moduleと同じtreeで管理しつつ自動importの対象外にする。
+
+この境界は命名規則だけに依存させない。test discoveryがsupport directory内のテストを収集し、architecture gateがmodule treeとの非交差、旧composition pattern、包括的なunfree許可の不在を検査する。構成の意味は評価結果のcontractで検査し、source検査だけで代替しない。

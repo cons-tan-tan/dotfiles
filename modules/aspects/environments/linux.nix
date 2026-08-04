@@ -31,7 +31,6 @@
           inherit (home.dotfiles) environment source;
         };
         nixpkgs = {
-          config.allowUnfree = true;
           overlays = overlayPlan.overlays;
         };
       };

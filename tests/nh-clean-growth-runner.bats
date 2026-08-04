@@ -1,6 +1,10 @@
 #!/usr/bin/env bats
 
 setup() {
+  load test-helper
+  require_nix_fixture NH_CLEAN_GROWTH_RUNNER_BIN "nh-clean growth runner package"
+  require_nix_fixture NH_CLEAN_GROWTH_TIMEOUT_RUNNER_BIN "timeout-configured nh-clean growth runner package"
+
   export GROWTH_CHECKER_ARGS="$BATS_TEST_TMPDIR/checker.args"
   export GROWTH_CLEANUP_ARGS="$BATS_TEST_TMPDIR/cleanup.args"
   export STATE_DIRECTORY="$BATS_TEST_TMPDIR/state"

@@ -1,4 +1,4 @@
-{ features, ... }:
+{ den, features, ... }:
 {
   features.platform-darwin-system = {
     name = "feature/platform/darwin/system";
@@ -45,6 +45,12 @@
 
   features.platform-darwin-packages = {
     name = "feature/platform/darwin/packages";
+    includes = [
+      (den.batteries.unfree [
+        "codex-app"
+        "raycast"
+      ])
+    ];
     homeManager = { pkgs, ... }: {
       home.packages =
         (with pkgs; [

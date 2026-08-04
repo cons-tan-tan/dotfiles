@@ -1,6 +1,6 @@
 { }:
 let
-  configNames = import ./linux-config-name.nix { username = "alice"; };
+  configNames = import ./configuration-names.nix { username = "alice"; };
 in
 {
   testHomeConfigurationNames = {

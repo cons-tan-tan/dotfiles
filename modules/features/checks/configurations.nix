@@ -11,7 +11,7 @@ let
   linuxHomedir = "/home/${username}";
   windowsUsername = "zhouc";
   windowsHomedir = "/mnt/c/Users/${windowsUsername}";
-  configNames = import ../../../nix/lib/linux-config-name.nix { inherit username; };
+  configNames = import ../../entities/_lib/configuration-names.nix { inherit username; };
   ciCheck = import ../../../nix/lib/ci-check.nix { inherit lib; };
 in
 {

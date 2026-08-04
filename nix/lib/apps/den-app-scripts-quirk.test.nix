@@ -69,7 +69,7 @@ let
     inherit pkgs;
     treefmtWrapper = flake.formatter.${system};
   };
-  configNames = import ../linux-config-name.nix { inherit username; };
+  configNames = import ../../../modules/entities/_lib/configuration-names.nix { inherit username; };
   expectedHostApps =
     if pkgs.stdenv.hostPlatform.isDarwin then
       (import ./mk-darwin-apps.nix { darwinHostname = username; }) {

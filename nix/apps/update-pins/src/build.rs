@@ -16,6 +16,7 @@ let
   flake = builtins.getFlake (toString ./.);
   pkgs = import ./nix/lib/mk-pkgs.nix {
     inputs = flake.inputs;
+    unfreePackageNames = [ "codex-app" ];
   } builtins.currentSystem;
 in
 pkgs.dotfilesPackages.${builtins.getEnv "UPDATE_PINS_PACKAGE"}
@@ -34,6 +35,7 @@ let
   flake = builtins.getFlake (toString ./.);
   pkgs = import ./nix/lib/mk-pkgs.nix {
     inputs = flake.inputs;
+    unfreePackageNames = [ "codex-app" ];
   } builtins.currentSystem;
   packageName = builtins.getEnv "UPDATE_PINS_PACKAGE";
   pinOverride = builtins.getEnv "UPDATE_PINS_PIN_OVERRIDE";
