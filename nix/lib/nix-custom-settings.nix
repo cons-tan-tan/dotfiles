@@ -19,6 +19,8 @@ let
     extra-substituters = nixDaemonSettings.extraSubstituters;
     extra-trusted-substituters = nixDaemonSettings.extraTrustedSubstituters;
     extra-trusted-public-keys = nixDaemonSettings.extraTrustedPublicKeys;
+    min-free = nixDaemonSettings.minFreeBytes;
+    max-free = nixDaemonSettings.maxFreeBytes;
   };
 in
 {

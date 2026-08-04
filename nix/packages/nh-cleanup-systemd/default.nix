@@ -45,7 +45,7 @@ let
     StateDirectory=${growth.stateDirectory}
     StateDirectoryMode=0750
     ExecStart=${lib.getExe policyRunner} check ${statePath}
-    TimeoutStartSec=infinity
+    TimeoutStartSec=${growth.cleanupTimeout}
   '';
   timerUnit = writeTextDir "lib/systemd/system/nh-clean.timer" ''
     [Unit]

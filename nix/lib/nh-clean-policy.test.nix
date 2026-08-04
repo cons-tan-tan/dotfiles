@@ -6,6 +6,7 @@ in
     expr = {
       inherit (policy.growth)
         checkInterval
+        cleanupTimeout
         maximumAgeSeconds
         retryIntervalSeconds
         thresholdBytes
@@ -13,6 +14,7 @@ in
     };
     expected = {
       checkInterval = "5m";
+      cleanupTimeout = "2h";
       maximumAgeSeconds = 21600;
       retryIntervalSeconds = 1800;
       thresholdBytes = 34359738368;

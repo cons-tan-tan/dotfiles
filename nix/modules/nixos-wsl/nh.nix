@@ -50,7 +50,7 @@ in
       StateDirectory = growth.stateDirectory;
       StateDirectoryMode = "0750";
       ExecStart = "${growthRunnerBin} check ${statePath}";
-      TimeoutStartSec = "infinity";
+      TimeoutStartSec = growth.cleanupTimeout;
     };
   };
 

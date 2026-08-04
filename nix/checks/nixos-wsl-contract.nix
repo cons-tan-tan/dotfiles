@@ -223,7 +223,7 @@ let
         stateDirectory = cleanupPolicy.growth.stateDirectory;
         stateDirectoryMode = "0750";
         command = expectedGrowthCheckCommand;
-        timeoutStart = "infinity";
+        timeoutStart = cleanupPolicy.growth.cleanupTimeout;
         timerOnBoot = cleanupPolicy.growth.checkInterval;
         timerOnActive = cleanupPolicy.growth.checkInterval;
         timerAccuracy = "30s";
@@ -304,6 +304,8 @@ let
         stateVersion = config.system.stateVersion;
         flakesEnabled = lib.elem "flakes" config.nix.settings.experimental-features;
         trustedUser = lib.elem username config.nix.settings."extra-trusted-users";
+        minFree = config.nix.settings."min-free";
+        maxFree = config.nix.settings."max-free";
         channelsEnabled = config.nix.channel.enable;
         tarballConfigPath = toString config.wsl.tarball.configPath;
       };
@@ -311,6 +313,8 @@ let
         stateVersion = "26.05";
         flakesEnabled = true;
         trustedUser = true;
+        minFree = 34359738368;
+        maxFree = 68719476736;
         channelsEnabled = false;
         tarballConfigPath = sourcePath;
       };

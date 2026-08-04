@@ -11,6 +11,7 @@
 
   growth = {
     checkInterval = "5m";
+    cleanupTimeout = "2h";
     maximumAgeSeconds = 6 * 60 * 60;
     queryTimeout = "2m";
     retryIntervalSeconds = 30 * 60;

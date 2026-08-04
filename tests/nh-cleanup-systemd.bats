@@ -19,6 +19,7 @@ setup() {
   grep -Eq '^ExecStart=/nix/store/.+/bin/nh-clean-growth-runner check /var/lib/nix-store-growth-checker$' \
     "$SERVICE"
   grep -Fqx "StateDirectory=nix-store-growth-checker" "$SERVICE"
+  grep -Fqx "TimeoutStartSec=2h" "$SERVICE"
 }
 
 @test "one system timer checks both cleanup limits every five minutes" {
