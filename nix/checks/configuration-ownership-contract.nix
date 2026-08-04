@@ -41,19 +41,25 @@ let
         resultRootTimer = builtins.hasAttr "nh-clean-result-roots" timers;
       }
   ) expectedStandalone;
-  standaloneExpected = lib.mapAttrs (_: system: {
-    exists = true;
-    activationPackage = true;
-    activationSystem = system;
-    username = username;
-    homeDirectory = linuxHomedir;
-    nhProgramEnabled = true;
-    userCleanupEnabled = true;
-    userCleanupService = true;
-    userCleanupTimer = true;
-    resultRootService = true;
-    resultRootTimer = true;
-  }) expectedStandalone;
+  standaloneExpected = lib.mapAttrs (
+    name: system:
+    let
+      cleanupOwnedBySystem = lib.hasInfix "@wsl-" name;
+    in
+    {
+      exists = true;
+      activationPackage = true;
+      activationSystem = system;
+      username = username;
+      homeDirectory = linuxHomedir;
+      nhProgramEnabled = true;
+      userCleanupEnabled = !cleanupOwnedBySystem;
+      userCleanupService = !cleanupOwnedBySystem;
+      userCleanupTimer = !cleanupOwnedBySystem;
+      resultRootService = !cleanupOwnedBySystem;
+      resultRootTimer = !cleanupOwnedBySystem;
+    }
+  ) expectedStandalone;
 
   expectedNixos = {
     wsl = "x86_64-linux";
@@ -94,6 +100,10 @@ let
           homeCleanupEnabled = lib.attrByPath [ "programs" "nh" "clean" "enable" ] null home;
           homeCleanupService = builtins.hasAttr "nh-clean" services;
           homeCleanupTimer = builtins.hasAttr "nh-clean" timers;
+          systemCleanupService = builtins.hasAttr "nh-clean" config.systemd.services;
+          systemCleanupTimer = builtins.hasAttr "nh-clean" config.systemd.timers;
+          systemResultRootService = builtins.hasAttr "nh-clean-result-roots" config.systemd.services;
+          systemResultRootTimer = builtins.hasAttr "nh-clean-result-roots" config.systemd.timers;
         }
   ) expectedNixos;
   nixosExpected = lib.mapAttrs (_: system: {
@@ -105,10 +115,14 @@ let
     backupFileExtension = "hm-backup";
     username = username;
     homeDirectory = linuxHomedir;
-    systemCleanupEnabled = true;
+    systemCleanupEnabled = false;
     homeCleanupEnabled = false;
     homeCleanupService = false;
     homeCleanupTimer = false;
+    systemCleanupService = true;
+    systemCleanupTimer = true;
+    systemResultRootService = true;
+    systemResultRootTimer = true;
   }) expectedNixos;
 
   darwinActual =

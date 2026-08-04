@@ -84,6 +84,7 @@ let
       in
       (import ./mk-linux-apps.nix {
         inherit inputs username;
+        homedir = "/home/${username}";
         windowsHomedir = "/mnt/c/Users/zhouc";
       })
         {
