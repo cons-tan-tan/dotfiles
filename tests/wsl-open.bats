@@ -2,7 +2,7 @@
 
 setup() {
   REPO_ROOT="$(git rev-parse --show-toplevel)"
-  SCRIPT="$REPO_ROOT/nix/modules/wsl/wsl-open.sh"
+  SCRIPT="$REPO_ROOT/modules/features/platform/_lib/wsl-open.sh"
   BASH_BIN="$(command -v bash)"
   WORK="$(mktemp -d)"
   STUB_DIR="$WORK/stub"

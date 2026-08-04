@@ -1,140 +1,196 @@
 { lib, pkgs }:
 let
-  cliTools = import ../_lib/cli-tools.nix;
-  allowedLinuxRoutes = [
-    "dotfiles-package"
-    "home-packages"
-    "none"
-    "programs"
+  aggregate = import ../_lib/aggregate-cli-tools.nix { inherit lib pkgs; };
+  entries = [
+    {
+      id = "nix-only";
+      nix = {
+        route = "home-packages";
+        nixpkgsAttr = "reuse";
+      };
+    }
+    {
+      id = "windows-only";
+      winget.packageId = "Example.WindowsOnly";
+    }
+    {
+      id = "both";
+      nix = {
+        route = "home-packages";
+        nixpkgsAttr = "ripgrep";
+      };
+      winget = {
+        packageId = "Example.Both";
+        dependsOn = [ "windows-only" ];
+      };
+    }
+    # Reaching the same named aspect through two variants is idempotent.
+    {
+      id = "both";
+      nix = {
+        route = "home-packages";
+        nixpkgsAttr = "ripgrep";
+      };
+      winget = {
+        packageId = "Example.Both";
+        dependsOn = [ "windows-only" ];
+      };
+    }
   ];
-  isNonEmptyString = value: builtins.isString value && value != "";
-  entryLabel =
-    index: tool:
-    if tool ? winget && tool.winget ? id then tool.winget.id else "entry-${toString index}";
-  coreValid =
-    tool:
-    tool ? winget
-    && builtins.isAttrs tool.winget
-    && tool.winget ? id
-    && isNonEmptyString tool.winget.id
-    && tool.winget ? packageId
-    && isNonEmptyString tool.winget.packageId
-    && tool ? linux
-    && builtins.isString tool.linux;
-  validTools = builtins.filter coreValid cliTools;
-  invalidCoreEntries = builtins.filter (label: label != null) (
-    lib.imap0 (index: tool: if coreValid tool then null else entryLabel index tool) cliTools
-  );
-  invalidLinuxRoutes = map (tool: {
-    inherit (tool.winget) id;
-    inherit (tool) linux;
-  }) (builtins.filter (tool: !(builtins.elem tool.linux allowedLinuxRoutes)) validTools);
-  invalidNixpkgsAttrOwnership = map (tool: tool.winget.id) (
-    builtins.filter (tool: (tool.linux == "home-packages") != (tool ? nixpkgsAttr)) validTools
-  );
-  invalidNixpkgsAttrs =
-    map
-      (tool: {
-        inherit (tool.winget) id;
-        attr = tool.nixpkgsAttr;
-      })
-      (
-        builtins.filter (
-          tool:
-          tool ? nixpkgsAttr
-          && (
-            !(isNonEmptyString tool.nixpkgsAttr)
-            || !(builtins.hasAttr tool.nixpkgsAttr pkgs)
-            || !(lib.isDerivation pkgs.${tool.nixpkgsAttr})
-          )
-        ) validTools
-      );
-  invalidWingetMetadata = map (tool: tool.winget.id) (
-    builtins.filter (
-      tool:
-      (tool.winget ? elevated && !(builtins.isBool tool.winget.elevated))
-      || (tool.winget ? description && !(isNonEmptyString tool.winget.description))
-      || (
-        tool.winget ? dependsOn
-        && (
-          !(builtins.isList tool.winget.dependsOn) || !(builtins.all isNonEmptyString tool.winget.dependsOn)
-        )
-      )
-    ) validTools
-  );
-  duplicates =
-    values:
-    builtins.filter (
-      value: builtins.length (builtins.filter (candidate: candidate == value) values) > 1
-    ) (lib.unique values);
-  wingetIds = map (tool: tool.winget.id) validTools;
-  packageIds = map (tool: tool.winget.packageId) validTools;
-  dependenciesFor = tool: tool.winget.dependsOn or [ ];
-  unresolvedDependencies = lib.concatMap (
-    tool:
-    map (dependency: {
-      owner = tool.winget.id;
-      inherit dependency;
-    }) (builtins.filter (dependency: !(builtins.elem dependency wingetIds)) (dependenciesFor tool))
-  ) validTools;
-  selfDependencies = map (tool: tool.winget.id) (
-    builtins.filter (tool: builtins.elem tool.winget.id (dependenciesFor tool)) validTools
-  );
-  dependencyGraph = lib.listToAttrs (
-    map (tool: lib.nameValuePair tool.winget.id (dependenciesFor tool)) validTools
-  );
-  hasCycleFrom =
-    start:
-    let
-      visit =
-        path: node:
-        if builtins.elem node path then
-          true
-        else
-          builtins.any (visit (path ++ [ node ])) (dependencyGraph.${node} or [ ]);
-    in
-    visit [ ] start;
-  cyclicIds = builtins.filter hasCycleFrom wingetIds;
+  result = aggregate entries;
+  rejects = candidate: !(builtins.tryEval (builtins.deepSeq (aggregate candidate) true)).success;
 in
 {
-  testCoreSchema = {
-    expr = invalidCoreEntries;
-    expected = [ ];
+  testProjectsNixOnlyWindowsOnlyAndSharedResources = {
+    expr = {
+      ids = map (entry: entry.id) result.checked;
+      nixPackages = map lib.getName result.nixHomePackages;
+      wingetIds = map (entry: entry.id) result.winget;
+    };
+    expected = {
+      ids = [
+        "nix-only"
+        "windows-only"
+        "both"
+      ];
+      nixPackages = [
+        "reuse"
+        "ripgrep"
+      ];
+      wingetIds = [
+        "windows-only"
+        "both"
+      ];
+    };
   };
-  testLinuxRoutes = {
-    expr = invalidLinuxRoutes;
-    expected = [ ];
+
+  testRejectsConflictingDuplicateIds = {
+    expr = rejects [
+      {
+        id = "duplicate";
+        winget.packageId = "Example.One";
+      }
+      {
+        id = "duplicate";
+        winget.packageId = "Example.Two";
+      }
+    ];
+    expected = true;
   };
-  testNixpkgsAttrOwnership = {
-    expr = invalidNixpkgsAttrOwnership;
-    expected = [ ];
+
+  testRejectsDuplicateWingetPackageIds = {
+    expr = rejects [
+      {
+        id = "first";
+        winget.packageId = "Example.Duplicate";
+      }
+      {
+        id = "second";
+        winget.packageId = "Example.Duplicate";
+      }
+    ];
+    expected = true;
   };
-  testNixpkgsAttrsResolveToPackages = {
-    expr = invalidNixpkgsAttrs;
-    expected = [ ];
+
+  testRejectsMissingProjection = {
+    expr = rejects [ { id = "missing"; } ];
+    expected = true;
   };
-  testWingetMetadata = {
-    expr = invalidWingetMetadata;
-    expected = [ ];
+
+  testRejectsUnknownFields = {
+    expr = rejects [
+      {
+        id = "unknown";
+        winget.packageId = "Example.Unknown";
+        surprise = true;
+      }
+    ];
+    expected = true;
   };
-  testWingetIdsAreUnique = {
-    expr = duplicates wingetIds;
-    expected = [ ];
+
+  testRejectsInvalidNestedMetadata = {
+    expr = rejects [
+      {
+        id = "invalid-nix";
+        nix = {
+          route = "home-packages";
+          nixpkgsAttr = "does-not-exist";
+        };
+      }
+      {
+        id = "invalid-winget";
+        winget = {
+          packageId = "Example.Invalid";
+          elevated = "yes";
+        };
+      }
+    ];
+    expected = true;
   };
-  testPackageIdsAreUnique = {
-    expr = duplicates packageIds;
-    expected = [ ];
+
+  testRejectsUnresolvedDependencies = {
+    expr = rejects [
+      {
+        id = "unresolved";
+        winget = {
+          packageId = "Example.Unresolved";
+          dependsOn = [ "missing" ];
+        };
+      }
+    ];
+    expected = true;
   };
-  testDependenciesResolve = {
-    expr = unresolvedDependencies;
-    expected = [ ];
+
+  testRejectsDependenciesOnNixOnlyEntries = {
+    expr = rejects [
+      {
+        id = "nix-only";
+        nix = {
+          route = "home-packages";
+          nixpkgsAttr = "reuse";
+        };
+      }
+      {
+        id = "windows";
+        winget = {
+          packageId = "Example.Windows";
+          dependsOn = [ "nix-only" ];
+        };
+      }
+    ];
+    expected = true;
   };
-  testDependenciesDoNotReferenceSelf = {
-    expr = selfDependencies;
-    expected = [ ];
+
+  testRejectsSelfDependencies = {
+    expr = rejects [
+      {
+        id = "self";
+        winget = {
+          packageId = "Example.Self";
+          dependsOn = [ "self" ];
+        };
+      }
+    ];
+    expected = true;
   };
-  testDependencyGraphIsAcyclic = {
-    expr = cyclicIds;
-    expected = [ ];
+
+  testRejectsDependencyCycles = {
+    expr = rejects [
+      {
+        id = "a";
+        winget = {
+          packageId = "Example.A";
+          dependsOn = [ "b" ];
+        };
+      }
+      {
+        id = "b";
+        winget = {
+          packageId = "Example.B";
+          dependsOn = [ "a" ];
+        };
+      }
+    ];
+    expected = true;
   };
 }

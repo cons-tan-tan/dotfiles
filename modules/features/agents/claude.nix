@@ -15,6 +15,16 @@
       features.agents-base
       features.agent-herdr
     ];
+    cli-tools = [
+      {
+        id = "claude-code";
+        nix.route = "dotfiles-package";
+        winget = {
+          packageId = "Anthropic.ClaudeCode";
+          description = "Claude Code CLI";
+        };
+      }
+    ];
     homeManager =
       {
         config,

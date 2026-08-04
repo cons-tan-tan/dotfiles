@@ -728,11 +728,70 @@ let
       printf '%s\n' "$#" "$@" >"$TEST_TMPDIR/package-handler.args"
     '';
   };
-  wslOpenTestPackage = pkgs.callPackage ../modules/wsl/wsl-open-package.nix {
+  wslOpenTestPackage = pkgs.callPackage ../../modules/features/platform/_lib/wsl-open-package.nix {
     realpathBin = lib.getExe wslRealpathFixture;
     rundll32Bin = lib.getExe wslHandlerFixture;
     wslpathBin = lib.getExe wslpathFixture;
   };
+
+  windowsCompanionDeployTestRoot = "/build/windows-companion-test/Users";
+  windowsCompanionDeployMvFixture = pkgs.writeShellApplication {
+    name = "windows-companion-deploy-mv-fixture";
+    text = ''
+      : "''${WINDOWS_COMPANION_DEPLOY_MV_STATE:?}"
+      count=0
+      if [[ -e $WINDOWS_COMPANION_DEPLOY_MV_STATE ]]; then
+        read -r count <"$WINDOWS_COMPANION_DEPLOY_MV_STATE"
+      fi
+      count=$((count + 1))
+      printf '%s\n' "$count" >"$WINDOWS_COMPANION_DEPLOY_MV_STATE"
+
+      if [[ ''${WINDOWS_COMPANION_DEPLOY_MV_FAIL_AT:-} == "$count" ]]; then
+        exit 71
+      fi
+      if [[ ''${WINDOWS_COMPANION_DEPLOY_MV_SIGNAL_BEFORE_AT:-} == "$count" ]]; then
+        kill -TERM "$PPID"
+        exit 143
+      fi
+
+      ${pkgs.coreutils}/bin/mv "$@"
+
+      if [[ ''${WINDOWS_COMPANION_DEPLOY_MV_SIGNAL_AFTER_AT:-} == "$count" ]]; then
+        kill -TERM "$PPID"
+        exit 143
+      fi
+    '';
+  };
+  windowsCompanionDeployRsyncFixture = pkgs.writeShellApplication {
+    name = "windows-companion-deploy-rsync-fixture";
+    text = ''
+      : "''${WINDOWS_COMPANION_DEPLOY_RSYNC_STATE:?}"
+      count=0
+      if [[ -e $WINDOWS_COMPANION_DEPLOY_RSYNC_STATE ]]; then
+        read -r count <"$WINDOWS_COMPANION_DEPLOY_RSYNC_STATE"
+      fi
+      count=$((count + 1))
+      printf '%s\n' "$count" >"$WINDOWS_COMPANION_DEPLOY_RSYNC_STATE"
+
+      if [[ ''${WINDOWS_COMPANION_DEPLOY_RSYNC_FAIL_AT:-} == "$count" ]]; then
+        exit 72
+      fi
+
+      ${pkgs.rsync}/bin/rsync "$@"
+
+      if [[ ''${WINDOWS_COMPANION_DEPLOY_RSYNC_SIGNAL_AFTER_AT:-} == "$count" ]]; then
+        kill -TERM "$PPID"
+        exit 143
+      fi
+    '';
+  };
+  windowsCompanionDeployTestPackage =
+    pkgs.callPackage ../../modules/features/windows/_lib/deploy-package.nix
+      {
+        mvBin = lib.getExe windowsCompanionDeployMvFixture;
+        rootPrefix = windowsCompanionDeployTestRoot;
+        rsyncBin = lib.getExe windowsCompanionDeployRsyncFixture;
+      };
 
   ghqFetchAllSmokePackage =
     let
@@ -871,6 +930,7 @@ let
         "tests/pi-wrapper.bats"
         "tests/wsl-open.bats"
         "tests/wsl-set-ssh-auth-sock.bats"
+        "tests/windows-companion-deploy.bats"
       ];
       sourceFiles = [
         "nix/apps/apply-winget.sh"
@@ -878,7 +938,7 @@ let
         "nix/apps/darwin-switch.sh"
         "nix/apps/linux-host-build.sh"
         "nix/apps/linux-host-switch.sh"
-        "nix/modules/wsl/wsl-open.sh"
+        "modules/features/platform/_lib/wsl-open.sh"
         "nix/packages/aws/aws-login.sh"
         "nix/packages/aws/reconcile-package.nix"
         "nix/packages/claude-code/claude-wrapper.sh"
@@ -929,6 +989,8 @@ let
         NIX_STORE_GROWTH_CHECKER_BIN = lib.getExe nixStoreGrowthChecker;
         PI_WRAPPER_TEST_PACKAGE = piWrapperTestPackage;
         WSL_OPEN_TEST_PACKAGE = wslOpenTestPackage;
+        WINDOWS_COMPANION_DEPLOY_TEST_BIN = lib.getExe windowsCompanionDeployTestPackage;
+        WINDOWS_COMPANION_DEPLOY_TEST_ROOT = windowsCompanionDeployTestRoot;
       };
       requiredEnvironment = [
         "AWS_CONFIG_RECONCILE_TEST_PACKAGE"
@@ -948,6 +1010,8 @@ let
         "NIX_STORE_GROWTH_CHECKER_BIN"
         "PI_WRAPPER_TEST_PACKAGE"
         "WSL_OPEN_TEST_PACKAGE"
+        "WINDOWS_COMPANION_DEPLOY_TEST_BIN"
+        "WINDOWS_COMPANION_DEPLOY_TEST_ROOT"
       ]
       ++ lib.optional pkgs.stdenv.hostPlatform.isLinux "DRAWIO_WRAPPER_TEST_PACKAGE";
       initializeGit = true;

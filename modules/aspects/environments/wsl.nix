@@ -5,57 +5,24 @@
   ...
 }:
 let
-  overlayPlan = import ../../../nix/lib/mk-overlays.nix { inherit inputs; } "x86_64-linux";
-  commonHomeModule =
+  baseHomeModule =
+    owner: cleanupOwner:
+    { config, ... }:
     {
-      config,
-      lib,
-      pkgs,
-      ...
-    }:
-    import ../../../nix/modules/home {
-      inherit
-        config
-        inputs
-        lib
-        pkgs
-        ;
-    };
-
-  baseHomeModule = owner: {
-    imports = [
-      ../../../nix/modules/options.nix
-      commonHomeModule
-      ../../../nix/modules/linux
-      ../../../nix/modules/wsl
-    ];
-    my = {
-      hostKind = owner.dotfiles.environment;
-      dotfilesDir = owner.dotfiles.source;
-      standalone = false;
-      windows = {
-        inherit (owner.dotfiles.windows) username homedir;
+      dotfiles.platform = {
+        inherit (owner.dotfiles) environment source;
+        standalone = owner.dotfiles.standalone or false;
+        windowsCompanion = owner.dotfiles.windows.enable;
+        nhCleanupOwner = cleanupOwner;
       };
-    };
-    dotfiles.agentEnvironment = {
-      inherit (owner.dotfiles) environment source;
-      windows.homedir = owner.dotfiles.windows.homedir;
-    };
-  };
-
-  standaloneHomeModule =
-    owner:
-    let
-      base = baseHomeModule owner;
-    in
-    base
-    // {
-      my = base.my // {
-        standalone = owner.dotfiles.standalone;
+      dotfiles.windows = {
+        inherit (owner.dotfiles.windows) enable username homedir;
+        inherit (owner.dotfiles) environment source;
+        linuxHomedir = config.home.homeDirectory;
       };
-      nixpkgs = {
-        config.allowUnfree = true;
-        overlays = overlayPlan.overlays;
+      dotfiles.agentEnvironment = {
+        inherit (owner.dotfiles) environment source;
+        windows.homedir = owner.dotfiles.windows.homedir;
       };
     };
 in
@@ -70,25 +37,24 @@ in
       features.security-gpg-wsl
       features.source-control-ghq-sync-systemd
       features.trash-systemd
+      features.platform-wsl
     ];
 
-    nixos = {
-      imports = [ ../../../nix/modules/nixos-wsl ];
-      _module.args.username = "constantan";
-      nixpkgs = {
-        config.allowUnfree = true;
-        overlays = overlayPlan.overlays;
+    nixos =
+      { host, ... }:
+      let
+        overlayPlan = import ../../../nix/lib/mk-overlays.nix { inherit inputs; } host.system;
+      in
+      {
+        nixpkgs = {
+          config.allowUnfree = true;
+          overlays = overlayPlan.overlays;
+        };
       };
-
-      # Keep the flake snapshot in the generated WSL tarball so recovery is
-      # possible before the canonical clone exists.
-      wsl.tarball.configPath = inputs.self.outPath;
-      nix.channel.enable = false;
-    };
 
     homeManager =
       { host, ... }:
-      baseHomeModule host;
+      baseHomeModule host "nixos";
   };
 
   den.aspects.environments.standalone-wsl = {
@@ -100,9 +66,19 @@ in
       features.security-gpg-wsl
       features.source-control-ghq-sync-systemd
       features.trash-systemd
+      features.platform-wsl
     ];
     homeManager =
       { home, ... }:
-      standaloneHomeModule home;
+      let
+        overlayPlan = import ../../../nix/lib/mk-overlays.nix { inherit inputs; } home.system;
+      in
+      {
+        imports = [ (baseHomeModule home "switch-app") ];
+        nixpkgs = {
+          config.allowUnfree = true;
+          overlays = overlayPlan.overlays;
+        };
+      };
   };
 }

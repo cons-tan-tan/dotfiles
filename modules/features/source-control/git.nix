@@ -2,6 +2,17 @@
 {
   features.source-control-git = {
     name = "feature/source-control/git";
+    cli-tools = [
+      {
+        id = "git";
+        nix.route = "programs";
+        winget = {
+          packageId = "Git.Git";
+          elevated = true;
+          description = "Git for Windows";
+        };
+      }
+    ];
     homeManager =
       { lib, pkgs, ... }:
       let

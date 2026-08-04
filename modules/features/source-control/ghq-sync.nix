@@ -6,6 +6,20 @@ in
 {
   features.source-control-ghq-sync = {
     name = "feature/source-control/ghq-sync";
+    cli-tools = [
+      {
+        id = "ghq";
+        nix = {
+          route = "home-packages";
+          nixpkgsAttr = "ghq";
+        };
+        winget = {
+          packageId = "x-motemen.ghq";
+          dependsOn = [ "git" ];
+          description = "ghq";
+        };
+      }
+    ];
   };
 
   features.source-control-ghq-sync-systemd = {

@@ -265,7 +265,7 @@ let
       };
     };
 
-    # nix/modules/nixos-wsl/default.nixの暫定対応と対になるcontract。
+    # modules/features/platform/wsl.nixの暫定対応と対になるcontract。
     # microsoft/WSL#40519を含むreleaseで再発しないことを確認後、
     # 対応する設定とこのcontractを同時に削除する。
     "temporary-wsl-workarounds" = {
@@ -329,11 +329,11 @@ let
           ;
         username = home.home.username;
         homeDirectory = home.home.homeDirectory;
-        hostKind = home.my.hostKind;
-        isWsl = home.my.isWsl;
-        windowsUsername = home.my.windows.username;
-        windowsHomedir = home.my.windows.homedir;
-        dotfilesDir = home.my.dotfilesDir;
+        hostKind = home.dotfiles.platform.environment;
+        isWsl = home.dotfiles.platform.environment == "wsl";
+        windowsUsername = home.dotfiles.windows.username;
+        windowsHomedir = home.dotfiles.windows.homedir;
+        dotfilesDir = home.dotfiles.platform.source;
       };
       expected = {
         useGlobalPkgs = true;

@@ -55,12 +55,6 @@ in
             flake = config.flake;
           }
         );
-        den-legacy-parity-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
-          import ../../../nix/checks/den-legacy-parity.nix {
-            inherit inputs lib pkgs;
-            flake = config.flake;
-          }
-        );
         den-unfree-capability-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
           import ../../../nix/checks/den-unfree-capability.nix {
             inherit inputs lib pkgs;
@@ -74,12 +68,60 @@ in
             fixtureRoot = ../../..;
           }
         );
+        cli-tools-dataflow-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
+          import ../../../nix/checks/den-capabilities.nix {
+            inherit inputs lib pkgs;
+            checkName = "cli-tools-dataflow-tests";
+            fixturePath = ../packages/_tests/dataflow.nix;
+            fixtureRoot = ../../..;
+          }
+        );
         home-feature-contract = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
           import ../_tests/home-feature-contract.nix {
             inherit inputs lib pkgs;
             flake = config.flake;
           }
         );
+        platform-feature-contract = ciCheck.annotate (ciCheck.targets.linux "configurations") (
+          import ../platform/_tests/contract.nix {
+            inherit
+              lib
+              pkgs
+              username
+              ;
+            flake = config.flake;
+          }
+        );
+        windows-class-contract =
+          let
+            outputContract = import ../windows/_tests/class-contract.nix {
+              inherit
+                inputs
+                lib
+                pkgs
+                username
+                ;
+              flake = config.flake;
+            };
+            dataflowContract = import ../../../nix/checks/den-capabilities.nix {
+              inherit inputs lib pkgs;
+              checkName = "windows-class-dataflow-tests";
+              fixturePath = ../windows/_tests/dataflow.nix;
+              fixtureRoot = ../../..;
+            };
+          in
+          ciCheck.annotate (ciCheck.targets.linux "configurations") (
+            pkgs.linkFarm "windows-class-contract" [
+              {
+                name = "outputs";
+                path = outputContract;
+              }
+              {
+                name = "dataflow";
+                path = dataflowContract;
+              }
+            ]
+          );
         flake-public-api-contract = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
           import ../../../nix/checks/flake-public-api-contract.nix {
             inherit lib pkgs;

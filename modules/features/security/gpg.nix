@@ -5,6 +5,16 @@ in
 {
   features.security-gpg = {
     name = "feature/security/gpg";
+    cli-tools = [
+      {
+        id = "gpg4win";
+        winget = {
+          packageId = "GnuPG.Gpg4win";
+          elevated = true;
+          description = "Gpg4win";
+        };
+      }
+    ];
     homeManager = { pkgs, ... }: {
       programs.gpg = {
         enable = true;

@@ -9,13 +9,8 @@ let
   username = "constantan";
   darwinHostname = username;
   linuxHomedir = "/home/${username}";
-  windowsHomedir = "/mnt/c/Users/zhouc";
   configNames = import ../../../nix/lib/linux-config-name.nix { inherit username; };
   darwinAppsFor = import ../../../nix/lib/apps/mk-darwin-apps.nix { inherit darwinHostname; };
-  mkLinuxApps = import ../../../nix/lib/apps/mk-linux-apps.nix {
-    inherit inputs username windowsHomedir;
-    homedir = linuxHomedir;
-  };
   appsFor =
     { pkgs, system, ... }:
     if lib.hasSuffix "-darwin" system then
@@ -38,6 +33,11 @@ let
         };
         nixosTarget = configNames.forNixosWsl { inherit system; };
         nixosConfiguration = config.flake.nixosConfigurations.${nixosTarget};
+        windowsHomedir = den.homes.${system}."${username}@standalone-wsl".dotfiles.windows.homedir;
+        mkLinuxApps = import ../../../nix/lib/apps/mk-linux-apps.nix {
+          inherit inputs username windowsHomedir;
+          homedir = linuxHomedir;
+        };
       in
       assert config.flake.homeConfigurations ? ${linuxTarget};
       assert config.flake.homeConfigurations ? ${wslTarget};

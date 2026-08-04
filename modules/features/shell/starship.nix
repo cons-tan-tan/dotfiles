@@ -2,6 +2,16 @@
 {
   features.shell-starship = {
     name = "feature/shell/starship";
+    cli-tools = [
+      {
+        id = "starship";
+        nix.route = "programs";
+        winget = {
+          packageId = "Starship.Starship";
+          description = "Starship";
+        };
+      }
+    ];
     homeManager.programs.starship = {
       enable = true;
       presets = [ "nerd-font-symbols" ];
