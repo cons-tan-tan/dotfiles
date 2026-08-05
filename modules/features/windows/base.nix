@@ -54,13 +54,6 @@ in
         };
       }
       {
-        id = "zed";
-        winget = {
-          packageId = "ZedIndustries.Zed";
-          description = "Zed";
-        };
-      }
-      {
         id = "wt";
         winget = {
           packageId = "Microsoft.WindowsTerminal";
@@ -86,8 +79,12 @@ in
         cfg = config.dotfiles.windows;
         platform = config.dotfiles.platform;
         deploy = import ./_lib/deploy.nix { inherit lib pkgs; };
-        standardResources = builtins.attrValues cfg.deployments;
-        staticResources = builtins.attrValues cfg.staticResources;
+        standardResources = cfg.deployments;
+        staticResources = cfg.staticResources;
+        allResources =
+          lib.mapAttrs' (owner: resource: lib.nameValuePair "deployments/${owner}" resource) standardResources
+          // lib.mapAttrs' (owner: resource: lib.nameValuePair "static/${owner}" resource) staticResources;
+        resourceValidation = deploy.validateResources allResources;
       in
       {
         options.dotfiles.windows = lib.mkOption {
@@ -115,20 +112,20 @@ in
 
         config = lib.mkIf platform.windows.enable {
           home.activation =
-            lib.optionalAttrs (standardResources != [ ]) {
+            lib.optionalAttrs (standardResources != { }) {
               deployWindowsCompanion = deploy.mkActivation {
                 after = [ "writeBoundary" ];
                 name = "files";
                 root = platform.windows.homedir;
-                resources = standardResources;
+                resources = builtins.seq resourceValidation standardResources;
               };
             }
-            // lib.optionalAttrs (staticResources != [ ]) {
+            // lib.optionalAttrs (staticResources != { }) {
               deployWindowsCompanionStatic = deploy.mkActivation {
                 after = [ "linkGeneration" ];
                 name = "static";
                 root = platform.windows.homedir;
-                resources = staticResources;
+                resources = builtins.seq resourceValidation staticResources;
               };
             };
         };

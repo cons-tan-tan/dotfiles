@@ -1,0 +1,14 @@
+{
+  "name": "agent-slack",
+  "kind": {
+    "type": "paired-release",
+    "pin": "modules/features/agents/slack/_packages/agent-slack/pin.json",
+    "source": {
+      "repository": "stablyai/agent-slack",
+      "input": "agent-slack-skill",
+      "authority": {
+        "sourcePath": "modules/features/agents/slack/default.nix"
+      }
+    }
+  }
+}

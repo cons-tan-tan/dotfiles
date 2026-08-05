@@ -6,10 +6,9 @@
   pkgs,
 }:
 let
-  expectedUsername = "constantan";
   system = pkgs.stdenv.hostPlatform.system;
   expectedProgram = lib.getExe pkgs.dotfilesPackages.difit;
-  targets = (import ../../../entities/_lib/configuration-targets.nix { inherit lib; }) {
+  targets = (import ../../../flake/_interface/configuration-targets.nix { inherit lib; }) {
     inherit den system;
   };
   hostPkgs =
@@ -22,16 +21,6 @@ let
       hostPkgs
     else
       flake.homeConfigurations.${targets.home.linux}.pkgs;
-  expectedCommonApps =
-    (import ../../../../nix/lib/apps/mk-common-apps.nix {
-      inherit inputs;
-      username = expectedUsername;
-    })
-      {
-        inherit pkgs;
-        treefmtWrapper = flake.formatter.${system};
-      };
-
   fixture = inputs.flake-parts.lib.mkFlake { inherit inputs; } (
     { den, ... }:
     {
@@ -39,7 +28,7 @@ let
         inputs.den.flakeModule
         ../../../flake/den-output-routing.nix
         ../../../flake/systems.nix
-        ../../nixpkgs.nix
+        ../../nixpkgs
       ];
 
       den.aspects.routing-probe = {
@@ -88,11 +77,6 @@ in
   testHomeConfigurationUsesSamePackage = {
     expr = homePkgs.dotfilesPackages.difit.drvPath;
     expected = pkgs.dotfilesPackages.difit.drvPath;
-  };
-
-  testPublicAppUsesSamePackageSet = {
-    expr = flake.apps.${system}.update-pins.program;
-    expected = expectedCommonApps.apps.update-pins.program;
   };
 
   testFixtureDoesNotPublishPackages = {

@@ -145,7 +145,7 @@
       flake = false;
     };
     supported-systems = {
-      url = "path:./nix/systems";
+      url = "path:./modules/flake/_data/systems";
       flake = false;
     };
     treefmt-nix = {

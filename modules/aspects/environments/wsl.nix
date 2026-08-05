@@ -6,8 +6,9 @@
 }:
 let
   profileAssertion = import ./_lib/profile-assertion.nix;
+  inherit (import ../../features/nixpkgs/_interface) mkOverlayPlan;
   baseHomeModule =
-    owner: cleanupOwner:
+    owner:
     { ... }:
     {
       assertions = [
@@ -20,7 +21,6 @@ let
         inherit (owner.dotfiles) environment source;
         standalone = owner.dotfiles.standalone or false;
         windows = owner.dotfiles.windows;
-        nhCleanupOwner = cleanupOwner;
       };
     };
 in
@@ -41,7 +41,10 @@ in
     nixos =
       { host, ... }:
       let
-        overlayPlan = import ../../../nix/lib/mk-overlays.nix { inherit inputs; } host.system;
+        overlayPlan = mkOverlayPlan {
+          inherit inputs;
+          system = host.system;
+        };
       in
       {
         assertions = [
@@ -57,7 +60,7 @@ in
 
     homeManager =
       { host, ... }:
-      baseHomeModule host "nixos";
+      baseHomeModule host;
   };
 
   den.aspects.environments.standalone-wsl = {
@@ -74,10 +77,13 @@ in
     homeManager =
       { home, ... }:
       let
-        overlayPlan = import ../../../nix/lib/mk-overlays.nix { inherit inputs; } home.system;
+        overlayPlan = mkOverlayPlan {
+          inherit inputs;
+          system = home.system;
+        };
       in
       {
-        imports = [ (baseHomeModule home "switch-app") ];
+        imports = [ (baseHomeModule home) ];
         nixpkgs = {
           overlays = overlayPlan.overlays;
         };

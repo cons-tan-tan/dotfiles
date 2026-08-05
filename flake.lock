@@ -821,11 +821,11 @@
     "supported-systems": {
       "flake": false,
       "locked": {
-        "path": "./nix/systems",
+        "path": "./modules/flake/_data/systems",
         "type": "path"
       },
       "original": {
-        "path": "./nix/systems",
+        "path": "./modules/flake/_data/systems",
         "type": "path"
       },
       "parent": []

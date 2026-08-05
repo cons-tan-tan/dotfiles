@@ -9,7 +9,7 @@ let
     {
       imports = [
         inputs.den.flakeModule
-        ../../nixpkgs.nix
+        ../../nixpkgs
         ../../../flake/den-output-routing.nix
         ../../../flake/systems.nix
       ];

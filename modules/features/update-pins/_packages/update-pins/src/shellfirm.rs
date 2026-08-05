@@ -1,0 +1,1365 @@
+use std::collections::BTreeSet;
+use std::fs::File;
+use std::io::Read as _;
+use std::path::{Component, Path, PathBuf};
+
+use toml::Value;
+
+#[cfg(feature = "mutating")]
+use crate::build::{build_check_output, build_package_once};
+#[cfg(feature = "mutating")]
+use crate::command::{CommandRunner, CommandSpec, require_success};
+use crate::error::UpdateError;
+#[cfg(feature = "mutating")]
+use crate::policy::RunPolicy;
+#[cfg(feature = "mutating")]
+use crate::prefetch::prefetch_result;
+#[cfg(feature = "mutating")]
+use crate::registry::TargetSpec;
+#[cfg(feature = "mutating")]
+use crate::targets::{load_pin, write_pin};
+#[cfg(feature = "mutating")]
+use crate::transaction::Transaction;
+#[cfg(feature = "mutating")]
+use crate::upstream::{latest_tag, validate_release_version};
+
+const MAX_SOURCE_ROOT_ENTRIES: usize = 4_096;
+const MAX_WORKSPACE_MEMBERS: usize = 1_024;
+const MAX_MANIFEST_BYTES: usize = 1024 * 1024;
+const MAX_TOTAL_MANIFEST_BYTES: usize = 8 * 1024 * 1024;
+const MAX_LOCK_BYTES: usize = 16 * 1024 * 1024;
+#[cfg(feature = "mutating")]
+const MAX_RULE_CATALOG_BYTES: u64 = 1024 * 1024;
+#[cfg(feature = "mutating")]
+const RULE_CATALOG_CHECK: &str = "agent-command-shellfirm-catalog";
+#[cfg(feature = "mutating")]
+const RULE_CATALOG_FILE: &str = "effective-shellfirm-rules.txt";
+const CRATES_IO_REGISTRY: &str = "registry+https://github.com/rust-lang/crates.io-index";
+
+fn select_lock_for_release<'a>(
+    current_version: &str,
+    candidate_version: &str,
+    current_lock: &'a [u8],
+    candidate_lock: &'a [u8],
+) -> &'a [u8] {
+    if current_version == candidate_version {
+        current_lock
+    } else {
+        candidate_lock
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+#[cfg(feature = "mutating")]
+pub(crate) fn update<R: CommandRunner>(
+    spec: &TargetSpec,
+    repository: &str,
+    pin_path: &str,
+    lock_path: &str,
+    guard_manifest_path: &str,
+    guard_lock_path: &str,
+    package: &str,
+    policy: RunPolicy,
+    runner: &R,
+    transaction: &mut Transaction<'_, R>,
+) -> Result<bool, UpdateError> {
+    let tag = latest_tag(policy, runner, transaction.root(), repository)?;
+    let version = tag.strip_prefix('v').unwrap_or(&tag);
+    validate_release_version(spec.name, version)?;
+
+    let mut pin = load_pin(transaction, pin_path)?;
+    let current_version = pin.string(&["version"])?.to_owned();
+    let current_guard_manifest = transaction.read(guard_manifest_path)?;
+    validate_guard_manifest(
+        spec.name,
+        guard_manifest_path,
+        &current_guard_manifest,
+        &current_version,
+    )?;
+    let current_guard_lock = transaction.read(guard_lock_path)?;
+    validate_guard_lock(
+        spec.name,
+        guard_lock_path,
+        &current_guard_lock,
+        &current_version,
+    )?;
+    if version == current_version && !policy.force {
+        println!("{}: {current_version} (up to date)", spec.name);
+        return Ok(false);
+    }
+
+    let current_catalog_output =
+        build_check_output(spec.name, RULE_CATALOG_CHECK, runner, transaction)?;
+    let current_catalog =
+        read_effective_rule_catalog(spec.name, &current_catalog_output.join(RULE_CATALOG_FILE))?;
+
+    println!(
+        "{}: prefetching candidate {version} (current {current_version})...",
+        spec.name
+    );
+    let source_url = format!("https://github.com/{repository}/archive/refs/tags/{tag}.tar.gz");
+    let source = prefetch_result(
+        &format!("{}: {pin_path}: srcHash", spec.name),
+        policy,
+        runner,
+        transaction.root(),
+        &source_url,
+        true,
+    )?;
+    let store_path = source.store_path.ok_or_else(|| {
+        UpdateError::message(format!(
+            "{}: prefetch did not return an unpacked store path for {source_url}",
+            spec.name
+        ))
+    })?;
+    let candidate_lock = read_lock_from_source(spec.name, &store_path, version)?;
+
+    let current_source_hash = pin.string(&["srcHash"])?.to_owned();
+    let current_lock = transaction.read(lock_path)?;
+    // The repository lock may contain security refreshes newer than the release
+    // archive. Re-forcing the same release must not roll those dependencies back;
+    // a version change is the boundary for adopting a new upstream lock.
+    let selected_lock =
+        select_lock_for_release(&current_version, version, &current_lock, &candidate_lock);
+    let (selected_guard_manifest, selected_guard_lock) = if current_version == version {
+        (current_guard_manifest, current_guard_lock)
+    } else {
+        let manifest = rewrite_guard_manifest(
+            spec.name,
+            guard_manifest_path,
+            &current_guard_manifest,
+            &current_version,
+            version,
+        )?;
+        let lock = resolve_guard_lock(
+            spec.name,
+            runner,
+            transaction.root(),
+            &manifest,
+            &current_guard_lock,
+            version,
+        )?;
+        (manifest, lock)
+    };
+    if current_version == version && current_lock != candidate_lock {
+        println!(
+            "{}: preserving the repository-owned lockfile for release {version}",
+            spec.name
+        );
+    }
+    let changed = current_version != version
+        || current_source_hash != source.hash
+        || current_lock != selected_lock
+        || transaction.read(guard_manifest_path)? != selected_guard_manifest
+        || transaction.read(guard_lock_path)? != selected_guard_lock;
+
+    pin.set_string(&["version"], version)?;
+    pin.set_string(&["srcHash"], source.hash)?;
+    write_pin(transaction, pin_path, &pin)?;
+    transaction.write_if_changed(lock_path, selected_lock)?;
+    transaction.write_if_changed(guard_manifest_path, &selected_guard_manifest)?;
+    transaction.write_if_changed(guard_lock_path, &selected_guard_lock)?;
+
+    build_package_once(spec.name, package, runner, transaction)?;
+    let candidate_catalog_output =
+        build_check_output(spec.name, RULE_CATALOG_CHECK, runner, transaction)?;
+    let candidate_catalog =
+        read_effective_rule_catalog(spec.name, &candidate_catalog_output.join(RULE_CATALOG_FILE))?;
+    print_effective_rule_diff(spec.name, &current_catalog, &candidate_catalog);
+    if !changed {
+        println!(
+            "{}: repository source and lockfile are unchanged",
+            spec.name
+        );
+    }
+    Ok(changed)
+}
+
+#[cfg(feature = "mutating")]
+fn read_effective_rule_catalog(label: &str, path: &Path) -> Result<BTreeSet<String>, UpdateError> {
+    let metadata = std::fs::metadata(path).map_err(|source| UpdateError::io(path, source))?;
+    if !metadata.is_file() || metadata.len() > MAX_RULE_CATALOG_BYTES {
+        return Err(UpdateError::message(format!(
+            "{label}: invalid effective Shellfirm rule catalog at {}",
+            path.display()
+        )));
+    }
+    let bytes = std::fs::read(path).map_err(|source| UpdateError::io(path, source))?;
+    let source = std::str::from_utf8(&bytes).map_err(|_| {
+        UpdateError::message(format!(
+            "{label}: effective Shellfirm rule catalog is not UTF-8"
+        ))
+    })?;
+    let mut previous: Option<&str> = None;
+    let mut rules = BTreeSet::new();
+    for rule in source.lines() {
+        if rule.is_empty()
+            || rule.len() > 512
+            || rule.chars().any(char::is_whitespace)
+            || rule.chars().any(char::is_control)
+        {
+            return Err(UpdateError::message(format!(
+                "{label}: effective Shellfirm rule catalog contains an invalid ID"
+            )));
+        }
+        if previous.is_some_and(|previous| previous >= rule) || !rules.insert(rule.to_owned()) {
+            return Err(UpdateError::message(format!(
+                "{label}: effective Shellfirm rule catalog must be sorted and unique"
+            )));
+        }
+        previous = Some(rule);
+    }
+    if rules.is_empty() {
+        return Err(UpdateError::message(format!(
+            "{label}: effective Shellfirm rule catalog is empty"
+        )));
+    }
+    Ok(rules)
+}
+
+#[cfg(feature = "mutating")]
+fn print_effective_rule_diff(
+    label: &str,
+    current: &BTreeSet<String>,
+    candidate: &BTreeSet<String>,
+) {
+    let added = candidate.difference(current).collect::<Vec<_>>();
+    let removed = current.difference(candidate).collect::<Vec<_>>();
+    println!("{label}: effective Shellfirm rule changes:");
+    print_rule_change("added", &added);
+    print_rule_change("removed", &removed);
+}
+
+#[cfg(feature = "mutating")]
+fn print_rule_change(label: &str, rules: &[&String]) {
+    if rules.is_empty() {
+        println!("  {label}: (none)");
+    } else {
+        println!("  {label}:");
+        for rule in rules {
+            println!("    {rule}");
+        }
+    }
+}
+
+pub fn validate_guard_manifest(
+    label: &str,
+    path: &str,
+    bytes: &[u8],
+    expected_version: &str,
+) -> Result<(), UpdateError> {
+    let document = parse_manifest(label, Path::new(path), bytes)?;
+    let dependency = document
+        .get("dependencies")
+        .and_then(Value::as_table)
+        .and_then(|dependencies| dependencies.get("shellfirm"))
+        .and_then(Value::as_table)
+        .ok_or_else(|| {
+            UpdateError::message(format!(
+                "{label}: {path}: shellfirm must be a dependency table"
+            ))
+        })?;
+    let version = dependency
+        .get("version")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            UpdateError::message(format!("{label}: {path}: shellfirm version is missing"))
+        })?;
+    if version != format!("={expected_version}")
+        || dependency.get("default-features").and_then(Value::as_bool) != Some(false)
+    {
+        return Err(UpdateError::message(format!(
+            "{label}: {path}: shellfirm must pin ={expected_version} with default-features disabled"
+        )));
+    }
+    Ok(())
+}
+
+fn rewrite_guard_manifest(
+    label: &str,
+    path: &str,
+    bytes: &[u8],
+    current_version: &str,
+    candidate_version: &str,
+) -> Result<Vec<u8>, UpdateError> {
+    validate_guard_manifest(label, path, bytes, current_version)?;
+    let source = std::str::from_utf8(bytes)
+        .map_err(|_| UpdateError::message(format!("{label}: {path}: manifest is not UTF-8")))?;
+    let current = format!("version = \"={current_version}\"");
+    let replacement = format!("version = \"={candidate_version}\"");
+    let mut matches = 0_usize;
+    let rewritten = source
+        .split_inclusive('\n')
+        .map(|line| {
+            if line.trim_start().starts_with("shellfirm =") && line.contains(&current) {
+                matches += 1;
+                line.replacen(&current, &replacement, 1)
+            } else {
+                line.to_owned()
+            }
+        })
+        .collect::<String>();
+    if matches != 1 {
+        return Err(UpdateError::message(format!(
+            "{label}: {path}: expected one single-line shellfirm version pin, found {matches}"
+        )));
+    }
+    let rewritten = rewritten.into_bytes();
+    validate_guard_manifest(label, path, &rewritten, candidate_version)?;
+    Ok(rewritten)
+}
+
+#[cfg(feature = "mutating")]
+fn resolve_guard_lock<R: CommandRunner>(
+    label: &str,
+    runner: &R,
+    repository_root: &Path,
+    manifest: &[u8],
+    current_lock: &[u8],
+    version: &str,
+) -> Result<Vec<u8>, UpdateError> {
+    let directory = tempfile::Builder::new()
+        .prefix("update-pins-shellfirm-guard-")
+        .tempdir_in(repository_root)
+        .map_err(|source| UpdateError::io(repository_root, source))?;
+    let manifest_path = directory.path().join("Cargo.toml");
+    let lock_path = directory.path().join("Cargo.lock");
+    std::fs::write(&manifest_path, manifest)
+        .map_err(|source| UpdateError::io(&manifest_path, source))?;
+    std::fs::write(&lock_path, current_lock)
+        .map_err(|source| UpdateError::io(&lock_path, source))?;
+    let command = CommandSpec::new("cargo")
+        .args([
+            "update".into(),
+            "--manifest-path".into(),
+            manifest_path.as_os_str().to_owned(),
+            "--package".into(),
+            "shellfirm".into(),
+            "--precise".into(),
+            version.into(),
+        ])
+        .env("CARGO_TERM_COLOR", "never")
+        .current_dir(repository_root);
+    require_success(&command, runner.run(&command)?)?;
+    let lock = std::fs::read(&lock_path).map_err(|source| UpdateError::io(&lock_path, source))?;
+    validate_guard_lock(label, &lock_path.display().to_string(), &lock, version)?;
+    Ok(lock)
+}
+
+#[derive(Clone, Copy)]
+enum LockExpectation {
+    ShellfirmRoot,
+    GuardDependency,
+}
+
+pub fn validate_cargo_lock(
+    label: &str,
+    path: &str,
+    bytes: &[u8],
+    expected_version: &str,
+) -> Result<(), UpdateError> {
+    validate_lock(
+        label,
+        path,
+        bytes,
+        expected_version,
+        LockExpectation::ShellfirmRoot,
+    )
+}
+
+pub fn validate_guard_lock(
+    label: &str,
+    path: &str,
+    bytes: &[u8],
+    expected_version: &str,
+) -> Result<(), UpdateError> {
+    validate_lock(
+        label,
+        path,
+        bytes,
+        expected_version,
+        LockExpectation::GuardDependency,
+    )
+}
+
+fn validate_lock(
+    label: &str,
+    path: &str,
+    bytes: &[u8],
+    expected_version: &str,
+    expectation: LockExpectation,
+) -> Result<(), UpdateError> {
+    let text = std::str::from_utf8(bytes)
+        .map_err(|_| UpdateError::message(format!("{label}: {path}: lockfile is not UTF-8")))?;
+    let document: Value = toml::from_str(text).map_err(|source| {
+        UpdateError::message(format!(
+            "{label}: {path}: invalid Cargo.lock TOML: {source}"
+        ))
+    })?;
+    let format = document
+        .get("version")
+        .and_then(Value::as_integer)
+        .ok_or_else(|| {
+            UpdateError::message(format!("{label}: {path}: missing integer lockfile version"))
+        })?;
+    if !matches!(format, 3 | 4) {
+        return Err(UpdateError::message(format!(
+            "{label}: {path}: unsupported Cargo.lock format version {format}"
+        )));
+    }
+    let packages = document
+        .get("package")
+        .and_then(Value::as_array)
+        .ok_or_else(|| UpdateError::message(format!("{label}: {path}: missing package entries")))?;
+    let mut identities = BTreeSet::new();
+    let mut shellfirm_root_count = 0_usize;
+    let mut matching_shellfirm_root_count = 0_usize;
+    let mut matching_shellfirm_dependency_count = 0_usize;
+    let mut guard_root_count = 0_usize;
+    for (index, package) in packages.iter().enumerate() {
+        let package = package.as_table().ok_or_else(|| {
+            UpdateError::message(format!(
+                "{label}: {path}: package entry {index} is not a table"
+            ))
+        })?;
+        let name = package
+            .get("name")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                UpdateError::message(format!(
+                    "{label}: {path}: package entry {index} has no name"
+                ))
+            })?;
+        let version = package
+            .get("version")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                UpdateError::message(format!("{label}: {path}: package {name} has no version"))
+            })?;
+        let source = match package.get("source") {
+            Some(Value::String(source)) => Some(source.as_str()),
+            Some(_) => {
+                return Err(UpdateError::message(format!(
+                    "{label}: {path}: package {name} {version} has a non-string source"
+                )));
+            }
+            None => None,
+        };
+        let identity = (name, version, source.unwrap_or(""));
+        if !identities.insert(identity) {
+            return Err(UpdateError::message(format!(
+                "{label}: {path}: duplicate package {name} {version}"
+            )));
+        }
+
+        match source {
+            Some(source) if source.starts_with("git+") => {
+                return Err(UpdateError::message(format!(
+                    "{label}: {path}: git dependency is unsupported: {name} {version}"
+                )));
+            }
+            Some(CRATES_IO_REGISTRY) => {
+                let checksum = package
+                    .get("checksum")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                if checksum.len() != 64
+                    || !checksum
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+                {
+                    return Err(UpdateError::message(format!(
+                        "{label}: {path}: registry package {name} {version} has no valid checksum"
+                    )));
+                }
+                if name == "shellfirm" && version == expected_version {
+                    matching_shellfirm_dependency_count += 1;
+                }
+            }
+            Some(source) => {
+                return Err(UpdateError::message(format!(
+                    "{label}: {path}: unsupported dependency source for {name} {version}: {source}"
+                )));
+            }
+            None if name == "shellfirm" => {
+                shellfirm_root_count += 1;
+                if version == expected_version {
+                    matching_shellfirm_root_count += 1;
+                }
+            }
+            None if name == "agent-command-guard" => guard_root_count += 1,
+            None => {}
+        }
+    }
+    match expectation {
+        LockExpectation::ShellfirmRoot
+            if shellfirm_root_count != 1 || matching_shellfirm_root_count != 1 =>
+        {
+            return Err(UpdateError::message(format!(
+                "{label}: {path}: expected exactly one source-free shellfirm {expected_version} package, found {shellfirm_root_count} shellfirm roots"
+            )));
+        }
+        LockExpectation::GuardDependency
+            if guard_root_count != 1
+                || shellfirm_root_count != 0
+                || matching_shellfirm_dependency_count != 1 =>
+        {
+            return Err(UpdateError::message(format!(
+                "{label}: {path}: expected one agent-command-guard root and one registry shellfirm {expected_version} dependency"
+            )));
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+pub(crate) fn read_lock_from_source(
+    label: &str,
+    store_path: &Path,
+    expected_version: &str,
+) -> Result<Vec<u8>, UpdateError> {
+    if !store_path.is_absolute() {
+        return Err(UpdateError::message(format!(
+            "{label}: prefetch returned a non-absolute store path {}",
+            store_path.display()
+        )));
+    }
+    let metadata = std::fs::symlink_metadata(store_path)
+        .map_err(|source| UpdateError::io(store_path, source))?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(UpdateError::message(format!(
+            "{label}: unpacked store path is not a regular directory: {}",
+            store_path.display()
+        )));
+    }
+
+    let roots = discover_source_roots(label, store_path)?;
+    let [(manifest_path, lock_path)] = roots.as_slice() else {
+        return Err(UpdateError::message(format!(
+            "{label}: expected exactly one directory containing regular Cargo.toml and Cargo.lock files, found {}",
+            roots.len()
+        )));
+    };
+    let root_manifest = read_bounded(label, manifest_path, MAX_MANIFEST_BYTES)?;
+    let root_document = parse_manifest(label, manifest_path, &root_manifest)?;
+    let source_root = manifest_path
+        .parent()
+        .expect("a Cargo.toml candidate always has a parent directory");
+    validate_package_manifest(
+        label,
+        source_root,
+        &root_document,
+        root_manifest.len(),
+        expected_version,
+    )?;
+
+    let lock = read_bounded(label, lock_path, MAX_LOCK_BYTES)?;
+    validate_cargo_lock(
+        label,
+        &lock_path.display().to_string(),
+        &lock,
+        expected_version,
+    )?;
+    Ok(lock)
+}
+
+fn discover_source_roots(label: &str, root: &Path) -> Result<Vec<(PathBuf, PathBuf)>, UpdateError> {
+    let mut roots = Vec::new();
+    let mut candidates = vec![root.to_owned()];
+    let entries = std::fs::read_dir(root).map_err(|source| UpdateError::io(root, source))?;
+    for (index, entry) in entries.enumerate() {
+        if index >= MAX_SOURCE_ROOT_ENTRIES {
+            return Err(UpdateError::message(format!(
+                "{label}: unpacked source has more than {MAX_SOURCE_ROOT_ENTRIES} root entries"
+            )));
+        }
+        let entry = entry.map_err(|source| UpdateError::io(root, source))?;
+        let file_type = entry
+            .file_type()
+            .map_err(|source| UpdateError::io(entry.path(), source))?;
+        if file_type.is_dir() {
+            candidates.push(entry.path());
+        }
+    }
+    candidates.sort();
+
+    for directory in candidates {
+        let manifest = directory.join("Cargo.toml");
+        let lock = directory.join("Cargo.lock");
+        let has_manifest = regular_file_if_present(label, &manifest)?;
+        let has_lock = regular_file_if_present(label, &lock)?;
+        if has_manifest && has_lock {
+            roots.push((manifest, lock));
+        }
+    }
+    Ok(roots)
+}
+
+fn regular_file_if_present(label: &str, path: &Path) -> Result<bool, UpdateError> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_file() => Ok(true),
+        Ok(_) => Err(UpdateError::message(format!(
+            "{label}: {} must be a regular non-symlink file",
+            path.display()
+        ))),
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(source) => Err(UpdateError::io(path, source)),
+    }
+}
+
+fn read_bounded(label: &str, path: &Path, limit: usize) -> Result<Vec<u8>, UpdateError> {
+    let file = File::open(path).map_err(|source| UpdateError::io(path, source))?;
+    let mut bytes = Vec::new();
+    file.take(limit as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|source| UpdateError::io(path, source))?;
+    if bytes.len() > limit {
+        return Err(UpdateError::message(format!(
+            "{label}: {} exceeds the {limit}-byte limit",
+            path.display()
+        )));
+    }
+    Ok(bytes)
+}
+
+fn parse_manifest(label: &str, path: &Path, bytes: &[u8]) -> Result<Value, UpdateError> {
+    let text = std::str::from_utf8(bytes)
+        .map_err(|_| UpdateError::message(format!("{label}: {} is not UTF-8", path.display())))?;
+    toml::from_str(text).map_err(|source| {
+        UpdateError::message(format!(
+            "{label}: invalid manifest {}: {source}",
+            path.display()
+        ))
+    })
+}
+
+fn validate_package_manifest(
+    label: &str,
+    source_root: &Path,
+    root_document: &Value,
+    root_manifest_size: usize,
+    expected_version: &str,
+) -> Result<(), UpdateError> {
+    let mut matches = 0_usize;
+    validate_manifest_package(
+        label,
+        &source_root.join("Cargo.toml"),
+        root_document,
+        expected_version,
+        &mut matches,
+        false,
+    )?;
+
+    let members = root_document
+        .get("workspace")
+        .and_then(Value::as_table)
+        .and_then(|workspace| workspace.get("members"));
+    let mut total_manifest_bytes = root_manifest_size;
+    if let Some(members) = members {
+        let members = members.as_array().ok_or_else(|| {
+            UpdateError::message(format!(
+                "{label}: {}: workspace.members must be an array",
+                source_root.join("Cargo.toml").display()
+            ))
+        })?;
+        if members.len() > MAX_WORKSPACE_MEMBERS {
+            return Err(UpdateError::message(format!(
+                "{label}: workspace has more than {MAX_WORKSPACE_MEMBERS} members"
+            )));
+        }
+        for member in members {
+            let member = member.as_str().ok_or_else(|| {
+                UpdateError::message(format!("{label}: workspace member must be a string"))
+            })?;
+            let relative = Path::new(member);
+            if relative.as_os_str().is_empty()
+                || relative.is_absolute()
+                || relative
+                    .components()
+                    .any(|component| !matches!(component, Component::Normal(_)))
+                || member.contains(['*', '?', '[', ']'])
+            {
+                return Err(UpdateError::message(format!(
+                    "{label}: unsupported workspace member path '{member}'"
+                )));
+            }
+            let path = workspace_member_manifest(label, source_root, relative)?;
+            let bytes = read_bounded(label, &path, MAX_MANIFEST_BYTES)?;
+            total_manifest_bytes =
+                total_manifest_bytes
+                    .checked_add(bytes.len())
+                    .ok_or_else(|| {
+                        UpdateError::message(format!("{label}: manifest byte count overflowed"))
+                    })?;
+            if total_manifest_bytes > MAX_TOTAL_MANIFEST_BYTES {
+                return Err(UpdateError::message(format!(
+                    "{label}: workspace manifests exceed {MAX_TOTAL_MANIFEST_BYTES} bytes"
+                )));
+            }
+            let document = parse_manifest(label, &path, &bytes)?;
+            validate_manifest_package(
+                label,
+                &path,
+                &document,
+                expected_version,
+                &mut matches,
+                true,
+            )?;
+        }
+    }
+    if matches != 1 {
+        return Err(UpdateError::message(format!(
+            "{label}: expected exactly one shellfirm {expected_version} package manifest, found {matches}"
+        )));
+    }
+    Ok(())
+}
+
+fn workspace_member_manifest(
+    label: &str,
+    source_root: &Path,
+    relative: &Path,
+) -> Result<PathBuf, UpdateError> {
+    let mut directory = source_root.to_owned();
+    for component in relative.components() {
+        let Component::Normal(component) = component else {
+            unreachable!("workspace member paths are validated before traversal");
+        };
+        directory.push(component);
+        let metadata = std::fs::symlink_metadata(&directory)
+            .map_err(|source| UpdateError::io(&directory, source))?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            return Err(UpdateError::message(format!(
+                "{label}: workspace member path component is not a regular directory: {}",
+                directory.display()
+            )));
+        }
+    }
+    let manifest = directory.join("Cargo.toml");
+    if !regular_file_if_present(label, &manifest)? {
+        return Err(UpdateError::message(format!(
+            "{label}: workspace member manifest is missing: {}",
+            manifest.display()
+        )));
+    }
+    Ok(manifest)
+}
+
+fn validate_manifest_package(
+    label: &str,
+    path: &Path,
+    document: &Value,
+    expected_version: &str,
+    matches: &mut usize,
+    package_required: bool,
+) -> Result<(), UpdateError> {
+    let Some(package) = document.get("package").and_then(Value::as_table) else {
+        if package_required {
+            return Err(UpdateError::message(format!(
+                "{label}: workspace member {} has no package table",
+                path.display()
+            )));
+        }
+        return Ok(());
+    };
+    let name = package
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            UpdateError::message(format!(
+                "{label}: package manifest {} has no name",
+                path.display()
+            ))
+        })?;
+    let version = package
+        .get("version")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            UpdateError::message(format!(
+                "{label}: package manifest {} has no version",
+                path.display()
+            ))
+        })?;
+    if name == "shellfirm" {
+        if version != expected_version {
+            return Err(UpdateError::message(format!(
+                "{label}: {} declares shellfirm {version}, expected {expected_version}",
+                path.display()
+            )));
+        }
+        *matches += 1;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[cfg(feature = "mutating")]
+    use std::cell::Cell;
+    use std::fs;
+    #[cfg(feature = "mutating")]
+    use std::path::{Path, PathBuf};
+    #[cfg(feature = "mutating")]
+    use std::process::Command;
+
+    #[cfg(feature = "mutating")]
+    use flate2::Compression;
+    #[cfg(feature = "mutating")]
+    use flate2::write::GzEncoder;
+    use tempfile::TempDir;
+
+    use super::{
+        CRATES_IO_REGISTRY, read_lock_from_source, rewrite_guard_manifest, select_lock_for_release,
+        validate_cargo_lock, validate_guard_lock, validate_guard_manifest,
+    };
+    #[cfg(feature = "mutating")]
+    use super::{RULE_CATALOG_FILE, read_effective_rule_catalog};
+    #[cfg(feature = "mutating")]
+    use crate::cli::Target;
+    #[cfg(feature = "mutating")]
+    use crate::command::{CommandOutput, CommandRunner, CommandSpec, SystemCommandRunner};
+    #[cfg(feature = "mutating")]
+    use crate::error::UpdateError;
+    #[cfg(feature = "mutating")]
+    use crate::policy::RunPolicy;
+    #[cfg(feature = "mutating")]
+    use crate::registry::target_spec;
+    #[cfg(feature = "mutating")]
+    use crate::transaction::{Repository, Transaction};
+
+    const VALID_LOCK: &str = r#"
+version = 4
+
+[[package]]
+name = "dependency"
+version = "1.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
+[[package]]
+name = "shellfirm"
+version = "9.9.9"
+"#;
+
+    #[test]
+    fn validates_format_root_and_registry_checksums() {
+        validate_cargo_lock("shellfirm", "Cargo.lock", VALID_LOCK.as_bytes(), "9.9.9")
+            .expect("valid lock");
+    }
+
+    #[test]
+    fn validates_and_rewrites_the_exact_guard_dependency_pin() {
+        let manifest =
+            b"[dependencies]\nshellfirm = { version = \"=9.9.9\", default-features = false }\n";
+        validate_guard_manifest("shellfirm", "Cargo.toml", manifest, "9.9.9").unwrap();
+        let rewritten =
+            rewrite_guard_manifest("shellfirm", "Cargo.toml", manifest, "9.9.9", "10.0.0").unwrap();
+        validate_guard_manifest("shellfirm", "Cargo.toml", &rewritten, "10.0.0").unwrap();
+        assert!(std::str::from_utf8(&rewritten).unwrap().contains("=10.0.0"));
+
+        let guard = r#"version = 4
+
+[[package]]
+name = "agent-command-guard"
+version = "0.1.0"
+
+[[package]]
+name = "shellfirm"
+version = "10.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+"#;
+        validate_guard_lock("shellfirm", "Cargo.lock", guard.as_bytes(), "10.0.0").unwrap();
+        assert!(validate_guard_lock("shellfirm", "Cargo.lock", guard.as_bytes(), "9.9.9").is_err());
+    }
+
+    #[test]
+    fn preserves_repository_lock_for_same_release_and_adopts_new_release_lock() {
+        let repository_lock = b"repository security refresh";
+        let upstream_lock = b"upstream release lock";
+
+        assert_eq!(
+            select_lock_for_release("9.9.9", "9.9.9", repository_lock, upstream_lock),
+            repository_lock
+        );
+        assert_eq!(
+            select_lock_for_release("9.9.9", "10.0.0", repository_lock, upstream_lock),
+            upstream_lock
+        );
+    }
+
+    #[cfg(feature = "mutating")]
+    #[test]
+    fn forced_update_preserves_same_release_lock_and_builds_candidate() {
+        let current_lock = format!("{VALID_LOCK}\n# repository security refresh\n");
+
+        let outcome = run_update_case("9.9.9", current_lock.as_bytes(), VALID_LOCK.as_bytes());
+
+        assert!(!outcome.changed);
+        assert_eq!(outcome.lock, current_lock.as_bytes());
+        assert_eq!(outcome.build_calls, 3);
+    }
+
+    #[cfg(feature = "mutating")]
+    #[test]
+    fn update_adopts_new_release_lock_and_builds_candidate() {
+        let current_lock = format!("{VALID_LOCK}\n# repository security refresh\n");
+        let candidate_lock = VALID_LOCK.replace("9.9.9", "10.0.0");
+
+        let outcome = run_update_case("10.0.0", current_lock.as_bytes(), candidate_lock.as_bytes());
+
+        assert!(outcome.changed);
+        assert_eq!(outcome.lock, candidate_lock.as_bytes());
+        assert_eq!(outcome.build_calls, 3);
+    }
+
+    #[test]
+    fn rejects_unsupported_sources_missing_checksums_and_wrong_root() {
+        let git = VALID_LOCK.replace(
+            "registry+https://github.com/rust-lang/crates.io-index",
+            "git+https://example.invalid/repository",
+        );
+        assert!(validate_cargo_lock("shellfirm", "Cargo.lock", git.as_bytes(), "9.9.9").is_err());
+        let non_string_source = VALID_LOCK.replace(
+            "source = \"registry+https://github.com/rust-lang/crates.io-index\"",
+            "source = [\"git+https://example.invalid/repository\"]",
+        );
+        assert!(
+            validate_cargo_lock(
+                "shellfirm",
+                "Cargo.lock",
+                non_string_source.as_bytes(),
+                "9.9.9"
+            )
+            .is_err()
+        );
+        let alternate_registry =
+            VALID_LOCK.replace(CRATES_IO_REGISTRY, "registry+https://example.invalid/index");
+        assert!(
+            validate_cargo_lock(
+                "shellfirm",
+                "Cargo.lock",
+                alternate_registry.as_bytes(),
+                "9.9.9"
+            )
+            .is_err()
+        );
+
+        let missing_checksum = VALID_LOCK
+            .lines()
+            .filter(|line| !line.starts_with("checksum ="))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            validate_cargo_lock(
+                "shellfirm",
+                "Cargo.lock",
+                missing_checksum.as_bytes(),
+                "9.9.9"
+            )
+            .is_err()
+        );
+        assert!(
+            validate_cargo_lock("shellfirm", "Cargo.lock", VALID_LOCK.as_bytes(), "8.8.8").is_err()
+        );
+        let duplicate_root =
+            format!("{VALID_LOCK}\n[[package]]\nname = \"shellfirm\"\nversion = \"8.8.8\"\n");
+        assert!(
+            validate_cargo_lock(
+                "shellfirm",
+                "Cargo.lock",
+                duplicate_root.as_bytes(),
+                "9.9.9"
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn reads_one_workspace_lock_without_rewriting_it() {
+        let source = source_fixture();
+        let bytes =
+            read_lock_from_source("shellfirm", source.path(), "9.9.9").expect("source lock");
+        assert_eq!(bytes, VALID_LOCK.as_bytes());
+
+        let wrapped = TempDir::new().expect("temporary wrapper");
+        populate_source(&wrapped.path().join("shellfirm-9.9.9"));
+        let bytes =
+            read_lock_from_source("shellfirm", wrapped.path(), "9.9.9").expect("wrapped lock");
+        assert_eq!(bytes, VALID_LOCK.as_bytes());
+    }
+
+    #[test]
+    fn rejects_missing_ambiguous_and_symlinked_layouts() {
+        let missing = TempDir::new().expect("temporary source");
+        fs::write(missing.path().join("Cargo.toml"), "[workspace]\n").expect("workspace manifest");
+        assert!(read_lock_from_source("shellfirm", missing.path(), "9.9.9").is_err());
+
+        let ambiguous = source_fixture();
+        let nested = ambiguous.path().join("nested");
+        fs::create_dir(&nested).expect("nested source");
+        fs::write(nested.join("Cargo.toml"), "[workspace]\n").expect("nested manifest");
+        fs::write(nested.join("Cargo.lock"), "version = 4\n").expect("nested lock");
+        assert!(read_lock_from_source("shellfirm", ambiguous.path(), "9.9.9").is_err());
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+
+            let symlinked = TempDir::new().expect("temporary source");
+            fs::write(symlinked.path().join("real.toml"), "[workspace]\n").expect("real manifest");
+            symlink(
+                symlinked.path().join("real.toml"),
+                symlinked.path().join("Cargo.toml"),
+            )
+            .expect("manifest symlink");
+            fs::write(symlinked.path().join("Cargo.lock"), VALID_LOCK).expect("lock");
+            assert!(read_lock_from_source("shellfirm", symlinked.path(), "9.9.9").is_err());
+
+            let member_symlink = TempDir::new().expect("temporary source");
+            let outside = TempDir::new().expect("outside package");
+            populate_source(member_symlink.path());
+            fs::remove_dir_all(member_symlink.path().join("shellfirm"))
+                .expect("remove package directory");
+            fs::write(
+                outside.path().join("Cargo.toml"),
+                "[package]\nname = \"shellfirm\"\nversion = \"9.9.9\"\n",
+            )
+            .expect("outside manifest");
+            symlink(outside.path(), member_symlink.path().join("shellfirm"))
+                .expect("member directory symlink");
+            assert!(read_lock_from_source("shellfirm", member_symlink.path(), "9.9.9").is_err());
+        }
+    }
+
+    fn source_fixture() -> TempDir {
+        let source = TempDir::new().expect("temporary source");
+        populate_source(source.path());
+        source
+    }
+
+    fn populate_source(path: &std::path::Path) {
+        fs::create_dir_all(path).expect("source directory");
+        fs::write(
+            path.join("Cargo.toml"),
+            "[workspace]\nmembers = [\"shellfirm\"]\n",
+        )
+        .expect("workspace manifest");
+        fs::write(path.join("Cargo.lock"), VALID_LOCK).expect("lock");
+        let package = path.join("shellfirm");
+        fs::create_dir(&package).expect("package directory");
+        fs::write(
+            package.join("Cargo.toml"),
+            "[package]\nname = \"shellfirm\"\nversion = \"9.9.9\"\n",
+        )
+        .expect("package manifest");
+    }
+
+    #[cfg(feature = "mutating")]
+    struct UpdateOutcome {
+        changed: bool,
+        lock: Vec<u8>,
+        build_calls: usize,
+    }
+
+    #[cfg(feature = "mutating")]
+    struct UpdateRunner {
+        version: String,
+        source: PathBuf,
+        archive: Vec<u8>,
+        current_catalog: PathBuf,
+        candidate_catalog: PathBuf,
+        build_calls: Cell<usize>,
+        check_calls: Cell<usize>,
+    }
+
+    #[cfg(feature = "mutating")]
+    impl CommandRunner for UpdateRunner {
+        fn run(&self, command: &CommandSpec) -> Result<CommandOutput, UpdateError> {
+            if command.program == "git" {
+                return SystemCommandRunner.run(command);
+            }
+            if command.program == "curl" {
+                let output_index = command
+                    .args
+                    .iter()
+                    .position(|argument| argument == "--output")
+                    .expect("curl output argument");
+                let output_path = PathBuf::from(&command.args[output_index + 1]);
+                let url = command.args.last().expect("curl URL").to_string_lossy();
+                let bytes = if url.ends_with("/releases/latest") {
+                    format!(r#"{{"tag_name":"v{}"}}"#, self.version).into_bytes()
+                } else {
+                    self.archive.clone()
+                };
+                fs::write(&output_path, bytes)
+                    .map_err(|source| UpdateError::io(&output_path, source))?;
+                return Ok(successful_output(b"200".to_vec()));
+            }
+            if command.program == "nix" && command.args.first().is_some_and(|arg| arg == "store") {
+                let response = serde_json::json!({
+                    "hash": source_hash(),
+                    "storePath": self.source,
+                });
+                return Ok(successful_output(
+                    serde_json::to_vec(&response).expect("prefetch response"),
+                ));
+            }
+            if command.program == "nix" && command.args.first().is_some_and(|arg| arg == "build") {
+                self.build_calls.set(self.build_calls.get() + 1);
+                if command
+                    .env
+                    .contains_key(std::ffi::OsStr::new("UPDATE_PINS_CHECK"))
+                {
+                    let call = self.check_calls.get();
+                    self.check_calls.set(call + 1);
+                    let path = if call == 0 {
+                        &self.current_catalog
+                    } else {
+                        &self.candidate_catalog
+                    };
+                    return Ok(successful_output(
+                        format!("{}\n", path.display()).into_bytes(),
+                    ));
+                }
+                return Ok(successful_output(Vec::new()));
+            }
+            if command.program == "cargo" {
+                let manifest_index = command
+                    .args
+                    .iter()
+                    .position(|argument| argument == "--manifest-path")
+                    .expect("cargo manifest argument");
+                let manifest = PathBuf::from(&command.args[manifest_index + 1]);
+                fs::write(
+                    manifest
+                        .parent()
+                        .expect("manifest parent")
+                        .join("Cargo.lock"),
+                    guard_lock(&self.version),
+                )
+                .expect("candidate guard lock");
+                return Ok(successful_output(Vec::new()));
+            }
+            panic!("unexpected command {}", command.display());
+        }
+
+        fn is_available(&self, _program: &Path) -> bool {
+            false
+        }
+    }
+
+    #[cfg(feature = "mutating")]
+    fn run_update_case(
+        candidate_version: &str,
+        current_lock: &[u8],
+        candidate_lock: &[u8],
+    ) -> UpdateOutcome {
+        let repository = update_repository(current_lock);
+        let candidate_source = TempDir::new().expect("candidate source");
+        populate_candidate_source(candidate_source.path(), candidate_version, candidate_lock);
+        let catalogs = TempDir::new().expect("rule catalogs");
+        let current_catalog = catalogs.path().join("current");
+        let candidate_catalog = catalogs.path().join("candidate");
+        write_rule_catalog(&current_catalog, &["git:force_push", "shell:rm_rf"]);
+        write_rule_catalog(
+            &candidate_catalog,
+            &["fs:overwrite_device", "git:force_push"],
+        );
+        let runner = UpdateRunner {
+            version: candidate_version.to_owned(),
+            source: candidate_source.path().to_owned(),
+            archive: archive_fixture(),
+            current_catalog,
+            candidate_catalog,
+            build_calls: Cell::new(0),
+            check_calls: Cell::new(0),
+        };
+        let repository_handle =
+            Repository::discover_in(&SystemCommandRunner, repository.path()).expect("repository");
+        let spec = target_spec(Target::Shellfirm).expect("shellfirm target");
+        let mut transaction =
+            Transaction::begin_scoped(repository_handle, &runner, spec.managed_paths)
+                .expect("transaction");
+
+        let changed = super::update(
+            spec,
+            "kaplanelad/shellfirm",
+            "modules/features/agents/base/_packages/shellfirm/pin.json",
+            "modules/features/agents/base/_packages/shellfirm/Cargo.lock",
+            "modules/features/agents/base/_packages/command-guard/Cargo.toml",
+            "modules/features/agents/base/_packages/command-guard/Cargo.lock",
+            "shellfirm",
+            RunPolicy {
+                force: true,
+                ..RunPolicy::default()
+            },
+            &runner,
+            &mut transaction,
+        )
+        .expect("shellfirm update");
+        let lock = transaction
+            .read("modules/features/agents/base/_packages/shellfirm/Cargo.lock")
+            .expect("updated lock");
+        let pin = transaction
+            .read("modules/features/agents/base/_packages/shellfirm/pin.json")
+            .expect("updated pin");
+        let pin: serde_json::Value = serde_json::from_slice(&pin).expect("pin JSON");
+        assert_eq!(pin["version"], candidate_version);
+        assert_eq!(pin["srcHash"], source_hash());
+        assert_eq!(runner.check_calls.get(), 2);
+        let build_calls = runner.build_calls.get();
+        transaction.rollback().expect("rollback");
+
+        UpdateOutcome {
+            changed,
+            lock,
+            build_calls,
+        }
+    }
+
+    #[cfg(feature = "mutating")]
+    fn write_rule_catalog(path: &Path, rules: &[&str]) {
+        fs::create_dir(path).expect("catalog output directory");
+        fs::write(
+            path.join(RULE_CATALOG_FILE),
+            format!("{}\n", rules.join("\n")),
+        )
+        .expect("rule catalog");
+    }
+
+    #[cfg(feature = "mutating")]
+    #[test]
+    fn effective_rule_catalog_requires_nonempty_sorted_unique_ids() {
+        let root = TempDir::new().expect("catalog root");
+        let catalog = root.path().join("rules.txt");
+        fs::write(&catalog, "fs:overwrite_device\ngit:force_push\n").expect("catalog");
+        assert_eq!(
+            read_effective_rule_catalog("shellfirm", &catalog)
+                .expect("valid catalog")
+                .into_iter()
+                .collect::<Vec<_>>(),
+            ["fs:overwrite_device", "git:force_push"]
+        );
+        for invalid in ["", "git:z\ngit:a\n", "git:a\ngit:a\n", "git:bad id\n"] {
+            fs::write(&catalog, invalid).expect("invalid catalog");
+            assert!(read_effective_rule_catalog("shellfirm", &catalog).is_err());
+        }
+    }
+
+    #[cfg(feature = "mutating")]
+    fn update_repository(current_lock: &[u8]) -> TempDir {
+        let repository = TempDir::new().expect("temporary repository");
+        run_git(repository.path(), ["init", "-q"]);
+        run_git(
+            repository.path(),
+            ["config", "user.email", "test@example.invalid"],
+        );
+        run_git(
+            repository.path(),
+            ["config", "user.name", "update-pins shellfirm test"],
+        );
+        run_git(repository.path(), ["config", "commit.gpgsign", "false"]);
+        let package_directory = repository
+            .path()
+            .join("modules/features/agents/base/_packages/shellfirm");
+        let guard_directory = repository
+            .path()
+            .join("modules/features/agents/base/_packages/command-guard");
+        fs::create_dir_all(&package_directory).expect("package directory");
+        fs::create_dir_all(&guard_directory).expect("guard directory");
+        fs::write(
+            package_directory.join("pin.json"),
+            format!(
+                "{{\n  \"version\": \"9.9.9\",\n  \"srcHash\": \"{}\"\n}}\n",
+                source_hash()
+            ),
+        )
+        .expect("pin");
+        fs::write(package_directory.join("Cargo.lock"), current_lock).expect("lock");
+        fs::write(
+            guard_directory.join("Cargo.toml"),
+            "[package]\nname = \"agent-command-guard\"\nversion = \"0.1.0\"\n\n[dependencies]\nshellfirm = { version = \"=9.9.9\", default-features = false }\n",
+        )
+        .expect("guard manifest");
+        fs::write(guard_directory.join("Cargo.lock"), guard_lock("9.9.9")).expect("guard lock");
+        run_git(repository.path(), ["add", "."]);
+        run_git(repository.path(), ["commit", "-q", "-m", "initial"]);
+        repository
+    }
+
+    #[cfg(feature = "mutating")]
+    fn populate_candidate_source(path: &Path, version: &str, lock: &[u8]) {
+        fs::write(
+            path.join("Cargo.toml"),
+            format!("[package]\nname = \"shellfirm\"\nversion = \"{version}\"\n"),
+        )
+        .expect("candidate manifest");
+        fs::write(path.join("Cargo.lock"), lock).expect("candidate lock");
+    }
+
+    #[cfg(feature = "mutating")]
+    fn archive_fixture() -> Vec<u8> {
+        let encoder = GzEncoder::new(Vec::new(), Compression::default());
+        let mut archive = tar::Builder::new(encoder);
+        archive.finish().expect("finish tar");
+        archive
+            .into_inner()
+            .expect("tar encoder")
+            .finish()
+            .expect("finish gzip")
+    }
+
+    #[cfg(feature = "mutating")]
+    fn successful_output(stdout: Vec<u8>) -> CommandOutput {
+        CommandOutput {
+            status: Some(0),
+            stdout,
+            stderr: Vec::new(),
+        }
+    }
+
+    #[cfg(feature = "mutating")]
+    fn source_hash() -> &'static str {
+        "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    }
+
+    #[cfg(feature = "mutating")]
+    fn guard_lock(version: &str) -> String {
+        format!(
+            r#"version = 4
+
+[[package]]
+name = "agent-command-guard"
+version = "0.1.0"
+dependencies = [
+ "shellfirm",
+]
+
+[[package]]
+name = "shellfirm"
+version = "{version}"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+"#
+        )
+    }
+
+    #[cfg(feature = "mutating")]
+    fn run_git<I, S>(directory: &Path, arguments: I)
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<std::ffi::OsStr>,
+    {
+        let status = Command::new("git")
+            .args(arguments)
+            .current_dir(directory)
+            .status()
+            .expect("run git");
+        assert!(status.success(), "git fixture command failed");
+    }
+}

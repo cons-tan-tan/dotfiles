@@ -27,16 +27,22 @@
     name = "feature/common-home";
     includes = [
       features.home-base
-      features.packages
+      features.ci-tools
+      features.cli-tools
+      features.development-default
+      features.editors-default
+      features.media-ffmpeg
       features.shell-zsh
       features.source-control-git
       features.source-control-git-wt
       features.source-control-gh
       features.source-control-ghq-sync
+      features.terminal-default
       features.cloud-aws
       features.cloud-gcloud
       features.network-curl
       features.security-gpg
+      features.security-secrets
       features.security-ssh
       features.trash
     ];

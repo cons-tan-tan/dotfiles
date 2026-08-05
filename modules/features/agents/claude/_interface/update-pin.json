@@ -1,0 +1,7 @@
+{
+  "name": "claude-code-settings-schema",
+  "kind": {
+    "type": "url-hash",
+    "pin": "modules/features/agents/claude/_pins/settings-schema.json"
+  }
+}

@@ -11,8 +11,8 @@ let
     after = [ "writeBoundary" ];
     name = "fixture";
     root = "/mnt/c/Users/test";
-    resources = [
-      {
+    resources = {
+      fixture = {
         directories = [ ".config/tool" ];
         files = [
           {
@@ -22,8 +22,8 @@ let
           }
         ];
         trees = [ ];
-      }
-    ];
+      };
+    };
   };
   activationData = builtins.unsafeDiscardStringContext activation.data;
   packageExe = builtins.unsafeDiscardStringContext (lib.getExe deploy.package);

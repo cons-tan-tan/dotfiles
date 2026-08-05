@@ -14,9 +14,8 @@ let
         default = { };
       };
     }
-    (repoRoot + "/modules/classes/agent-command-policy.nix")
-    (repoRoot + "/modules/classes/windows.nix")
-    (repoRoot + "/modules/quirks/cli-tools.nix")
+    (repoRoot + "/modules/features/windows/class.nix")
+    (repoRoot + "/modules/features/cli-tools/quirk.nix")
   ];
 
   evalTest =
@@ -73,7 +72,6 @@ let
               username = windowsUser;
               homedir = "/mnt/c/Users/${windowsUser}";
             };
-            nhCleanupOwner = "switch-app";
           };
         };
       };
@@ -107,7 +105,6 @@ let
             username = windowsUser;
             homedir = "/mnt/c/Users/${windowsUser}";
           };
-          nhCleanupOwner = "switch-app";
         };
       };
     };
@@ -120,16 +117,17 @@ let
         ...
       }:
       let
-        overlayPlan = import (repoRoot + "/nix/lib/mk-overlays.nix") { inherit inputs; } "x86_64-linux";
+        overlayPlan = (import (repoRoot + "/modules/features/nixpkgs/_interface")).mkOverlayPlan {
+          inherit inputs;
+          system = "x86_64-linux";
+        };
         claudePkgs = config.flake.homeConfigurations.claude.pkgs;
-        claudeSettingsLib = import (repoRoot + "/modules/features/agents/_lib/settings/claude.nix") {
+        claudeSettingsLib = import (repoRoot + "/modules/features/agents/claude/_lib/settings.nix") {
           inherit lib;
         };
-        claudeSettingsValidator =
-          import (repoRoot + "/modules/features/agents/_lib/settings/claude-validator.nix")
-            {
-              pkgs = claudePkgs;
-            };
+        claudeSettingsValidator = import (
+          repoRoot + "/modules/features/agents/claude/_lib/settings-validator.nix"
+        ) { pkgs = claudePkgs; };
         expectedClaudeSettingsRaw = (claudePkgs.formats.json { }).generate "claude-windows-settings.json" (
           claudeSettingsLib.mkSettings { forWindows = true; }
         );
@@ -196,11 +194,11 @@ let
           baseHome
           (repoRoot + "/modules/features/platform/context.nix")
           (windowsRoot + "/base.nix")
-          (repoRoot + "/modules/features/agents/base.nix")
-          (repoRoot + "/modules/features/agents/herdr.nix")
-          (repoRoot + "/modules/features/agents/claude.nix")
+          (repoRoot + "/modules/features/agents/base/default.nix")
+          (repoRoot + "/modules/features/agents/herdr/default.nix")
+          (repoRoot + "/modules/features/agents/claude/default.nix")
           (repoRoot + "/modules/features/source-control/git.nix")
-          (repoRoot + "/modules/features/security/gpg.nix")
+          (repoRoot + "/modules/features/security/gpg/default.nix")
         ];
         den.default.homeManager.nixpkgs.overlays = overlayPlan.overlays;
         den.homes.x86_64-linux = {
@@ -316,7 +314,6 @@ let
             environment = "linux";
             source = "/source/linux";
             standalone = true;
-            nhCleanupOwner = "home-manager";
           };
           windows.dotfiles.windows.deployments.must-not-leak.directories = [ ".config/leaked" ];
         };
@@ -392,7 +389,6 @@ let
                   source = "/source/broken";
                   standalone = true;
                   windows.enable = true;
-                  nhCleanupOwner = "switch-app";
                 };
               };
             };
@@ -433,7 +429,6 @@ let
                     username = "alice";
                     homedir = "/mnt/c/Users/bob";
                   };
-                  nhCleanupOwner = "switch-app";
                 };
               };
             };
@@ -474,7 +469,6 @@ let
                     username = "alice";
                     homedir = "/mnt/c/Users/alice";
                   };
-                  nhCleanupOwner = "home-manager";
                 };
               };
             };
@@ -513,7 +507,6 @@ let
                   username = "alice";
                   homedir = "/mnt/c/Users/alice";
                 };
-                nhCleanupOwner = "home-manager";
               };
             };
             expr = builtins.deepSeq config.flake.homeConfigurations.broken.activationPackage true;
@@ -546,7 +539,6 @@ let
                   username = "";
                   homedir = "/mnt/c/Users/";
                 };
-                nhCleanupOwner = "switch-app";
               };
             };
             expr = builtins.deepSeq config.flake.homeConfigurations.broken.activationPackage true;
@@ -574,7 +566,6 @@ let
                 environment = "linux";
                 source = "";
                 standalone = true;
-                nhCleanupOwner = "home-manager";
               };
             };
             expr = builtins.deepSeq config.flake.homeConfigurations.broken.activationPackage true;

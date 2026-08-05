@@ -22,7 +22,7 @@
     nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
     nixpkgs-lib.follows = "nixpkgs";
     supported-systems = {
-      url = "path:./nix/systems";
+      url = "path:./modules/flake/_data/systems";
       flake = false;
     };
   };

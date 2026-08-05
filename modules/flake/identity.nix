@@ -1,5 +1,5 @@
 let
-  cache = import ../../nix/lib/cache-settings.nix;
+  cache = (import ../features/platform/nix-settings/_interface).cache;
 in
 {
   flake-file.description = "constantan's declarative Darwin, NixOS-WSL, and Home Manager dotfiles";

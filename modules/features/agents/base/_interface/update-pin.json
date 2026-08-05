@@ -1,0 +1,12 @@
+{
+  "name": "shellfirm",
+  "kind": {
+    "type": "shellfirm",
+    "repository": "kaplanelad/shellfirm",
+    "pin": "modules/features/agents/base/_packages/shellfirm/pin.json",
+    "lock": "modules/features/agents/base/_packages/shellfirm/Cargo.lock",
+    "guardManifest": "modules/features/agents/base/_packages/command-guard/Cargo.toml",
+    "guardLock": "modules/features/agents/base/_packages/command-guard/Cargo.lock",
+    "package": "shellfirm"
+  }
+}

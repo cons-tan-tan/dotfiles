@@ -8,7 +8,12 @@
       features.platform-darwin-fonts
       features.platform-darwin-touch-id
       features.platform-homebrew
-      features.platform-darwin-packages
+      features.input-methods-azookey
+      features.media-aqua-voice
+      features.media-fiji
+      features.network-tailscale
+      features.platform-darwin-scroll-reverser
+      features.productivity-raycast
       features.platform-ghostty
       features.platform-sleepctl
       features.platform-nh

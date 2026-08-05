@@ -1,0 +1,10 @@
+{
+  "name": "herdr",
+  "kind": {
+    "type": "release",
+    "repository": "ogulcancelik/herdr",
+    "pin": "modules/features/agents/herdr/_packages/herdr/pin.json",
+    "assetNaming": "name-field",
+    "sourceHash": true
+  }
+}

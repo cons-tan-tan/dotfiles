@@ -5,8 +5,7 @@
     includes = [
       features.windows-base
       features.windows-powershell
-      features.windows-static
-      features.windows-winget
+      features.cli-tools-winget
     ];
   };
 }

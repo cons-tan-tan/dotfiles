@@ -1,0 +1,126 @@
+{
+  anthropic-skills,
+  mkNodeModules,
+  pkgs,
+  pyproject-build-systems,
+  pyproject-nix,
+  uv2nix,
+}:
+
+let
+  contract = import ./contract.nix;
+  runnerFactory = import ./runner.nix { inherit pkgs; };
+  validation = import ./validation.nix {
+    inherit
+      contract
+      pkgs
+      runnerFactory
+      ;
+    productionRunner = runner;
+  };
+  pptxSkillDir = "${anthropic-skills}/skills/pptx";
+
+  pythonWorkspace = uv2nix.lib.workspace.loadWorkspace {
+    workspaceRoot = contract.pythonDir;
+  };
+
+  pythonSet =
+    (pkgs.callPackage pyproject-nix.build.packages {
+      # onnxruntime 1.20.1 in uv.lock only provides wheels through CPython 3.13.
+      python = pkgs.python313;
+    }).overrideScope
+      (
+        pkgs.lib.composeManyExtensions [
+          pyproject-build-systems.overlays.default
+          (pythonWorkspace.mkPyprojectOverlay {
+            sourcePreference = "wheel";
+          })
+        ]
+      );
+
+  pythonEnv = pythonSet.mkVirtualEnv "pptx-python-env" pythonWorkspace.deps.default;
+
+  pythonWrapper = pkgs.runCommandLocal "pptx-python-wrapper" { } ''
+    mkdir -p "$out/bin"
+
+    cat > "$out/bin/python" <<'EOF'
+    #!${pkgs.runtimeShell}
+    if [ "$#" -gt 0 ]; then
+      script="$1"
+      case "$script" in
+        scripts/*)
+          if [ ! -e "$script" ]; then
+            shift
+            exec "${pythonEnv}/bin/python" "${pptxSkillDir}/$script" "$@"
+          fi
+          ;;
+      esac
+    fi
+
+    exec "${pythonEnv}/bin/python" "$@"
+    EOF
+
+    chmod +x "$out/bin/python"
+    ln -s python "$out/bin/python3"
+  '';
+
+  pptxNodeModules = mkNodeModules {
+    name = "pptx";
+    nodeDir = contract.nodeDir;
+  };
+
+  nodeWrapper = pkgs.runCommandLocal "pptx-node-wrapper" { } ''
+    mkdir -p "$out/bin"
+
+    cat > "$out/bin/node" <<'EOF'
+    #!${pkgs.runtimeShell}
+    export NODE_PATH="${pptxNodeModules}/node_modules''${NODE_PATH:+:$NODE_PATH}"
+    exec ${pkgs.nodejs}/bin/node "$@"
+    EOF
+
+    chmod +x "$out/bin/node"
+
+    for bin in npm npx corepack; do
+      if [ -x "${pkgs.nodejs}/bin/$bin" ]; then
+        ln -s "${pkgs.nodejs}/bin/$bin" "$out/bin/$bin"
+      fi
+    done
+  '';
+
+  sofficeDarwin = pkgs.writeShellApplication {
+    name = "soffice";
+    runtimeInputs = [ pkgs.libreoffice-bin ];
+    text = ''
+      exec "${pkgs.libreoffice-bin}/Applications/LibreOffice.app/Contents/MacOS/soffice" "$@"
+    '';
+  };
+
+  pptxTools = pkgs.buildEnv {
+    name = "pptx-tools";
+    paths =
+      with pkgs;
+      [
+        nodeWrapper
+        pnpm
+        poppler-utils
+        pythonWrapper
+      ]
+      ++ lib.optionals stdenv.isLinux [
+        gcc
+        libreoffice
+      ]
+      ++ lib.optionals stdenv.isDarwin [
+        sofficeDarwin
+      ];
+  };
+
+  runner = runnerFactory { toolPath = pptxTools; };
+in
+{
+  app = {
+    type = "app";
+    meta.description = "Run commands in the repository-managed PPTX conversion toolchain";
+    program = pkgs.lib.getExe runner.package;
+  };
+  inherit validation;
+}

@@ -5,7 +5,7 @@
   repoRoot ? ../..,
 }:
 let
-  configurationTargets = import (repoRoot + "/modules/entities/_lib/configuration-targets.nix") {
+  configurationTargets = import (repoRoot + "/modules/flake/_interface/configuration-targets.nix") {
     inherit lib;
   };
   targetWindows = {

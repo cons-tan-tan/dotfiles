@@ -27,7 +27,7 @@ GPG秘密鍵が未導入のデバイスでは`apply-secrets`は警告だけ出�
 ## 新しい secret の追加手順
 
 1. `sops edit secrets/<name>`で作成(`.sops.yaml`により自動暗号化される)
-2. `nix/lib/apps/mk-common-apps.nix`の`secretsManifest`にエントリを追加:
+2. `modules/features/security/secrets/_data/manifest.nix`にエントリを追加:
 
    ```nix
    { src = "secrets/<name>"; dst = "<home-relative-path>"; mode = "600"; dirMode = "700"; }

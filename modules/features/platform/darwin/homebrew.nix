@@ -10,15 +10,7 @@ _: {
         extraFlags = [ "--cleanup" ];
       };
       brews = [ ];
-      # Simple .app bundles stay in the packages feature's brew-nix overlay.
-      # Installer packages, privileged helpers, and input methods remain real
-      # Homebrew casks.
-      casks = [
-        "azookey"
-        "fiji"
-        "scroll-reverser"
-        "tailscale-app"
-      ];
+      casks = [ ];
       masApps = { };
     };
   };

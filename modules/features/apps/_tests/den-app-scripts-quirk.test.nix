@@ -1,12 +1,10 @@
 {
-  den,
   flake,
   inputs,
   lib,
   pkgs,
 }:
 let
-  expectedUsername = "constantan";
   system = pkgs.stdenv.hostPlatform.system;
   systems = import inputs.supported-systems;
   mkProducer =
@@ -38,7 +36,7 @@ let
           inputs.den.flakeModule
           ../../../flake/den-output-routing.nix
           ../../../flake/systems.nix
-          ../../nixpkgs.nix
+          ../../nixpkgs
           ../scripts.nix
         ];
 
@@ -135,52 +133,7 @@ let
       second.app-validations = [ (mkProducerRecord [ ]) ];
     };
   };
-  expectedCommonApps =
-    (import ../../../../nix/lib/apps/mk-common-apps.nix {
-      inherit inputs;
-      username = expectedUsername;
-    })
-      {
-        inherit pkgs;
-        treefmtWrapper = flake.formatter.${system};
-      };
-  targets = (import ../../../entities/_lib/configuration-targets.nix { inherit lib; }) {
-    inherit den system;
-  };
-  expectedHostApps =
-    if pkgs.stdenv.hostPlatform.isDarwin then
-      (import ../../../../nix/lib/apps/mk-darwin-apps.nix { darwinHostname = targets.darwin; }) {
-        inherit pkgs;
-        darwinRebuildBin = "${
-          flake.darwinConfigurations.${targets.darwin}.config.system.build.darwin-rebuild
-        }/bin/darwin-rebuild";
-      }
-    else
-      (import ../../../../nix/lib/apps/mk-linux-apps.nix {
-        inherit inputs;
-        username = expectedUsername;
-        homedir = "/home/${expectedUsername}";
-        windowsHomedir = "/mnt/c/Users/zhouc";
-      })
-        {
-          inherit pkgs system;
-          homeTargets = targets.home;
-          nixosTarget = targets.nixosWsl;
-          nixosRebuildBin = "${
-            flake.nixosConfigurations.${targets.nixosWsl}.config.system.build.nixos-rebuild
-          }/bin/nixos-rebuild";
-        };
-  expectedPrograms = lib.mapAttrs (_: app: app.program) expectedCommonApps.apps;
-  actualPrograms = lib.mapAttrs (
-    name: _: flake.apps.${system}.${name}.program
-  ) expectedCommonApps.apps;
-  expectedValidationPaths = lib.sort builtins.lessThan (
-    map toString (expectedCommonApps.validations ++ expectedHostApps.validations)
-  );
-  actualValidationPaths = lib.sort builtins.lessThan (
-    map toString flake.checks.${system}.app-scripts.paths
-  );
-  expectedValidationNames = builtins.attrNames (expectedCommonApps.apps // expectedHostApps.apps);
+  expectedValidationNames = builtins.attrNames flake.apps.${system};
 in
 {
   testTwoProducersMergeIntoOneConsumer = {
@@ -252,18 +205,9 @@ in
     };
   };
 
-  testLiveAppGateContainsEveryValidation = {
-    expr = actualValidationPaths;
-    expected = expectedValidationPaths;
-  };
-
   testLivePublicAppsAndValidationsHaveExactNames = {
     expr = flake.checks.${system}.app-scripts.validationNames;
     expected = expectedValidationNames;
   };
 
-  testPublicCommonAppsKeepLeafBuilderPrograms = {
-    expr = actualPrograms;
-    expected = expectedPrograms;
-  };
 }

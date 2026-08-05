@@ -19,6 +19,8 @@
         gitLib = import ./_lib/git.nix { inherit lib pkgs; };
       in
       {
+        home.packages = [ pkgs.git-cliff ];
+
         programs.git = {
           enable = true;
           signing = {

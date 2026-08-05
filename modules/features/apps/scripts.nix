@@ -6,7 +6,7 @@
 }:
 let
   mergeValidationProducers = import ./_lib/merge-validation-producers.nix { inherit lib; };
-  ciCheck = import ../../../nix/lib/ci-check.nix { inherit lib; };
+  ciCheck = import ../ci/_interface/check.nix { inherit lib; };
 in
 {
   options.perSystem = flake-parts-lib.mkPerSystemOption {

@@ -6,6 +6,7 @@
 }:
 let
   profileAssertion = import ./_lib/profile-assertion.nix;
+  inherit (import ../../features/nixpkgs/_interface) mkOverlayPlan;
 in
 {
   den.aspects.environments.darwin = {
@@ -23,7 +24,10 @@ in
     darwin =
       { host, ... }:
       let
-        overlayPlan = import ../../../nix/lib/mk-overlays.nix { inherit inputs; } host.system;
+        overlayPlan = mkOverlayPlan {
+          inherit inputs;
+          system = host.system;
+        };
       in
       {
         assertions = [
@@ -49,7 +53,6 @@ in
         dotfiles.platform = {
           inherit (host.dotfiles) environment source;
           standalone = false;
-          nhCleanupOwner = "none";
         };
       };
   };

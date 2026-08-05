@@ -6,9 +6,9 @@
   ...
 }:
 let
-  ciCheck = import ../../../nix/lib/ci-check.nix { inherit lib; };
-  configurationTargets = import ../../entities/_lib/configuration-targets.nix { inherit lib; };
-  composeUniqueChecks = import ../../../nix/tests/compose.nix { inherit lib; };
+  ciCheck = import ../ci/_interface/check.nix { inherit lib; };
+  configurationTargets = import ../../flake/_interface/configuration-targets.nix { inherit lib; };
+  composeUniqueChecks = import ./_lib/compose.nix { inherit lib; };
   externallyOwnedCheckNames = [
     "app-scripts"
     "check-flake-file"
@@ -54,13 +54,13 @@ in
       };
       baseChecks = lib.optionalAttrs (system == "x86_64-linux") {
         den-capability-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
-          import ../../../nix/tests/eval/den-suite-harness.nix {
+          import ./_lib/eval/den-suite-harness.nix {
             inherit inputs lib pkgs;
             fixtureRoot = ../../..;
           }
         );
         den-schema-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
-          import ../../../nix/tests/eval/den-suite-harness.nix {
+          import ./_lib/eval/den-suite-harness.nix {
             inherit inputs lib pkgs;
             checkName = "den-schema-tests";
             fixturePath = ../../_tests/den-schema.suite.nix;
@@ -69,7 +69,7 @@ in
           }
         );
         den-entity-topology-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
-          import ../../../nix/checks/den-entity-topology.nix {
+          import ../../entities/_tests/topology-check.nix {
             inherit
               den
               inputs
@@ -80,28 +80,36 @@ in
           }
         );
         den-unfree-capability-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
-          import ../../../nix/checks/den-unfree-capability.nix {
+          import ../../_tests/den-unfree-capability.check.nix {
             inherit inputs lib pkgs;
           }
         );
         agent-den-dataflow-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
-          import ../../../nix/tests/eval/den-suite-harness.nix {
+          import ./_lib/eval/den-suite-harness.nix {
             inherit inputs lib pkgs;
             checkName = "agent-den-dataflow-tests";
             fixturePath = ../agents/_tests/dataflow.suite.nix;
             fixtureRoot = ../../..;
           }
         );
+        agent-skills-dataflow-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
+          import ./_lib/eval/den-suite-harness.nix {
+            inherit inputs lib pkgs;
+            checkName = "agent-skills-dataflow-tests";
+            fixturePath = ../agents/skills/_tests/dataflow.suite.nix;
+            fixtureRoot = ../../..;
+          }
+        );
         cli-tools-dataflow-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
-          import ../../../nix/tests/eval/den-suite-harness.nix {
+          import ./_lib/eval/den-suite-harness.nix {
             inherit inputs lib pkgs;
             checkName = "cli-tools-dataflow-tests";
-            fixturePath = ../packages/_tests/dataflow.suite.nix;
+            fixturePath = ../cli-tools/_tests/dataflow.suite.nix;
             fixtureRoot = ../../..;
           }
         );
         home-feature-contract = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
-          import ../../../nix/checks/home-feature-contract.nix {
+          import ./_lib/home-contract.nix {
             inherit
               entityContexts
               inputs
@@ -109,10 +117,11 @@ in
               pkgs
               ;
             flake = config.flake;
+            repoRoot = ../../..;
           }
         );
         platform-feature-contract = ciCheck.annotate (ciCheck.targets.linux "configurations") (
-          import ../../../nix/checks/platform-feature-contract.nix {
+          import ../platform/_tests/feature-contract.nix {
             inherit
               entityContexts
               lib
@@ -123,7 +132,7 @@ in
         );
         windows-class-contract =
           let
-            outputContract = import ../../../nix/checks/windows-class-contract.nix {
+            outputContract = import ../windows/_tests/class-contract.nix {
               inherit
                 entityContexts
                 inputs
@@ -132,7 +141,7 @@ in
                 ;
               flake = config.flake;
             };
-            dataflowContract = import ../../../nix/tests/eval/den-suite-harness.nix {
+            dataflowContract = import ./_lib/eval/den-suite-harness.nix {
               inherit inputs lib pkgs;
               checkName = "windows-class-dataflow-tests";
               fixturePath = ../windows/_tests/dataflow.suite.nix;
@@ -152,7 +161,7 @@ in
             ]
           );
         flake-public-api-contract = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
-          import ../../../nix/checks/flake-public-api-contract.nix {
+          import ../../flake/_tests/public-api-contract.nix {
             inherit lib pkgs;
             systems = config.systems;
             inherit (config.flake)
@@ -166,10 +175,11 @@ in
               packages
               ;
             rootPackagesPresent = config.flake ? packages;
+            rootHydraCiPresent = config.flake ? hydraJobs && config.flake.hydraJobs ? ci;
           }
         );
       };
-      testChecks = import ../../../nix/tests {
+      testChecks = import ./_lib/repository-tests.nix {
         inherit
           ciCheck
           den
@@ -184,6 +194,7 @@ in
         homeManager = inputs.home-manager;
         llmAgents = inputs.llm-agents;
         publicApps = config.flake.apps.${system};
+        repoRoot = ../../..;
         reservedCheckNames = externallyOwnedCheckNames ++ builtins.attrNames baseChecks;
       };
     in

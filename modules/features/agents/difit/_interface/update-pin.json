@@ -1,0 +1,32 @@
+{
+  "name": "difit",
+  "kind": {
+    "type": "published-node-package",
+    "pin": "modules/features/agents/difit/_packages/difit/pin.json",
+    "artifact": {
+      "type": "npm-registry-tarball",
+      "package": "difit",
+      "sourceHashField": "srcHash"
+    },
+    "dependencies": {
+      "type": "upstream-pnpm",
+      "source": {
+        "repository": "yoshiko-pg/difit",
+        "input": "difit-src",
+        "authority": {
+          "sourcePath": "modules/features/agents/difit/default.nix"
+        }
+      },
+      "lockPath": "pnpm-lock.yaml",
+      "workspacePath": "pnpm-workspace.yaml",
+      "workspace": "difit",
+      "pnpmMajor": 11,
+      "scope": "production"
+    },
+    "build": {
+      "packageAttr": "difit",
+      "pinOverride": "difitPin",
+      "dependencyHashField": "pnpmDepsHash"
+    }
+  }
+}

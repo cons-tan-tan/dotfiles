@@ -6,6 +6,7 @@
 }:
 let
   profileAssertion = import ./_lib/profile-assertion.nix;
+  inherit (import ../../features/nixpkgs/_interface) mkOverlayPlan;
 in
 {
   den.aspects.environments.linux = {
@@ -22,7 +23,10 @@ in
     homeManager =
       { home, ... }:
       let
-        overlayPlan = import ../../../nix/lib/mk-overlays.nix { inherit inputs; } home.system;
+        overlayPlan = mkOverlayPlan {
+          inherit inputs;
+          system = home.system;
+        };
       in
       {
         assertions = [
@@ -33,7 +37,6 @@ in
         ];
         dotfiles.platform = {
           inherit (home.dotfiles) environment source standalone;
-          nhCleanupOwner = "home-manager";
         };
         nixpkgs = {
           overlays = overlayPlan.overlays;

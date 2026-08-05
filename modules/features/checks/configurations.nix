@@ -7,8 +7,8 @@
 }:
 let
   darwinSystem = "aarch64-darwin";
-  configurationTargets = import ../../entities/_lib/configuration-targets.nix { inherit lib; };
-  ciCheck = import ../../../nix/lib/ci-check.nix { inherit lib; };
+  configurationTargets = import ../../flake/_interface/configuration-targets.nix { inherit lib; };
+  ciCheck = import ../ci/_interface/check.nix { inherit lib; };
 in
 {
   den.aspects.configuration-checks.checks =
@@ -43,11 +43,11 @@ in
         if lib.hasSuffix "-linux" system then nixosConfigurations.${targets.nixosWsl} else null;
       homeConfiguration = environment: homeConfigurations.${targets.home.${environment}};
       hcomProfile =
-        homeConfiguration: import ../agents/_tests/hcom-profile.factory.nix { inherit homeConfiguration; };
+        homeConfiguration: import ../agents/hcom/_tests/profile-check.nix { inherit homeConfiguration; };
     in
     lib.optionalAttrs (system == "x86_64-linux") {
       configuration-ownership-contract = ciCheck.annotate (ciCheck.targets.linux "configurations") (
-        import ../../../nix/checks/configuration-ownership-contract.nix {
+        import ./_tests/configuration-ownership-contract.nix {
           inherit
             darwinConfigurations
             entityContexts
@@ -68,7 +68,7 @@ in
               { home-manager.users.${username}.dotfiles.hcom.enable = true; }
             ];
           }).system;
-        darwin-nh-cleanup-contract = import ../../../nix/checks/darwin-nh-cleanup-contract.nix {
+        darwin-nh-cleanup-contract = import ../platform/nh/_tests/darwin-cleanup-contract.nix {
           inherit lib pkgs username;
           config = darwinConfigurations.${targets.darwin}.config;
         };
@@ -78,7 +78,7 @@ in
       lib.optionalAttrs (lib.hasSuffix "-linux" system) {
         nixos-wsl-system = nixosWslConfiguration.config.system.build.toplevel;
         nixos-wsl-tarball-builder = nixosWslConfiguration.config.system.build.tarballBuilder;
-        nixos-wsl-contract = import ../../../nix/checks/nixos-wsl-contract.nix {
+        nixos-wsl-contract = import ../platform/wsl/_tests/nixos-contract.nix {
           inherit
             lib
             pkgs
@@ -87,7 +87,7 @@ in
           config = nixosWslConfiguration.config;
           sourcePath = toString inputs.self.outPath;
         };
-        claude-userprofile-contract = import ../../../nix/checks/claude-userprofile-contract.nix {
+        claude-userprofile-contract = import ../agents/claude/_tests/userprofile-contract.nix {
           inherit lib pkgs;
           linuxSettings = (homeConfiguration "linux").config.home.file.".claude/settings.json".source;
           wslSettings = (homeConfiguration "wsl").config.home.file.".claude/settings.json".source;

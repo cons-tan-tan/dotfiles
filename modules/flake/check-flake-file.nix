@@ -4,7 +4,7 @@
   ...
 }:
 let
-  ciCheck = import ../../nix/lib/ci-check.nix { inherit lib; };
+  ciCheck = import ../features/ci/_interface/check.nix { inherit lib; };
 in
 {
   perSystem =

@@ -42,14 +42,6 @@
                   };
                 };
               };
-              nhCleanupOwner = lib.mkOption {
-                type = lib.types.enum [
-                  "home-manager"
-                  "nixos"
-                  "none"
-                  "switch-app"
-                ];
-              };
             };
           };
         };
