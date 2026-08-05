@@ -8,7 +8,19 @@
 let
   ciCheck = import ../ci/_interface/check.nix { inherit lib; };
   configurationTargets = import ../../flake/_interface/configuration-targets.nix { inherit lib; };
-  composeUniqueChecks = import ./_lib/compose.nix { inherit lib; };
+  composeUniqueChecks = import ./_lib/compose.nix { inherit ciCheck lib; };
+  modulesRoot = ../..;
+  testDiscovery = import ./_lib/test-discovery.nix { inherit lib; };
+  evalInventory = import ./_lib/eval/inventory.nix {
+    inherit modulesRoot testDiscovery;
+  };
+  repositoryEvaluationCompleteCheckNames = [
+    "den-entity-topology-tests"
+    "den-unfree-capability-tests"
+    "flake-public-api-contract"
+    "home-feature-contract"
+    "platform-feature-contract"
+  ];
   externallyOwnedCheckNames = [
     "app-scripts"
     "check-flake-file"
@@ -21,6 +33,7 @@ let
     "home-linux-hcom-profile"
     "home-wsl"
     "home-wsl-hcom-profile"
+    "hestia-job-contract"
     "nixos-wsl-contract"
     "nixos-wsl-system"
     "nixos-wsl-tarball-builder"
@@ -32,6 +45,14 @@ in
     url = "github:RustSec/advisory-db";
     flake = false;
   };
+
+  perSystem =
+    { system, ... }:
+    {
+      dotfiles.ci.evaluationCompleteCheckNames =
+        evalInventory.evaluationCompleteCheckNames
+        ++ lib.optionals (system == "x86_64-linux") repositoryEvaluationCompleteCheckNames;
+    };
 
   den.aspects.repository-checks.checks =
     { pkgs, system, ... }:
@@ -68,7 +89,7 @@ in
             schemaModule = ../../schema/entities.nix;
           }
         );
-        den-entity-topology-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
+        den-entity-topology-tests = ciCheck.evaluationComplete (
           import ../../entities/_tests/topology-check.nix {
             inherit
               den
@@ -79,7 +100,7 @@ in
             flake = config.flake;
           }
         );
-        den-unfree-capability-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
+        den-unfree-capability-tests = ciCheck.evaluationComplete (
           import ../../_tests/den-unfree-capability.check.nix {
             inherit inputs lib pkgs;
           }
@@ -108,7 +129,7 @@ in
             fixtureRoot = ../../..;
           }
         );
-        home-feature-contract = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
+        home-feature-contract = ciCheck.evaluationComplete (
           import ./_lib/home-contract.nix {
             inherit
               entityContexts
@@ -120,7 +141,7 @@ in
             repoRoot = ../../..;
           }
         );
-        platform-feature-contract = ciCheck.annotate (ciCheck.targets.linux "configurations") (
+        platform-feature-contract = ciCheck.evaluationComplete (
           import ../platform/_tests/feature-contract.nix {
             inherit
               entityContexts
@@ -160,7 +181,7 @@ in
               }
             ]
           );
-        flake-public-api-contract = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
+        flake-public-api-contract = ciCheck.evaluationComplete (
           import ../../flake/_tests/public-api-contract.nix {
             inherit lib pkgs;
             systems = config.systems;

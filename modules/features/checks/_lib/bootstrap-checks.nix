@@ -7,11 +7,8 @@
   testDiscovery,
 }:
 let
-  paths = [
-    ../_tests/test-discovery.test.nix
-    ../_tests/dendritic-test-discovery.test.nix
-    ../_tests/dendritic-module-boundary.test.nix
-  ];
+  bootstrap = import ./bootstrap-paths.nix;
+  paths = bootstrap.all;
 
   harness = import ./eval/harness.nix {
     inherit
@@ -24,7 +21,7 @@ let
       ;
   };
   positiveChecks = harness.positiveChecks paths;
-  discoveryCheckName = testDiscovery.checkName ../_tests/test-discovery.test.nix;
+  discoveryCheckName = testDiscovery.checkName bootstrap.discovery;
   diagnosticContract = harness.isolatedFailureCheck {
     name = "test-discovery-diagnostics";
     path = ./eval/test-discovery-diagnostics.failure.fixture.nix;

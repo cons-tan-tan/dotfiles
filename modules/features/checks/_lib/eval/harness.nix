@@ -252,9 +252,7 @@ in
       entries = map mkEvalCheck files;
       uniqueness = validateUniqueCheckNames "positive eval suites" (map (entry: entry.name) entries);
     in
-    builtins.seq uniqueness (
-      ciCheck.annotateSet (ciCheck.targets.both "eval-tests") (lib.listToAttrs entries)
-    );
+    builtins.seq uniqueness (ciCheck.evaluationCompleteSet (lib.listToAttrs entries));
   failureChecks =
     files:
     let

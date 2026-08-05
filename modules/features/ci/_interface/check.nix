@@ -87,15 +87,62 @@ let
     else
       true;
 
+  evaluationComplete =
+    check:
+    let
+      oldMeta = check.meta or { };
+      oldDotfilesMeta = oldMeta.dotfiles or { };
+      oldCiMeta = oldDotfilesMeta.ci or { };
+    in
+    if
+      (oldMeta ? hestia && oldMeta.hestia ? group) || oldDotfilesMeta ? hestia || oldCiMeta ? execution
+    then
+      throw "CI check already has CI or canonical Hestia metadata"
+    else
+      check
+      // {
+        meta = oldMeta // {
+          dotfiles = oldDotfilesMeta // {
+            ci = oldCiMeta // {
+              execution = "evaluation-complete";
+            };
+          };
+        };
+      };
+
+  evaluationCompleteSet = lib.mapAttrs (_: evaluationComplete);
+
+  getExecution =
+    check:
+    let
+      oldMeta = check.meta or { };
+      oldDotfilesMeta = oldMeta.dotfiles or { };
+      oldCiMeta = oldDotfilesMeta.ci or { };
+    in
+    oldCiMeta.execution or null;
+
+  isEvaluationComplete =
+    check:
+    let
+      oldMeta = check.meta or { };
+      oldDotfilesMeta = oldMeta.dotfiles or { };
+    in
+    getExecution check == "evaluation-complete"
+    && !(oldDotfilesMeta ? hestia)
+    && !(oldMeta ? hestia && oldMeta.hestia ? group);
+
   annotate =
     checkTargets: check:
     let
       oldMeta = check.meta or { };
       oldDotfilesMeta = oldMeta.dotfiles or { };
+      oldCiMeta = oldDotfilesMeta.ci or { };
       validation = validateTargets checkTargets;
     in
-    if oldDotfilesMeta ? hestia then
-      throw "CI check already has dotfiles Hestia metadata"
+    if
+      (oldMeta ? hestia && oldMeta.hestia ? group) || oldDotfilesMeta ? hestia || oldCiMeta ? execution
+    then
+      throw "CI check already has CI or canonical Hestia metadata"
     else
       builtins.seq validation (
         check
@@ -110,17 +157,30 @@ let
 
   annotateSet = checkTargets: lib.mapAttrs (_: annotate checkTargets);
 
+  isClassified =
+    check:
+    let
+      execution = getExecution check;
+      checkTargets = getTargets check;
+    in
+    (execution == "evaluation-complete" && checkTargets == null)
+    || (execution == null && checkTargets != null);
+
   getTargets =
     check:
     let
       oldMeta = check.meta or { };
+      oldDotfilesMeta = oldMeta.dotfiles or { };
+      oldCiMeta = oldDotfilesMeta.ci or { };
     in
     if oldMeta ? hestia && oldMeta.hestia ? group then
       throw "canonical checks must not define meta.hestia.group"
-    else if !(oldMeta ? dotfiles && oldMeta.dotfiles ? hestia && oldMeta.dotfiles.hestia ? targets) then
+    else if oldDotfilesMeta ? hestia && oldCiMeta ? execution then
+      throw "CI check has conflicting execution metadata"
+    else if !(oldDotfilesMeta ? hestia && oldDotfilesMeta.hestia ? targets) then
       null
     else
-      oldMeta.dotfiles.hestia.targets;
+      oldDotfilesMeta.hestia.targets;
 
   mkHestiaChecks =
     {
@@ -191,6 +251,92 @@ let
     checksBySystem:
     let
       configuredSystems = builtins.attrNames checksBySystem;
+    in
+    if configuredSystems != systemNames then
+      throw "Hestia jobs must provide every build system: ${builtins.toJSON systemNames}"
+    else
+      lib.mapAttrs (system: checks: mkHestiaChecks { inherit checks system; }) checksBySystem;
+
+  selectBuildChecks =
+    {
+      checks,
+      evaluationCompleteCheckNames,
+      system,
+    }:
+    let
+      unknown = builtins.filter (name: !(builtins.hasAttr name checks)) evaluationCompleteCheckNames;
+    in
+    if unknown != [ ] then
+      throw "evaluation-complete CI checks are missing for ${system}: ${builtins.toJSON unknown}"
+    else
+      removeAttrs checks evaluationCompleteCheckNames;
+
+  validateEvaluationCompleteChecks =
+    {
+      checksBySystem,
+      evaluationCompleteCheckNamesBySystem,
+      ignoredCheckNamesBySystem ? { },
+    }:
+    let
+      configuredSystems = builtins.attrNames checksBySystem;
+      declaredSystems = builtins.attrNames evaluationCompleteCheckNamesBySystem;
+      ignoredSystems = builtins.attrNames ignoredCheckNamesBySystem;
+      unexpectedIgnoredSystems = lib.subtractLists configuredSystems ignoredSystems;
+      validateSystem =
+        system:
+        let
+          checks = checksBySystem.${system};
+          checkNames = builtins.attrNames checks;
+          declaredNames = evaluationCompleteCheckNamesBySystem.${system};
+          ignoredNames = ignoredCheckNamesBySystem.${system} or [ ];
+          duplicateNames = builtins.filter (
+            name: builtins.length (builtins.filter (other: other == name) declaredNames) > 1
+          ) (lib.unique declaredNames);
+          unknown = builtins.filter (name: !(builtins.hasAttr name checks)) declaredNames;
+          ignoredWithoutListing = builtins.filter (name: !(builtins.elem name declaredNames)) ignoredNames;
+          classifiedNames = lib.subtractLists ignoredNames checkNames;
+          declaredClassifiedNames = lib.subtractLists ignoredNames declaredNames;
+          listedWithoutMarker = builtins.filter (
+            name: !isEvaluationComplete checks.${name}
+          ) declaredClassifiedNames;
+          markerWithoutListing = builtins.filter (
+            name: isEvaluationComplete checks.${name} && !(builtins.elem name declaredNames)
+          ) classifiedNames;
+        in
+        if
+          duplicateNames != [ ]
+          || unknown != [ ]
+          || ignoredWithoutListing != [ ]
+          || listedWithoutMarker != [ ]
+          || markerWithoutListing != [ ]
+        then
+          throw "invalid evaluation-complete CI checks for ${system}: ${
+            builtins.toJSON {
+              inherit
+                duplicateNames
+                ignoredWithoutListing
+                listedWithoutMarker
+                markerWithoutListing
+                unknown
+                ;
+            }
+          }"
+        else
+          true;
+    in
+    if configuredSystems != declaredSystems || unexpectedIgnoredSystems != [ ] then
+      throw "evaluation-complete checks must use matching systems: ${
+        builtins.toJSON {
+          inherit configuredSystems declaredSystems unexpectedIgnoredSystems;
+        }
+      }"
+    else
+      builtins.all validateSystem configuredSystems;
+
+  validateHestiaJobs =
+    checksBySystem:
+    let
+      configuredSystems = builtins.attrNames checksBySystem;
       checkRefs = lib.concatMap (
         system:
         map (name: {
@@ -229,6 +375,13 @@ let
           ) systemNames
         )
       ) checkNames;
+      jobsValid = builtins.all (
+        system:
+        builtins.seq (mkHestiaChecks {
+          checks = checksBySystem.${system};
+          inherit system;
+        }) true
+      ) systemNames;
     in
     if configuredSystems != systemNames then
       throw "Hestia jobs must provide every build system: ${builtins.toJSON systemNames}"
@@ -241,14 +394,21 @@ let
         }
       }"
     else
-      lib.mapAttrs (system: checks: mkHestiaChecks { inherit checks system; }) checksBySystem;
+      builtins.seq jobsValid true;
 in
 {
   inherit
     annotate
     annotateSet
+    evaluationComplete
+    evaluationCompleteSet
+    isClassified
+    isEvaluationComplete
     mkHestiaChecks
     mkHestiaJobs
+    selectBuildChecks
     targets
+    validateEvaluationCompleteChecks
+    validateHestiaJobs
     ;
 }

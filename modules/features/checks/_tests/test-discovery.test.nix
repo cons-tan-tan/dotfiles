@@ -1,11 +1,21 @@
 { lib }:
 let
+  ciCheck = import ../../ci/_interface/check.nix { inherit lib; };
   discovery = import ../_lib/test-discovery.nix { inherit lib; };
-  composeUniqueChecks = import ../_lib/compose.nix { inherit lib; };
+  bootstrap = import ../_lib/bootstrap-paths.nix;
+  inventory = import ../_lib/eval/inventory.nix {
+    modulesRoot = ../../..;
+    testDiscovery = discovery;
+  };
+  composeUniqueChecks = import ../_lib/compose.nix { inherit ciCheck lib; };
   validateBatsCatalog = import ../_lib/bats/validate-catalog.nix { inherit lib; };
   annotated = marker: {
     inherit marker;
     meta.dotfiles.hestia.targets = [ "fixture" ];
+  };
+  evaluationComplete = marker: {
+    inherit marker;
+    meta.dotfiles.ci.execution = "evaluation-complete";
   };
   classified = discovery.classify [
     "/repo/modules/feature-a/_tests/alpha.test.nix"
@@ -53,6 +63,23 @@ in
         "/repo/modules/feature-b/_tests/beta.test.nix"
       ];
       failure = [ "/repo/modules/feature-b/_tests/gamma.failure.test.nix" ];
+    };
+  };
+
+  testEvaluationCompleteInventoryExcludesBuildTimeSuites = {
+    expr = {
+      autoPositive = builtins.elem "ci-check-tests" inventory.evaluationCompleteCheckNames;
+      bootstrapPositive = builtins.elem "dendritic-test-discovery-tests" inventory.evaluationCompleteCheckNames;
+      failureSuite = builtins.elem "home-contract-protocol-failure-tests" inventory.evaluationCompleteCheckNames;
+      mixedBootstrap = builtins.elem "test-discovery-tests" inventory.evaluationCompleteCheckNames;
+      sourcesExist = builtins.all builtins.pathExists bootstrap.all;
+    };
+    expected = {
+      autoPositive = true;
+      bootstrapPositive = true;
+      failureSuite = false;
+      mixedBootstrap = false;
+      sourcesExist = true;
     };
   };
 
@@ -108,6 +135,18 @@ in
     };
   };
 
+  testEvaluationCompleteCheckOwnerComposes = {
+    expr = composeUniqueChecks {
+      producers = [
+        {
+          owner = "evaluated";
+          checks.evaluated = evaluationComplete 1;
+        }
+      ];
+    };
+    expected.evaluated = evaluationComplete 1;
+  };
+
   testCheckOwnerCollisionIsRejected = {
     expr =
       (builtins.tryEval (composeUniqueChecks {
@@ -152,6 +191,21 @@ in
             }
           ];
         }).unannotated
+      ).success;
+    expected = false;
+  };
+
+  testUnknownExecutionClassificationIsRejected = {
+    expr =
+      (builtins.tryEval
+        (composeUniqueChecks {
+          producers = [
+            {
+              owner = "alpha";
+              checks.unknown.meta.dotfiles.ci.execution = "sometimes-build";
+            }
+          ];
+        }).unknown
       ).success;
     expected = false;
   };

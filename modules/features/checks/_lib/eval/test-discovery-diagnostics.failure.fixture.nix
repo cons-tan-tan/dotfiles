@@ -8,7 +8,7 @@ let
   ciCheck = import (repoRoot + "/modules/features/ci/_interface/check.nix") { inherit lib; };
   checksLib = repoRoot + "/modules/features/checks/_lib";
   testDiscovery = import (checksLib + "/test-discovery.nix") { inherit lib; };
-  composeUniqueChecks = import (checksLib + "/compose.nix") { inherit lib; };
+  composeUniqueChecks = import (checksLib + "/compose.nix") { inherit ciCheck lib; };
   validateBatsCatalog = import (checksLib + "/bats/validate-catalog.nix") { inherit lib; };
   harness = import (checksLib + "/eval/harness.nix") {
     inherit

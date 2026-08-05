@@ -11,6 +11,15 @@ let
   ciCheck = import ../ci/_interface/check.nix { inherit lib; };
 in
 {
+  perSystem =
+    { system, ... }:
+    {
+      dotfiles.ci.evaluationCompleteCheckNames =
+        lib.optionals (system == "x86_64-linux") [ "configuration-ownership-contract" ]
+        ++ lib.optionals (system == darwinSystem) [ "darwin-nh-cleanup-contract" ]
+        ++ lib.optionals (lib.hasSuffix "-linux" system) [ "nixos-wsl-contract" ];
+    };
+
   den.aspects.configuration-checks.checks =
     { pkgs, system, ... }:
     let
@@ -46,7 +55,7 @@ in
         homeConfiguration: import ../agents/hcom/_tests/profile-check.nix { inherit homeConfiguration; };
     in
     lib.optionalAttrs (system == "x86_64-linux") {
-      configuration-ownership-contract = ciCheck.annotate (ciCheck.targets.linux "configurations") (
+      configuration-ownership-contract = ciCheck.evaluationComplete (
         import ./_tests/configuration-ownership-contract.nix {
           inherit
             darwinConfigurations
@@ -68,25 +77,20 @@ in
               { home-manager.users.${username}.dotfiles.hcom.enable = true; }
             ];
           }).system;
-        darwin-nh-cleanup-contract = import ../platform/nh/_tests/darwin-cleanup-contract.nix {
-          inherit lib pkgs username;
-          config = darwinConfigurations.${targets.darwin}.config;
-        };
       }
     )
+    // lib.optionalAttrs (system == darwinSystem) {
+      darwin-nh-cleanup-contract = ciCheck.evaluationComplete (
+        import ../platform/nh/_tests/darwin-cleanup-contract.nix {
+          inherit lib pkgs username;
+          config = darwinConfigurations.${targets.darwin}.config;
+        }
+      );
+    }
     // ciCheck.annotateSet (ciCheck.targets.linux "configurations") (
       lib.optionalAttrs (lib.hasSuffix "-linux" system) {
         nixos-wsl-system = nixosWslConfiguration.config.system.build.toplevel;
         nixos-wsl-tarball-builder = nixosWslConfiguration.config.system.build.tarballBuilder;
-        nixos-wsl-contract = import ../platform/wsl/_tests/nixos-contract.nix {
-          inherit
-            lib
-            pkgs
-            ;
-          entityContext = targets;
-          config = nixosWslConfiguration.config;
-          sourcePath = toString inputs.self.outPath;
-        };
         claude-userprofile-contract = import ../agents/claude/_tests/userprofile-contract.nix {
           inherit lib pkgs;
           linuxSettings = (homeConfiguration "linux").config.home.file.".claude/settings.json".source;
@@ -94,6 +98,19 @@ in
         };
       }
     )
+    // lib.optionalAttrs (lib.hasSuffix "-linux" system) {
+      nixos-wsl-contract = ciCheck.evaluationComplete (
+        import ../platform/wsl/_tests/nixos-contract.nix {
+          inherit
+            lib
+            pkgs
+            ;
+          entityContext = targets;
+          config = nixosWslConfiguration.config;
+          sourcePath = toString inputs.self.outPath;
+        }
+      );
+    }
     // ciCheck.annotateSet (ciCheck.targets.linux "configurations") (
       lib.optionalAttrs (lib.hasSuffix "-linux" system) (
         lib.listToAttrs (

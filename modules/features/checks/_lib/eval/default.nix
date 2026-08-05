@@ -8,10 +8,9 @@
   testDiscovery,
 }:
 let
-  repositoryDiscovery = testDiscovery.discoverRepository {
-    inherit modulesRoot;
+  inventory = import ./inventory.nix {
+    inherit modulesRoot testDiscovery;
   };
-  classifiedTests = testDiscovery.classify repositoryDiscovery.files;
   bootstrap = import ../bootstrap-checks.nix {
     inherit
       ciCheck
@@ -32,7 +31,6 @@ let
       testDiscovery
       ;
   };
-  testFiles = testDiscovery.excludePaths bootstrap.paths classifiedTests.testFiles;
 in
 {
   producers = [
@@ -42,11 +40,11 @@ in
     }
     {
       owner = "auto eval suites";
-      checks = harness.positiveChecks testFiles;
+      checks = harness.positiveChecks inventory.testFiles;
     }
     {
       owner = "failure eval suites";
-      checks = harness.failureChecks classifiedTests.failureTestFiles;
+      checks = harness.failureChecks inventory.failureTestFiles;
     }
   ];
 }

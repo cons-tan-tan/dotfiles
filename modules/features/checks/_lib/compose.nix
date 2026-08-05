@@ -1,4 +1,4 @@
-{ lib }:
+{ ciCheck, lib }:
 {
   producers,
   reservedCheckNames ? [ ],
@@ -28,15 +28,10 @@ let
     producer:
     builtins.mapAttrs (
       name: check:
-      if
-        check ? meta
-        && check.meta ? dotfiles
-        && check.meta.dotfiles ? hestia
-        && check.meta.dotfiles.hestia ? targets
-      then
+      if ciCheck.isClassified check then
         check
       else
-        throw "check missing Hestia targets: ${
+        throw "check missing a unique CI execution classification: ${
           builtins.toJSON {
             inherit name;
             inherit (producer) owner;
@@ -47,6 +42,6 @@ in
 if collisions != [ ] then
   throw "check owner collisions: ${builtins.toJSON collisions}"
 else
-  # 各checkのmetadataは、そのcheckが選択された時に検証する。ここで全値を
+  # 各checkの分類は、そのcheckが選択された時に検証する。ここで全値を
   # 強制すると、flake.checksを参照するeval suiteとのfixed pointを壊す。
   builtins.foldl' (checks: producer: checks // validateProducer producer) { } producers

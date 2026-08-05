@@ -3,7 +3,7 @@ let
   ciCheck = import ../_interface/check.nix { inherit lib; };
   linuxSystem = "x86_64-linux";
   darwinSystem = "aarch64-darwin";
-  evaluationOnlySystem = "aarch64-linux";
+  additionalSystem = "aarch64-linux";
   fakeCheck = {
     drvPath = "/nix/store/00000000000000000000000000000000-ci-check.drv";
     meta.description = "preserved metadata";
@@ -23,6 +23,164 @@ in
   testAnnotationPreservesMetadata = {
     expr = (ciCheck.annotate (ciCheck.targets.both "eval-tests") fakeCheck).meta.description;
     expected = "preserved metadata";
+  };
+
+  testEvaluationCompletePreservesMetadata = {
+    expr = {
+      classified = ciCheck.isClassified (ciCheck.evaluationComplete fakeCheck);
+      evaluationComplete = ciCheck.isEvaluationComplete (ciCheck.evaluationComplete fakeCheck);
+      description = (ciCheck.evaluationComplete fakeCheck).meta.description;
+    };
+    expected = {
+      classified = true;
+      evaluationComplete = true;
+      description = "preserved metadata";
+    };
+  };
+
+  testExecutionClassificationIsExclusive = {
+    expr = evaluates (
+      ciCheck.annotate (ciCheck.targets.linux "eval-tests") (ciCheck.evaluationComplete fakeCheck)
+    );
+    expected = false;
+  };
+
+  testManualConflictingMetadataFails = {
+    expr = evaluates (
+      ciCheck.mkHestiaChecks {
+        system = linuxSystem;
+        checks.example = fakeCheck // {
+          meta = fakeCheck.meta // {
+            dotfiles = {
+              ci.execution = "evaluation-complete";
+              hestia.targets = ciCheck.targets.linux "eval-tests";
+            };
+          };
+        };
+      }
+    );
+    expected = false;
+  };
+
+  testEvaluationCompleteRejectsCanonicalHestiaGroup = {
+    expr = evaluates (
+      ciCheck.evaluationComplete (
+        fakeCheck
+        // {
+          meta = fakeCheck.meta // {
+            hestia.group = "linux-eval-tests";
+          };
+        }
+      )
+    );
+    expected = false;
+  };
+
+  testUnknownExecutionFails = {
+    expr = evaluates (
+      ciCheck.mkHestiaChecks {
+        system = linuxSystem;
+        checks.example = fakeCheck // {
+          meta = fakeCheck.meta // {
+            dotfiles.ci.execution = "sometimes-build";
+          };
+        };
+      }
+    );
+    expected = false;
+  };
+
+  testBuildSelectionDoesNotForceEvaluationCompleteChecks = {
+    expr = builtins.attrNames (
+      ciCheck.selectBuildChecks {
+        checks = {
+          build = fakeCheck;
+          evaluated = throw "evaluation-complete check was forced";
+        };
+        evaluationCompleteCheckNames = [ "evaluated" ];
+        system = linuxSystem;
+      }
+    );
+    expected = [ "build" ];
+  };
+
+  testBuildSelectionRejectsStaleNames = {
+    expr = evaluates (
+      ciCheck.selectBuildChecks {
+        checks.build = fakeCheck;
+        evaluationCompleteCheckNames = [ "renamed" ];
+        system = linuxSystem;
+      }
+    );
+    expected = false;
+  };
+
+  testEvaluationCompleteListingRequiresMarker = {
+    expr = evaluates (
+      ciCheck.validateEvaluationCompleteChecks {
+        checksBySystem = {
+          ${linuxSystem}.missingMarker = fakeCheck;
+          ${darwinSystem} = { };
+        };
+        evaluationCompleteCheckNamesBySystem = {
+          ${linuxSystem} = [ "missingMarker" ];
+          ${darwinSystem} = [ ];
+        };
+      }
+    );
+    expected = false;
+  };
+
+  testEvaluationCompleteMarkerRequiresListing = {
+    expr = evaluates (
+      ciCheck.validateEvaluationCompleteChecks {
+        checksBySystem = {
+          ${linuxSystem} = { };
+          ${darwinSystem}.missingListing = ciCheck.evaluationComplete (
+            fakeCheck // { system = darwinSystem; }
+          );
+        };
+        evaluationCompleteCheckNamesBySystem = {
+          ${linuxSystem} = [ ];
+          ${darwinSystem} = [ ];
+        };
+      }
+    );
+    expected = false;
+  };
+
+  testEvaluationCompleteListingRejectsDuplicateOwners = {
+    expr = evaluates (
+      ciCheck.validateEvaluationCompleteChecks {
+        checksBySystem = {
+          ${linuxSystem}.evaluated = ciCheck.evaluationComplete fakeCheck;
+          ${darwinSystem} = { };
+        };
+        evaluationCompleteCheckNamesBySystem = {
+          ${linuxSystem} = [
+            "evaluated"
+            "evaluated"
+          ];
+          ${darwinSystem} = [ ];
+        };
+      }
+    );
+    expected = false;
+  };
+
+  testIgnoredValidationCheckIsNotForced = {
+    expr = ciCheck.validateEvaluationCompleteChecks {
+      checksBySystem = {
+        ${linuxSystem}.contract = throw "validation contract was forced";
+        ${darwinSystem} = { };
+      };
+      evaluationCompleteCheckNamesBySystem = {
+        ${linuxSystem} = [ "contract" ];
+        ${darwinSystem} = [ ];
+      };
+      ignoredCheckNamesBySystem.${linuxSystem} = [ "contract" ];
+    };
+    expected = true;
   };
 
   testSystemSpecificGroups =
@@ -113,7 +271,7 @@ in
       ciCheck.mkHestiaJobs {
         ${linuxSystem} = { };
         ${darwinSystem} = { };
-        ${evaluationOnlySystem} = { };
+        ${additionalSystem} = { };
       }
     );
     expected = false;
@@ -161,7 +319,7 @@ in
 
   testDeclaredTargetMustExist = {
     expr = evaluates (
-      ciCheck.mkHestiaJobs {
+      ciCheck.validateHestiaJobs {
         ${linuxSystem}.example = ciCheck.annotate (ciCheck.targets.both "eval-tests") fakeCheck;
         ${darwinSystem} = { };
       }
@@ -171,7 +329,7 @@ in
 
   testCrossSystemTargetsMustMatch = {
     expr = evaluates (
-      ciCheck.mkHestiaJobs {
+      ciCheck.validateHestiaJobs {
         ${linuxSystem}.example = ciCheck.annotate (ciCheck.targets.linux "eval-tests") fakeCheck;
         ${darwinSystem}.example = ciCheck.annotate (ciCheck.targets.darwin "eval-tests") (
           fakeCheck
@@ -182,6 +340,16 @@ in
       }
     );
     expected = false;
+  };
+
+  testSystemPartitionDoesNotForceSiblingChecks = {
+    expr = builtins.attrNames (
+      (ciCheck.mkHestiaJobs {
+        ${linuxSystem}.example = ciCheck.annotate (ciCheck.targets.linux "eval-tests") fakeCheck;
+        ${darwinSystem} = throw "sibling system was forced";
+      }).${linuxSystem}
+    );
+    expected = [ "example" ];
   };
 
   testConflictingDerivationGroupsFail = {

@@ -17,7 +17,7 @@
 let
   modulesRoot = repoRoot + "/modules";
   testDiscovery = import ./test-discovery.nix { inherit lib; };
-  composeUniqueChecks = import ./compose.nix { inherit lib; };
+  composeUniqueChecks = import ./compose.nix { inherit ciCheck lib; };
   cacheSettings = (import ../../platform/nix-settings/_interface).cache;
   configurationTargets = import ../../../flake/_interface/configuration-targets.nix {
     inherit lib;

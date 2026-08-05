@@ -81,6 +81,7 @@ let
       ++ [
         "configuration-ownership-contract"
         "flake-public-api-contract"
+        "hestia-job-contract"
         "home-feature-contract"
         "windows-class-contract"
       ];
