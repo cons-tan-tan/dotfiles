@@ -5,9 +5,9 @@ source "$DOTFILES_TEST_REPO_ROOT/modules/features/checks/_lib/bats/test-helper.b
 
 setup() {
   require_nix_fixture WINDOWS_COMPANION_DEPLOY_TEST_BIN "Windows companion deployment package"
-  require_nix_fixture WINDOWS_COMPANION_DEPLOY_TEST_ROOT "isolated Windows home prefix"
 
   WORK="$BATS_TEST_TMPDIR/work"
+  WINDOWS_COMPANION_DEPLOY_TEST_ROOT="$BATS_TEST_TMPDIR/windows-companion-test/Users"
   ROOT="$WINDOWS_COMPANION_DEPLOY_TEST_ROOT/test-user"
   SOURCE="$WORK/source"
   MANIFEST="$WORK/manifest.json"
@@ -15,6 +15,7 @@ setup() {
   RSYNC_STATE="$WORK/rsync-state"
 
   mkdir -p "$ROOT" "$SOURCE"
+  export WINDOWS_COMPANION_DEPLOY_ROOT_PREFIX="$WINDOWS_COMPANION_DEPLOY_TEST_ROOT"
   export WINDOWS_COMPANION_DEPLOY_MV_STATE="$MV_STATE"
   export WINDOWS_COMPANION_DEPLOY_RSYNC_STATE="$RSYNC_STATE"
   unset WINDOWS_COMPANION_DEPLOY_MV_FAIL_AT

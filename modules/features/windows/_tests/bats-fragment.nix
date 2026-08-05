@@ -1,6 +1,5 @@
 { lib, pkgs }:
 let
-  testRoot = "/build/windows-companion-test/Users";
   mvFixture = pkgs.writeShellApplication {
     name = "windows-companion-deploy-mv-fixture";
     text = ''
@@ -53,7 +52,8 @@ let
   };
   testPackage = pkgs.callPackage ../_packages/companion-deploy {
     mvBin = lib.getExe mvFixture;
-    rootPrefix = testRoot;
+    # The fixture receives a writable sandbox path from Bats at runtime.
+    rootPrefix = null;
     rsyncBin = lib.getExe rsyncFixture;
   };
 in
@@ -62,12 +62,8 @@ in
     nativeBuildInputs = [ pkgs.jq ];
     environment = {
       WINDOWS_COMPANION_DEPLOY_TEST_BIN = lib.getExe testPackage;
-      WINDOWS_COMPANION_DEPLOY_TEST_ROOT = testRoot;
     };
-    requiredEnvironment = [
-      "WINDOWS_COMPANION_DEPLOY_TEST_BIN"
-      "WINDOWS_COMPANION_DEPLOY_TEST_ROOT"
-    ];
+    requiredEnvironment = [ "WINDOWS_COMPANION_DEPLOY_TEST_BIN" ];
   };
   shard = {
     testFiles = [ "modules/features/windows/_tests/windows-companion-deploy.bats" ];
