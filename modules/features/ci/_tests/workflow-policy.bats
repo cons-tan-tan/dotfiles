@@ -11,6 +11,10 @@ setup() {
   HESTIA_WORKFLOW="$WORKFLOW_DIR/hestia-system.yaml"
   CACHE_GC_WORKFLOW="$WORKFLOW_DIR/cache-gc.yaml"
   CACHE_SETTINGS="$REPO_ROOT/modules/features/platform/nix-settings/_data/cache.nix"
+  CI_SCRIPT_DIR="$REPO_ROOT/modules/features/ci/_scripts"
+  HESTIA_MATRIX_VALIDATOR="$CI_SCRIPT_DIR/validate_hestia_matrix.py"
+  HESTIA_BUILD_SCRIPT="$CI_SCRIPT_DIR/prefetch_hestia_closure_and_build.sh"
+  SUBSTITUTER_CHECK_SCRIPT="$CI_SCRIPT_DIR/verify_binary_substituters.sh"
 }
 
 workflow_files() {
@@ -97,10 +101,8 @@ run_hestia_matrix_validation() {
   local system=${3:-x86_64-linux}
   local any_jobs=${4:-}
   local matrix_output_max_chars=${5:-499000}
-  local script
   MATRIX_OUTPUT="$BATS_TEST_TMPDIR/matrix-output"
   : >"$MATRIX_OUTPUT"
-  script=$(hestia_step_script "evaluate" "Validate system matrix")
 
   if [[ -z "$any_jobs" ]]; then
     any_jobs=$(jq -r '.include | length > 0' <<<"$matrix" 2>/dev/null) || any_jobs=invalid
@@ -113,7 +115,7 @@ run_hestia_matrix_validation() {
     HESTIA_MATRIX="$matrix" \
     MATRIX_OUTPUT_MAX_CHARS="$matrix_output_max_chars" \
     SYSTEM="$system" \
-    bash -euo pipefail -c "$script"
+    python3 "$HESTIA_MATRIX_VALIDATOR"
 }
 
 run_ci_build_step() {
@@ -126,7 +128,6 @@ run_ci_build_step() {
   local calls="$BATS_TEST_TMPDIR/ci-build-calls"
   local import_count="$BATS_TEST_TMPDIR/ci-build-import-count"
   local installable=/nix/store/00000000000000000000000000000000-test.drv^\*
-  local script
 
   mkdir -p "$stub_dir"
   write_bash_stub "$stub_dir/curl" <<'SH'
@@ -173,7 +174,6 @@ printf ' <%s>' "$@" >>"$CI_BUILD_CALLS"
 printf '\n' >>"$CI_BUILD_CALLS"
 exit "$CI_BUILD_STATUS"
 SH
-  script=$(hestia_step_script "build" "Prefetch derivation closure and build")
 
   run env \
     PATH="$stub_dir:$PATH" \
@@ -186,7 +186,26 @@ SH
     CI_REALISE_STATUS="$realise_status" \
     HESTIA_LISTEN=127.0.0.1:37515 \
     INSTALLABLES="$installable" \
-    bash -euo pipefail -c "$script"
+    bash "$HESTIA_BUILD_SCRIPT"
+}
+
+run_substituter_check() {
+  local configured_substituters=$1
+  local stub_dir="$BATS_TEST_TMPDIR/substituter-check-stubs"
+
+  mkdir -p "$stub_dir"
+  write_bash_stub "$stub_dir/nix" <<'SH'
+if [[ "$*" != "config show substituters" ]]; then
+  exit 2
+fi
+printf '%s\n' "$CONFIGURED_SUBSTITUTERS"
+SH
+
+  run env \
+    PATH="$stub_dir:$PATH" \
+    CONFIGURED_SUBSTITUTERS="$configured_substituters" \
+    NIX_EXTRA_SUBSTITUTERS="https://cache.numtide.com https://nix-community.cachix.org" \
+    bash "$SUBSTITUTER_CHECK_SCRIPT"
 }
 
 cache_setting() {
@@ -490,6 +509,10 @@ YAML
       | length) == 1
     and ([.jobs.evaluate.steps[] | select(.id == "matrix")][0].name)
       == "Validate system matrix"
+    and ([.jobs.evaluate.steps[] | select(.id == "matrix")][0].shell)
+      == "bash"
+    and ([.jobs.evaluate.steps[] | select(.id == "matrix")][0].run)
+      == "python3 modules/features/ci/_scripts/validate_hestia_matrix.py"
   ' "$HESTIA_WORKFLOW"
   [ "$status" -eq 0 ]
 }
@@ -586,15 +609,41 @@ YAML
     )][0].env.INSTALLABLES) == "${{ matrix.installables }}"
     and ([.jobs.build.steps[] | select(
       .name == "Prefetch derivation closure and build"
-    )][0].run | contains("/closure/$hashes"))
+    )][0].run)
+      == "bash modules/features/ci/_scripts/prefetch_hestia_closure_and_build.sh"
     and ([.jobs.build.steps[] | select(
-      .name == "Prefetch derivation closure and build"
-    )][0].run | contains("nix-store --import"))
+      .name == "Verify binary substituters"
+    )][0].run)
+      == "bash modules/features/ci/_scripts/verify_binary_substituters.sh"
     and ([.jobs.build.steps[] | select(
-      .name == "Prefetch derivation closure and build"
-    )][0].run | contains("nix build"))
+      .name == "Check out CI scripts"
+    )][0].with."persist-credentials" == false)
+    and ([.jobs.build.steps[] | select(
+      .name == "Check out CI scripts"
+    )][0].with."sparse-checkout") == "modules/features/ci/_scripts"
   ' "$HESTIA_WORKFLOW"
   [ "$status" -eq 0 ]
+}
+
+@test "Hestia CI scripts pass static checks" {
+  run shellcheck "$HESTIA_BUILD_SCRIPT" "$SUBSTITUTER_CHECK_SCRIPT"
+  [ "$status" -eq 0 ]
+
+  run env \
+    PYTHONPYCACHEPREFIX="$BATS_TEST_TMPDIR/pycache" \
+    python3 -m py_compile "$HESTIA_MATRIX_VALIDATOR"
+  [ "$status" -eq 0 ]
+}
+
+@test "system lane requires all binary substituters" {
+  run_substituter_check \
+    "https://cache.nixos.org https://cache.numtide.com https://nix-community.cachix.org http://127.0.0.1:37515"
+  [ "$status" -eq 0 ]
+
+  run_substituter_check \
+    "https://cache.nixos.org https://cache.numtide.com https://nix-community.cachix.org"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"missing substituter: http://127.0.0.1:"* ]]
 }
 
 @test "matrix build resolves a filtered reference and retries closure import" {

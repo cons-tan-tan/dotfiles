@@ -5,6 +5,8 @@
 {
   nativeBuildInputs = [
     pkgs.jq
+    pkgs.python3
+    pkgs.shellcheck
     pkgs.yq-go
   ];
   environment = {
