@@ -1,0 +1,292 @@
+name: Hestia system
+
+on:
+  workflow_call:
+    inputs:
+      system:
+        description: Nix system exposed under hydraJobs.ci
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# GitHub Actionsはflake.nixのnixConfigをNixのインストール前には読めない。
+# 公開cache設定はここで宣言し、Nix側との一致をworkflow-policy-testsで検証する。
+env:
+  NIX_EXTRA_SUBSTITUTERS: >-
+    https://cache.numtide.com
+    https://nix-community.cachix.org
+  NIX_EXTRA_TRUSTED_PUBLIC_KEYS: >-
+    niks3.numtide.com-1:DTx8wZduET09hRmMtKdQDxNNthLQETkc/yaX7M4qK0g=
+    nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
+  HESTIA_VERSION: v3.0.0
+  HESTIA_UPSTREAM_CACHE_KEY_NAMES: >-
+    cache.nixos.org-1
+    niks3.numtide.com-1
+    nix-community.cachix.org-1
+
+jobs:
+  evaluate:
+    name: evaluate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      any-jobs: ${{ steps.matrix.outputs.any-jobs }}
+      manifest-version: ${{ steps.matrix.outputs.manifest-version }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install Nix
+        uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
+        with:
+          enable_kvm: false
+          nix_conf: |
+            extra-substituters = ${{ env.NIX_EXTRA_SUBSTITUTERS }}
+            extra-trusted-public-keys = ${{ env.NIX_EXTRA_TRUSTED_PUBLIC_KEYS }}
+      - name: Start Hestia
+        uses: Mic92/hestia@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320 # v3.0.0
+        with:
+          version: ${{ env.HESTIA_VERSION }}
+          upstream-cache-filter: true
+          upstream-cache-key-names: ${{ env.HESTIA_UPSTREAM_CACHE_KEY_NAMES }}
+      - name: Evaluate Hestia matrix
+        id: hestia-matrix
+        uses: Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320 # v3.0.0
+        with:
+          flake: ".#hydraJobs.ci.${{ inputs.system }}"
+          # 16 GB runner上で評価workerの再起動を避けつつ、OSとNix daemon用に
+          # 4 GBを残す。
+          nix-eval-jobs: >-
+            nix run
+            nixpkgs#nix-eval-jobs
+            --inputs-from .
+            --
+            --workers 1
+            --max-memory-size 12288
+          attr-prefix: "hydraJobs.ci.${{ inputs.system }}"
+      - id: matrix
+        name: Validate system matrix
+        env:
+          HESTIA_ANY_JOBS: ${{ steps.hestia-matrix.outputs.any-jobs }}
+          HESTIA_MANIFEST_VERSION: ${{ steps.hestia-matrix.outputs.manifest-version }}
+          HESTIA_MATRIX: ${{ steps.hestia-matrix.outputs.matrix }}
+          SYSTEM: ${{ inputs.system }}
+        run: |
+          set -euo pipefail
+          matrix="$(
+            jq -cen \
+              --arg any_jobs "$HESTIA_ANY_JOBS" \
+              --arg system "$SYSTEM" '
+                (env.HESTIA_MATRIX | fromjson) as $matrix
+                | def rows_match($flag; $rows):
+                    ($flag == "true" and ($rows | length) > 0)
+                    or ($flag == "false" and ($rows | length) == 0);
+                if ($matrix | type) != "object"
+                  or ($matrix.include | type) != "array"
+                then
+                  error("Hestia matrix must contain an include array")
+                elif (rows_match($any_jobs; $matrix.include) | not) then
+                  error("Hestia any-jobs output does not match its matrix")
+                elif ($matrix.include | length) > 256 then
+                  error("Hestia matrix exceeds 256 rows")
+                elif any($matrix.include[];
+                  (.drvPath | type) != "string" or (.drvPath | length) == 0)
+                then
+                  error("Hestia matrix row has an invalid drvPath")
+                elif any($matrix.include[];
+                  (.name | type) != "string" or (.name | length) == 0
+                  or (.os | type) != "string" or (.os | length) == 0
+                  or (.installables | type) != "string"
+                  or (.installables | length) == 0)
+                then
+                  error("Hestia matrix row has invalid build fields")
+                elif any($matrix.include[]; .system != $system) then
+                  error("Hestia matrix row belongs to another system")
+                elif ([$matrix.include[].drvPath] | length)
+                  != ([$matrix.include[].drvPath] | unique | length)
+                then
+                  error("Hestia matrix contains duplicate drvPaths")
+                else
+                  { include: $matrix.include }
+                end
+              '
+          )"
+          manifest_version="$(
+            jq -ren \
+              --arg any_jobs "$HESTIA_ANY_JOBS" \
+              --arg version "$HESTIA_MANIFEST_VERSION" '
+                def valid_u64:
+                  test("^(0|[1-9][0-9]*)$")
+                  and (length < 20
+                    or (length == 20 and . <= "18446744073709551615"));
+                if ($version | valid_u64)
+                  and ($any_jobs == "false" or $version != "0")
+                then
+                  $version
+                else
+                  error("Hestia manifest version is invalid for its matrix")
+                end
+              '
+          )"
+          max_matrix_chars=${MATRIX_OUTPUT_MAX_CHARS:-499000}
+          if [[ ! "$max_matrix_chars" =~ ^[1-9][0-9]*$ ]]; then
+            echo "invalid Hestia matrix output limit" >&2
+            exit 1
+          fi
+          if (( ${#matrix} > max_matrix_chars )); then
+            echo "Hestia matrix exceeds the GitHub job output limit" >&2
+            exit 1
+          fi
+          {
+            printf 'matrix=%s\n' "$matrix"
+            printf 'any-jobs=%s\n' "$HESTIA_ANY_JOBS"
+            printf 'manifest-version=%s\n' "$manifest_version"
+          } >> "$GITHUB_OUTPUT"
+
+  # 評価済みのdrv closureを引き継ぎ、評価とbuildが別のderivationを選ぶ余地を
+  # 作らない。
+  build:
+    name: build / ${{ matrix.name }} (${{ matrix.system }})
+    needs: evaluate
+    if: >-
+      needs.evaluate.result == 'success'
+      && needs.evaluate.outputs.any-jobs == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.evaluate.outputs.matrix) }}
+    steps:
+      - name: Install Nix
+        uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
+        with:
+          enable_kvm: false
+          nix_conf: |
+            extra-substituters = ${{ env.NIX_EXTRA_SUBSTITUTERS }}
+            extra-trusted-public-keys = ${{ env.NIX_EXTRA_TRUSTED_PUBLIC_KEYS }}
+      - name: Start Hestia
+        uses: Mic92/hestia@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320 # v3.0.0
+        with:
+          version: ${{ env.HESTIA_VERSION }}
+          upstream-cache-filter: true
+          upstream-cache-key-names: ${{ env.HESTIA_UPSTREAM_CACHE_KEY_NAMES }}
+          wait-manifest-version: ${{ needs.evaluate.outputs.manifest-version }}
+      - name: Verify binary substituters
+        run: |
+          set -euo pipefail
+          substituters="$(nix config show substituters)"
+          read -r -a public_substituters <<< "$NIX_EXTRA_SUBSTITUTERS"
+          for expected in \
+            https://cache.nixos.org \
+            "${public_substituters[@]}" \
+            http://127.0.0.1:; do
+            if [[ "$substituters" != *"$expected"* ]]; then
+              echo "missing substituter: $expected" >&2
+              echo "configured substituters: $substituters" >&2
+              exit 1
+            fi
+          done
+      - name: Prefetch derivation closure and build
+        env:
+          INSTALLABLES: ${{ matrix.installables }}
+        run: |
+          set -euo pipefail
+          read -r -a installables <<< "$INSTALLABLES"
+          if (( ${#installables[@]} == 0 )); then
+            echo "matrix group has no installables" >&2
+            exit 1
+          fi
+          hashes="$(
+            printf '%s\n' "${installables[@]}" \
+              | awk -F/ '{printf "%s%s", (NR > 1 ? "," : ""), substr($NF, 1, 32)}'
+          )"
+          import_log="$(mktemp)"
+          trap 'rm -f "$import_log"' EXIT
+          max_resolved_references=4
+          resolved_reference_count=0
+          resolved_references='|'
+          prefetch_succeeded=false
+          store_path_pattern='^/nix/store/[0-9abcdfghijklmnpqrsvwxyz]{32}-[A-Za-z0-9+._?=-]+$'
+
+          # Hestia v3のupstream-cache-filterは署名済み参照を/closureから外す一方、
+          # exportされた親pathのReferencesには残す。nix-store --importは外部参照を
+          # substituteしないため、報告されたstore pathだけを通常cacheから取得して
+          # 再試行する。Hestia側で解決されるまでのworkaroundなので、診断文の解析と
+          # 再試行を厳密かつ有限にし、失敗時は下のnix buildへ委ねる。
+          while true; do
+            : > "$import_log"
+            if curl -fsS "http://$HESTIA_LISTEN/closure/$hashes" \
+              | nix-store --import 2>"$import_log"; then
+              cat "$import_log" >&2
+              prefetch_succeeded=true
+              break
+            fi
+            cat "$import_log" >&2
+
+            missing_path="$(
+              sed -nE "s#^error: path '(/nix/store/[^']+)' is not valid\$#\\1#p" \
+                "$import_log" \
+                | tail -n 1
+            )"
+            already_resolved=false
+            if [[ "$resolved_references" == *"|$missing_path|"* ]]; then
+              already_resolved=true
+            fi
+            if [[ ! "$missing_path" =~ $store_path_pattern ]] \
+              || [[ "$missing_path" == *.drv ]] \
+              || [[ "$already_resolved" == true ]] \
+              || (( resolved_reference_count >= max_resolved_references )); then
+              break
+            fi
+
+            echo "Substituting filtered Hestia closure reference: $missing_path"
+            if ! nix-store --realise "$missing_path"; then
+              break
+            fi
+            resolved_references+="$missing_path|"
+            resolved_reference_count=$((resolved_reference_count + 1))
+          done
+
+          if [[ "$prefetch_succeeded" != true ]]; then
+            echo "::warning::Hestia closure prefetch failed; falling back to normal Nix substitution"
+          fi
+          nix build "${installables[@]}"
+
+  result:
+    name: result
+    needs:
+      - evaluate
+      - build
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Verify system result
+        env:
+          ANY_JOBS: ${{ needs.evaluate.outputs.any-jobs }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          EVAL_RESULT: ${{ needs.evaluate.result }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVAL_RESULT" != success ]]; then
+            echo "matrix evaluation failed: $EVAL_RESULT" >&2
+            exit 1
+          fi
+          if [[ "$ANY_JOBS" == true ]]; then
+            if [[ "$BUILD_RESULT" != success ]]; then
+              echo "matrix build failed: $BUILD_RESULT" >&2
+              exit 1
+            fi
+          elif [[ "$ANY_JOBS" == false ]]; then
+            if [[ "$BUILD_RESULT" != skipped ]]; then
+              echo "unexpected empty matrix result: $BUILD_RESULT" >&2
+              exit 1
+            fi
+          else
+            echo "invalid any-jobs output: $ANY_JOBS" >&2
+            exit 1
+          fi

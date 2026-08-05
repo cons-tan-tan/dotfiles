@@ -8,6 +8,7 @@ setup() {
   WORKFLOW_DIR="$REPO_ROOT/.github/workflows"
   WORKFLOW="$WORKFLOW_DIR/update-pins-smoke.yaml"
   CI_WORKFLOW="$WORKFLOW_DIR/ci.yaml"
+  HESTIA_WORKFLOW="$WORKFLOW_DIR/hestia-system.yaml"
   CACHE_GC_WORKFLOW="$WORKFLOW_DIR/cache-gc.yaml"
   CACHE_SETTINGS="$REPO_ROOT/modules/features/platform/nix-settings/_data/cache.nix"
 }
@@ -37,11 +38,17 @@ check_universal_workflow_policy() {
       and (.permissions | length) == 1
       and ((.jobs | kind) == "map")
       and ((.jobs | length) > 0)
-      and ([.jobs[] | has("timeout-minutes")] | all)
+      and ([.jobs[] | select(has("uses") | not) | has("timeout-minutes")] | all)
+      and ([.jobs[] | select(has("uses")) | has("timeout-minutes") | not] | all)
       and ([.jobs[] | select(has("timeout-minutes")) | .["timeout-minutes"] |
         (tag == "!!int" and . > 0)] | all)
+      and ([.jobs[] | .steps[]? |
+        (has("name") and (.name | tag == "!!str" and length > 0))] | all)
       and ([.. | select(kind == "map") | .uses // "" | select(length > 0)
+        | select(test("^\\./") | not)
         | test("@[0-9a-f]{40}$")] | all)
+      and ([.jobs[] | .uses // "" | select(test("^\\./"))
+        | test("^\\./\\.github/workflows/[a-z0-9-]+\\.yaml$")] | all)
       and ([.. | select(kind == "map") | select(
         (.uses // "") | test("^actions/checkout@")
       ) | .with."persist-credentials" == false] | all)
@@ -78,35 +85,34 @@ ci_step_script() {
   yq -r ".jobs.\"$job\".steps[] | select(.name == \"$name\") | .run" "$CI_WORKFLOW"
 }
 
-run_ci_matrix_merge() {
-  local linux_matrix=$1
-  local darwin_matrix=$2
-  local linux_manifest_version=$3
-  local darwin_manifest_version=$4
-  local linux_any_jobs=${5:-}
-  local darwin_any_jobs=${6:-}
-  local matrix_output_max_chars=${7:-499000}
-  local script
-  MATRIX_MERGE_OUTPUT="$BATS_TEST_TMPDIR/matrix-merge-output"
-  : >"$MATRIX_MERGE_OUTPUT"
-  script=$(ci_step_script "build-eval" "Merge system matrices")
+hestia_step_script() {
+  local job=$1
+  local name=$2
+  yq -r ".jobs.\"$job\".steps[] | select(.name == \"$name\") | .run" "$HESTIA_WORKFLOW"
+}
 
-  if [[ -z "$linux_any_jobs" ]]; then
-    linux_any_jobs=$(jq -r '.include | length > 0' <<<"$linux_matrix" 2>/dev/null) || linux_any_jobs=invalid
-  fi
-  if [[ -z "$darwin_any_jobs" ]]; then
-    darwin_any_jobs=$(jq -r '.include | length > 0' <<<"$darwin_matrix" 2>/dev/null) || darwin_any_jobs=invalid
+run_hestia_matrix_validation() {
+  local matrix=$1
+  local manifest_version=$2
+  local system=${3:-x86_64-linux}
+  local any_jobs=${4:-}
+  local matrix_output_max_chars=${5:-499000}
+  local script
+  MATRIX_OUTPUT="$BATS_TEST_TMPDIR/matrix-output"
+  : >"$MATRIX_OUTPUT"
+  script=$(hestia_step_script "evaluate" "Validate system matrix")
+
+  if [[ -z "$any_jobs" ]]; then
+    any_jobs=$(jq -r '.include | length > 0' <<<"$matrix" 2>/dev/null) || any_jobs=invalid
   fi
 
   run env \
-    DARWIN_ANY_JOBS="$darwin_any_jobs" \
-    DARWIN_MANIFEST_VERSION="$darwin_manifest_version" \
-    DARWIN_MATRIX="$darwin_matrix" \
-    GITHUB_OUTPUT="$MATRIX_MERGE_OUTPUT" \
-    LINUX_ANY_JOBS="$linux_any_jobs" \
-    LINUX_MANIFEST_VERSION="$linux_manifest_version" \
-    LINUX_MATRIX="$linux_matrix" \
+    GITHUB_OUTPUT="$MATRIX_OUTPUT" \
+    HESTIA_ANY_JOBS="$any_jobs" \
+    HESTIA_MANIFEST_VERSION="$manifest_version" \
+    HESTIA_MATRIX="$matrix" \
     MATRIX_OUTPUT_MAX_CHARS="$matrix_output_max_chars" \
+    SYSTEM="$system" \
     bash -euo pipefail -c "$script"
 }
 
@@ -167,7 +173,7 @@ printf ' <%s>' "$@" >>"$CI_BUILD_CALLS"
 printf '\n' >>"$CI_BUILD_CALLS"
 exit "$CI_BUILD_STATUS"
 SH
-  script=$(ci_step_script "build-matrix" "Prefetch derivation closure and build")
+  script=$(hestia_step_script "build" "Prefetch derivation closure and build")
 
   run env \
     PATH="$stub_dir:$PATH" \
@@ -238,7 +244,7 @@ cache_setting() {
   ! grep -Fq 'continue-on-error:' "$WORKFLOW"
 }
 
-@test "upstream smoke workflow reuses pinned CI actions" {
+@test "upstream smoke workflow reuses pinned CI lane actions" {
   local -a actions
   local action
   mapfile -t actions < <(
@@ -247,7 +253,9 @@ cache_setting() {
   [ "${#actions[@]}" -eq 3 ]
   for action in "${actions[@]}"; do
     [[ "$action" =~ ^[^@]+@[0-9a-f]{40}$ ]] || return 1
-    grep -Fq "uses: $action" "$CI_WORKFLOW" || return 1
+    grep -Fq "uses: $action" "$CI_WORKFLOW" \
+      || grep -Fq "uses: $action" "$HESTIA_WORKFLOW" \
+      || return 1
   done
 }
 
@@ -271,7 +279,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
 YAML
@@ -296,7 +305,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
 YAML
@@ -334,7 +344,8 @@ jobs:
     runs-on: ubuntu-latest
 $timeout_line
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
 YAML
@@ -343,6 +354,28 @@ YAML
     run check_universal_workflow_policy "$fixture_dir"
     [ "$status" -ne 0 ]
   done
+}
+
+@test "universal policy rejects unnamed steps" {
+  local fixture_dir="$BATS_TEST_TMPDIR/unnamed-step-workflow"
+  mkdir -p "$fixture_dir"
+
+  cat >"$fixture_dir/unnamed.yaml" <<'YAML'
+on: push
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+YAML
+
+  run check_universal_workflow_policy "$fixture_dir"
+  [ "$status" -ne 0 ]
 }
 
 @test "cache GC does not check out the repository" {
@@ -397,8 +430,8 @@ YAML
 @test "Hestia workflow inputs stay aligned with the CI defaults" {
   local version
   local upstream_key_names
-  version=$(yq -r '.env.HESTIA_VERSION' "$CI_WORKFLOW")
-  upstream_key_names=$(yq -r '.env.HESTIA_UPSTREAM_CACHE_KEY_NAMES' "$CI_WORKFLOW")
+  version=$(yq -r '.env.HESTIA_VERSION' "$HESTIA_WORKFLOW")
+  upstream_key_names=$(yq -r '.env.HESTIA_UPSTREAM_CACHE_KEY_NAMES' "$HESTIA_WORKFLOW")
 
   [ "$(yq -r '.jobs.smoke.steps[] | select(.uses == "Mic92/hestia@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320") | .with.version' "$WORKFLOW")" = "$version" ]
   [ "$(yq -r '.jobs.smoke.steps[] | select(.uses == "Mic92/hestia@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320") | .with."upstream-cache-filter"' "$WORKFLOW")" = true ]
@@ -406,159 +439,157 @@ YAML
   [ "$(yq -r '.jobs.gc.steps[] | select(.uses == "Mic92/hestia@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320") | .with.version' "$CACHE_GC_WORKFLOW")" = "$version" ]
 }
 
-@test "check and Hestia evaluation start independently" {
+@test "flake evaluation and system lanes start independently" {
   run yq -e '
-    .jobs.check.runs-on == "ubuntu-latest"
-    and .jobs.check.needs == null
-    and .jobs."build-eval".runs-on == "ubuntu-latest"
-    and .jobs."build-eval".needs == null
-    and .jobs."build-eval".outputs.matrix
+    .jobs."flake-eval".name == "evaluate / flake"
+    and .jobs."flake-eval".runs-on == "ubuntu-latest"
+    and .jobs."flake-eval".needs == null
+    and .jobs.linux.name == "linux"
+    and .jobs.linux.uses == "./.github/workflows/hestia-system.yaml"
+    and .jobs.linux.with.system == "x86_64-linux"
+    and .jobs.linux.needs == null
+    and .jobs.darwin.name == "darwin"
+    and .jobs.darwin.uses == "./.github/workflows/hestia-system.yaml"
+    and .jobs.darwin.with.system == "aarch64-darwin"
+    and .jobs.darwin.needs == null
+  ' "$CI_WORKFLOW"
+  [ "$status" -eq 0 ]
+
+  run yq -e '
+    .on.workflow_call.inputs.system.required == true
+    and .on.workflow_call.inputs.system.type == "string"
+    and .jobs.evaluate.name == "evaluate"
+    and .jobs.evaluate.runs-on == "ubuntu-latest"
+    and .jobs.evaluate.needs == null
+    and .jobs.evaluate.outputs.matrix
       == "${{ steps.matrix.outputs.matrix }}"
-    and .jobs."build-eval".outputs."any-jobs"
+    and .jobs.evaluate.outputs."any-jobs"
       == "${{ steps.matrix.outputs.any-jobs }}"
-    and .jobs."build-eval".outputs."manifest-version"
+    and .jobs.evaluate.outputs."manifest-version"
       == "${{ steps.matrix.outputs.manifest-version }}"
-    and ([.jobs."build-eval".steps[] | select(
+    and ([.jobs.evaluate.steps[] | select(
       .uses == "Mic92/hestia@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320"
     )] | length) == 1
-    and ([.jobs."build-eval".steps[] | select(
+    and ([.jobs.evaluate.steps[] | select(
       .uses == "Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320"
-    )] | length) == 2
-    and ([.jobs."build-eval".steps[] | select(
+    )] | length) == 1
+    and ([.jobs.evaluate.steps[] | select(
       .uses == "Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320"
-    )][0].id) == "matrix_linux"
-    and ([.jobs."build-eval".steps[] | select(
+    )][0].id) == "hestia-matrix"
+    and ([.jobs.evaluate.steps[] | select(
       .uses == "Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320"
-    )][0].with.flake) == ".#hydraJobs.ci.x86_64-linux"
-    and ([.jobs."build-eval".steps[] | select(
+    )][0].with.flake) == ".#hydraJobs.ci.${{ inputs.system }}"
+    and ([.jobs.evaluate.steps[] | select(
       .uses == "Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320"
-    )][0].with."attr-prefix") == "hydraJobs.ci.x86_64-linux"
-    and ([.jobs."build-eval".steps[] | select(
+    )][0].with."attr-prefix") == "hydraJobs.ci.${{ inputs.system }}"
+    and ([.jobs.evaluate.steps[] | select(
       .uses == "Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320"
-    )][1].id) == "matrix_darwin"
-    and ([.jobs."build-eval".steps[] | select(
-      .uses == "Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320"
-    )][1].with.flake) == ".#hydraJobs.ci.aarch64-darwin"
-    and ([.jobs."build-eval".steps[] | select(
-      .uses == "Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320"
-    )][1].with."attr-prefix") == "hydraJobs.ci.aarch64-darwin"
-    and ([.jobs."build-eval".steps[] | select(
-      .uses == "Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320"
-    )] | map(.with."nix-eval-jobs"
+    )][0].with."nix-eval-jobs"
       == "nix run nixpkgs#nix-eval-jobs --inputs-from . -- --workers 1 --max-memory-size 12288")
-      | all)
-    and ([.jobs."build-eval".steps[] | select(.id == "matrix")]
+    and ([.jobs.evaluate.steps[] | select(.id == "matrix")]
       | length) == 1
-    and ([.jobs."build-eval".steps[] | select(.id == "matrix")][0].name)
-      == "Merge system matrices"
-  ' "$CI_WORKFLOW"
+    and ([.jobs.evaluate.steps[] | select(.id == "matrix")][0].name)
+      == "Validate system matrix"
+  ' "$HESTIA_WORKFLOW"
   [ "$status" -eq 0 ]
 }
 
-@test "system matrices merge once without duplicate derivations" {
-  local linux='{"include":[{"drvPath":"/nix/store/linux-a.drv"},{"drvPath":"/nix/store/linux-b.drv"}]}'
-  local darwin='{"include":[{"drvPath":"/nix/store/darwin-a.drv"}]}'
-
-  run_ci_matrix_merge "$linux" "$darwin" 7 9
-
-  [ "$status" -eq 0 ]
-  [ "$(sed -n 's/^any-jobs=//p' "$MATRIX_MERGE_OUTPUT")" = true ]
-  [ "$(sed -n 's/^manifest-version=//p' "$MATRIX_MERGE_OUTPUT")" -eq 9 ]
-  run jq -e '.include | length == 3 and ([.[].drvPath] | unique | length) == 3' \
-    <<<"$(sed -n 's/^matrix=//p' "$MATRIX_MERGE_OUTPUT")"
-  [ "$status" -eq 0 ]
-}
-
-@test "matrix merge preserves the nonempty fragment and newest manifest" {
+@test "system matrix validation preserves nonempty and empty matrices" {
   local empty='{"include":[]}'
-  local linux='{"include":[{"drvPath":"/nix/store/linux-a.drv"}]}'
-  local darwin='{"include":[{"drvPath":"/nix/store/darwin-a.drv"}]}'
+  local linux='{"include":[{"drvPath":"/nix/store/linux-a.drv","system":"x86_64-linux","name":"linux-a","os":"ubuntu-latest","installables":"/nix/store/linux-a.drv^*"}]}'
+  local linux_with_axis='{"include":[{"drvPath":"/nix/store/linux-a.drv","system":"x86_64-linux","name":"linux-a","os":"ubuntu-latest","installables":"/nix/store/linux-a.drv^*"}],"unexpected":["axis"]}'
 
-  run_ci_matrix_merge "$linux" "$empty" 12 0
+  run_hestia_matrix_validation "$linux_with_axis" 12
   [ "$status" -eq 0 ]
-  [ "$(sed -n 's/^manifest-version=//p' "$MATRIX_MERGE_OUTPUT")" -eq 12 ]
+  [ "$(sed -n 's/^any-jobs=//p' "$MATRIX_OUTPUT")" = true ]
+  [ "$(sed -n 's/^manifest-version=//p' "$MATRIX_OUTPUT")" -eq 12 ]
+  [ "$(sed -n 's/^matrix=//p' "$MATRIX_OUTPUT")" = "$linux" ]
 
-  run_ci_matrix_merge "$empty" "$darwin" 0 14
+  run_hestia_matrix_validation "$empty" 0
   [ "$status" -eq 0 ]
-  [ "$(sed -n 's/^manifest-version=//p' "$MATRIX_MERGE_OUTPUT")" -eq 14 ]
-
-  run_ci_matrix_merge "$empty" "$empty" 0 0
-  [ "$status" -eq 0 ]
-  [ "$(sed -n 's/^any-jobs=//p' "$MATRIX_MERGE_OUTPUT")" = false ]
-  [ "$(sed -n 's/^matrix=//p' "$MATRIX_MERGE_OUTPUT")" = '{"include":[]}' ]
+  [ "$(sed -n 's/^any-jobs=//p' "$MATRIX_OUTPUT")" = false ]
+  [ "$(sed -n 's/^matrix=//p' "$MATRIX_OUTPUT")" = "$empty" ]
 }
 
-@test "matrix merge requires every nonempty fragment to register a manifest" {
-  local empty='{"include":[]}'
-  local linux='{"include":[{"drvPath":"/nix/store/linux-a.drv"}]}'
+@test "system matrix validation requires a matching manifest registration" {
+  local linux='{"include":[{"drvPath":"/nix/store/linux-a.drv","system":"x86_64-linux","name":"linux-a","os":"ubuntu-latest","installables":"/nix/store/linux-a.drv^*"}]}'
 
-  run_ci_matrix_merge "$linux" "$empty" 0 0
+  run_hestia_matrix_validation "$linux" 0
   [ "$status" -ne 0 ]
 
-  run_ci_matrix_merge "$linux" "$empty" 12 0 false false
+  run_hestia_matrix_validation "$linux" 12 x86_64-linux false
   [ "$status" -ne 0 ]
 }
 
-@test "matrix merge rejects malformed, duplicate, and oversized inputs" {
+@test "system matrix validation rejects malformed, mixed, and oversized inputs" {
   local empty='{"include":[]}'
-  local duplicate='{"include":[{"drvPath":"/nix/store/shared.drv"}]}'
+  local linux='{"include":[{"drvPath":"/nix/store/linux-a.drv","system":"x86_64-linux","name":"linux-a","os":"ubuntu-latest","installables":"/nix/store/linux-a.drv^*"}]}'
+  local incomplete='{"include":[{"drvPath":"/nix/store/linux-a.drv","system":"x86_64-linux"}]}'
+  local mixed='{"include":[{"drvPath":"/nix/store/darwin-a.drv","system":"aarch64-darwin","name":"darwin-a","os":"macos-15","installables":"/nix/store/darwin-a.drv^*"}]}'
+  local duplicate='{"include":[{"drvPath":"/nix/store/shared.drv","system":"x86_64-linux","name":"first","os":"ubuntu-latest","installables":"/nix/store/shared.drv^*"},{"drvPath":"/nix/store/shared.drv","system":"x86_64-linux","name":"second","os":"ubuntu-latest","installables":"/nix/store/shared.drv^*"}]}'
   local oversized
 
-  run_ci_matrix_merge '{' "$empty" 1 1
+  run_hestia_matrix_validation '{' 1
   [ "$status" -ne 0 ]
 
-  run_ci_matrix_merge '{}' "$empty" 1 1
+  run_hestia_matrix_validation '{}' 1
   [ "$status" -ne 0 ]
 
-  run_ci_matrix_merge "$duplicate" "$duplicate" 1 1
+  run_hestia_matrix_validation "$incomplete" 1
   [ "$status" -ne 0 ]
 
-  oversized=$(jq -cn '{include: [range(257) | {drvPath: ("/nix/store/" + tostring + ".drv")}]}')
-  run_ci_matrix_merge "$oversized" "$empty" 1 1
+  run_hestia_matrix_validation "$duplicate" 1
   [ "$status" -ne 0 ]
 
-  run_ci_matrix_merge "$empty" "$empty" latest 1
+  run_hestia_matrix_validation "$mixed" 1
   [ "$status" -ne 0 ]
 
-  run_ci_matrix_merge "$duplicate" "$empty" 18446744073709551615 0 true false
+  oversized=$(jq -cn '{include: [range(257) | {drvPath: ("/nix/store/" + tostring + ".drv"), system: "x86_64-linux", name: ("row-" + tostring), os: "ubuntu-latest", installables: ("/nix/store/" + tostring + ".drv^*")}]}')
+  run_hestia_matrix_validation "$oversized" 1
+  [ "$status" -ne 0 ]
+
+  run_hestia_matrix_validation "$empty" latest
+  [ "$status" -ne 0 ]
+
+  run_hestia_matrix_validation "$linux" 18446744073709551615
   [ "$status" -eq 0 ]
-  [ "$(sed -n 's/^manifest-version=//p' "$MATRIX_MERGE_OUTPUT")" = 18446744073709551615 ]
+  [ "$(sed -n 's/^manifest-version=//p' "$MATRIX_OUTPUT")" = 18446744073709551615 ]
 
-  run_ci_matrix_merge "$duplicate" "$empty" 18446744073709551616 0 true false
+  run_hestia_matrix_validation "$linux" 18446744073709551616
   [ "$status" -ne 0 ]
 
-  run_ci_matrix_merge "$duplicate" "$empty" 1 0 true false 20
+  run_hestia_matrix_validation "$linux" 1 x86_64-linux true 20
   [ "$status" -ne 0 ]
 }
 
-@test "multi-system matrix waits for and builds the evaluated derivations" {
+@test "system lane waits for and builds its evaluated derivations" {
   run yq -e '
-    .jobs."build-matrix".needs == "build-eval"
-    and .jobs."build-matrix"."timeout-minutes" == 90
-    and .jobs."build-matrix".if
-      == "needs.build-eval.result == '\''success'\'' && needs.build-eval.outputs.any-jobs == '\''true'\''"
-    and .jobs."build-matrix"."runs-on" == "${{ matrix.os }}"
-    and .jobs."build-matrix".strategy."fail-fast" == false
-    and .jobs."build-matrix".strategy."max-parallel" == null
-    and .jobs."build-matrix".strategy.matrix
-      == "${{ fromJSON(needs.build-eval.outputs.matrix) }}"
-    and ([.jobs."build-matrix".steps[] | select(
+    .jobs.build.needs == "evaluate"
+    and .jobs.build."timeout-minutes" == 90
+    and .jobs.build.if
+      == "needs.evaluate.result == '\''success'\'' && needs.evaluate.outputs.any-jobs == '\''true'\''"
+    and .jobs.build."runs-on" == "${{ matrix.os }}"
+    and .jobs.build.strategy."fail-fast" == false
+    and .jobs.build.strategy."max-parallel" == null
+    and .jobs.build.strategy.matrix
+      == "${{ fromJSON(needs.evaluate.outputs.matrix) }}"
+    and ([.jobs.build.steps[] | select(
       .uses == "Mic92/hestia@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320"
     )][0].with."wait-manifest-version")
-      == "${{ needs.build-eval.outputs.manifest-version }}"
-    and ([.jobs."build-matrix".steps[] | select(
+      == "${{ needs.evaluate.outputs.manifest-version }}"
+    and ([.jobs.build.steps[] | select(
       .name == "Prefetch derivation closure and build"
     )][0].env.INSTALLABLES) == "${{ matrix.installables }}"
-    and ([.jobs."build-matrix".steps[] | select(
+    and ([.jobs.build.steps[] | select(
       .name == "Prefetch derivation closure and build"
     )][0].run | contains("/closure/$hashes"))
-    and ([.jobs."build-matrix".steps[] | select(
+    and ([.jobs.build.steps[] | select(
       .name == "Prefetch derivation closure and build"
     )][0].run | contains("nix-store --import"))
-    and ([.jobs."build-matrix".steps[] | select(
+    and ([.jobs.build.steps[] | select(
       .name == "Prefetch derivation closure and build"
     )][0].run | contains("nix build"))
-  ' "$CI_WORKFLOW"
+  ' "$HESTIA_WORKFLOW"
   [ "$status" -eq 0 ]
 }
 
@@ -647,7 +678,7 @@ YAML
   [ "$(cat "$BATS_TEST_TMPDIR/ci-build-calls")" = $'curl\nnix-store <import>\nnix <build> </nix/store/00000000000000000000000000000000-test.drv^*>' ]
 }
 
-@test "multi-system matrix keeps public substituters and a stable aggregate result" {
+@test "system lane keeps public substituters and a stable result" {
   local numtide_substituter
   local numtide_key
   local nix_community_substituter
@@ -673,26 +704,26 @@ YAML
       and .env.HESTIA_VERSION == "v3.0.0"
       and .env.HESTIA_UPSTREAM_CACHE_KEY_NAMES
         == strenv(EXPECTED_HESTIA_KEY_NAMES)
-    ' "$CI_WORKFLOW"
+    ' "$HESTIA_WORKFLOW"
   [ "$status" -eq 0 ]
 
   run yq -e '
     ([
-      .jobs."build-eval".steps[],
-      .jobs."build-matrix".steps[]
+      .jobs.evaluate.steps[],
+      .jobs.build.steps[]
     ] | map(select(.uses
       == "nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c"))
       | length) == 2
     and ([
-      .jobs."build-eval".steps[],
-      .jobs."build-matrix".steps[]
+      .jobs.evaluate.steps[],
+      .jobs.build.steps[]
     ] | map(select(.uses
       == "nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c"))
       | map(select(.with.nix_conf | contains("${{ env.NIX_EXTRA_SUBSTITUTERS }}")))
       | length) == 2
     and ([
-      .jobs."build-eval".steps[],
-      .jobs."build-matrix".steps[]
+      .jobs.evaluate.steps[],
+      .jobs.build.steps[]
     ] | map(select(.uses
       == "nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c"))
       | map(select(.with.nix_conf | contains("${{ env.NIX_EXTRA_TRUSTED_PUBLIC_KEYS }}")))
@@ -706,33 +737,54 @@ YAML
       and .with."upstream-cache-key-names"
         == "${{ env.HESTIA_UPSTREAM_CACHE_KEY_NAMES }}"
     )) | length) == 2
-    and (.jobs.build.needs | join(",")) == "check,build-eval,build-matrix"
-    and .jobs.build.if == "always()"
-  ' "$CI_WORKFLOW"
+    and (.jobs.result.needs | join(",")) == "evaluate,build"
+    and .jobs.result.if == "always()"
+  ' "$HESTIA_WORKFLOW"
   [ "$status" -eq 0 ]
 }
 
-@test "aggregate result rejects missing or failed matrix states" {
+@test "system result rejects missing or failed matrix states" {
   local script
-  script=$(ci_step_script "build" "Verify matrix result")
+  script=$(hestia_step_script "result" "Verify system result")
 
-  run env CHECK_RESULT=success EVAL_RESULT=success ANY_JOBS=true MATRIX_RESULT=success bash -c "$script"
+  run env EVAL_RESULT=success ANY_JOBS=true BUILD_RESULT=success bash -c "$script"
   [ "$status" -eq 0 ]
 
-  run env CHECK_RESULT=success EVAL_RESULT=success ANY_JOBS=false MATRIX_RESULT=skipped bash -c "$script"
+  run env EVAL_RESULT=success ANY_JOBS=false BUILD_RESULT=skipped bash -c "$script"
   [ "$status" -eq 0 ]
 
-  run env CHECK_RESULT=success EVAL_RESULT=failure ANY_JOBS=false MATRIX_RESULT=skipped bash -c "$script"
+  run env EVAL_RESULT=failure ANY_JOBS=false BUILD_RESULT=skipped bash -c "$script"
   [ "$status" -ne 0 ]
 
-  run env CHECK_RESULT=failure EVAL_RESULT=success ANY_JOBS=true MATRIX_RESULT=success bash -c "$script"
+  run env EVAL_RESULT=success ANY_JOBS=true BUILD_RESULT=failure bash -c "$script"
   [ "$status" -ne 0 ]
 
-  run env CHECK_RESULT=success EVAL_RESULT=success ANY_JOBS=true MATRIX_RESULT=failure bash -c "$script"
+  run env EVAL_RESULT=success ANY_JOBS= BUILD_RESULT=skipped bash -c "$script"
+  [ "$status" -ne 0 ]
+}
+
+@test "required result accepts only successful independent lanes" {
+  local script
+  script=$(ci_step_script "required" "Verify required results")
+
+  run env FLAKE_EVAL_RESULT=success LINUX_RESULT=success DARWIN_RESULT=success bash -c "$script"
+  [ "$status" -eq 0 ]
+
+  run env FLAKE_EVAL_RESULT=failure LINUX_RESULT=success DARWIN_RESULT=success bash -c "$script"
   [ "$status" -ne 0 ]
 
-  run env CHECK_RESULT=success EVAL_RESULT=success ANY_JOBS= MATRIX_RESULT=skipped bash -c "$script"
+  run env FLAKE_EVAL_RESULT=success LINUX_RESULT=failure DARWIN_RESULT=success bash -c "$script"
   [ "$status" -ne 0 ]
+
+  run env FLAKE_EVAL_RESULT=success LINUX_RESULT=success DARWIN_RESULT=cancelled bash -c "$script"
+  [ "$status" -ne 0 ]
+
+  run yq -e '
+    .jobs.required.name == "required"
+    and (.jobs.required.needs | join(",")) == "flake-eval,linux,darwin"
+    and .jobs.required.if == "always()"
+  ' "$CI_WORKFLOW"
+  [ "$status" -eq 0 ]
 }
 
 @test "private and production smoke checks overlap after setup" {
@@ -897,4 +949,3 @@ YAML
     '(^|[[:space:];|&])git[[:space:]].*(add|commit|push)([[:space:]]|$)' \
     <<<"$script"
 }
-    LINUX_ANY_JOBS="$linux_any_jobs" \

@@ -6,8 +6,8 @@ on:
   pull_request:
   workflow_dispatch:
 
-# 同一 ref の旧 run をキャンセルする。build matrix がmozuku-lspをソース
-# ビルドして重いため、force-push 時の並走が特に無駄になる。
+# 同一refの旧runをキャンセルする。build matrixがmozuku-lspをソースから
+# ビルドするため、force-push時の並走を避ける。
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -15,318 +15,65 @@ concurrency:
 permissions:
   contents: read
 
-# GitHub Actions は flake.nix の nixConfig を Nix のインストール前には読めない。
-# 公開cache設定はここで一度だけ宣言し、Nix側との一致をworkflow-policy-testsで
-# 検証する。
-env:
-  NIX_EXTRA_SUBSTITUTERS: >-
-    https://cache.numtide.com
-    https://nix-community.cachix.org
-  NIX_EXTRA_TRUSTED_PUBLIC_KEYS: >-
-    niks3.numtide.com-1:DTx8wZduET09hRmMtKdQDxNNthLQETkc/yaX7M4qK0g=
-    nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
-  HESTIA_VERSION: v3.0.0
-  HESTIA_UPSTREAM_CACHE_KEY_NAMES: >-
-    cache.nixos.org-1
-    niks3.numtide.com-1
-    nix-community.cachix.org-1
-
 jobs:
-  check:
+  flake-eval:
+    name: evaluate / flake
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
+      - name: Install Nix
+        uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
         with:
           enable_kvm: false
-      # Hestiaのmatrix評価とは独立して開始し、buildのcritical pathに含めない。
-      # eval時IFDを排除してあるため、darwinを含む全systemをLinuxで評価できる。
+      # Hestiaのsystem laneとは独立して開始する。eval時のIFDを排除して
+      # あるため、Darwinを含む全systemをLinuxで評価できる。
       - name: Evaluate flake outputs
         run: nix flake check --no-build --all-systems
 
-  build-eval:
-    name: build / evaluate
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    outputs:
-      matrix: ${{ steps.matrix.outputs.matrix }}
-      any-jobs: ${{ steps.matrix.outputs.any-jobs }}
-      manifest-version: ${{ steps.matrix.outputs.manifest-version }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
-        with:
-          enable_kvm: false
-          nix_conf: |
-            extra-substituters = ${{ env.NIX_EXTRA_SUBSTITUTERS }}
-            extra-trusted-public-keys = ${{ env.NIX_EXTRA_TRUSTED_PUBLIC_KEYS }}
-      - uses: Mic92/hestia@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320 # v3.0.0
-        with:
-          version: ${{ env.HESTIA_VERSION }}
-          upstream-cache-filter: true
-          upstream-cache-key-names: ${{ env.HESTIA_UPSTREAM_CACHE_KEY_NAMES }}
-      # systemごとにevaluator processを終了させ、片方のheapを次へ持ち越さない。
-      - id: matrix_linux
-        uses: Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320 # v3.0.0
-        with:
-          flake: ".#hydraJobs.ci.x86_64-linux"
-          # 16 GB runner上で評価workerの再起動を避けつつ、OSとNix daemon用に4 GB残す。
-          nix-eval-jobs: >-
-            nix run
-            nixpkgs#nix-eval-jobs
-            --inputs-from .
-            --
-            --workers 1
-            --max-memory-size 12288
-          attr-prefix: "hydraJobs.ci.x86_64-linux"
-      - id: matrix_darwin
-        uses: Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320 # v3.0.0
-        with:
-          flake: ".#hydraJobs.ci.aarch64-darwin"
-          nix-eval-jobs: >-
-            nix run
-            nixpkgs#nix-eval-jobs
-            --inputs-from .
-            --
-            --workers 1
-            --max-memory-size 12288
-          attr-prefix: "hydraJobs.ci.aarch64-darwin"
-      - id: matrix
-        name: Merge system matrices
-        env:
-          DARWIN_ANY_JOBS: ${{ steps.matrix_darwin.outputs.any-jobs }}
-          DARWIN_MANIFEST_VERSION: ${{ steps.matrix_darwin.outputs.manifest-version }}
-          DARWIN_MATRIX: ${{ steps.matrix_darwin.outputs.matrix }}
-          LINUX_ANY_JOBS: ${{ steps.matrix_linux.outputs.any-jobs }}
-          LINUX_MANIFEST_VERSION: ${{ steps.matrix_linux.outputs.manifest-version }}
-          LINUX_MATRIX: ${{ steps.matrix_linux.outputs.matrix }}
-        run: |
-          set -euo pipefail
-          matrix="$(
-            jq -cen \
-              --arg linux_any_jobs "$LINUX_ANY_JOBS" \
-              --arg darwin_any_jobs "$DARWIN_ANY_JOBS" \
-              --arg linux_version "$LINUX_MANIFEST_VERSION" \
-              --arg darwin_version "$DARWIN_MANIFEST_VERSION" '
-                (env.LINUX_MATRIX | fromjson) as $linux
-                | (env.DARWIN_MATRIX | fromjson) as $darwin
-                | def rows_match($flag; $rows):
-                    ($flag == "true" and ($rows | length) > 0)
-                    or ($flag == "false" and ($rows | length) == 0);
-                if ($linux | type) != "object"
-                  or ($darwin | type) != "object"
-                  or ($linux.include | type) != "array"
-                  or ($darwin.include | type) != "array"
-                then
-                  error("Hestia matrices must contain include arrays")
-                elif (rows_match($linux_any_jobs; $linux.include) | not)
-                  or (rows_match($darwin_any_jobs; $darwin.include) | not)
-                then
-                  error("Hestia any-jobs output does not match its matrix")
-                elif ($linux_any_jobs == "true" and $linux_version == "0")
-                  or ($darwin_any_jobs == "true" and $darwin_version == "0")
-                then
-                  error("Hestia did not register a nonempty matrix fragment")
-                else
-                  ($linux.include + $darwin.include) as $rows
-                  | if ($rows | length) > 256 then
-                      error("combined Hestia matrix exceeds 256 rows")
-                    elif any($rows[]; (.drvPath | type) != "string" or (.drvPath | length) == 0) then
-                      error("Hestia matrix row has an invalid drvPath")
-                    elif ([$rows[].drvPath] | length) != ([$rows[].drvPath] | unique | length) then
-                      error("Hestia matrix contains duplicate drvPaths")
-                    else
-                      { include: $rows }
-                    end
-                end
-              '
-          )"
-          manifest_version="$(
-            jq -ren \
-              --arg linux "$LINUX_MANIFEST_VERSION" \
-              --arg darwin "$DARWIN_MANIFEST_VERSION" '
-                def valid_u64:
-                  test("^(0|[1-9][0-9]*)$")
-                  and (length < 20 or (length == 20 and . <= "18446744073709551615"));
-                def decimal_max($left; $right):
-                  if ($left | length) > ($right | length) then $left
-                  elif ($right | length) > ($left | length) then $right
-                  elif $left >= $right then $left
-                  else $right
-                  end;
-                if ($linux | valid_u64) and ($darwin | valid_u64) then
-                  decimal_max($linux; $darwin)
-                else
-                  error("Hestia manifest versions must be unsigned 64-bit integers")
-                end
-              '
-          )"
-          max_matrix_chars=${MATRIX_OUTPUT_MAX_CHARS:-499000}
-          if [[ ! "$max_matrix_chars" =~ ^[1-9][0-9]*$ ]]; then
-            echo "invalid Hestia matrix output limit" >&2
-            exit 1
-          fi
-          if (( ${#matrix} > max_matrix_chars )); then
-            echo "combined Hestia matrix exceeds the GitHub job output limit" >&2
-            exit 1
-          fi
-          any_jobs="$(jq -r '.include | length > 0' <<< "$matrix")"
-          {
-            printf 'matrix=%s\n' "$matrix"
-            printf 'any-jobs=%s\n' "$any_jobs"
-            printf 'manifest-version=%s\n' "$manifest_version"
-          } >> "$GITHUB_OUTPUT"
+  linux:
+    name: linux
+    uses: ./.github/workflows/hestia-system.yaml
+    with:
+      system: x86_64-linux
 
-  # 評価済みのdrv closureを引き継ぎ、評価とbuildが別のderivationを選ぶ余地を
-  # 作らない。
-  build-matrix:
-    name: build / ${{ matrix.name }} (${{ matrix.system }})
-    needs: build-eval
-    if: >-
-      needs.build-eval.result == 'success'
-      && needs.build-eval.outputs.any-jobs == 'true'
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.build-eval.outputs.matrix) }}
-    steps:
-      - uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
-        with:
-          enable_kvm: false
-          nix_conf: |
-            extra-substituters = ${{ env.NIX_EXTRA_SUBSTITUTERS }}
-            extra-trusted-public-keys = ${{ env.NIX_EXTRA_TRUSTED_PUBLIC_KEYS }}
-      - uses: Mic92/hestia@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320 # v3.0.0
-        with:
-          version: ${{ env.HESTIA_VERSION }}
-          upstream-cache-filter: true
-          upstream-cache-key-names: ${{ env.HESTIA_UPSTREAM_CACHE_KEY_NAMES }}
-          wait-manifest-version: ${{ needs.build-eval.outputs.manifest-version }}
-      - name: Verify binary substituters
-        run: |
-          set -euo pipefail
-          substituters="$(nix config show substituters)"
-          read -r -a public_substituters <<< "$NIX_EXTRA_SUBSTITUTERS"
-          for expected in \
-            https://cache.nixos.org \
-            "${public_substituters[@]}" \
-            http://127.0.0.1:; do
-            if [[ "$substituters" != *"$expected"* ]]; then
-              echo "missing substituter: $expected" >&2
-              echo "configured substituters: $substituters" >&2
-              exit 1
-            fi
-          done
-      - name: Prefetch derivation closure and build
-        env:
-          INSTALLABLES: ${{ matrix.installables }}
-        run: |
-          set -euo pipefail
-          read -r -a installables <<< "$INSTALLABLES"
-          if (( ${#installables[@]} == 0 )); then
-            echo "matrix group has no installables" >&2
-            exit 1
-          fi
-          hashes="$(
-            printf '%s\n' "${installables[@]}" \
-              | awk -F/ '{printf "%s%s", (NR > 1 ? "," : ""), substr($NF, 1, 32)}'
-          )"
-          import_log="$(mktemp)"
-          trap 'rm -f "$import_log"' EXIT
-          max_resolved_references=4
-          resolved_reference_count=0
-          resolved_references='|'
-          prefetch_succeeded=false
-          store_path_pattern='^/nix/store/[0-9abcdfghijklmnpqrsvwxyz]{32}-[A-Za-z0-9+._?=-]+$'
+  darwin:
+    name: darwin
+    uses: ./.github/workflows/hestia-system.yaml
+    with:
+      system: aarch64-darwin
 
-          # Hestia v3のupstream-cache-filterは署名済み参照を/closureから外す一方、
-          # exportされた親pathのReferencesには残す。nix-store --importは外部参照を
-          # substituteしないため、報告されたstore pathだけを通常cacheから取得して
-          # 再試行する。Hestia側で解決されるまでのworkaroundなので、診断文の解析と
-          # 再試行を厳密かつ有限にし、失敗時は下のnix buildへ委ねる。
-          while true; do
-            : > "$import_log"
-            if curl -fsS "http://$HESTIA_LISTEN/closure/$hashes" \
-              | nix-store --import 2>"$import_log"; then
-              cat "$import_log" >&2
-              prefetch_succeeded=true
-              break
-            fi
-            cat "$import_log" >&2
-
-            missing_path="$(
-              sed -nE "s#^error: path '(/nix/store/[^']+)' is not valid\$#\\1#p" \
-                "$import_log" \
-                | tail -n 1
-            )"
-            already_resolved=false
-            if [[ "$resolved_references" == *"|$missing_path|"* ]]; then
-              already_resolved=true
-            fi
-            if [[ ! "$missing_path" =~ $store_path_pattern ]] \
-              || [[ "$missing_path" == *.drv ]] \
-              || [[ "$already_resolved" == true ]] \
-              || (( resolved_reference_count >= max_resolved_references )); then
-              break
-            fi
-
-            echo "Substituting filtered Hestia closure reference: $missing_path"
-            if ! nix-store --realise "$missing_path"; then
-              break
-            fi
-            resolved_references+="$missing_path|"
-            resolved_reference_count=$((resolved_reference_count + 1))
-          done
-
-          if [[ "$prefetch_succeeded" != true ]]; then
-            echo "::warning::Hestia closure prefetch failed; falling back to normal Nix substitution"
-          fi
-          nix build "${installables[@]}"
-
-  # matrixの行数はcache状態で変わるため、systemに依存しない安定したcheck名で
-  # 評価失敗・部分的なbuild失敗・全件cache hitを一箇所で判定する。
-  build:
+  # matrixの行数はcache状態で変わるため、固定名のcheckでflake評価と
+  # system laneの完了を集約する。branch protectionはこのjobだけを参照できる。
+  required:
+    name: required
     needs:
-      - check
-      - build-eval
-      - build-matrix
+      - flake-eval
+      - linux
+      - darwin
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Verify matrix result
+      - name: Verify required results
         env:
-          ANY_JOBS: ${{ needs.build-eval.outputs.any-jobs }}
-          CHECK_RESULT: ${{ needs.check.result }}
-          EVAL_RESULT: ${{ needs.build-eval.result }}
-          MATRIX_RESULT: ${{ needs.build-matrix.result }}
+          DARWIN_RESULT: ${{ needs.darwin.result }}
+          FLAKE_EVAL_RESULT: ${{ needs.flake-eval.result }}
+          LINUX_RESULT: ${{ needs.linux.result }}
         run: |
           set -euo pipefail
-          if [[ "$CHECK_RESULT" != success ]]; then
-            echo "flake evaluation failed: $CHECK_RESULT" >&2
+          if [[ "$FLAKE_EVAL_RESULT" != success ]]; then
+            echo "flake evaluation failed: $FLAKE_EVAL_RESULT" >&2
             exit 1
           fi
-          if [[ "$EVAL_RESULT" != success ]]; then
-            echo "matrix evaluation failed: $EVAL_RESULT" >&2
+          if [[ "$LINUX_RESULT" != success ]]; then
+            echo "Linux lane failed: $LINUX_RESULT" >&2
             exit 1
           fi
-          if [[ "$ANY_JOBS" == true ]]; then
-            if [[ "$MATRIX_RESULT" != success ]]; then
-              echo "matrix build failed: $MATRIX_RESULT" >&2
-              exit 1
-            fi
-          elif [[ "$ANY_JOBS" == false ]]; then
-            if [[ "$MATRIX_RESULT" != skipped ]]; then
-              echo "unexpected empty matrix result: $MATRIX_RESULT" >&2
-              exit 1
-            fi
-          else
-            echo "invalid any-jobs output: $ANY_JOBS" >&2
+          if [[ "$DARWIN_RESULT" != success ]]; then
+            echo "Darwin lane failed: $DARWIN_RESULT" >&2
             exit 1
           fi
