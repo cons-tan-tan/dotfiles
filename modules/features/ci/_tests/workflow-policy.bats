@@ -78,6 +78,38 @@ ci_step_script() {
   yq -r ".jobs.\"$job\".steps[] | select(.name == \"$name\") | .run" "$CI_WORKFLOW"
 }
 
+run_ci_matrix_merge() {
+  local linux_matrix=$1
+  local darwin_matrix=$2
+  local linux_manifest_version=$3
+  local darwin_manifest_version=$4
+  local linux_any_jobs=${5:-}
+  local darwin_any_jobs=${6:-}
+  local matrix_output_max_chars=${7:-499000}
+  local script
+  MATRIX_MERGE_OUTPUT="$BATS_TEST_TMPDIR/matrix-merge-output"
+  : >"$MATRIX_MERGE_OUTPUT"
+  script=$(ci_step_script "build-eval" "Merge system matrices")
+
+  if [[ -z "$linux_any_jobs" ]]; then
+    linux_any_jobs=$(jq -r '.include | length > 0' <<<"$linux_matrix" 2>/dev/null) || linux_any_jobs=invalid
+  fi
+  if [[ -z "$darwin_any_jobs" ]]; then
+    darwin_any_jobs=$(jq -r '.include | length > 0' <<<"$darwin_matrix" 2>/dev/null) || darwin_any_jobs=invalid
+  fi
+
+  run env \
+    DARWIN_ANY_JOBS="$darwin_any_jobs" \
+    DARWIN_MANIFEST_VERSION="$darwin_manifest_version" \
+    DARWIN_MATRIX="$darwin_matrix" \
+    GITHUB_OUTPUT="$MATRIX_MERGE_OUTPUT" \
+    LINUX_ANY_JOBS="$linux_any_jobs" \
+    LINUX_MANIFEST_VERSION="$linux_manifest_version" \
+    LINUX_MATRIX="$linux_matrix" \
+    MATRIX_OUTPUT_MAX_CHARS="$matrix_output_max_chars" \
+    bash -euo pipefail -c "$script"
+}
+
 run_ci_build_step() {
   local curl_status=$1
   local import_outcomes=$2
@@ -386,18 +418,117 @@ YAML
       == "${{ steps.matrix.outputs.any-jobs }}"
     and .jobs."build-eval".outputs."manifest-version"
       == "${{ steps.matrix.outputs.manifest-version }}"
+    and ([.jobs."build-eval".steps[] | select(
+      .uses == "Mic92/hestia@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320"
+    )] | length) == 1
+    and ([.jobs."build-eval".steps[] | select(
+      .uses == "Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320"
+    )] | length) == 2
+    and ([.jobs."build-eval".steps[] | select(
+      .uses == "Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320"
+    )][0].id) == "matrix_linux"
+    and ([.jobs."build-eval".steps[] | select(
+      .uses == "Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320"
+    )][0].with.flake) == ".#hydraJobs.ci.x86_64-linux"
+    and ([.jobs."build-eval".steps[] | select(
+      .uses == "Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320"
+    )][0].with."attr-prefix") == "hydraJobs.ci.x86_64-linux"
+    and ([.jobs."build-eval".steps[] | select(
+      .uses == "Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320"
+    )][1].id) == "matrix_darwin"
+    and ([.jobs."build-eval".steps[] | select(
+      .uses == "Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320"
+    )][1].with.flake) == ".#hydraJobs.ci.aarch64-darwin"
+    and ([.jobs."build-eval".steps[] | select(
+      .uses == "Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320"
+    )][1].with."attr-prefix") == "hydraJobs.ci.aarch64-darwin"
+    and ([.jobs."build-eval".steps[] | select(
+      .uses == "Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320"
+    )] | map(.with."nix-eval-jobs"
+      == "nix run nixpkgs#nix-eval-jobs --inputs-from . -- --workers 1 --max-memory-size 12288")
+      | all)
     and ([.jobs."build-eval".steps[] | select(.id == "matrix")]
       | length) == 1
-    and ([.jobs."build-eval".steps[] | select(.id == "matrix")][0].uses)
-      == "Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320"
-    and ([.jobs."build-eval".steps[] | select(.id == "matrix")][0].with.flake)
-      == ".#hydraJobs.ci"
-    and ([.jobs."build-eval".steps[] | select(.id == "matrix")][0].with."attr-prefix")
-      == "hydraJobs.ci"
-    and ([.jobs."build-eval".steps[] | select(.id == "matrix")][0].with."nix-eval-jobs")
-      == "nix run nixpkgs#nix-eval-jobs --inputs-from . -- --workers 1 --max-memory-size 12288"
+    and ([.jobs."build-eval".steps[] | select(.id == "matrix")][0].name)
+      == "Merge system matrices"
   ' "$CI_WORKFLOW"
   [ "$status" -eq 0 ]
+}
+
+@test "system matrices merge once without duplicate derivations" {
+  local linux='{"include":[{"drvPath":"/nix/store/linux-a.drv"},{"drvPath":"/nix/store/linux-b.drv"}]}'
+  local darwin='{"include":[{"drvPath":"/nix/store/darwin-a.drv"}]}'
+
+  run_ci_matrix_merge "$linux" "$darwin" 7 9
+
+  [ "$status" -eq 0 ]
+  [ "$(sed -n 's/^any-jobs=//p' "$MATRIX_MERGE_OUTPUT")" = true ]
+  [ "$(sed -n 's/^manifest-version=//p' "$MATRIX_MERGE_OUTPUT")" -eq 9 ]
+  run jq -e '.include | length == 3 and ([.[].drvPath] | unique | length) == 3' \
+    <<<"$(sed -n 's/^matrix=//p' "$MATRIX_MERGE_OUTPUT")"
+  [ "$status" -eq 0 ]
+}
+
+@test "matrix merge preserves the nonempty fragment and newest manifest" {
+  local empty='{"include":[]}'
+  local linux='{"include":[{"drvPath":"/nix/store/linux-a.drv"}]}'
+  local darwin='{"include":[{"drvPath":"/nix/store/darwin-a.drv"}]}'
+
+  run_ci_matrix_merge "$linux" "$empty" 12 0
+  [ "$status" -eq 0 ]
+  [ "$(sed -n 's/^manifest-version=//p' "$MATRIX_MERGE_OUTPUT")" -eq 12 ]
+
+  run_ci_matrix_merge "$empty" "$darwin" 0 14
+  [ "$status" -eq 0 ]
+  [ "$(sed -n 's/^manifest-version=//p' "$MATRIX_MERGE_OUTPUT")" -eq 14 ]
+
+  run_ci_matrix_merge "$empty" "$empty" 0 0
+  [ "$status" -eq 0 ]
+  [ "$(sed -n 's/^any-jobs=//p' "$MATRIX_MERGE_OUTPUT")" = false ]
+  [ "$(sed -n 's/^matrix=//p' "$MATRIX_MERGE_OUTPUT")" = '{"include":[]}' ]
+}
+
+@test "matrix merge requires every nonempty fragment to register a manifest" {
+  local empty='{"include":[]}'
+  local linux='{"include":[{"drvPath":"/nix/store/linux-a.drv"}]}'
+
+  run_ci_matrix_merge "$linux" "$empty" 0 0
+  [ "$status" -ne 0 ]
+
+  run_ci_matrix_merge "$linux" "$empty" 12 0 false false
+  [ "$status" -ne 0 ]
+}
+
+@test "matrix merge rejects malformed, duplicate, and oversized inputs" {
+  local empty='{"include":[]}'
+  local duplicate='{"include":[{"drvPath":"/nix/store/shared.drv"}]}'
+  local oversized
+
+  run_ci_matrix_merge '{' "$empty" 1 1
+  [ "$status" -ne 0 ]
+
+  run_ci_matrix_merge '{}' "$empty" 1 1
+  [ "$status" -ne 0 ]
+
+  run_ci_matrix_merge "$duplicate" "$duplicate" 1 1
+  [ "$status" -ne 0 ]
+
+  oversized=$(jq -cn '{include: [range(257) | {drvPath: ("/nix/store/" + tostring + ".drv")}]}')
+  run_ci_matrix_merge "$oversized" "$empty" 1 1
+  [ "$status" -ne 0 ]
+
+  run_ci_matrix_merge "$empty" "$empty" latest 1
+  [ "$status" -ne 0 ]
+
+  run_ci_matrix_merge "$duplicate" "$empty" 18446744073709551615 0 true false
+  [ "$status" -eq 0 ]
+  [ "$(sed -n 's/^manifest-version=//p' "$MATRIX_MERGE_OUTPUT")" = 18446744073709551615 ]
+
+  run_ci_matrix_merge "$duplicate" "$empty" 18446744073709551616 0 true false
+  [ "$status" -ne 0 ]
+
+  run_ci_matrix_merge "$duplicate" "$empty" 1 0 true false 20
+  [ "$status" -ne 0 ]
 }
 
 @test "multi-system matrix waits for and builds the evaluated derivations" {
@@ -766,3 +897,4 @@ YAML
     '(^|[[:space:];|&])git[[:space:]].*(add|commit|push)([[:space:]]|$)' \
     <<<"$script"
 }
+    LINUX_ANY_JOBS="$linux_any_jobs" \

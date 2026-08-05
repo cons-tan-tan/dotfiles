@@ -70,10 +70,11 @@ jobs:
           version: ${{ env.HESTIA_VERSION }}
           upstream-cache-filter: true
           upstream-cache-key-names: ${{ env.HESTIA_UPSTREAM_CACHE_KEY_NAMES }}
-      - id: matrix
+      # systemごとにevaluator processを終了させ、片方のheapを次へ持ち越さない。
+      - id: matrix_linux
         uses: Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320 # v3.0.0
         with:
-          flake: ".#hydraJobs.ci"
+          flake: ".#hydraJobs.ci.x86_64-linux"
           # 16 GB runner上で評価workerの再起動を避けつつ、OSとNix daemon用に4 GB残す。
           nix-eval-jobs: >-
             nix run
@@ -82,7 +83,104 @@ jobs:
             --
             --workers 1
             --max-memory-size 12288
-          attr-prefix: "hydraJobs.ci"
+          attr-prefix: "hydraJobs.ci.x86_64-linux"
+      - id: matrix_darwin
+        uses: Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320 # v3.0.0
+        with:
+          flake: ".#hydraJobs.ci.aarch64-darwin"
+          nix-eval-jobs: >-
+            nix run
+            nixpkgs#nix-eval-jobs
+            --inputs-from .
+            --
+            --workers 1
+            --max-memory-size 12288
+          attr-prefix: "hydraJobs.ci.aarch64-darwin"
+      - id: matrix
+        name: Merge system matrices
+        env:
+          DARWIN_ANY_JOBS: ${{ steps.matrix_darwin.outputs.any-jobs }}
+          DARWIN_MANIFEST_VERSION: ${{ steps.matrix_darwin.outputs.manifest-version }}
+          DARWIN_MATRIX: ${{ steps.matrix_darwin.outputs.matrix }}
+          LINUX_ANY_JOBS: ${{ steps.matrix_linux.outputs.any-jobs }}
+          LINUX_MANIFEST_VERSION: ${{ steps.matrix_linux.outputs.manifest-version }}
+          LINUX_MATRIX: ${{ steps.matrix_linux.outputs.matrix }}
+        run: |
+          set -euo pipefail
+          matrix="$(
+            jq -cen \
+              --arg linux_any_jobs "$LINUX_ANY_JOBS" \
+              --arg darwin_any_jobs "$DARWIN_ANY_JOBS" \
+              --arg linux_version "$LINUX_MANIFEST_VERSION" \
+              --arg darwin_version "$DARWIN_MANIFEST_VERSION" '
+                (env.LINUX_MATRIX | fromjson) as $linux
+                | (env.DARWIN_MATRIX | fromjson) as $darwin
+                | def rows_match($flag; $rows):
+                    ($flag == "true" and ($rows | length) > 0)
+                    or ($flag == "false" and ($rows | length) == 0);
+                if ($linux | type) != "object"
+                  or ($darwin | type) != "object"
+                  or ($linux.include | type) != "array"
+                  or ($darwin.include | type) != "array"
+                then
+                  error("Hestia matrices must contain include arrays")
+                elif (rows_match($linux_any_jobs; $linux.include) | not)
+                  or (rows_match($darwin_any_jobs; $darwin.include) | not)
+                then
+                  error("Hestia any-jobs output does not match its matrix")
+                elif ($linux_any_jobs == "true" and $linux_version == "0")
+                  or ($darwin_any_jobs == "true" and $darwin_version == "0")
+                then
+                  error("Hestia did not register a nonempty matrix fragment")
+                else
+                  ($linux.include + $darwin.include) as $rows
+                  | if ($rows | length) > 256 then
+                      error("combined Hestia matrix exceeds 256 rows")
+                    elif any($rows[]; (.drvPath | type) != "string" or (.drvPath | length) == 0) then
+                      error("Hestia matrix row has an invalid drvPath")
+                    elif ([$rows[].drvPath] | length) != ([$rows[].drvPath] | unique | length) then
+                      error("Hestia matrix contains duplicate drvPaths")
+                    else
+                      { include: $rows }
+                    end
+                end
+              '
+          )"
+          manifest_version="$(
+            jq -ren \
+              --arg linux "$LINUX_MANIFEST_VERSION" \
+              --arg darwin "$DARWIN_MANIFEST_VERSION" '
+                def valid_u64:
+                  test("^(0|[1-9][0-9]*)$")
+                  and (length < 20 or (length == 20 and . <= "18446744073709551615"));
+                def decimal_max($left; $right):
+                  if ($left | length) > ($right | length) then $left
+                  elif ($right | length) > ($left | length) then $right
+                  elif $left >= $right then $left
+                  else $right
+                  end;
+                if ($linux | valid_u64) and ($darwin | valid_u64) then
+                  decimal_max($linux; $darwin)
+                else
+                  error("Hestia manifest versions must be unsigned 64-bit integers")
+                end
+              '
+          )"
+          max_matrix_chars=${MATRIX_OUTPUT_MAX_CHARS:-499000}
+          if [[ ! "$max_matrix_chars" =~ ^[1-9][0-9]*$ ]]; then
+            echo "invalid Hestia matrix output limit" >&2
+            exit 1
+          fi
+          if (( ${#matrix} > max_matrix_chars )); then
+            echo "combined Hestia matrix exceeds the GitHub job output limit" >&2
+            exit 1
+          fi
+          any_jobs="$(jq -r '.include | length > 0' <<< "$matrix")"
+          {
+            printf 'matrix=%s\n' "$matrix"
+            printf 'any-jobs=%s\n' "$any_jobs"
+            printf 'manifest-version=%s\n' "$manifest_version"
+          } >> "$GITHUB_OUTPUT"
 
   # 評価済みのdrv closureを引き継ぎ、評価とbuildが別のderivationを選ぶ余地を
   # 作らない。
