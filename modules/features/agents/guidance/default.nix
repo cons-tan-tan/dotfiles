@@ -5,7 +5,6 @@ in
 {
   features.agent-guidance = {
     name = "feature/agents/guidance";
-    homeManager = import ./_lib/home.nix;
     windows =
       { config, ... }:
       let

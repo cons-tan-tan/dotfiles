@@ -6,7 +6,7 @@
   nix,
   rustPlatform,
   smoke ? false,
-  updatePinRegistry ? import ../../_lib/registry.nix { inherit lib; },
+  updatePinRegistry ? import ../../_interface/registry.nix { inherit lib; },
 }:
 
 rustPlatform.buildRustPackage {

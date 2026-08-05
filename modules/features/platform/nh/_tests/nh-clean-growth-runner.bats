@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 
 DOTFILES_TEST_REPO_ROOT=${DOTFILES_TEST_REPO_ROOT:-$(git -C "$BATS_TEST_DIRNAME" rev-parse --show-toplevel)}
-source "$DOTFILES_TEST_REPO_ROOT/modules/features/checks/_lib/bats/test-helper.bash"
+source "$DOTFILES_TEST_REPO_ROOT/modules/features/checks/_interface/bats/test-helper.bash"
 
 setup() {
   require_nix_fixture NH_CLEAN_GROWTH_RUNNER_BIN "nh-clean growth runner package"

@@ -17,6 +17,7 @@ let
   };
 in
 {
+  group = "shellWrappers";
   fixture = {
     nativeBuildInputs = [ testPackage ];
     environment.CODEX_WRAPPER_TEST_PACKAGE = testPackage;

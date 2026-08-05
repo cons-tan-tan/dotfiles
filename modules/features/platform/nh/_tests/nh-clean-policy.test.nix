@@ -1,5 +1,5 @@
 let
-  policy = import ../_lib/cleanup-policy.nix;
+  policy = import ../_data/cleanup-policy.nix;
 in
 {
   testCleanupPolicyLimits = {

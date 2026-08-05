@@ -14,6 +14,7 @@ in
     ignoredAdvisories = [ ];
   };
   packages.default = package;
+  subjects.applySecretsCore = package;
   buildVariants = [
     {
       name = "default";

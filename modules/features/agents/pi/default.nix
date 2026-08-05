@@ -6,6 +6,5 @@
       features.agents-base
       features.agent-herdr
     ];
-    homeManager = import ./_lib/home.nix;
   };
 }

@@ -1,4 +1,5 @@
 {
+  features,
   lib,
   ...
 }:
@@ -6,17 +7,60 @@ let
   policyRoot = ./_lib/command-policy;
 in
 {
+  features.agent-command-policy-defaults = {
+    name = "feature/agents/command-policy/defaults";
+    agent-command-policy = [
+      {
+        source = "feature/agents/command-policy/defaults";
+        policy = {
+          shell.redirection.emptyFile = false;
+          shellfirm = {
+            enabled = true;
+            minimumSeverity = "High";
+            categories = {
+              aws = true;
+              docker = true;
+              fs = true;
+              gcp = true;
+              git = true;
+              github = true;
+              kubernetes = true;
+              network = true;
+              npm = true;
+              shell = true;
+            };
+            ruleNamespaces = {
+              fs-strict = false;
+              git-strict = false;
+              kubernetes-strict = false;
+            };
+            rules.fs.flush_file_content = false;
+          };
+        };
+      }
+    ];
+  };
+
   features.agents-base = {
     name = "feature/agents/base";
+    includes = [ features.agent-command-policy-defaults ];
 
     homeManager =
-      { config, pkgs, ... }:
+      {
+        agent-command-policy,
+        config,
+        pkgs,
+        ...
+      }:
       let
+        aggregated = import (policyRoot + "/aggregate.nix") {
+          inherit lib;
+        } agent-command-policy;
         policy = config.dotfiles.agentCommandPolicy;
       in
       {
         imports = [
-          (policyRoot + "/options.nix")
+          ./_interface/command-policy-options.nix
           (lib.mkAliasOptionModule
             [
               "dotfiles"
@@ -24,10 +68,8 @@ in
             ]
             [ "agentCommandPolicy" ]
           )
-        ];
-
-        config.agentCommandPolicy =
-          (import (policyRoot + "/rules.nix") { inherit lib; }).agentCommandPolicy;
+        ]
+        ++ aggregated.modules;
 
         config.home.packages = [ pkgs.dotfilesPackages.shellfirm ];
 
@@ -36,21 +78,6 @@ in
           readOnly = true;
           internal = true;
           description = "Validated projections of the merged agent command policy.";
-        };
-
-        options.dotfiles.agentIntegrations.hcom = lib.mkOption {
-          internal = true;
-          default = null;
-          description = "hcom artifacts available when dotfiles.hcom.enable is enabled.";
-          type = lib.types.nullOr (
-            lib.types.submodule {
-              options = {
-                package = lib.mkOption { type = lib.types.package; };
-                claudeHooks = lib.mkOption { type = lib.types.package; };
-                codexHooks = lib.mkOption { type = lib.types.package; };
-              };
-            }
-          );
         };
 
         config.dotfiles.agentCommandPolicyCompiled = import (policyRoot + "/compiler.nix") {

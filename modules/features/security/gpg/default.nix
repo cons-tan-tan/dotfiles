@@ -1,6 +1,6 @@
 { features, ... }:
 let
-  inherit (import ./_lib/gpg.nix) cacheTtl sshKeygrips;
+  inherit (import ./_data/gpg.nix) cacheTtl sshKeygrips;
 in
 {
   features.security-gpg = {

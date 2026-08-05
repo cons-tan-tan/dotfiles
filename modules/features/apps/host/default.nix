@@ -20,7 +20,7 @@ let
       let
         targets = configurationTargets { inherit den system; };
         darwinConfiguration = config.flake.darwinConfigurations.${targets.darwin};
-        darwinAppsFor = import ./_lib/mk-darwin-apps.nix {
+        darwinAppsFor = import ./_interface/darwin-apps.nix {
           inherit appSet;
           darwinHostname = targets.darwin;
         };
@@ -33,7 +33,7 @@ let
       let
         targets = configurationTargets { inherit den system; };
         nixosConfiguration = config.flake.nixosConfigurations.${targets.nixosWsl};
-        mkLinuxApps = import ./_lib/mk-linux-apps.nix {
+        mkLinuxApps = import ./_interface/linux-apps.nix {
           inherit appSet inputs;
           homedir = targets.linuxHomedir;
           nhCleanupSystemdSource = nhPackageSources.cleanupSystemd;

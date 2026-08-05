@@ -1,6 +1,6 @@
 { features, ... }:
 let
-  cleanupPolicy = import ./_lib/cleanup-policy.nix;
+  cleanupPolicy = import ./_data/cleanup-policy.nix;
 in
 {
   features.platform-nh = {
@@ -96,7 +96,7 @@ in
         resultRootPruner = pkgs.callPackage ./_packages/result-root-pruner { };
         username = config.wsl.defaultUser;
         homedir = config.users.users.${username}.home;
-        lock = import ./_lib/cleanup-lock.nix {
+        lock = import ./_interface/cleanup-lock.nix {
           coreutils = pkgs.coreutils;
           inherit lib username;
         };

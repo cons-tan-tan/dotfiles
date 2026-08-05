@@ -33,6 +33,7 @@ let
   };
 in
 {
+  group = "shellWrappers";
   fixture = {
     nativeBuildInputs = [
       awsConfigReconcileTestPackage

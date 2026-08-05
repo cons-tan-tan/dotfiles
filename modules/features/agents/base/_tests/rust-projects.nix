@@ -9,9 +9,10 @@ let
       manifest,
       lockfile,
       package,
+      subjects ? { },
     }:
     {
-      inherit name manifest;
+      inherit name manifest subjects;
       ciTargets = ciCheck.targets.both "rust-and-bats";
       platformPredicate = _platform: true;
       advisoryOnly = false;
@@ -53,6 +54,7 @@ in
     manifest = "modules/features/agents/base/_packages/command-guard/Cargo.toml";
     lockfile = "modules/features/agents/base/_packages/command-guard/Cargo.lock";
     package = commandGuard;
+    subjects.agentCommandGuard = commandGuard;
   })
   {
     # shellfirm is built from an upstream source, but its vendored lockfile is
@@ -77,6 +79,7 @@ in
       ];
     };
     packages = { };
+    subjects = { };
     buildVariants = [ ];
     clippyVariants = [ ];
   }

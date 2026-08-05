@@ -4,8 +4,7 @@ let
   discovery = import ../_lib/test-discovery.nix { inherit lib; };
   isTestSource = path: lib.hasSuffix ".test.nix" (baseNameOf path);
   isFailureTest = path: lib.hasSuffix ".failure.test.nix" (baseNameOf path);
-  isSupportPath =
-    path: lib.hasInfix "/_tests/" (toString path) || lib.hasInfix "/_lib/" (toString path);
+  isSupportPath = path: lib.hasInfix "/_tests/" (toString path);
   candidateFiles = builtins.filter (path: isSupportPath path && isTestSource path) (
     lib.filesystem.listFilesRecursive modulesRoot
   );

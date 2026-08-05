@@ -2,7 +2,7 @@
 let
   appsFor =
     { pkgs, ... }:
-    import ./_lib/mk-app-set.nix {
+    import ./_interface/app-set.nix {
       inherit pkgs;
       repoRoot = ../../../..;
     };

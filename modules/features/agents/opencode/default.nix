@@ -6,19 +6,5 @@
       features.agent-guidance
       features.agent-herdr
     ];
-    homeManager =
-      {
-        config,
-        lib,
-        pkgs,
-        ...
-      }:
-      import ./_lib/home.nix {
-        inherit
-          config
-          lib
-          pkgs
-          ;
-      };
   };
 }

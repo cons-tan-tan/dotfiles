@@ -6,7 +6,7 @@
 }:
 let
   modulesRoot = repoRoot + "/modules";
-  catalog = import ../_lib/rust-projects.nix {
+  catalog = import ../_interface/rust-projects.nix {
     inherit ciCheck lib pkgs;
   };
   inherit (catalog) projects;
@@ -50,6 +50,7 @@ let
   clippyCheckNames = lib.concatMap (
     project: map (variant: variant.checkName) project.clippyVariants
   ) projects;
+  subjectNames = lib.concatMap (project: builtins.attrNames (project.subjects or { })) projects;
   invalidAdvisories = lib.concatMap (
     project:
     map
@@ -146,6 +147,11 @@ in
 
   testClippyCheckNamesAreUnique = {
     expr = catalog.duplicates clippyCheckNames;
+    expected = [ ];
+  };
+
+  testRustSubjectNamesAreUnique = {
+    expr = catalog.duplicates subjectNames;
     expected = [ ];
   };
 

@@ -41,7 +41,7 @@
 #   restore, commit-only success, and second-run inode/mtime stability.
 
 DOTFILES_TEST_REPO_ROOT=${DOTFILES_TEST_REPO_ROOT:-$(git -C "$BATS_TEST_DIRNAME" rev-parse --show-toplevel)}
-source "$DOTFILES_TEST_REPO_ROOT/modules/features/checks/_lib/bats/test-helper.bash"
+source "$DOTFILES_TEST_REPO_ROOT/modules/features/checks/_interface/bats/test-helper.bash"
 
 MANAGED_PIN_PATHS=()
 SHELLFIRM_COMPANION_PATHS=()

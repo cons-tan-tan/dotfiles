@@ -1,97 +1,7 @@
-{ ... }:
-let
-  tools = [
-    {
-      id = "reuse";
-      nix = {
-        route = "home-packages";
-        nixpkgsAttr = "reuse";
-      };
-    }
-    {
-      id = "rg";
-      nix = {
-        route = "home-packages";
-        nixpkgsAttr = "ripgrep";
-      };
-      winget = {
-        packageId = "BurntSushi.ripgrep.MSVC";
-        description = "ripgrep";
-      };
-    }
-    {
-      id = "fd";
-      nix = {
-        route = "home-packages";
-        nixpkgsAttr = "fd";
-      };
-      winget = {
-        packageId = "sharkdp.fd";
-        description = "fd";
-      };
-    }
-    {
-      id = "bat";
-      nix = {
-        route = "home-packages";
-        nixpkgsAttr = "bat";
-      };
-      winget = {
-        packageId = "sharkdp.bat";
-        description = "bat";
-      };
-    }
-    {
-      id = "eza";
-      nix = {
-        route = "home-packages";
-        nixpkgsAttr = "eza";
-      };
-      winget = {
-        packageId = "eza-community.eza";
-        description = "eza";
-      };
-    }
-    {
-      id = "jq";
-      nix = {
-        route = "home-packages";
-        nixpkgsAttr = "jq";
-      };
-      winget = {
-        packageId = "jqlang.jq";
-        description = "jq";
-      };
-    }
-    {
-      id = "ast-grep";
-      nix = {
-        route = "home-packages";
-        nixpkgsAttr = "ast-grep";
-      };
-      winget = {
-        packageId = "ast-grep.ast-grep";
-        description = "ast-grep";
-      };
-    }
-    {
-      id = "fzf";
-      nix = {
-        route = "home-packages";
-        nixpkgsAttr = "fzf";
-      };
-      winget = {
-        packageId = "junegunn.fzf";
-        description = "fzf";
-      };
-    }
-  ];
-in
+{ features, ... }:
 {
-  features.cli-tools = {
-    name = "feature/cli-tools";
-    cli-tools = tools;
-
+  features.cli-tools-consumer = {
+    name = "feature/cli-tools/consumer";
     homeManager =
       {
         cli-tools,
@@ -105,5 +15,20 @@ in
       {
         home.packages = aggregated.nixHomePackages;
       };
+  };
+
+  features.cli-tools = {
+    name = "feature/cli-tools";
+    includes = [
+      features.cli-tools-consumer
+      features.cli-tool-reuse
+      features.cli-tool-rg
+      features.cli-tool-fd
+      features.cli-tool-bat
+      features.cli-tool-eza
+      features.cli-tool-jq
+      features.ast-grep
+      features.cli-tool-fzf
+    ];
   };
 }

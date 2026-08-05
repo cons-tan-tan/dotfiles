@@ -1,7 +1,7 @@
 let
-  contextRoot = ../_data/context;
+  contextRoot = ../../../../../agents/context;
   repositoryRelative = rec {
-    contextRoot = "modules/features/agents/guidance/_data/context";
+    contextRoot = "agents/context";
     globalContext = "${contextRoot}/global.md";
   };
 in

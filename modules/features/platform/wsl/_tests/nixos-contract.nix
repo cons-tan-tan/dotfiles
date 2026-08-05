@@ -12,7 +12,7 @@ let
   windowsHomedir = "/mnt/c/Users/zhouc";
   subjectUsername = entityContext.username;
   home = config.home-manager.users.${subjectUsername};
-  cleanupPolicy = import ../../nh/_lib/cleanup-policy.nix;
+  cleanupPolicy = import ../../nh/_data/cleanup-policy.nix;
   growthChecker = pkgs.callPackage ../../nh/_packages/store-growth-checker {
     nix = config.nix.package;
   };
@@ -34,7 +34,7 @@ let
       ;
   };
   growthRunnerBin = lib.getExe growthRunner;
-  cleanupLock = import ../../nh/_lib/cleanup-lock.nix {
+  cleanupLock = import ../../nh/_interface/cleanup-lock.nix {
     coreutils = pkgs.coreutils;
     inherit lib;
     username = subjectUsername;

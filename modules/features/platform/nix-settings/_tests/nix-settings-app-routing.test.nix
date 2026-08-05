@@ -10,7 +10,7 @@ let
   targets = (import ../../../../flake/_interface/configuration-targets.nix { inherit lib; }) {
     inherit den system;
   };
-  expected = import ../_lib/mk-app-set.nix {
+  expected = import ../_interface/app-set.nix {
     inherit pkgs;
     username = targets.username;
   };

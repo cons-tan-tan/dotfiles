@@ -1,4 +1,5 @@
 {
+  group = "shellWrappers";
   testFiles = [
     "modules/features/apps/host/_tests/apply-winget.bats"
     "modules/features/apps/host/_tests/darwin-apps.bats"

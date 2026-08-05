@@ -30,6 +30,7 @@ let
   };
 in
 {
+  group = "shellWrappers";
   fixture = {
     nativeBuildInputs = [ testPackage ];
     environment.WSL_OPEN_TEST_PACKAGE = testPackage;

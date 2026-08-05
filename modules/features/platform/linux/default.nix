@@ -4,7 +4,7 @@
     name = "feature/platform/linux";
     includes = [
       features.platform-context
-      features.platform-linux-drawio-headless
+      features.drawio-linux-headless
       features.platform-nh
     ];
   };

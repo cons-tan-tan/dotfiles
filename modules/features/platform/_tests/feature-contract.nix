@@ -1,5 +1,6 @@
 {
   entityContexts,
+  featuresRoot,
   flake,
   lib,
   pkgs,
@@ -32,7 +33,7 @@ let
   contractSuffix = ".platform-contract.nix";
   contractFiles = builtins.filter (
     path: lib.hasSuffix contractSuffix (baseNameOf path) && lib.hasInfix "/_tests/" (toString path)
-  ) (lib.filesystem.listFilesRecursive ../.);
+  ) (lib.filesystem.listFilesRecursive featuresRoot);
   contractName = path: lib.removeSuffix contractSuffix (baseNameOf path);
   contractNames = map contractName contractFiles;
   expectedContractNames = import ./platform-contracts.nix;

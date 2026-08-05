@@ -7,6 +7,7 @@ let
   curlFetch = pkgs.dotfilesPackages.curl-fetch;
 in
 {
+  group = "safeFetch";
   fixture = {
     nativeBuildInputs = [
       subjects.safeFetch.core

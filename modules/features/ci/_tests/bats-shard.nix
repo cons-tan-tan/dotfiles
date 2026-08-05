@@ -19,7 +19,7 @@ in
   ciTargets = ciCheck.targets.linux "rust-and-bats";
   testFiles = [ "modules/features/ci/_tests/workflow-policy.bats" ];
   sourceFiles =
-    workflowFiles ++ ciScriptFiles ++ [ "modules/features/checks/_lib/bats/test-helper.bash" ];
+    workflowFiles ++ ciScriptFiles ++ [ "modules/features/checks/_interface/bats/test-helper.bash" ];
   initializeGit = false;
   platformPredicate = _platform: true;
 }

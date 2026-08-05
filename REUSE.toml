@@ -5,7 +5,7 @@ SPDX-PackageSupplier = "constantan <zhouchengt@gmail.com>"
 # 既定: リポジトリ全体は CC0-1.0 (ルートの LICENSE と同一)。
 # 由来が異なるファイルは sidecar (.license) が precedence = "closest" で勝つ:
 #   - ryoppippi/dotfiles 由来の派生物 → MIT
-#   - modules/features/agents/claude/_data/output-styles/faust.md → LicenseRef-ProjectMoon-Fanwork
+#   - claude/output-styles/faust.md → LicenseRef-ProjectMoon-Fanwork
 [[annotations]]
 path = "**"
 precedence = "closest"

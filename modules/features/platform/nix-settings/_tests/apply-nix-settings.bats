@@ -2,7 +2,7 @@
 # Nix-built executable and host process boundaries; pure behavior lives in Rust tests.
 
 DOTFILES_TEST_REPO_ROOT=${DOTFILES_TEST_REPO_ROOT:-$(git -C "$BATS_TEST_DIRNAME" rev-parse --show-toplevel)}
-source "$DOTFILES_TEST_REPO_ROOT/modules/features/checks/_lib/bats/test-helper.bash"
+source "$DOTFILES_TEST_REPO_ROOT/modules/features/checks/_interface/bats/test-helper.bash"
 
 setup_file() {
   bats_require_minimum_version 1.5.0

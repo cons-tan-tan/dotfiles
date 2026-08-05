@@ -7,6 +7,7 @@ let
   ghApiGet = pkgs.dotfilesPackages.gh-api-get;
 in
 {
+  group = "safeFetch";
   fixture = {
     nativeBuildInputs = [ ghApiGet ];
     environment = {

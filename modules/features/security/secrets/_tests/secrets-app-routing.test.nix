@@ -6,7 +6,7 @@
 }:
 let
   system = pkgs.stdenv.hostPlatform.system;
-  expected = import ../_lib/mk-app-set.nix { inherit pkgs repoRoot; };
+  expected = import ../_interface/app-set.nix { inherit pkgs repoRoot; };
 in
 {
   testPublicApplySecretsAppUsesOwnerDeclaration = {

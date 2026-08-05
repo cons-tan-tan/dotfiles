@@ -1,6 +1,6 @@
 { lib }:
 let
-  registry = import ../_lib/registry.nix { inherit lib; };
+  registry = import ../_interface/registry.nix { inherit lib; };
   entries = registry.entries;
   sourceAuthorityFor =
     entry:

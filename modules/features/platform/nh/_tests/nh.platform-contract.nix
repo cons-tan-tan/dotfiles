@@ -9,7 +9,7 @@
   darwinSystem,
 }:
 let
-  cleanupPolicy = import ../_lib/cleanup-policy.nix;
+  cleanupPolicy = import ../_data/cleanup-policy.nix;
   cleanupArgs = lib.escapeShellArgs cleanupPolicy.arguments;
   linuxCleanupRunner = standaloneLinuxResult.pkgs.callPackage ../_packages/clean-user {
     nh = standaloneLinux.programs.nh.package;

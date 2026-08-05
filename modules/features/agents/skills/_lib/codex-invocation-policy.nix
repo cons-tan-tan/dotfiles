@@ -4,12 +4,10 @@
 let
   yaml = import ./yaml-frontmatter.nix { inherit lib; };
   inherit (yaml) ensureTrailingNewline;
+  codexImplicitInvocationPolicy = import ../_data/codex-invocation-policy.nix;
 in
-rec {
-  codexImplicitInvocationPolicy = ''
-    policy:
-      allow_implicit_invocation: false
-  '';
+{
+  inherit codexImplicitInvocationPolicy;
 
   disableCodexImplicitInvocation =
     text:

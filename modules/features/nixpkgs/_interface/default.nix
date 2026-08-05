@@ -8,7 +8,7 @@ let
   };
   mkOverlayPlan =
     { inputs, system }:
-    import ../_lib/mk-overlays.nix {
+    import ./overlay-plan.nix {
       inherit inputs localPackageRegistry watchexecOverlay;
       llmAgentsOverlay = agentOverlays.llmAgents;
       mozukuOverlay = mozuku.overlay;

@@ -8,9 +8,9 @@
     name = "feature/agents/codex";
     includes = [
       features.agents-base
+      features.agent-hcom-contract
       features.agent-herdr
       (den.batteries.unfree [ "codex-app" ])
     ];
-    homeManager = import ./_lib/home.nix;
   };
 }

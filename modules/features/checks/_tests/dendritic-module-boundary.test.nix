@@ -15,7 +15,55 @@ let
   actualModuleFiles = (inputs.import-tree.withLib lib).leafs modulesRoot;
   isSupportPath =
     path: lib.hasInfix "/_tests/" (toString path) || lib.hasInfix "/_lib/" (toString path);
+  isTestPath = path: lib.hasInfix "/_tests/" (toString path);
   supportFiles = builtins.filter isSupportPath allNixFiles;
+  libNixFiles = builtins.filter (path: lib.hasInfix "/_lib/" (toString path)) allNixFiles;
+  approvedLibRelativePaths = [
+    "modules/features/agents/base/_lib/command-policy/aggregate.nix"
+    "modules/features/agents/base/_lib/command-policy/compiler.nix"
+    "modules/features/agents/base/_lib/command-policy/mk-guard.nix"
+    "modules/features/agents/base/_lib/command-policy/profile.nix"
+    "modules/features/agents/base/_lib/command-policy/rule-dsl.nix"
+    "modules/features/agents/base/_lib/command-policy/shell-policy-schema.nix"
+    "modules/features/agents/skills/_lib/aggregate.nix"
+    "modules/features/agents/skills/_lib/codex-invocation-policy.nix"
+    "modules/features/agents/skills/_lib/skill-policy.nix"
+    "modules/features/agents/skills/_lib/yaml-frontmatter.nix"
+    "modules/features/checks/_lib/bats/harness.nix"
+    "modules/features/checks/_lib/bats/validate-catalog.nix"
+    "modules/features/checks/_lib/compose.nix"
+    "modules/features/checks/_lib/eval/den-suite-harness.nix"
+    "modules/features/checks/_lib/eval/harness.nix"
+    "modules/features/checks/_lib/home-contract-protocol.nix"
+    "modules/features/checks/_lib/test-discovery.nix"
+    "modules/features/cli-tools/_lib/aggregate.nix"
+    "modules/features/lint/_lib/mk-node-lint-app.nix"
+    "modules/features/nixpkgs/_lib/mk-pinned-asset.nix"
+    "modules/features/nixpkgs/_lib/mk-pkgs.nix"
+    "modules/features/update-pins/_lib/candidate-package.nix"
+  ];
+  relativePath = path: lib.removePrefix "${toString repoRoot}/" (toString path);
+  unapprovedLibPaths = builtins.filter (
+    path: !(builtins.elem (relativePath path) approvedLibRelativePaths)
+  ) libNixFiles;
+  libBoundaryViolations = builtins.filter (
+    path:
+    builtins.elem (baseNameOf path) [
+      "catalog.nix"
+      "class.nix"
+      "default.nix"
+      "home.nix"
+      "module.nix"
+      "options.nix"
+      "pipe.nix"
+      "policy.nix"
+      "quirk.nix"
+      "registry.nix"
+      "settings.nix"
+      "sources.nix"
+    ]
+    || lib.hasSuffix ".fixture.nix" (baseNameOf path)
+  ) libNixFiles;
   isNonemptyModuleValue =
     path:
     let
@@ -28,7 +76,6 @@ let
   ++ builtins.filter (path: lib.hasSuffix ".nix" (toString path)) (
     lib.filesystem.listFilesRecursive modulesRoot
   );
-  relativePath = path: lib.removePrefix "${toString repoRoot}/" (toString path);
   architectureRelativePaths = map relativePath architectureSourceFiles;
   matchingFiles =
     needles:
@@ -125,6 +172,40 @@ let
       } tokens;
     in
     lib.concatStrings (lib.reverseList scanned.output);
+  libGraphBoundaryNeedles = [
+    "features."
+    "den.aspects"
+    "den.policies"
+    "den.quirks"
+    "den.schema"
+    "policy.resolve"
+    "pipe."
+  ];
+  libGraphBoundaryViolations = matchingFilesBy libNixFiles (
+    contents:
+    let
+      sanitizedContents = sanitizeNixSource contents;
+      lines = lib.splitString "\n" sanitizedContents;
+    in
+    builtins.any (needle: lib.hasInfix needle sanitizedContents) libGraphBoundaryNeedles
+    || builtins.any (
+      line: lineMatches "^[[:space:]]*(features|includes|provides)[[:space:]]*=.*$" line
+    ) lines
+  );
+  libClassModuleViolations = matchingFilesBy libNixFiles (
+    contents:
+    builtins.any (
+      line:
+      lineMatches "^[[:space:]]*(nixos|darwin|homeManager|perSystem|generic|hjem|maid)[[:space:]]*=.*$" line
+    ) (lib.splitString "\n" (sanitizeNixSource contents))
+  );
+  libModuleOptionViolations = matchingFilesBy libNixFiles (
+    contents:
+    builtins.any (
+      line:
+      lineMatches "^[[:space:]]*(assertions|environment|fonts|home|homebrew|launchd|networking|nix|nixpkgs|programs|security|services|system|systemd|users)[.][^=]*=.*$" line
+    ) (lib.splitString "\n" (sanitizeNixSource contents))
+  );
   legacyTopologyNeedles = [
     ("mk" + "Host")
     ("mk" + "Darwin")
@@ -245,7 +326,7 @@ let
         inherit lib;
       }).flake-file.inputs;
     pptxSkill =
-      (import ../../agents/skills/pptx/default.nix {
+      (import ../../pptx/default.nix {
         den = { };
         inputs = { };
       }).flake-file.inputs;
@@ -274,11 +355,22 @@ let
     "modules/features/apps/update-pins.nix"
     "modules/features/platform/wsl/nix-settings.nix"
     "modules/features/packages"
-    "agents"
+    "modules/features/agents/guidance/_data/context"
+    "modules/features/agents/skills/_data/local"
+    "modules/features/agents/claude/_data/commands"
+    "modules/features/agents/claude/_data/hooks"
+    "modules/features/agents/claude/_data/output-styles"
+    "modules/features/agents/pi/_data/extensions"
     "bats"
-    "claude"
     "nix"
-    "pi"
+  ];
+  nativePayloadRoots = [
+    "agents/context"
+    "agents/skills"
+    "claude/commands"
+    "claude/hooks"
+    "claude/output-styles"
+    "pi/extensions"
   ];
 in
 {
@@ -304,10 +396,37 @@ in
   };
 
   testPureTestsUseSupportDirectories = {
-    expr = builtins.all isSupportPath (
+    expr = builtins.all isTestPath (
       builtins.filter (path: lib.hasSuffix ".test.nix" (toString path)) allNixFiles
     );
     expected = true;
+  };
+
+  testLibContainsOnlyReusableImplementationHelpers = {
+    expr = {
+      forbiddenBasenames = map relativePath libBoundaryViolations;
+      unapprovedPaths = map relativePath unapprovedLibPaths;
+    };
+    expected = {
+      forbiddenBasenames = [ ];
+      unapprovedPaths = [ ];
+    };
+  };
+
+  testLibDoesNotDeclareOrChangeDenGraphs = {
+    expr = libGraphBoundaryViolations;
+    expected = [ ];
+  };
+
+  testLibDoesNotContainClassModules = {
+    expr = {
+      classKeys = libClassModuleViolations;
+      moduleOptions = libModuleOptionViolations;
+    };
+    expected = {
+      classKeys = [ ];
+      moduleOptions = [ ];
+    };
   };
 
   testAutoImportedFilesHaveModuleValues = {
@@ -443,6 +562,11 @@ in
   testRetiredLocalityModulesAreAbsent = {
     expr = builtins.filter (path: builtins.pathExists (repoRoot + "/${path}")) retiredLocalityPaths;
     expected = [ ];
+  };
+
+  testNativePayloadTreesRemainAtCanonicalRoots = {
+    expr = builtins.all (path: builtins.pathExists (repoRoot + "/${path}")) nativePayloadRoots;
+    expected = true;
   };
 
   testLegacyExtraSpecialArgsDetectionIsScopedToItsAttributeSet = {

@@ -11,6 +11,7 @@ let
   agentPackageSources = import ../../agents/_interface/package-sources.nix;
   ciPackageSources = import ../../ci/_interface/package-sources.nix;
   cloudPackageSources = import ../../cloud/_interface/package-sources.nix;
+  drawioPackageSources = import ../../drawio/_interface/package-sources.nix;
   networkPackageSources = import ../../network/_interface/package-sources.nix;
   platformPackageSources = import ../../platform/_interface/package-sources.nix;
   securityPackageSources = import ../../security/_interface/package-sources.nix;
@@ -78,7 +79,7 @@ in
     ;
 }
 // lib.optionalAttrs hostPlatform.isLinux {
-  drawio-headless = pkgs.callPackage platformPackageSources.drawioHeadless { };
+  drawio-headless = pkgs.callPackage drawioPackageSources.headless { };
   wsl-open = pkgs.callPackage platformPackageSources.wslOpen { };
   wsl-set-ssh-auth-sock = pkgs.callPackage securityPackageSources.wslSetSshAuthSock { };
 }

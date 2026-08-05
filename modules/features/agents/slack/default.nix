@@ -1,8 +1,4 @@
-{
-  features,
-  inputs,
-  ...
-}:
+{ inputs, ... }:
 {
   flake-file.inputs.agent-slack-skill = {
     url = "github:stablyai/agent-slack/v0.9.3";
@@ -11,7 +7,6 @@
 
   features.agent-slack = {
     name = "feature/agents/slack";
-    includes = [ features.agent-skills-consumer ];
     agent-skills = [
       {
         name = "agent-slack";

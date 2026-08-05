@@ -4,7 +4,7 @@ let
   fm =
     (import ../_lib/yaml-frontmatter.nix { inherit lib; })
     // (import ../_lib/skill-policy.nix { inherit lib; });
-  policy = import ../_lib/policy.nix { inherit lib; };
+  policy = import ../_data/policy.nix { inherit lib; };
 
   defaultInheritedFields = policy.defaultInheritedFrontmatterFields;
   prepare =

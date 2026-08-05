@@ -1,6 +1,6 @@
 let
   trashDirectory = "/home/test/.local/share/Trash";
-  settings = (import ../_lib/settings.nix).mkMergePayload {
+  settings = (import ../_interface/settings.nix).mkMergePayload {
     codexHome = "/home/test/.codex";
     inherit trashDirectory;
   };

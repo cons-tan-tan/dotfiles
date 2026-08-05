@@ -16,6 +16,7 @@ let
       };
     }
     (repoRoot + "/modules/features/agents/skills/quirk.nix")
+    (repoRoot + "/modules/features/agents/base/quirk.nix")
   ];
 
   evalTest =
@@ -60,12 +61,22 @@ let
           (agentsRoot + "/base/default.nix")
         ];
         den.hosts.x86_64-linux.igloo.users = {
-          tux = { };
           pingu = { };
+          tux = { };
         };
 
-        den.aspects.policy-alpha.homeManager.agentCommandPolicy.commands.alpha = true;
-        den.aspects.policy-beta.homeManager.agentCommandPolicy.commands.beta = false;
+        den.aspects.policy-alpha.agent-command-policy = [
+          {
+            source = "fixture/policy-alpha";
+            policy.commands.alpha = true;
+          }
+        ];
+        den.aspects.policy-beta.agent-command-policy = [
+          {
+            source = "fixture/policy-beta";
+            policy.commands.beta = false;
+          }
+        ];
         den.aspects.tux = {
           includes = [
             features.agents-base
@@ -105,6 +116,54 @@ let
             pingu = true;
           };
         };
+      }
+    );
+
+    testCommandPolicyMergeIsIncludeOrderIndependent = evalTest (
+      {
+        config,
+        den,
+        features,
+        ...
+      }:
+      let
+        commandsFor =
+          name: config.flake.homeConfigurations.${name}.config.dotfiles.agentCommandPolicy.commands;
+      in
+      {
+        imports = [
+          baseHome
+          (agentsRoot + "/base/default.nix")
+        ];
+        den.homes.x86_64-linux = {
+          pingu = { };
+          tux = { };
+        };
+        den.aspects.policy-alpha.agent-command-policy = [
+          {
+            source = "fixture/policy-alpha";
+            policy.commands.alpha = true;
+          }
+        ];
+        den.aspects.policy-beta.agent-command-policy = [
+          {
+            source = "fixture/policy-beta";
+            policy.commands.beta = false;
+          }
+        ];
+        den.aspects.pingu.includes = [
+          den.aspects.policy-beta
+          features.agents-base
+          den.aspects.policy-alpha
+        ];
+        den.aspects.tux.includes = [
+          den.aspects.policy-alpha
+          features.agents-base
+          den.aspects.policy-beta
+        ];
+
+        expr = commandsFor "pingu" == commandsFor "tux";
+        expected = true;
       }
     );
 
@@ -185,17 +244,27 @@ let
           (agentsRoot + "/browser/default.nix")
           (agentsRoot + "/ccusage/default.nix")
           (agentsRoot + "/claude/default.nix")
+          (agentsRoot + "/claude/home.nix")
           (agentsRoot + "/codex/default.nix")
+          (agentsRoot + "/codex/home.nix")
           (agentsRoot + "/copilot/default.nix")
           (agentsRoot + "/difit/default.nix")
           (agentsRoot + "/gemini/default.nix")
           (agentsRoot + "/guidance/default.nix")
+          (agentsRoot + "/guidance/home.nix")
           (agentsRoot + "/herdr/default.nix")
+          (agentsRoot + "/herdr/home.nix")
           (agentsRoot + "/hunk/default.nix")
+          (agentsRoot + "/hunk/home.nix")
           (agentsRoot + "/opencode/default.nix")
+          (agentsRoot + "/opencode/home.nix")
           (agentsRoot + "/pi/default.nix")
+          (agentsRoot + "/pi/home.nix")
           (agentsRoot + "/skills/default.nix")
+          (repoRoot + "/modules/features/pptx/default.nix")
+          (repoRoot + "/modules/features/drawio/default.nix")
           (agentsRoot + "/slack/default.nix")
+          (agentsRoot + "/hcom/contract.nix")
           (agentsRoot + "/hcom/default.nix")
           (repoRoot + "/modules/features/platform/context.nix")
         ];
@@ -289,6 +358,7 @@ let
         imports = [
           baseHome
           (agentsRoot + "/hunk/default.nix")
+          (agentsRoot + "/hunk/home.nix")
           (agentsRoot + "/skills/default.nix")
         ];
         den.default.homeManager.nixpkgs.overlays = overlayPlan.overlays;

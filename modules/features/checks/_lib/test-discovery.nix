@@ -11,7 +11,7 @@ let
     [
       {
         path = modulesRoot;
-        include = path: lib.hasInfix "/_tests/" (toString path) || lib.hasInfix "/_lib/" (toString path);
+        include = path: lib.hasInfix "/_tests/" (toString path);
       }
     ];
 in

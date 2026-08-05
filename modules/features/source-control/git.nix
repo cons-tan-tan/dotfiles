@@ -13,10 +13,19 @@
         };
       }
     ];
+    agent-command-policy = [
+      {
+        source = "feature/source-control/git";
+        policy.commands.git = {
+          clone = true;
+          commit = true;
+        };
+      }
+    ];
     homeManager =
       { lib, pkgs, ... }:
       let
-        gitLib = import ./_lib/git.nix { inherit lib pkgs; };
+        gitLib = import ./_interface/git.nix { inherit lib pkgs; };
       in
       {
         home.packages = [ pkgs.git-cliff ];
@@ -40,7 +49,7 @@
       }:
       let
         pkgs = config._module.args.pkgs;
-        gitLib = import ./_lib/git.nix { inherit lib pkgs; };
+        gitLib = import ./_interface/git.nix { inherit lib pkgs; };
         windowsCfg = gitLib.mkSettings {
           forWindows = true;
           windowsUsername = config.dotfiles.platform.windows.username;

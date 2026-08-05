@@ -1,4 +1,10 @@
 { lib, ... }:
+let
+  profileAssertion = expected: owner: {
+    assertion = owner.dotfiles.environment == expected;
+    message = "dotfiles ${expected} environment aspect requires owner.dotfiles.environment = ${expected}";
+  };
+in
 {
   features.platform-context = {
     name = "feature/platform/context";
@@ -80,5 +86,54 @@
           }
         ];
       };
+  };
+
+  features.platform-context-linux-home = {
+    name = "feature/platform/context/linux-home";
+    homeManager = { home, ... }: {
+      assertions = [ (profileAssertion "linux" home) ];
+      dotfiles.platform = {
+        inherit (home.dotfiles) environment source standalone;
+      };
+    };
+  };
+
+  features.platform-context-wsl-host = {
+    name = "feature/platform/context/wsl-host";
+    nixos = { host, ... }: {
+      assertions = [ (profileAssertion "wsl" host) ];
+    };
+    homeManager = { host, ... }: {
+      assertions = [ (profileAssertion "wsl" host) ];
+      dotfiles.platform = {
+        inherit (host.dotfiles) environment source windows;
+        standalone = host.dotfiles.standalone or false;
+      };
+    };
+  };
+
+  features.platform-context-wsl-home = {
+    name = "feature/platform/context/wsl-home";
+    homeManager = { home, ... }: {
+      assertions = [ (profileAssertion "wsl" home) ];
+      dotfiles.platform = {
+        inherit (home.dotfiles) environment source windows;
+        standalone = home.dotfiles.standalone or false;
+      };
+    };
+  };
+
+  features.platform-context-darwin-host = {
+    name = "feature/platform/context/darwin-host";
+    darwin = { host, ... }: {
+      assertions = [ (profileAssertion "darwin" host) ];
+    };
+    homeManager = { host, ... }: {
+      assertions = [ (profileAssertion "darwin" host) ];
+      dotfiles.platform = {
+        inherit (host.dotfiles) environment source;
+        standalone = false;
+      };
+    };
   };
 }

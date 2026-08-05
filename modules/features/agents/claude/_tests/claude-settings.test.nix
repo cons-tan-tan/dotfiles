@@ -4,7 +4,12 @@ let
   evaluatedPolicy = lib.evalModules {
     modules = [
       commandPolicyInterface.options
-      commandPolicyInterface.rules
+      {
+        agentCommandPolicy.commands = {
+          ax = true;
+          gh.api-get = true;
+        };
+      }
     ];
   };
   policy = evaluatedPolicy.config.agentCommandPolicy;
@@ -16,7 +21,7 @@ let
       shellfirm
       ;
   };
-  settingsLib = import ../_lib/settings.nix { inherit lib commandPolicy; };
+  settingsLib = import ../_interface/settings.nix { inherit lib commandPolicy; };
   settings = settingsLib.mkSettings { };
   wslSettings = settingsLib.mkSettings {
     wslUserProfile = "/mnt/c/Users/test-user";

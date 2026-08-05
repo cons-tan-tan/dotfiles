@@ -8,7 +8,7 @@ in
   testFiles = [ "modules/features/update-pins/_tests/update-pins.bats" ];
   sourceFiles = updatePinRegistry.sourceFiles ++ [
     "modules/features/agents/hunk/default.nix"
-    "modules/features/checks/_lib/bats/test-helper.bash"
+    "modules/features/checks/_interface/bats/test-helper.bash"
   ];
   initializeGit = true;
   platformPredicate = _platform: true;

@@ -21,6 +21,7 @@ in
     default = package;
     smoke = smokePackage;
   };
+  subjects.updatePinsCore = package;
   buildVariants = [
     {
       name = "default";

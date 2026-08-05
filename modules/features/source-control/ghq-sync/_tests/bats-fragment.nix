@@ -1,5 +1,6 @@
 { pkgs }:
 {
+  group = "shellWrappers";
   fixture = {
     nativeBuildInputs = [ pkgs.git ];
     environment = { };

@@ -1,7 +1,7 @@
 { flake, pkgs, ... }:
 let
   system = pkgs.stdenv.hostPlatform.system;
-  expected = import ../_lib/mk-update-app-set.nix { inherit pkgs; };
+  expected = import ../_interface/update-apps.nix { inherit pkgs; };
 in
 {
   testPublicFlakeUpdateAppUsesOwnerDeclaration = {

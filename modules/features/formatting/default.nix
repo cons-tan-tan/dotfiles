@@ -8,7 +8,7 @@ let
   ciCheck = import ../ci/_interface/check.nix { inherit lib; };
   appsFor =
     { pkgs, self', ... }:
-    import ./_lib/mk-app-set.nix {
+    import ./_interface/app-set.nix {
       formatter = self'.formatter;
       inherit pkgs;
     };

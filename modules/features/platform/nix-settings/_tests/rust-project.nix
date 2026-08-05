@@ -14,6 +14,7 @@ in
     ignoredAdvisories = [ ];
   };
   packages.default = package;
+  subjects.applyNixSettingsCore = package;
   buildVariants = [
     {
       name = "default";

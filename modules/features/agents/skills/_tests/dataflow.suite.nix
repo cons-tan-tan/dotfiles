@@ -46,7 +46,7 @@ let
         aggregated = aggregateSkills agent-skills;
       in
       {
-        imports = [ (skillsRoot + "/_lib/options.nix") ];
+        imports = [ (skillsRoot + "/_interface/options.nix") ];
         dotfiles.agentSkills.externalSkills = aggregated.definitions;
         home.sessionVariables.AGENT_SKILL_PROVENANCE = builtins.toJSON aggregated.provenance;
       };
@@ -83,14 +83,14 @@ let
         den.aspects.skills-external.agent-skills = [
           {
             name = "external";
-            definition.root = repoRoot + "/modules/features/agents/skills/_data/local/missing-tools";
+            definition.root = repoRoot + "/agents/skills/missing-tools";
             provenance = "external";
           }
         ];
         den.aspects.skills-local.agent-skills = [
           {
             name = "local";
-            definition.root = repoRoot + "/modules/features/agents/skills/_data/local/commit";
+            definition.root = repoRoot + "/agents/skills/commit";
             provenance = "local";
           }
         ];

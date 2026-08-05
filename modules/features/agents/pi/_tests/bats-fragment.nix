@@ -18,6 +18,7 @@ let
   };
 in
 {
+  group = "shellWrappers";
   fixture = {
     nativeBuildInputs = [ testPackage ];
     environment.PI_WRAPPER_TEST_PACKAGE = testPackage;

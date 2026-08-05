@@ -1,6 +1,6 @@
 { lib }:
 let
-  deploy = import ../_lib/deploy.nix {
+  deploy = import ../_interface/deploy.nix {
     inherit lib;
     pkgs = { };
   };

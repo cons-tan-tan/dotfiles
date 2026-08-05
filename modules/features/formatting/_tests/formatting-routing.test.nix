@@ -5,7 +5,7 @@
 }:
 let
   system = pkgs.stdenv.hostPlatform.system;
-  expectedAppSet = import ../_lib/mk-app-set.nix {
+  expectedAppSet = import ../_interface/app-set.nix {
     formatter = flake.formatter.${system};
     inherit pkgs;
   };

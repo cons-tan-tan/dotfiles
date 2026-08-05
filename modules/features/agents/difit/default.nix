@@ -1,8 +1,4 @@
-{
-  features,
-  inputs,
-  ...
-}:
+{ inputs, ... }:
 {
   # CLI pin と agent skill source は update-pins が同じ release へ揃える。
   flake-file.inputs.difit-src = {
@@ -12,7 +8,6 @@
 
   features.agent-difit = {
     name = "feature/agents/difit";
-    includes = [ features.agent-skills-consumer ];
     agent-skills = [
       {
         name = "difit";

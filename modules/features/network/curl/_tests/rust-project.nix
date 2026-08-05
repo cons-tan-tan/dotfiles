@@ -33,6 +33,9 @@ in
   packages = package // {
     check = checkPackage;
   };
+  subjects.safeFetch = package // {
+    check = checkPackage;
+  };
   buildVariants = [
     {
       name = "default";

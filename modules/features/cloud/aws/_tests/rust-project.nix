@@ -14,6 +14,7 @@ in
     ignoredAdvisories = [ ];
   };
   packages.default = package;
+  subjects.awsConfigHelper = package;
   buildVariants = [
     {
       name = "default";

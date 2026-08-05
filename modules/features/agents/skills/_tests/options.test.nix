@@ -3,7 +3,7 @@ let
   eval =
     modules:
     lib.evalModules {
-      modules = [ ../_lib/options.nix ] ++ modules;
+      modules = [ ../_interface/options.nix ] ++ modules;
     };
 
   evaluated = eval [

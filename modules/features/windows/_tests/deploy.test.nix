@@ -3,7 +3,7 @@ let
   fixtureLib = lib // {
     hm.dag.entryAfter = after: data: { inherit after data; };
   };
-  deploy = import ../_lib/deploy.nix {
+  deploy = import ../_interface/deploy.nix {
     lib = fixtureLib;
     inherit pkgs;
   };

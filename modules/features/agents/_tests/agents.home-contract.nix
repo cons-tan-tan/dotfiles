@@ -79,10 +79,43 @@ in
       };
       policy = {
         schemaVersion = commandPolicy.guardPolicy.schemaVersion;
+        allowsAx = lib.any (rule: rule.argvPrefix == [ "ax" ]) commandPolicy.prefixRules;
+        allowsGitWrites =
+          lib.all (prefix: lib.any (rule: rule.argvPrefix == prefix) commandPolicy.prefixRules)
+            [
+              [
+                "git"
+                "clone"
+              ]
+              [
+                "git"
+                "commit"
+              ]
+            ];
+        allowsGhRepositoryAccess =
+          lib.all (prefix: lib.any (rule: rule.argvPrefix == prefix) commandPolicy.prefixRules)
+            [
+              [
+                "gh"
+                "api-get"
+              ]
+              [
+                "gh"
+                "repo"
+                "read-file"
+              ]
+            ];
         allowsRg = lib.any (rule: rule.argvPrefix == [ "rg" ]) commandPolicy.prefixRules;
         deniesTrashEmpty = lib.any (
           rule: rule.argvPrefix == [ "trash-empty" ] && rule.decision == "deny"
         ) commandPolicy.guardPolicy.exact;
+        guardsSemanticCommands =
+          lib.all (prefix: lib.any (rule: rule.commandPrefix == prefix) commandPolicy.guardPolicy.semantic)
+            [
+              [ "fd" ]
+              [ "rm" ]
+              [ "trash-restore" ]
+            ];
         inherit (commandPolicy.guardPolicy.unknown)
           dynamicExecutable
           dynamicRelevantOption
@@ -146,8 +179,12 @@ in
     };
     policy = {
       schemaVersion = 2;
+      allowsAx = true;
+      allowsGitWrites = true;
+      allowsGhRepositoryAccess = true;
       allowsRg = true;
       deniesTrashEmpty = true;
+      guardsSemanticCommands = true;
       dynamicExecutable = "deny";
       dynamicRelevantOption = "deny";
       parseError = "deny";

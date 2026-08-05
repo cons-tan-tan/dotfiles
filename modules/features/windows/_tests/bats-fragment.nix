@@ -58,6 +58,7 @@ let
   };
 in
 {
+  group = "shellWrappers";
   fixture = {
     nativeBuildInputs = [ pkgs.jq ];
     environment = {

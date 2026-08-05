@@ -4,6 +4,25 @@
   pkgs,
 }:
 let
+  commandPolicyInterface = import ../../agents/base/_interface/command-policy.nix;
+  policyFeatures = (import ../command-policy.nix { inherit lib; }).features;
+  safeDeletionFeatures =
+    (import ../../safe-deletion/default.nix {
+      features.trash = { };
+      inherit lib;
+    }).features;
+  policyEntries =
+    policyFeatures.trash.agent-command-policy
+    ++ safeDeletionFeatures.safe-deletion.agent-command-policy;
+  aggregatedPolicy = commandPolicyInterface.aggregate { inherit lib; } policyEntries;
+  evaluatedPolicy =
+    (lib.evalModules {
+      modules = [ commandPolicyInterface.options ] ++ aggregatedPolicy.modules;
+    }).config.agentCommandPolicy;
+  compiledPolicy = commandPolicyInterface.compiler {
+    inherit lib;
+    inherit (evaluatedPolicy) commands shell shellfirm;
+  };
   mkEvaluated =
     {
       platformModule,
@@ -12,7 +31,7 @@ let
     (homeManager.lib.homeManagerConfiguration {
       inherit pkgs;
       modules = [
-        ../_lib/common.nix
+        (import ../home.nix { }).features.trash.homeManager
         platformModule
         {
           home = {
@@ -33,10 +52,14 @@ let
         expr = true;
         expected = true;
       };
-  linux = mkEvaluated { platformModule = ../_lib/systemd.nix; };
-  wsl = mkEvaluated { platformModule = ../_lib/systemd.nix; };
+  linux = mkEvaluated {
+    platformModule = (import ../systemd.nix { }).features.trash-systemd.homeManager;
+  };
+  wsl = mkEvaluated {
+    platformModule = (import ../systemd.nix { }).features.trash-systemd.homeManager;
+  };
   darwin = mkEvaluated {
-    platformModule = ../_lib/darwin.nix;
+    platformModule = (import ../darwin.nix { }).features.trash-darwin.homeManager;
     homeDirectory = "/Users/test";
   };
   systemdContract =
@@ -54,6 +77,37 @@ let
     && !(evaluated.launchd.agents ? trash-gc);
 in
 {
+  testFeatureOwnedPolicyPreservesRecoverableDeletionBoundary = {
+    expr = {
+      sources = aggregatedPolicy.sources;
+      exactDenied = map (rule: rule.argvPrefix) compiledPolicy.guardPolicy.exact;
+      semanticCommands = map (rule: rule.commandPrefix) compiledPolicy.guardPolicy.semantic;
+      nativeTrash =
+        lib.all (prefix: lib.elem prefix (map (rule: rule.argvPrefix) compiledPolicy.prefixRules))
+          [
+            [ "trash" ]
+            [ "trash-list" ]
+            [ "trash-put" ]
+            [ "trash-restore" ]
+          ];
+    };
+    expected = {
+      sources = [
+        "feature/trash"
+        "feature/safe-deletion"
+      ];
+      exactDenied = [
+        [ "trash-empty" ]
+        [ "trash-rm" ]
+      ];
+      semanticCommands = [
+        [ "rm" ]
+        [ "trash-restore" ]
+      ];
+      nativeTrash = true;
+    };
+  };
+
   testLinuxUsesRecoverableTrashWithSevenDayGc = platformTest pkgs.stdenv.hostPlatform.isLinux {
     expr = systemdContract linux;
     expected = true;

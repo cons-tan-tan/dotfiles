@@ -2,8 +2,8 @@
 let
   ciCheck = import ../../ci/_interface/check.nix { inherit lib; };
   discovery = import ../_lib/test-discovery.nix { inherit lib; };
-  bootstrap = import ../_lib/bootstrap-paths.nix;
-  inventory = import ../_lib/eval/inventory.nix {
+  bootstrap = import ../_data/bootstrap-paths.nix;
+  inventory = import ../_interface/eval/inventory.nix {
     modulesRoot = ../../..;
     testDiscovery = discovery;
   };

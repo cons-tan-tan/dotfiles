@@ -6,8 +6,8 @@
 }:
 let
   skillsLib = ./_lib;
-  localSkillsDir = ./_data/local;
-  externalDefinitions = import (skillsLib + "/sources.nix") { inherit inputs; };
+  localSkillsDir = (import ./_interface/payload.nix).localSkillsRoot;
+  externalDefinitions = import ./_data/sources.nix { inherit inputs; };
   localDefinitions = lib.mapAttrs (name: _: { root = localSkillsDir + "/${name}"; }) (
     lib.filterAttrs (_: type: type == "directory") (builtins.readDir localSkillsDir)
   );
@@ -20,14 +20,6 @@ in
 {
   flake-file.inputs.anthropic-skills = {
     url = "github:anthropics/skills";
-    flake = false;
-  };
-  flake-file.inputs.ast-grep-skill = {
-    url = "github:ast-grep/claude-skill";
-    flake = false;
-  };
-  flake-file.inputs.drawio-skill = {
-    url = "github:jgraph/drawio-mcp";
     flake = false;
   };
   flake-file.inputs.improve-skill = {
@@ -63,7 +55,7 @@ in
           name: _: aggregated.enablePredicates.${name} config
         ) aggregated.definitions;
         skills = config.dotfiles.agentSkills.externalSkills;
-        inherit (import (skillsLib + "/policy.nix") { inherit lib; })
+        inherit (import ./_data/policy.nix { inherit lib; })
           defaultInheritedFrontmatterFields
           ;
         inherit (import (skillsLib + "/skill-policy.nix") { inherit lib; })
@@ -119,7 +111,7 @@ in
           ) skillSources;
       in
       {
-        imports = [ (skillsLib + "/options.nix") ];
+        imports = [ ./_interface/options.nix ];
         dotfiles.agentSkills.externalSkills = enabledDefinitions;
         home.file = deployTo ".claude/skills" // deployTo ".agents/skills";
       };
@@ -148,6 +140,8 @@ in
     name = "feature/agents/skills";
     includes = [
       features.agent-skills-external
+      features.pptx-agent-skill
+      features.drawio-agent-skill
       features.agent-skills-local
       features.agent-skills-consumer
     ];

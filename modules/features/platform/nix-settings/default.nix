@@ -4,8 +4,8 @@
   ...
 }:
 let
-  mkAppSet = import ./_lib/mk-app-set.nix;
-  mkSettings = import ./_lib/custom-settings.nix;
+  mkAppSet = import ./_interface/app-set.nix;
+  mkSettings = import ./_interface/custom-settings.nix;
   appsFor =
     {
       pkgs,

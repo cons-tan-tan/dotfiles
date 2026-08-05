@@ -86,20 +86,21 @@ let
     hash = "sha256-schema-marker";
   };
 
-  claudeSettingsValidatorSource = ../../agents/claude/_lib/settings-validator.nix;
-  claudeSettingsSchemaPin = ../../agents/claude/_pins/settings-schema.json;
+  claudeSettingsValidatorSource = ../../agents/claude/_interface/settings-validator.nix;
+  claudeSettingsSchema = ../../agents/claude/_interface/settings-schema.nix;
 
   mkSchemaValidator =
     args:
     import claudeSettingsValidatorSource (
       {
         pkgs.fetchurl = attrs: attrs;
+        schemaPin = import claudeSettingsSchema;
       }
       // args
     );
 
   injectedSchemaValidator = mkSchemaValidator { inherit schemaPin; };
-  defaultSchemaPin = builtins.fromJSON (builtins.readFile claudeSettingsSchemaPin);
+  defaultSchemaPin = import claudeSettingsSchema;
   defaultSchemaValidator = mkSchemaValidator { };
 in
 {

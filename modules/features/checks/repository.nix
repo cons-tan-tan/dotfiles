@@ -11,7 +11,7 @@ let
   composeUniqueChecks = import ./_lib/compose.nix { inherit ciCheck lib; };
   modulesRoot = ../..;
   testDiscovery = import ./_lib/test-discovery.nix { inherit lib; };
-  evalInventory = import ./_lib/eval/inventory.nix {
+  evalInventory = import ./_interface/eval/inventory.nix {
     inherit modulesRoot testDiscovery;
   };
   repositoryEvaluationCompleteCheckNames = [
@@ -130,7 +130,7 @@ in
           }
         );
         home-feature-contract = ciCheck.evaluationComplete (
-          import ./_lib/home-contract.nix {
+          import ./_interface/home-contract.nix {
             inherit
               entityContexts
               inputs
@@ -148,6 +148,7 @@ in
               lib
               pkgs
               ;
+            featuresRoot = ../.;
             flake = config.flake;
           }
         );
@@ -200,7 +201,7 @@ in
           }
         );
       };
-      testChecks = import ./_lib/repository-tests.nix {
+      testChecks = import ./_interface/repository-tests.nix {
         inherit
           ciCheck
           den

@@ -163,8 +163,18 @@ pkgs.runCommand "windows-class-contract"
   }
   ''
     for source in $sources; do
-      count="$(rg --count --fixed-strings 'id: ZedIndustries.Zed' "$source")"
-      test "$count" -eq 1
+      for package_id in \
+        ZedIndustries.Zed \
+        BurntSushi.ripgrep.MSVC \
+        sharkdp.fd \
+        sharkdp.bat \
+        eza-community.eza \
+        jqlang.jq \
+        ast-grep.ast-grep \
+        junegunn.fzf; do
+        count="$(rg --count --fixed-strings "id: $package_id" "$source")"
+        test "$count" -eq 1
+      done
     done
     touch "$out"
   ''

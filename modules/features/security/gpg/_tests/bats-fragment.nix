@@ -1,4 +1,5 @@
 {
+  group = "shellWrappers";
   fixture = {
     nativeBuildInputs = [ ];
     environment = { };

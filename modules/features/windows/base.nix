@@ -78,7 +78,7 @@ in
       let
         cfg = config.dotfiles.windows;
         platform = config.dotfiles.platform;
-        deploy = import ./_lib/deploy.nix { inherit lib pkgs; };
+        deploy = import ./_interface/deploy.nix { inherit lib pkgs; };
         standardResources = cfg.deployments;
         staticResources = cfg.staticResources;
         allResources =

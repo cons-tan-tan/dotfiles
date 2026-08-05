@@ -1,6 +1,6 @@
 { lib, pkgs }:
 let
-  lock = import ../_lib/cleanup-lock.nix {
+  lock = import ../_interface/cleanup-lock.nix {
     coreutils = pkgs.coreutils;
     inherit lib;
     username = "test-user";

@@ -3,7 +3,7 @@
   ...
 }:
 let
-  appsFor = { pkgs, ... }: import ./_lib/mk-app-set.nix { inherit pkgs; };
+  appsFor = { pkgs, ... }: import ./_interface/app-set.nix { inherit pkgs; };
 in
 {
   den.aspects.lint = {

@@ -6,7 +6,7 @@
   writeShellApplication,
 }:
 let
-  cleanupPolicy = import ../../_lib/cleanup-policy.nix;
+  cleanupPolicy = import ../../_data/cleanup-policy.nix;
 in
 assert lib.assertOneOf "nh cleanup scope" scope [
   "all"

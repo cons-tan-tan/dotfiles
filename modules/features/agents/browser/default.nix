@@ -1,8 +1,4 @@
-{
-  features,
-  inputs,
-  ...
-}:
+{ inputs, ... }:
 {
   flake-file.inputs.agent-browser-skill = {
     url = "github:vercel-labs/agent-browser/v0.31.1";
@@ -11,7 +7,6 @@
 
   features.agent-browser = {
     name = "feature/agents/browser";
-    includes = [ features.agent-skills-consumer ];
     agent-skills = [
       {
         name = "agent-browser";

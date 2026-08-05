@@ -6,7 +6,7 @@
 let
   featureNames = [
     "platform-context"
-    "platform-linux-drawio-headless"
+    "drawio-linux-headless"
     "platform-wsl-base"
     "platform-wsl-docker"
     "platform-wsl-memory"

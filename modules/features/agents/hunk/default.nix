@@ -1,8 +1,4 @@
-{
-  features,
-  inputs,
-  ...
-}:
+{ inputs, ... }:
 {
   flake-file.inputs.hunk = {
     url = "github:modem-dev/hunk";
@@ -12,7 +8,6 @@
 
   features.agent-hunk = {
     name = "feature/agents/hunk";
-    includes = [ features.agent-skills-consumer ];
     agent-skills = [
       {
         name = "hunk-review";
@@ -20,21 +15,6 @@
         definition.root = inputs.hunk.outPath + "/skills/hunk-review";
       }
     ];
-    homeManager =
-      {
-        config,
-        lib,
-        pkgs,
-        ...
-      }:
-      import ./_lib/home.nix {
-        inherit
-          config
-          inputs
-          lib
-          pkgs
-          ;
-      };
   };
 
   features.agent-hunk-wsl = {

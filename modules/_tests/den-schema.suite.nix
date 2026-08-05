@@ -33,39 +33,8 @@ let
     homedir = "/mnt/c/Users/windows-user";
   };
 
-  profileFixtureArgs = {
-    den.aspects.environments = {
-      base = { };
-      integrated-home-manager = { };
-    };
-    features = lib.genAttrs [
-      "agent-hunk-wsl"
-      "platform-darwin"
-      "platform-linux"
-      "platform-wsl"
-      "registries-home"
-      "registries-host"
-      "security-gpg-darwin"
-      "security-gpg-linux"
-      "security-gpg-wsl"
-      "source-control-ghq-sync-launchd"
-      "source-control-ghq-sync-systemd"
-      "trash-darwin"
-      "trash-systemd"
-    ] (_: { });
-    inherit inputs;
-  };
-  environmentProfiles = {
-    darwin =
-      (import (repoRoot + "/modules/aspects/environments/darwin.nix") profileFixtureArgs)
-      .den.aspects.environments.darwin;
-    linux =
-      (import (repoRoot + "/modules/aspects/environments/linux.nix") profileFixtureArgs)
-      .den.aspects.environments.linux;
-    wsl =
-      (import (repoRoot + "/modules/aspects/environments/wsl.nix") profileFixtureArgs)
-      .den.aspects.environments;
-  };
+  platformContext =
+    (import (repoRoot + "/modules/features/platform/context.nix") { inherit lib; }).features;
   profileOwner = environment: {
     dotfiles = {
       inherit environment;
@@ -104,17 +73,17 @@ let
     testMatchingEnvironmentProfilesAreAccepted = {
       expr = [
         (enforceAssertions
-          (environmentProfiles.darwin.homeManager {
+          (platformContext.platform-context-darwin-host.homeManager {
             host = profileOwner "darwin";
           }).assertions
         )
         (enforceAssertions
-          (environmentProfiles.linux.homeManager {
+          (platformContext.platform-context-linux-home.homeManager {
             home = profileOwner "linux";
           }).assertions
         )
         (enforceAssertions
-          (environmentProfiles.wsl.wsl.nixos {
+          (platformContext.platform-context-wsl-host.nixos {
             host = profileOwner "wsl";
           }).assertions
         )
@@ -273,7 +242,7 @@ let
     darwinProfileRejectsLinuxOwner = {
       expression =
         enforceAssertions
-          (environmentProfiles.darwin.homeManager {
+          (platformContext.platform-context-darwin-host.homeManager {
             host = profileOwner "linux";
           }).assertions;
       expectedFragments = [
@@ -283,7 +252,7 @@ let
     linuxProfileRejectsWslOwner = {
       expression =
         enforceAssertions
-          (environmentProfiles.linux.homeManager {
+          (platformContext.platform-context-linux-home.homeManager {
             home = profileOwner "wsl";
           }).assertions;
       expectedFragments = [
@@ -293,7 +262,7 @@ let
     integratedWslProfileRejectsLinuxHost = {
       expression =
         enforceAssertions
-          (environmentProfiles.wsl.wsl.nixos {
+          (platformContext.platform-context-wsl-host.nixos {
             host = profileOwner "linux";
           }).assertions;
       expectedFragments = [
@@ -302,15 +271,9 @@ let
     };
     standaloneWslProfileRejectsLinuxHome = {
       expression =
-        let
-          outerModule = environmentProfiles.wsl.standalone-wsl.homeManager {
-            home = profileOwner "linux";
-          };
-          profileModule = builtins.head outerModule.imports;
-        in
         enforceAssertions
-          (profileModule {
-            config.home.homeDirectory = "/home/test";
+          (platformContext.platform-context-wsl-home.homeManager {
+            home = profileOwner "linux";
           }).assertions;
       expectedFragments = [
         "dotfiles wsl environment aspect requires owner.dotfiles.environment = wsl"

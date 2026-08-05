@@ -14,7 +14,7 @@
     name = "feature/agents/hcom";
     includes = [
       features.agents-base
-      features.agent-skills-consumer
+      features.agent-hcom-contract
     ];
 
     agent-skills = [

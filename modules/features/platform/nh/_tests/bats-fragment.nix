@@ -57,6 +57,7 @@ let
   };
 in
 {
+  group = "shellWrappers";
   fixture = {
     nativeBuildInputs = [
       cleanGrowthRunnerContract

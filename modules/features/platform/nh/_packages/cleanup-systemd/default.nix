@@ -13,7 +13,7 @@
   writeTextDir,
 }:
 let
-  cleanupPolicy = import ../../_lib/cleanup-policy.nix;
+  cleanupPolicy = import ../../_data/cleanup-policy.nix;
   growth = cleanupPolicy.growth;
   checker = callPackage ../store-growth-checker { inherit nix; };
   cleanupRunner = callPackage ../clean-user { inherit nh nix; };
@@ -29,7 +29,7 @@ let
       ;
   };
   statePath = "/var/lib/${growth.stateDirectory}";
-  lock = import ../../_lib/cleanup-lock.nix {
+  lock = import ../../_interface/cleanup-lock.nix {
     inherit coreutils lib username;
   };
   lockPreparation = lib.concatMapStringsSep "\n" (

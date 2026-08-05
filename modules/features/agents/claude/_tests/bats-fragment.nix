@@ -18,6 +18,7 @@ let
   };
 in
 {
+  group = "shellWrappers";
   fixture = {
     nativeBuildInputs = [ testPackage ];
     environment.CLAUDE_WRAPPER_TEST_PACKAGE = testPackage;

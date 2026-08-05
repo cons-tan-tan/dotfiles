@@ -9,7 +9,7 @@ let
   fm =
     (import (sourceRoot + "/yaml-frontmatter.nix") { inherit lib; })
     // (import (sourceRoot + "/skill-policy.nix") { inherit lib; });
-  policy = import (sourceRoot + "/policy.nix") { inherit lib; };
+  policy = import (repoRoot + "/modules/features/agents/skills/_data/policy.nix") { inherit lib; };
 
   defaultInheritedFields = policy.defaultInheritedFrontmatterFields;
   prepare =

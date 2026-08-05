@@ -16,6 +16,7 @@ let
     }
     (repoRoot + "/modules/features/windows/class.nix")
     (repoRoot + "/modules/features/cli-tools/quirk.nix")
+    (repoRoot + "/modules/features/agents/base/quirk.nix")
   ];
 
   evalTest =
@@ -122,12 +123,15 @@ let
           system = "x86_64-linux";
         };
         claudePkgs = config.flake.homeConfigurations.claude.pkgs;
-        claudeSettingsLib = import (repoRoot + "/modules/features/agents/claude/_lib/settings.nix") {
+        claudeSettingsLib = import (repoRoot + "/modules/features/agents/claude/_interface/settings.nix") {
           inherit lib;
         };
-        claudeSettingsValidator = import (
-          repoRoot + "/modules/features/agents/claude/_lib/settings-validator.nix"
-        ) { pkgs = claudePkgs; };
+        claudeSettingsValidator =
+          import (repoRoot + "/modules/features/agents/claude/_interface/settings-validator.nix")
+            {
+              pkgs = claudePkgs;
+              schemaPin = import (repoRoot + "/modules/features/agents/claude/_interface/settings-schema.nix");
+            };
         expectedClaudeSettingsRaw = (claudePkgs.formats.json { }).generate "claude-windows-settings.json" (
           claudeSettingsLib.mkSettings { forWindows = true; }
         );
@@ -135,7 +139,7 @@ let
           claudeSettingsValidator.validate "claude-windows-settings.json" expectedClaudeSettingsRaw
         );
         gitPkgs = config.flake.homeConfigurations.git.pkgs;
-        gitLib = import (repoRoot + "/modules/features/source-control/_lib/git.nix") {
+        gitLib = import (repoRoot + "/modules/features/source-control/_interface/git.nix") {
           inherit lib;
           pkgs = gitPkgs;
         };
@@ -195,8 +199,11 @@ let
           (repoRoot + "/modules/features/platform/context.nix")
           (windowsRoot + "/base.nix")
           (repoRoot + "/modules/features/agents/base/default.nix")
+          (repoRoot + "/modules/features/agents/hcom/contract.nix")
           (repoRoot + "/modules/features/agents/herdr/default.nix")
+          (repoRoot + "/modules/features/agents/herdr/home.nix")
           (repoRoot + "/modules/features/agents/claude/default.nix")
+          (repoRoot + "/modules/features/agents/claude/home.nix")
           (repoRoot + "/modules/features/source-control/git.nix")
           (repoRoot + "/modules/features/security/gpg/default.nix")
         ];

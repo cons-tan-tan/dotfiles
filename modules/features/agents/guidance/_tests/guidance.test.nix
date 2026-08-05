@@ -4,11 +4,12 @@
   pkgs,
 }:
 let
+  guidanceHome = (import ../home.nix { }).features.agent-guidance.homeManager;
   evaluated =
     (homeManager.lib.homeManagerConfiguration {
       inherit pkgs;
       modules = [
-        ../_lib/home.nix
+        guidanceHome
         {
           home = {
             username = "test";
@@ -18,7 +19,7 @@ let
         }
       ];
     }).config;
-  contextRoot = ../_data/context;
+  contextRoot = ../../../../../agents/context;
   globalContext = contextRoot + "/global.md";
   rulesDirectory = contextRoot + "/rules";
   ruleEntries = builtins.readDir rulesDirectory;

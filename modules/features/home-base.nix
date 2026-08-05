@@ -44,7 +44,7 @@
       features.security-gpg
       features.security-secrets
       features.security-ssh
-      features.trash
+      features.safe-deletion
     ];
   };
 }

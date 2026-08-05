@@ -1,7 +1,7 @@
 { flake, pkgs, ... }:
 let
   system = pkgs.stdenv.hostPlatform.system;
-  expected = import ../_lib/mk-app-set.nix { inherit pkgs; };
+  expected = import ../_interface/app-set.nix { inherit pkgs; };
 in
 {
   testPublicLintAppsUseOwnerDeclaration = {

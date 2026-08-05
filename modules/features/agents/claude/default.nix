@@ -1,6 +1,5 @@
 {
   features,
-  inputs,
   ...
 }:
 let
@@ -16,6 +15,7 @@ in
     name = "feature/agents/claude";
     includes = [
       features.agents-base
+      features.agent-hcom-contract
       features.agent-herdr
     ];
     cli-tools = [
@@ -28,21 +28,6 @@ in
         };
       }
     ];
-    homeManager =
-      {
-        config,
-        lib,
-        pkgs,
-        ...
-      }:
-      import ./_lib/home.nix {
-        inherit
-          config
-          inputs
-          lib
-          pkgs
-          ;
-      };
     windows =
       {
         config,
@@ -51,8 +36,11 @@ in
       }:
       let
         pkgs = config._module.args.pkgs;
-        settingsLib = import ./_lib/settings.nix { inherit lib; };
-        settingsValidator = import ./_lib/settings-validator.nix { inherit pkgs; };
+        settingsLib = import ./_interface/settings.nix { inherit lib; };
+        settingsValidator = import ./_interface/settings-validator.nix {
+          inherit pkgs;
+          schemaPin = import ./_interface/settings-schema.nix;
+        };
         raw = (pkgs.formats.json { }).generate "claude-windows-settings.json" (
           settingsLib.mkSettings { forWindows = true; }
         );

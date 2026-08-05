@@ -5,7 +5,7 @@
 }:
 let
   lib = import (nixpkgsPath + "/lib");
-  optionsModule = repoRoot + "/modules/features/agents/skills/_lib/options.nix";
+  optionsModule = repoRoot + "/modules/features/agents/skills/_interface/options.nix";
   eval =
     modules:
     lib.evalModules {

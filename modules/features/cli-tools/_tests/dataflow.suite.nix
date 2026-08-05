@@ -14,6 +14,8 @@ let
       };
     }
     (repoRoot + "/modules/features/cli-tools/quirk.nix")
+    (repoRoot + "/modules/features/agents/skills/quirk.nix")
+    (repoRoot + "/modules/features/agents/base/quirk.nix")
   ];
 
   evalTest =
@@ -64,6 +66,75 @@ let
   };
 
   tests = {
+    testCliToolsBundleKeepsToolOwnedProjectionsTogether = evalTest (
+      { config, features, ... }:
+      let
+        home = config.flake.homeConfigurations.tux.config;
+        packageNames = map lib.getName home.home.packages;
+        overlayPlan = (import ../../nixpkgs/_interface).mkOverlayPlan {
+          inherit inputs;
+          system = "x86_64-linux";
+        };
+      in
+      {
+        imports = [
+          baseHome
+          (repoRoot + "/modules/features/cli-tools/default.nix")
+          (repoRoot + "/modules/features/cli-tools/reuse.nix")
+          (repoRoot + "/modules/features/cli-tools/rg.nix")
+          (repoRoot + "/modules/features/cli-tools/fd.nix")
+          (repoRoot + "/modules/features/cli-tools/bat.nix")
+          (repoRoot + "/modules/features/cli-tools/eza.nix")
+          (repoRoot + "/modules/features/cli-tools/jq.nix")
+          (repoRoot + "/modules/features/cli-tools/fzf.nix")
+          (repoRoot + "/modules/features/ast-grep/default.nix")
+          (repoRoot + "/modules/features/agents/skills/default.nix")
+          (repoRoot + "/modules/features/agents/base/default.nix")
+        ];
+        den.default.homeManager.nixpkgs.overlays = overlayPlan.overlays;
+        den.homes.x86_64-linux.tux = { };
+        den.aspects.tux.includes = [
+          features.cli-tools
+          features.agent-skills-consumer
+          features.agents-base
+        ];
+
+        expr = {
+          toolPackagesPresent = lib.all (name: lib.elem name packageNames) [
+            "reuse"
+            "ripgrep"
+            "fd"
+            "bat"
+            "eza"
+            "jq"
+            "ast-grep"
+            "fzf"
+          ];
+          hasAstGrepSkill = home.dotfiles.agentSkills.externalSkills ? ast-grep;
+          commandDecisions = {
+            ast-grep = home.dotfiles.agentCommandPolicy.commands.ast-grep;
+            bat = home.dotfiles.agentCommandPolicy.commands.bat;
+            eza = home.dotfiles.agentCommandPolicy.commands.eza;
+            fd = home.dotfiles.agentCommandPolicy.commands.fd.decision;
+            jq = home.dotfiles.agentCommandPolicy.commands.jq;
+            rg = home.dotfiles.agentCommandPolicy.commands.rg;
+          };
+        };
+        expected = {
+          toolPackagesPresent = true;
+          hasAstGrepSkill = true;
+          commandDecisions = {
+            ast-grep = true;
+            bat = true;
+            eza = true;
+            fd = true;
+            jq = true;
+            rg = true;
+          };
+        };
+      }
+    );
+
     testQuirkMergesIndependentOfIncludeOrderAndKeepsHomeScopesIsolated = evalTest (
       {
         config,
