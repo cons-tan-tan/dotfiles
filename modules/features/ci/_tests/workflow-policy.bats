@@ -496,8 +496,8 @@ YAML
 
 @test "system matrix validation preserves nonempty and empty matrices" {
   local empty='{"include":[]}'
-  local linux='{"include":[{"drvPath":"/nix/store/linux-a.drv","system":"x86_64-linux","name":"linux-a","os":"ubuntu-latest","installables":"/nix/store/linux-a.drv^*"}]}'
-  local linux_with_axis='{"include":[{"drvPath":"/nix/store/linux-a.drv","system":"x86_64-linux","name":"linux-a","os":"ubuntu-latest","installables":"/nix/store/linux-a.drv^*"}],"unexpected":["axis"]}'
+  local linux='{"include":[{"drvPath":"/nix/store/linux-a.drv","system":"x86_64-linux","name":"linux-a","os":["ubuntu-latest"],"installables":"/nix/store/linux-a.drv^*"}]}'
+  local linux_with_axis='{"include":[{"drvPath":"/nix/store/linux-a.drv","system":"x86_64-linux","name":"linux-a","os":["ubuntu-latest"],"installables":"/nix/store/linux-a.drv^*"}],"unexpected":["axis"]}'
 
   run_hestia_matrix_validation "$linux_with_axis" 12
   [ "$status" -eq 0 ]
@@ -512,7 +512,7 @@ YAML
 }
 
 @test "system matrix validation requires a matching manifest registration" {
-  local linux='{"include":[{"drvPath":"/nix/store/linux-a.drv","system":"x86_64-linux","name":"linux-a","os":"ubuntu-latest","installables":"/nix/store/linux-a.drv^*"}]}'
+  local linux='{"include":[{"drvPath":"/nix/store/linux-a.drv","system":"x86_64-linux","name":"linux-a","os":["ubuntu-latest"],"installables":"/nix/store/linux-a.drv^*"}]}'
 
   run_hestia_matrix_validation "$linux" 0
   [ "$status" -ne 0 ]
@@ -523,10 +523,11 @@ YAML
 
 @test "system matrix validation rejects malformed, mixed, and oversized inputs" {
   local empty='{"include":[]}'
-  local linux='{"include":[{"drvPath":"/nix/store/linux-a.drv","system":"x86_64-linux","name":"linux-a","os":"ubuntu-latest","installables":"/nix/store/linux-a.drv^*"}]}'
+  local linux='{"include":[{"drvPath":"/nix/store/linux-a.drv","system":"x86_64-linux","name":"linux-a","os":["ubuntu-latest"],"installables":"/nix/store/linux-a.drv^*"}]}'
   local incomplete='{"include":[{"drvPath":"/nix/store/linux-a.drv","system":"x86_64-linux"}]}'
-  local mixed='{"include":[{"drvPath":"/nix/store/darwin-a.drv","system":"aarch64-darwin","name":"darwin-a","os":"macos-15","installables":"/nix/store/darwin-a.drv^*"}]}'
-  local duplicate='{"include":[{"drvPath":"/nix/store/shared.drv","system":"x86_64-linux","name":"first","os":"ubuntu-latest","installables":"/nix/store/shared.drv^*"},{"drvPath":"/nix/store/shared.drv","system":"x86_64-linux","name":"second","os":"ubuntu-latest","installables":"/nix/store/shared.drv^*"}]}'
+  local invalid_os='{"include":[{"drvPath":"/nix/store/linux-a.drv","system":"x86_64-linux","name":"linux-a","os":"ubuntu-latest","installables":"/nix/store/linux-a.drv^*"}]}'
+  local mixed='{"include":[{"drvPath":"/nix/store/darwin-a.drv","system":"aarch64-darwin","name":"darwin-a","os":["macos-15"],"installables":"/nix/store/darwin-a.drv^*"}]}'
+  local duplicate='{"include":[{"drvPath":"/nix/store/shared.drv","system":"x86_64-linux","name":"first","os":["ubuntu-latest"],"installables":"/nix/store/shared.drv^*"},{"drvPath":"/nix/store/shared.drv","system":"x86_64-linux","name":"second","os":["ubuntu-latest"],"installables":"/nix/store/shared.drv^*"}]}'
   local oversized
 
   run_hestia_matrix_validation '{' 1
@@ -538,13 +539,16 @@ YAML
   run_hestia_matrix_validation "$incomplete" 1
   [ "$status" -ne 0 ]
 
+  run_hestia_matrix_validation "$invalid_os" 1
+  [ "$status" -ne 0 ]
+
   run_hestia_matrix_validation "$duplicate" 1
   [ "$status" -ne 0 ]
 
   run_hestia_matrix_validation "$mixed" 1
   [ "$status" -ne 0 ]
 
-  oversized=$(jq -cn '{include: [range(257) | {drvPath: ("/nix/store/" + tostring + ".drv"), system: "x86_64-linux", name: ("row-" + tostring), os: "ubuntu-latest", installables: ("/nix/store/" + tostring + ".drv^*")}]}')
+  oversized=$(jq -cn '{include: [range(257) | {drvPath: ("/nix/store/" + tostring + ".drv"), system: "x86_64-linux", name: ("row-" + tostring), os: ["ubuntu-latest"], installables: ("/nix/store/" + tostring + ".drv^*")}]}')
   run_hestia_matrix_validation "$oversized" 1
   [ "$status" -ne 0 ]
 

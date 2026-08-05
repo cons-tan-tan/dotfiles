@@ -85,6 +85,10 @@ jobs:
                 | def rows_match($flag; $rows):
                     ($flag == "true" and ($rows | length) > 0)
                     or ($flag == "false" and ($rows | length) == 0);
+                def valid_runner_labels:
+                  if type != "array" or length == 0 then false
+                  else all(.[]; type == "string" and length > 0)
+                  end;
                 if ($matrix | type) != "object"
                   or ($matrix.include | type) != "array"
                 then
@@ -99,7 +103,7 @@ jobs:
                   error("Hestia matrix row has an invalid drvPath")
                 elif any($matrix.include[];
                   (.name | type) != "string" or (.name | length) == 0
-                  or (.os | type) != "string" or (.os | length) == 0
+                  or (.os | valid_runner_labels | not)
                   or (.installables | type) != "string"
                   or (.installables | length) == 0)
                 then
