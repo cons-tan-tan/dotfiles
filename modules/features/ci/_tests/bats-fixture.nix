@@ -3,7 +3,10 @@
   pkgs,
 }:
 {
-  nativeBuildInputs = [ pkgs.yq-go ];
+  nativeBuildInputs = [
+    pkgs.jq
+    pkgs.yq-go
+  ];
   environment = {
     CACHE_NIX_COMMUNITY_SUBSTITUTER = cacheSettings.nixCommunitySubstituter;
     CACHE_NIX_COMMUNITY_TRUSTED_PUBLIC_KEY = cacheSettings.nixCommunityTrustedPublicKey;
