@@ -16,6 +16,7 @@ let
         hash = "sha256-test";
       };
     };
+    updateScript = "/nix/store/update-watchexec";
   };
   result = overlay { marker = "final"; } {
     lib = {
@@ -40,5 +41,14 @@ in
   testUsesPinnedReleaseAsset = {
     expr = result.watchexec.src.url;
     expected = "https://github.com/watchexec/watchexec/releases/download/v1.2.3/watchexec-1.2.3-aarch64-apple-darwin.tar.xz";
+  };
+
+  testPublishesPackageOwnedUpdater = {
+    expr = result.watchexec.passthru;
+    expected = {
+      updateScript = "/nix/store/update-watchexec";
+      updateScriptDescription = "Update pinned Watchexec Darwin release assets";
+      updateScriptName = "watchexec";
+    };
   };
 }

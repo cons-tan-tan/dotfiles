@@ -1,4 +1,6 @@
 {
+  callPackage,
+  ghApiGet,
   lib,
   stdenvNoCC,
   fetchurl,
@@ -7,8 +9,9 @@
   mkPinnedAsset,
 }:
 let
+  updater = callPackage ../../_scripts/update.nix { inherit ghApiGet; };
   # version は skill と共有する hcom-src、配布物の hash は JSON pin が所有する。
-  # `nix run .#update-pins` は両方を同じ transaction で更新する。
+  # package-owned updateScript が input と assets を同じ release へ揃える。
   # Linux uses the static musl build: no glibc dependency, so autoPatchelfHook
   # is unnecessary. macOS has no musl variant, so use the native darwin build.
   version = (fromTOML (builtins.readFile "${hcomSource}/Cargo.toml")).package.version;
@@ -44,6 +47,12 @@ stdenvNoCC.mkDerivation {
     install -Dm755 "$bin" "$out/bin/hcom"
     runHook postInstall
   '';
+
+  passthru = {
+    updateScript = lib.getExe updater;
+    updateScriptName = "hcom";
+    updateScriptDescription = "Update hcom release input and native assets";
+  };
 
   meta = with lib; {
     description = "Let AI agents message, watch, and spawn each other across terminals";

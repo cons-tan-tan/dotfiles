@@ -1,4 +1,6 @@
 {
+  callPackage,
+  ghApiGet,
   lib,
   stdenvNoCC,
   fetchurl,
@@ -7,6 +9,7 @@
   mkPinnedAsset,
 }:
 let
+  updater = callPackage ../../_scripts/update.nix { inherit ghApiGet; };
   system = stdenvNoCC.hostPlatform.system;
   inherit (herdrPin) version;
   pinnedAsset = mkPinnedAsset {
@@ -44,6 +47,12 @@ in
       install -Dm755 "$src" "$out/bin/herdr"
       runHook postInstall
     '';
+
+    passthru = {
+      updateScript = lib.getExe updater;
+      updateScriptName = "herdr";
+      updateScriptDescription = "Update Herdr source and native release assets";
+    };
 
     meta = {
       description = "Terminal workspace manager for AI coding agents";

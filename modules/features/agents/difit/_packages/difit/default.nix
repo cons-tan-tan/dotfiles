@@ -1,4 +1,5 @@
 {
+  callPackage,
   lib,
   stdenvNoCC,
   fetchPnpmDeps,
@@ -13,6 +14,7 @@
 }:
 let
   pin = difitPin;
+  updater = callPackage ../../_scripts/update.nix { };
   upstreamManifest = builtins.fromJSON (builtins.readFile "${difitSource}/package.json");
   version = upstreamManifest.version;
   # npm tarballのbuild済みdistを使い、依存graphだけは同じtagで上流が検証した
@@ -109,13 +111,10 @@ stdenvNoCC.mkDerivation (finalAttrs: {
     runHook postInstallCheck
   '';
 
-  passthru.updatePinsDependencyProvenance = {
-    kind = "upstream-pnpm";
-    lockPath = "pnpm-lock.yaml";
-    workspacePath = "pnpm-workspace.yaml";
-    workspace = "difit";
-    pnpmMajor = 11;
-    scope = "production";
+  passthru = {
+    updateScript = lib.getExe updater;
+    updateScriptName = "difit";
+    updateScriptDescription = "Update the difit input, npm source, and pnpm dependencies";
   };
 
   meta = {

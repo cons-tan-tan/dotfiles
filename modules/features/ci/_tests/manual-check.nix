@@ -68,7 +68,6 @@ let
       ''
         shellcheck \
           ${repoRoot}/modules/features/ci/_scripts/prefetch_hestia_closure_and_build.sh \
-          ${repoRoot}/modules/features/ci/_scripts/update_pins_smoke.sh \
           ${repoRoot}/modules/features/ci/_scripts/verify_binary_substituters.sh \
           ${repoRoot}/modules/features/ci/_scripts/verify_hestia_result.sh \
           ${repoRoot}/modules/features/ci/_scripts/verify_required_results.sh

@@ -1,6 +1,7 @@
 {
   agentConfigHelper,
   callPackage,
+  ghApiGet,
   hcomSource,
   hcomPin ? builtins.fromJSON (builtins.readFile ./pin.json),
   mkPinnedAsset,
@@ -13,7 +14,12 @@ let
       "overrideDerivation"
     ];
   package = callPackage ./package.nix {
-    inherit hcomPin hcomSource mkPinnedAsset;
+    inherit
+      ghApiGet
+      hcomPin
+      hcomSource
+      mkPinnedAsset
+      ;
   };
 in
 {

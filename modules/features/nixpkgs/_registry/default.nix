@@ -17,12 +17,16 @@ let
   securityPackageSources = import ../../security/_interface/package-sources.nix;
   sourceControlPackageSources = import ../../source-control/_interface/package-sources.nix;
   agentConfigHelper = pkgs.callPackage agentPackageSources.configHelper { };
+  safeFetch = pkgs.callPackage networkPackageSources.safeFetch { };
+  ghApiGet = pkgs.callPackage sourceControlPackageSources.ghApiGet {
+    safeFetchCore = safeFetch.core;
+  };
   aws = import cloudPackageSources.aws {
     inherit (pkgs) callPackage;
   };
   hcom = import agentPackageSources.hcom {
     inherit (pkgs) callPackage;
-    inherit agentConfigHelper mkPinnedAsset;
+    inherit agentConfigHelper ghApiGet mkPinnedAsset;
     hcomSource = inputs.hcom-src;
   };
   codex = import agentPackageSources.codex {
@@ -31,22 +35,21 @@ let
   };
   herdr = import agentPackageSources.herdr {
     inherit (pkgs) callPackage;
-    inherit mkPinnedAsset;
+    inherit ghApiGet mkPinnedAsset;
   };
   pi = import agentPackageSources.pi {
     inherit (pkgs) callPackage pi;
   };
-  safeFetch = pkgs.callPackage networkPackageSources.safeFetch { };
 in
 {
   agent-browser = pkgs.callPackage agentPackageSources.browser {
     agentBrowserSource = inputs.agent-browser-skill;
-    inherit mkPinnedAsset;
+    inherit ghApiGet mkPinnedAsset;
   };
   agent-command-guard = pkgs.callPackage agentPackageSources.commandGuard { };
   agent-slack = pkgs.callPackage agentPackageSources.slack {
     agentSlackSource = inputs.agent-slack-skill;
-    inherit mkPinnedAsset;
+    inherit ghApiGet mkPinnedAsset;
   };
   claude-code = import agentPackageSources.claudeCode {
     inherit (pkgs) callPackage;
@@ -57,9 +60,7 @@ in
     difitSource = inputs.difit-src;
   };
   curl-fetch = safeFetch.curlFetch;
-  gh-api-get = pkgs.callPackage sourceControlPackageSources.ghApiGet {
-    safeFetchCore = safeFetch.core;
-  };
+  gh-api-get = ghApiGet;
   gha-lint = pkgs.callPackage ciPackageSources.ghaLint {
     bun2nix = inputs.bun2nix.packages.${hostPlatform.system}.default;
   };
@@ -68,7 +69,7 @@ in
     inherit (pkgs) callPackage stdenv;
     hunkInput = inputs.hunk;
   };
-  shellfirm = pkgs.callPackage agentPackageSources.shellfirm { };
+  shellfirm = pkgs.callPackage agentPackageSources.shellfirm { inherit ghApiGet; };
 
   inherit
     aws

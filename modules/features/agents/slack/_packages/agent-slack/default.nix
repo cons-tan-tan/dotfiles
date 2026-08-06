@@ -1,4 +1,6 @@
 {
+  callPackage,
+  ghApiGet,
   lib,
   stdenv,
   stdenvNoCC,
@@ -9,6 +11,7 @@
   pin ? builtins.fromJSON (builtins.readFile ./pin.json),
 }:
 let
+  updater = callPackage ../../_scripts/update.nix { inherit ghApiGet; };
   version = (builtins.fromJSON (builtins.readFile "${agentSlackSource}/package.json")).version;
   system = stdenv.hostPlatform.system;
   pinnedAsset = mkPinnedAsset {
@@ -42,6 +45,12 @@ in
     install -Dm755 "$src" "$out/bin/agent-slack"
     runHook postInstall
   '';
+
+  passthru = {
+    updateScript = lib.getExe updater;
+    updateScriptName = "agent-slack";
+    updateScriptDescription = "Update agent-slack release input and native assets";
+  };
 
   meta = with lib; {
     description = "Slack automation CLI for AI agents";

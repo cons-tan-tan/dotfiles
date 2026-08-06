@@ -5,6 +5,7 @@ let
     version = "1.2.3";
   };
   fixtureFamily = import ../_packages/herdr/default.nix {
+    ghApiGet = null;
     herdrPin = fixturePin;
     mkPinnedAsset = _: { };
     callPackage =

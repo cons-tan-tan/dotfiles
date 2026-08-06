@@ -10,7 +10,6 @@
     "modules/features/ci/_scripts/ci_telemetry.py"
     "modules/features/ci/_scripts/optimize_hestia_matrix.py"
     "modules/features/ci/_scripts/prefetch_hestia_closure_and_build.sh"
-    "modules/features/ci/_scripts/update_pins_smoke.sh"
     "modules/features/ci/_scripts/validate_hestia_matrix.py"
     "modules/features/ci/_scripts/verify_binary_substituters.sh"
     "modules/features/ci/_scripts/verify_hestia_result.sh"

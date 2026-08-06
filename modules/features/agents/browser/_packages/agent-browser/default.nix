@@ -1,4 +1,6 @@
 {
+  callPackage,
+  ghApiGet,
   lib,
   stdenvNoCC,
   fetchurl,
@@ -9,6 +11,7 @@
   pin ? builtins.fromJSON (builtins.readFile ./pin.json),
 }:
 let
+  updater = callPackage ../../_scripts/update.nix { inherit ghApiGet; };
   version = (builtins.fromJSON (builtins.readFile "${agentBrowserSource}/package.json")).version;
   system = stdenvNoCC.hostPlatform.system;
   pinnedAsset = mkPinnedAsset {
@@ -43,6 +46,12 @@ stdenvNoCC.mkDerivation {
     wrapProgram "$out/bin/agent-browser" \
       --set AGENT_BROWSER_EXECUTABLE_PATH "${chromium}/bin/chromium"
   '';
+
+  passthru = {
+    updateScript = lib.getExe updater;
+    updateScriptName = "agent-browser";
+    updateScriptDescription = "Update agent-browser release input and native assets";
+  };
 
   meta = {
     description = "Headless browser automation CLI for AI agents";

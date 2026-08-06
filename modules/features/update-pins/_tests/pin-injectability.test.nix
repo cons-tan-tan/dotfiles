@@ -4,7 +4,6 @@
 { lib, pkgs }:
 let
   hasInjectablePin = fn: argName: (builtins.functionArgs (import fn)).${argName} or false;
-  updatePins = import ../_interface;
   agentPackageSources = import ../../agents/_interface/package-sources.nix;
   watchexec = import ../../development/watchexec/_interface;
 
@@ -43,6 +42,8 @@ let
     args:
     import agentPackageSources.shellfirm (
       {
+        callPackage = _: _: "shellfirm-updater";
+        ghApiGet = "gh-api-get";
         inherit lib;
         rustPlatform.buildRustPackage = attrs: attrs;
         fetchFromGitHub = attrs: attrs;
@@ -63,23 +64,6 @@ let
   injectedDifitPackage = pkgs.dotfilesPackages.difit.override { difitPin = difitPin; };
   defaultDifitPin = lib.importJSON (agentPackageSources.difit + "/pin.json");
   defaultDifitPackage = pkgs.dotfilesPackages.difit;
-  difitDependencyProvenance = {
-    kind = "upstream-pnpm";
-    lockPath = "pnpm-lock.yaml";
-    workspacePath = "pnpm-workspace.yaml";
-    workspace = "difit";
-    pnpmMajor = 11;
-    scope = "production";
-  };
-  mkDifitCandidate =
-    expectedDependencyProvenance:
-    updatePins.mkCandidatePackage {
-      inherit pkgs expectedDependencyProvenance;
-      packageName = "difit";
-      pinOverride = "difitPin";
-      dependencyHashField = "pnpmDepsHash";
-      rawPin = defaultDifitPin;
-    };
 
   schemaPin = {
     url = "https://example.invalid/schema.json";
@@ -191,8 +175,7 @@ in
       && lib.hasPrefix "pnpm-11." defaultDifitPackage.pnpmDeps.pnpm.name
       && defaultDifitPackage.postPatch == defaultDifitPackage.pnpmDeps.postPatch
       && lib.hasInfix "pnpm-lock.yaml" defaultDifitPackage.postPatch
-      && lib.hasInfix "pnpm-workspace.yaml" defaultDifitPackage.postPatch
-      && defaultDifitPackage.updatePinsDependencyProvenance == difitDependencyProvenance;
+      && lib.hasInfix "pnpm-workspace.yaml" defaultDifitPackage.postPatch;
     expected = true;
   };
 
@@ -205,16 +188,6 @@ in
       && lib.any (
         input: (input.drvPath or null) == defaultDifitPackage.pnpmDeps.pnpm.drvPath
       ) defaultDifitPackage.nativeBuildInputs;
-    expected = true;
-  };
-
-  testDifitCandidateAcceptsMatchingProvenance = {
-    expr =
-      let
-        candidate = mkDifitCandidate difitDependencyProvenance;
-      in
-      candidate.src.outputHash == defaultDifitPin.srcHash
-      && candidate.pnpmDeps.outputHash == lib.fakeHash;
     expected = true;
   };
 

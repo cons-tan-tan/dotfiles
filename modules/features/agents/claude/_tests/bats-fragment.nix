@@ -20,12 +20,29 @@ in
 {
   group = "shellWrappers";
   fixture = {
-    nativeBuildInputs = [ testPackage ];
-    environment.CLAUDE_WRAPPER_TEST_PACKAGE = testPackage;
-    requiredEnvironment = [ "CLAUDE_WRAPPER_TEST_PACKAGE" ];
+    nativeBuildInputs = [
+      pkgs.coreutils
+      pkgs.git
+      pkgs.jq
+      testPackage
+    ];
+    environment = {
+      CLAUDE_UPDATE_TEST_FIXTURE = "1";
+      CLAUDE_WRAPPER_TEST_PACKAGE = testPackage;
+    };
+    requiredEnvironment = [
+      "CLAUDE_UPDATE_TEST_FIXTURE"
+      "CLAUDE_WRAPPER_TEST_PACKAGE"
+    ];
   };
   shard = {
-    testFiles = [ "modules/features/agents/claude/_tests/claude-wrapper.bats" ];
-    sourceFiles = [ "modules/features/agents/claude/_packages/claude-code/claude-wrapper.sh" ];
+    testFiles = [
+      "modules/features/agents/claude/_tests/claude-wrapper.bats"
+      "modules/features/agents/claude/_tests/update-settings-schema.bats"
+    ];
+    sourceFiles = [
+      "modules/features/agents/claude/_packages/claude-code/claude-wrapper.sh"
+      "modules/features/agents/claude/_scripts/update-settings-schema.sh"
+    ];
   };
 }

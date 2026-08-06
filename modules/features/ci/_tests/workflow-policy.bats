@@ -5,7 +5,6 @@ DOTFILES_TEST_REPO_ROOT=${DOTFILES_TEST_REPO_ROOT:-$(git -C "$BATS_TEST_DIRNAME"
 setup() {
   REPO_ROOT="$DOTFILES_TEST_REPO_ROOT"
   WORKFLOW_DIR="$REPO_ROOT/.github/workflows"
-  WORKFLOW="$WORKFLOW_DIR/update-pins-smoke.yaml"
   CI_WORKFLOW="$WORKFLOW_DIR/ci.yaml"
   TELEMETRY_WORKFLOW="$WORKFLOW_DIR/ci-telemetry.yaml"
   HESTIA_WORKFLOW="$WORKFLOW_DIR/hestia-system.yaml"
@@ -95,42 +94,6 @@ cache_setting() {
   else
     sed -n "s/^[[:space:]]*$name = \"\([^\"]*\)\";.*/\1/p" "$CACHE_SETTINGS"
   fi
-}
-
-@test "upstream smoke workflow is weekly and manual only" {
-  run yq -e '
-    (.on.schedule | length) == 1
-    and .on.schedule[0].cron == "37 4 * * 1"
-    and (.on | keys | sort | join(",")) == "schedule,workflow_dispatch"
-  ' "$WORKFLOW"
-  [ "$status" -eq 0 ]
-
-  run yq -e '
-    (.on | has("workflow_dispatch"))
-    and .on.push == null
-    and .on.pull_request == null
-  ' "$WORKFLOW"
-  [ "$status" -eq 0 ]
-}
-
-@test "upstream smoke workflow has a bounded read-only job" {
-  run yq -e '
-    .permissions.contents == "read"
-    and (.permissions | length) == 1
-    and .jobs.smoke.permissions == null
-    and .concurrency.group == "update-pins-upstream-smoke"
-    and .concurrency.cancel-in-progress == true
-    and .jobs.smoke.timeout-minutes == 20
-    and ([.jobs.smoke.steps[] | select(
-      .run == "bash modules/features/ci/_scripts/update_pins_smoke.sh create-checkout"
-    )][0].env.UPDATE_PINS_CHECKOUT)
-      == "${{ runner.temp }}/update-pins-check"
-    and ([.jobs.smoke.steps[] | select(
-      (.uses // "") | test("^actions/checkout@")
-    )][0].with."persist-credentials") == false
-    and ([.jobs.smoke.steps[] | has("continue-on-error") | not] | all)
-  ' "$WORKFLOW"
-  [ "$status" -eq 0 ]
 }
 
 @test "all discovered workflows follow the universal policy" {
@@ -328,36 +291,18 @@ YAML
   [ "$status" -eq 0 ]
 }
 
-@test "live contract executable crosses the expression boundary through env" {
-  run yq -e '
-    [
-      ([.jobs.smoke.steps[] | select(.id == "live-upstream")][0].env.UPDATE_PINS_SMOKE
-        == "${{ steps.build.outputs.path }}/bin/update-pins-smoke")
-    ] | all
-  ' "$WORKFLOW"
-  [ "$status" -eq 0 ]
-}
-
-@test "Hestia workflow inputs stay aligned with the CI defaults" {
+@test "Hestia workflow versions stay aligned" {
   local cache_gc_action
   local matrix_action
-  local smoke_action
   local system_action
   local version
-  local upstream_key_names
   version=$(yq -r '.env.HESTIA_VERSION' "$HESTIA_WORKFLOW")
-  upstream_key_names=$(yq -r '.env.HESTIA_UPSTREAM_CACHE_KEY_NAMES' "$HESTIA_WORKFLOW")
-  smoke_action=$(yq -r '.jobs.smoke.steps[] | select((.uses // "") | test("^Mic92/hestia@")) | .uses' "$WORKFLOW")
   system_action=$(yq -r '.jobs.evaluate.steps[] | select((.uses // "") | test("^Mic92/hestia@")) | .uses' "$HESTIA_WORKFLOW")
   matrix_action=$(yq -r '.jobs.evaluate.steps[] | select(.id == "hestia-matrix") | .uses' "$HESTIA_WORKFLOW")
   cache_gc_action=$(yq -r '.jobs.gc.steps[] | select((.uses // "") | test("^Mic92/hestia@")) | .uses' "$CACHE_GC_WORKFLOW")
 
-  [ "$smoke_action" = "$system_action" ]
   [ "$cache_gc_action" = "$system_action" ]
   [ "${system_action##*@}" = "${matrix_action##*@}" ]
-  [ "$(yq -r '.jobs.smoke.steps[] | select((.uses // "") | test("^Mic92/hestia@")) | .with.version' "$WORKFLOW")" = "$version" ]
-  [ "$(yq -r '.jobs.smoke.steps[] | select((.uses // "") | test("^Mic92/hestia@")) | .with."upstream-cache-filter"' "$WORKFLOW")" = true ]
-  [ "$(yq -r '.jobs.smoke.steps[] | select((.uses // "") | test("^Mic92/hestia@")) | .with."upstream-cache-key-names"' "$WORKFLOW")" = "$upstream_key_names" ]
   [ "$(yq -r '.jobs.gc.steps[] | select((.uses // "") | test("^Mic92/hestia@")) | .with.version' "$CACHE_GC_WORKFLOW")" = "$version" ]
 }
 
@@ -681,77 +626,5 @@ YAML
       .run == "bash modules/features/ci/_scripts/verify_required_results.sh"
     )] | length) == 1
   ' "$CI_WORKFLOW"
-  [ "$status" -eq 0 ]
-}
-
-@test "private and production smoke checks overlap after setup" {
-  run yq -e '
-    (.jobs.smoke.steps | length) as $count
-    | (.jobs.smoke.steps | to_entries | map(select(
-      .value.run == "bash modules/features/ci/_scripts/update_pins_smoke.sh build-private"
-    ))[0].key) as $build
-    | (.jobs.smoke.steps | to_entries | map(select(.value.id == "live-upstream"))[0].key) as $private
-    | (.jobs.smoke.steps | to_entries | map(select(
-      .value.run == "bash modules/features/ci/_scripts/update_pins_smoke.sh create-checkout"
-    ))[0].key) as $clone
-    | (.jobs.smoke.steps | to_entries | map(select(
-      .value.run == "bash modules/features/ci/_scripts/update_pins_smoke.sh exercise-updater"
-    ))[0].key) as $production
-    | (.jobs.smoke.steps | to_entries | map(select(
-      .value.run == "bash modules/features/ci/_scripts/update_pins_smoke.sh verify-original"
-    ))[0].key) as $final
-    | (.jobs.smoke.steps | to_entries | map(select(
-      .value.wait == "live-upstream"
-    ))[0].key) as $wait
-    | [
-        ($build < $private),
-        ($private < $clone),
-        ($clone < $production),
-        ($production < $wait),
-        ($wait < $final),
-        ([.jobs.smoke.steps[] | select(.id == "live-upstream")][0].background == true),
-        ([.jobs.smoke.steps[] | select(.wait == "live-upstream")] | length) == 1,
-        ($final == ($count - 1))
-      ]
-      | all
-  ' "$WORKFLOW"
-  [ "$status" -eq 0 ]
-}
-
-@test "smoke workflow delegates behavior to the process script" {
-  run yq -e '
-    ([.jobs.smoke.steps[].run // "" | select(
-      contains("modules/features/ci/_scripts/update_pins_smoke.sh")
-    )] | sort | join("|")) == (
-      "bash modules/features/ci/_scripts/update_pins_smoke.sh build-private|"
-      + "bash modules/features/ci/_scripts/update_pins_smoke.sh create-checkout|"
-      + "bash modules/features/ci/_scripts/update_pins_smoke.sh exercise-updater|"
-      + "bash modules/features/ci/_scripts/update_pins_smoke.sh live-upstream|"
-      + "bash modules/features/ci/_scripts/update_pins_smoke.sh verify-original"
-    )
-  ' "$WORKFLOW"
-  [ "$status" -eq 0 ]
-}
-
-@test "production updater runs in a bounded disposable checkout" {
-  run yq -e '
-    ([.jobs.smoke.steps[] | select(
-      .run == "bash modules/features/ci/_scripts/update_pins_smoke.sh create-checkout"
-    )][0].env.UPDATE_PINS_CHECKOUT)
-      == "${{ runner.temp }}/update-pins-check"
-    and ([.jobs.smoke.steps[] | select(
-      .run == "bash modules/features/ci/_scripts/update_pins_smoke.sh exercise-updater"
-    )][0].working-directory)
-      == "${{ runner.temp }}/update-pins-check"
-  ' "$WORKFLOW"
-  [ "$status" -eq 0 ]
-}
-
-@test "original checkout is checked even after a smoke failure" {
-  run yq -e '
-    ([.jobs.smoke.steps[] | select(
-      .run == "bash modules/features/ci/_scripts/update_pins_smoke.sh verify-original"
-    )][0].if) == "always()"
-  ' "$WORKFLOW"
   [ "$status" -eq 0 ]
 }

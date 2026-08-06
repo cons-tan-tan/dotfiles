@@ -1,4 +1,6 @@
 {
+  callPackage,
+  ghApiGet,
   lib,
   rustPlatform,
   fetchFromGitHub,
@@ -6,7 +8,9 @@
   openssl,
   pin ? builtins.fromJSON (builtins.readFile ./pin.json),
 }:
-
+let
+  updater = callPackage ../../_scripts/update-shellfirm.nix { inherit ghApiGet; };
+in
 rustPlatform.buildRustPackage rec {
   pname = "shellfirm";
   inherit (pin) version;
@@ -35,6 +39,12 @@ rustPlatform.buildRustPackage rec {
 
   nativeBuildInputs = [ pkg-config ];
   buildInputs = [ openssl ];
+
+  passthru = {
+    updateScript = lib.getExe updater;
+    updateScriptName = "shellfirm";
+    updateScriptDescription = "Update shellfirm with nix-update and synchronize Cargo locks";
+  };
 
   meta = with lib; {
     description = "Safety guardrails for AI coding agents and human terminal commands";

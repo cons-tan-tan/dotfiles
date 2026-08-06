@@ -1,5 +1,6 @@
 {
   callPackage,
+  ghApiGet,
   herdrPin ? builtins.fromJSON (builtins.readFile ./pin.json),
   mkPinnedAsset,
 }:
@@ -11,7 +12,7 @@ let
       "overrideDerivation"
     ];
   build = callPackage ./package.nix {
-    inherit herdrPin mkPinnedAsset;
+    inherit ghApiGet herdrPin mkPinnedAsset;
   };
 in
 {

@@ -1,14 +1,12 @@
-{ lib }:
-let
-  updatePinRegistry = import ./registry.nix { inherit lib; };
-in
+{ ... }:
 {
-  name = "update-pins-e2e";
+  name = "update-pins-runner";
   fixture = "updatePins";
   testFiles = [ "modules/features/update-pins/_tests/update-pins.bats" ];
-  sourceFiles = updatePinRegistry.sourceFiles ++ [
-    "modules/features/agents/hunk/default.nix"
+  sourceFiles = [
     "modules/features/checks/_interface/bats/test-helper.bash"
+    "modules/features/update-pins/_interface/app-set.nix"
+    "modules/features/update-pins/_scripts/update-pins.sh"
   ];
   initializeGit = true;
   platformPredicate = _platform: true;

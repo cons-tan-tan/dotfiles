@@ -9,11 +9,9 @@ let
     "mozuku-lsp"
     "llm-agents"
     "local-packages"
-  ];
-  darwinNames = [
     "watchexec"
-    "brew-nix"
   ];
+  darwinNames = [ "brew-nix" ];
   expectedNames = commonNames ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin darwinNames;
   watchexecPin = (import ../../development/watchexec/_interface).pin;
 in
@@ -41,5 +39,10 @@ in
       brewCasks = pkgs.stdenv.hostPlatform.isDarwin;
       pinnedWatchexec = pkgs.stdenv.hostPlatform.isDarwin;
     };
+  };
+
+  testWatchexecUpdaterIsAvailableOnEveryPlatform = {
+    expr = pkgs.watchexec.updateScriptName;
+    expected = "watchexec";
   };
 }

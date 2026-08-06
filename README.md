@@ -46,13 +46,15 @@ wsl --install --from-file .\nixos.wsl --name NixOS
 | `nix run .#switch` | ホスト構成をビルドして適用 |
 | `nix run .#build` | ホスト構成を適用せずビルドのみ |
 | `nix run .#update` | flake.lock を更新 |
-| `nix run .#update-pins -- --help` | upstream同期の対象とオプションを表示 |
+| `nix run .#update-pins -- --list` | packageごとのupstream同期対象を表示 |
 | `nix run .#write-flake` | input moduleから`flake.nix`を再生成 |
 | `nix run .#apply-winget` | `switch`後にWindows側のpackage構成を適用（WSLのみ） |
 
 そのほかの公開appは`nix flake show`で確認する。
 
-`flake-file.inputs`を定義するmoduleを直接変更した場合は、`nix run .#write-flake`で`flake.nix`を再生成する。`update-pins`によるupstream同期では自動的に再生成される。
+`update-pins`は各packageの`passthru.updateScript`を実行する。対象を省略すると全件を更新し、`nix run .#update-pins -- hcom`のように名前を渡すと1件だけ更新する。更新にはcleanなworktreeが必要で、使い捨てのcloneで全対象が成功してから差分を反映する。`--check`を付けると差分を反映せず、更新が必要な場合に失敗する。通常のpackage更新は`nix-update`へ委譲し、複数assetやflake inputを同時に扱う更新だけを各featureのscriptで補う。GitHub releaseを参照する対象には、`gh auth login`または`GH_TOKEN`による認証が必要となる。旧updaterの`--force`、`--jobs`、`--retry`はpackage側へ更新処理を移したため廃止した。
+
+`flake-file.inputs`を定義するmoduleを直接変更した場合は、`nix run .#write-flake`で`flake.nix`を再生成する。inputを所有する`updateScript`は、`flake.nix`と`flake.lock`も更新する。
 
 `switch`で導入される`gha-lint`は、任意のrepositoryでGitHub Actionsのworkflowとaction metadataを検査できる。
 

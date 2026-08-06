@@ -1,7 +1,0 @@
-{
-  "name": "codex-app",
-  "kind": {
-    "type": "codex-app",
-    "pin": "modules/features/agents/codex/_packages/codex-app/pin.json"
-  }
-}

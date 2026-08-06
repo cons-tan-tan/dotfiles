@@ -44,7 +44,15 @@ in
 
   testCodexFamilyShape = {
     expr = builtins.attrNames codex;
-    expected = [ "mkWrappedPackage" ];
+    expected = [
+      "appUpdater"
+      "mkWrappedPackage"
+    ];
+  };
+
+  testCodexAppUpdaterIsDerivation = {
+    expr = pkgs.lib.isDerivation codex.appUpdater;
+    expected = true;
   };
 
   testCodexWrapperIsBuilder = {

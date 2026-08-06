@@ -19,12 +19,34 @@ in
 {
   group = "shellWrappers";
   fixture = {
-    nativeBuildInputs = [ testPackage ];
-    environment.CODEX_WRAPPER_TEST_PACKAGE = testPackage;
-    requiredEnvironment = [ "CODEX_WRAPPER_TEST_PACKAGE" ];
+    nativeBuildInputs = [
+      pkgs.coreutils
+      pkgs.git
+      pkgs.jq
+      pkgs.libplist
+      pkgs.ripgrep
+      pkgs.unzip
+      pkgs.xmlstarlet
+      pkgs.zip
+      testPackage
+    ];
+    environment = {
+      CODEX_UPDATE_TEST_FIXTURE = "1";
+      CODEX_WRAPPER_TEST_PACKAGE = testPackage;
+    };
+    requiredEnvironment = [
+      "CODEX_UPDATE_TEST_FIXTURE"
+      "CODEX_WRAPPER_TEST_PACKAGE"
+    ];
   };
   shard = {
-    testFiles = [ "modules/features/agents/codex/_tests/codex-wrapper.bats" ];
-    sourceFiles = [ "modules/features/agents/codex/_packages/codex/codex-wrapper.sh" ];
+    testFiles = [
+      "modules/features/agents/codex/_tests/codex-wrapper.bats"
+      "modules/features/agents/codex/_tests/update-app.bats"
+    ];
+    sourceFiles = [
+      "modules/features/agents/codex/_packages/codex/codex-wrapper.sh"
+      "modules/features/agents/codex/_scripts/update-app.sh"
+    ];
   };
 }

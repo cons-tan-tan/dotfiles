@@ -1,5 +1,5 @@
 # package owner が持つ pin の assets map から現在の system の配布物を引く共有ロジック。
-# 生成側の対称形は update-pins Feature の refresh_assets。
+# 更新側は各 package の passthru.updateScript が所有する。
 {
   pin,
   system,

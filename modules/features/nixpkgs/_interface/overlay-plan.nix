@@ -24,12 +24,12 @@ let
         registry = localPackageRegistry;
       };
     }
-  ];
-  darwin = [
     {
       name = "watchexec";
       value = watchexecOverlay;
     }
+  ];
+  darwin = [
     {
       name = "brew-nix";
       value = inputs.brew-nix.overlays.default;
