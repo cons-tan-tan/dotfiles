@@ -34,7 +34,7 @@ fi
 gcroots_dir=${NH_GCROOTS_DIR:-/nix/var/nix/gcroots/auto}
 [[ -d $gcroots_dir ]] || exit 0
 
-owner=$(id -u)
+owner=$("${NH_ID_BIN:-id}" -u)
 
 while IFS= read -r -d '' registration; do
   target=$(readlink -- "$registration") || continue
@@ -77,13 +77,13 @@ while IFS= read -r -d '' registration; do
   fi
   [[ -n $candidate ]] || continue
 
-  identity=$(stat --format '%d:%i:%u:%Y' -- "$target") || continue
+  identity=$("${NH_STAT_BIN:-stat}" --format '%d:%i:%u:%Y' -- "$target") || continue
   inode=${identity#*:}
   inode=${inode%%:*}
 
   # Revalidate the symlink immediately before deletion. The final find also
   # checks the captured inode, owner, type and age to narrow replacement races.
-  current_identity=$(stat --format '%d:%i:%u:%Y' -- "$target") || continue
+  current_identity=$("${NH_STAT_BIN:-stat}" --format '%d:%i:%u:%Y' -- "$target") || continue
   current_store_target=$(readlink -- "$target") || continue
   if [[ $current_identity != "$identity" || $current_store_target != "$store_target" ]]; then
     echo "skipped changed result link: $target" >&2

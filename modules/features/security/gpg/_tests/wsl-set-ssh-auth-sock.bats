@@ -1,21 +1,11 @@
 #!/usr/bin/env bats
 
-DOTFILES_TEST_REPO_ROOT=${DOTFILES_TEST_REPO_ROOT:-$(git -C "$BATS_TEST_DIRNAME" rev-parse --show-toplevel)}
-source "$DOTFILES_TEST_REPO_ROOT/modules/features/checks/_interface/bats/test-helper.bash"
-
 setup() {
-  REPO_ROOT="$DOTFILES_TEST_REPO_ROOT"
-  SCRIPT="$REPO_ROOT/modules/features/security/gpg/_packages/wsl-set-ssh-auth-sock/set-ssh-auth-sock.sh"
+  if [[ -z ${GPG_WSL_AUTH_SOCK_TEST_BIN:-} ]]; then
+    skip "GPG_WSL_AUTH_SOCK_TEST_BIN is only available in the Nix-backed Bats check"
+  fi
   TEST_TMPDIR="$(mktemp -d)"
   export TEST_TMPDIR
-
-  write_bash_stub "$TEST_TMPDIR/gpgconf" <<'SH'
-echo called >>"$TEST_TMPDIR/gpgconf.log"
-printf '%s\n' /run/user/1000/gnupg/S.gpg-agent.ssh
-SH
-  write_bash_stub "$TEST_TMPDIR/systemctl" <<'SH'
-printf 'args:%s\nsocket:%s\nagent:%s\n' "$*" "${SSH_AUTH_SOCK:-}" "${SSH_AGENT_PID:-}" >"$TEST_TMPDIR/systemctl.log"
-SH
 }
 
 teardown() {
@@ -23,11 +13,7 @@ teardown() {
 }
 
 run_helper() {
-  run env \
-    GPGCONF_BIN="$TEST_TMPDIR/gpgconf" \
-    SYSTEMCTL_BIN="$TEST_TMPDIR/systemctl" \
-    "$@" \
-    bash "$SCRIPT"
+  run env "$@" "$GPG_WSL_AUTH_SOCK_TEST_BIN"
 }
 
 @test "discovers and imports the GnuPG socket when SSH variables are incomplete" {

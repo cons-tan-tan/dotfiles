@@ -1,6 +1,7 @@
 {
   callPackage,
   coreutils,
+  enableTestOverrides ? false,
   homedir,
   lib,
   nh,
@@ -113,13 +114,32 @@ let
     text = ''
       readonly cleanup_user=${lib.escapeShellArg username}
       readonly source_directory=${lib.escapeShellArg "${unitTree}/lib/systemd/system"}
-      readonly target_directory=/etc/systemd/system
-      readonly gcroot=/nix/var/nix/gcroots/nh-cleanup-systemd
+    ''
+    + (
+      if enableTestOverrides then
+        ''
+          readonly target_directory="''${NH_CLEANUP_TEST_TARGET_DIRECTORY:?}"
+          readonly gcroot="''${NH_CLEANUP_TEST_GCROOT:?}"
+          readonly lock_directory="''${NH_CLEANUP_TEST_LOCK_DIRECTORY:?}"
+          readonly systemctl_command="''${NH_CLEANUP_TEST_SYSTEMCTL_BIN:?}"
+          readonly allow_unprivileged=true
+          readonly manage_ownership=false
+        ''
+      else
+        ''
+          readonly target_directory=/etc/systemd/system
+          readonly gcroot=/nix/var/nix/gcroots/nh-cleanup-systemd
+          readonly lock_directory=${lock.directory}
+          readonly systemctl_command=${lib.escapeShellArg (lib.getExe' systemd "systemctl")}
+          readonly allow_unprivileged=false
+          readonly manage_ownership=true
+        ''
+    )
+    + ''
       readonly next_gcroot="$gcroot.next"
       readonly unit_tree=${lib.escapeShellArg unitTree}
-      readonly lock_directory=${lock.directory}
-      readonly cleanup_lock_file=${lock.cleanupFile}
-      readonly installer_lock_file=${lock.installerFile}
+      readonly cleanup_lock_file="$lock_directory/cleanup.lock"
+      readonly installer_lock_file="$lock_directory/installer.lock"
     ''
     + builtins.readFile ./install-nh-cleanup-systemd.sh;
   };

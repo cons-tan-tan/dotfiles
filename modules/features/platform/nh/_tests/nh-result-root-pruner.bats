@@ -1,9 +1,10 @@
 #!/usr/bin/env bats
 
-DOTFILES_TEST_REPO_ROOT=${DOTFILES_TEST_REPO_ROOT:-$(git -C "$BATS_TEST_DIRNAME" rev-parse --show-toplevel)}
-
 setup() {
-  export PRUNER="$DOTFILES_TEST_REPO_ROOT/modules/features/platform/nh/_packages/result-root-pruner/nh-prune-result-roots.sh"
+  if [[ -z ${NH_RESULT_ROOT_PRUNER_BIN:-} ]]; then
+    skip "NH_RESULT_ROOT_PRUNER_BIN is only available in the Nix-backed Bats check"
+  fi
+  PRUNER=$NH_RESULT_ROOT_PRUNER_BIN
   export NH_GCROOTS_DIR="$BATS_TEST_TMPDIR/gcroots"
   mkdir -p "$NH_GCROOTS_DIR" "$BATS_TEST_TMPDIR/project/.direnv"
 }
@@ -22,7 +23,7 @@ make_result_root() {
   make_result_root result "8 days ago"
   make_result_root result-dev "8 days ago"
 
-  run bash "$PRUNER" --keep-minutes 10080
+  run "$PRUNER" --keep-minutes 10080
 
   [ "$status" -eq 0 ]
   [ ! -L "$BATS_TEST_TMPDIR/project/result" ]
@@ -34,7 +35,7 @@ make_result_root() {
 @test "keeps recent result symlinks" {
   make_result_root result "1 day ago"
 
-  run bash "$PRUNER" --keep-minutes 10080
+  run "$PRUNER" --keep-minutes 10080
 
   [ "$status" -eq 0 ]
   [ -L "$BATS_TEST_TMPDIR/project/result" ]
@@ -43,7 +44,7 @@ make_result_root() {
 @test "dry-run reports but keeps stale result symlinks" {
   make_result_root result "8 days ago"
 
-  run bash "$PRUNER" --keep-minutes 10080 --dry-run
+  run "$PRUNER" --keep-minutes 10080 --dry-run
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"would remove $BATS_TEST_TMPDIR/project/result"* ]]
@@ -67,7 +68,7 @@ make_result_root() {
   ln -s "$layout_result" "$NH_GCROOTS_DIR/layout-result"
   ln -s "$current_home" "$NH_GCROOTS_DIR/current-home"
 
-  run bash "$PRUNER" --keep-minutes 10080
+  run "$PRUNER" --keep-minutes 10080
 
   [ "$status" -eq 0 ]
   [ -L "$direnv_root" ]
@@ -86,7 +87,7 @@ make_result_root() {
   ln -s "$arbitrary" "$NH_GCROOTS_DIR/arbitrary"
   ln -s "$nested" "$NH_GCROOTS_DIR/nested"
 
-  run bash "$PRUNER" --keep-minutes 10080
+  run "$PRUNER" --keep-minutes 10080
 
   [ "$status" -eq 0 ]
   [ -L "$arbitrary" ]
@@ -99,12 +100,12 @@ make_result_root() {
   ln -s "$dangling" "$NH_GCROOTS_DIR/first-dangling"
   make_result_root result-dev "8 days ago"
 
-  run bash "$PRUNER" --keep-minutes 10080
+  run "$PRUNER" --keep-minutes 10080
 
   [ "$status" -eq 0 ]
   [ ! -L "$BATS_TEST_TMPDIR/project/result-dev" ]
 
-  run bash "$PRUNER" --keep-minutes 10080
+  run "$PRUNER" --keep-minutes 10080
 
   [ "$status" -eq 0 ]
 }
@@ -114,7 +115,7 @@ make_result_root() {
   rm "$NH_GCROOTS_DIR/result"
   ln -s ../project/result "$NH_GCROOTS_DIR/result"
 
-  run bash "$PRUNER" --keep-minutes 10080
+  run "$PRUNER" --keep-minutes 10080
 
   [ "$status" -eq 0 ]
   [ -L "$BATS_TEST_TMPDIR/project/result" ]
@@ -128,7 +129,7 @@ make_result_root() {
   printf '#!/bin/sh\nprintf "99999\\n"\n' >"$fake_bin/id"
   chmod +x "$fake_bin/id"
 
-  run env PATH="$fake_bin:$PATH" bash "$PRUNER" --keep-minutes 10080
+  run env NH_ID_BIN="$fake_bin/id" "$PRUNER" --keep-minutes 10080
 
   [ "$status" -eq 0 ]
   [ -L "$BATS_TEST_TMPDIR/project/result" ]
@@ -156,7 +157,7 @@ make_result_root() {
     >"$fake_bin/stat"
   chmod +x "$fake_bin/stat"
 
-  run env PATH="$fake_bin:$PATH" bash "$PRUNER" --keep-minutes 10080
+  run env NH_STAT_BIN="$fake_bin/stat" "$PRUNER" --keep-minutes 10080
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"skipped changed result link: $RACE_TARGET"* ]]
@@ -170,7 +171,7 @@ make_result_root() {
   touch -d "30 days ago" "$result"
   ln -s "$result" "$NH_GCROOTS_DIR/result"
 
-  run bash "$PRUNER" --keep-minutes 10080
+  run "$PRUNER" --keep-minutes 10080
 
   [ "$status" -eq 0 ]
   [ -f "$result" ]
@@ -178,26 +179,26 @@ make_result_root() {
 }
 
 @test "rejects invalid retention values" {
-  run bash "$PRUNER" --keep-minutes 0
+  run "$PRUNER" --keep-minutes 0
 
   [ "$status" -eq 2 ]
   [[ "$output" == *"--keep-minutes must be a positive integer"* ]]
 }
 
 @test "rejects a missing retention value and unknown arguments" {
-  run bash "$PRUNER" --keep-minutes
+  run "$PRUNER" --keep-minutes
 
   [ "$status" -eq 2 ]
   [[ "$output" == *"--keep-minutes requires a value"* ]]
 
-  run bash "$PRUNER" --unknown
+  run "$PRUNER" --unknown
 
   [ "$status" -eq 2 ]
   [[ "$output" == *"unknown argument: --unknown"* ]]
 }
 
 @test "succeeds when the gcroot registry is absent" {
-  run env NH_GCROOTS_DIR="$BATS_TEST_TMPDIR/missing" bash "$PRUNER"
+  run env NH_GCROOTS_DIR="$BATS_TEST_TMPDIR/missing" "$PRUNER"
 
   [ "$status" -eq 0 ]
   [ -z "$output" ]

@@ -7,6 +7,7 @@ let
   cleanupSystemd =
     if pkgs.stdenv.hostPlatform.isLinux then
       pkgs.callPackage ../_packages/cleanup-systemd {
+        enableTestOverrides = true;
         homedir = "/home/${username}";
         inherit username;
         nh = pkgs.nh;
@@ -14,6 +15,7 @@ let
       }
     else
       null;
+  resultRootPruner = pkgs.callPackage ../_packages/result-root-pruner { };
   storeGrowthChecker = pkgs.callPackage ../_packages/store-growth-checker { };
   growthCheckerProbe = pkgs.writeShellApplication {
     name = "nix-store-growth-checker";
@@ -62,17 +64,20 @@ in
     nativeBuildInputs = [
       cleanGrowthRunnerContract
       cleanGrowthTimeoutRunnerContract
+      resultRootPruner
       storeGrowthChecker
     ];
     environment = {
       NH_CLEAN_GROWTH_RUNNER_BIN = lib.getExe cleanGrowthRunnerContract;
       NH_CLEAN_GROWTH_TIMEOUT_RUNNER_BIN = lib.getExe cleanGrowthTimeoutRunnerContract;
       NH_CLEANUP_SYSTEMD_PACKAGE = lib.optionalString pkgs.stdenv.hostPlatform.isLinux cleanupSystemd;
+      NH_RESULT_ROOT_PRUNER_BIN = lib.getExe resultRootPruner;
       NIX_STORE_GROWTH_CHECKER_BIN = lib.getExe storeGrowthChecker;
     };
     requiredEnvironment = [
       "NH_CLEAN_GROWTH_RUNNER_BIN"
       "NH_CLEAN_GROWTH_TIMEOUT_RUNNER_BIN"
+      "NH_RESULT_ROOT_PRUNER_BIN"
       "NIX_STORE_GROWTH_CHECKER_BIN"
     ]
     ++ lib.optional pkgs.stdenv.hostPlatform.isLinux "NH_CLEANUP_SYSTEMD_PACKAGE";

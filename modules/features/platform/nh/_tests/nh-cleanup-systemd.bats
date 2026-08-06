@@ -13,6 +13,69 @@ setup() {
   RESULT_ROOT_SERVICE="$NH_CLEANUP_SYSTEMD_PACKAGE/lib/systemd/system/nh-clean-result-roots.service"
   RESULT_ROOT_TIMER="$NH_CLEANUP_SYSTEMD_PACKAGE/lib/systemd/system/nh-clean-result-roots.timer"
   INSTALLER_SOURCE="$DOTFILES_TEST_REPO_ROOT/modules/features/platform/nh/_packages/cleanup-systemd/install-nh-cleanup-systemd.sh"
+  INSTALL_TARGET="$BATS_TEST_TMPDIR/etc/systemd/system"
+  INSTALL_GCROOT="$BATS_TEST_TMPDIR/gcroots/nh-cleanup-systemd"
+  INSTALL_LOCK_DIRECTORY="$BATS_TEST_TMPDIR/run/nh-cleanup-systemd"
+  SYSTEMCTL_LOG="$BATS_TEST_TMPDIR/systemctl.log"
+  SYSTEMCTL_STATE_DIRECTORY="$BATS_TEST_TMPDIR/systemctl-state"
+  SYSTEMCTL_PROBE="$BATS_TEST_TMPDIR/systemctl"
+
+  mkdir -p "$SYSTEMCTL_STATE_DIRECTORY"
+  printf '%s\n' \
+    '#!/bin/sh' \
+    'set -eu' \
+    'printf "systemctl %s\n" "$*" >>"$SYSTEMCTL_LOG"' \
+    'command_name=$1' \
+    'if [ -f "$NH_CLEANUP_TEST_LOCK_DIRECTORY/installer.lock" ] && [ -f "$NH_CLEANUP_TEST_LOCK_DIRECTORY/cleanup.lock" ]; then' \
+    '  printf "locks=present\n" >>"$SYSTEMCTL_LOG"' \
+    'fi' \
+    'if [ "$command_name" = daemon-reload ]; then' \
+    '  [ -L "$NH_CLEANUP_TEST_GCROOT.next" ] && printf "next-root=present\n" >>"$SYSTEMCTL_LOG"' \
+    '  [ -f "$NH_CLEANUP_TEST_TARGET_DIRECTORY/nh-clean.service" ] && printf "units=present\n" >>"$SYSTEMCTL_LOG"' \
+    'fi' \
+    'if [ "$command_name" = restart ]; then' \
+    '  if [ -e "$NH_CLEANUP_TEST_GCROOT" ] || [ -L "$NH_CLEANUP_TEST_GCROOT" ]; then' \
+    '    printf "restart-root=present\n" >>"$SYSTEMCTL_LOG"' \
+    '  else' \
+    '    printf "restart-root=absent\n" >>"$SYSTEMCTL_LOG"' \
+    '  fi' \
+    'fi' \
+    'if [ "${SYSTEMCTL_FAIL_COMMAND:-}" = "$command_name" ]; then' \
+    '  exit 42' \
+    'fi' \
+    'case "$command_name" in' \
+    'show)' \
+    '  unit=$4' \
+    '  state_file="$SYSTEMCTL_STATE_DIRECTORY/$unit"' \
+    '  if [ -f "$state_file" ]; then' \
+    '    cat "$state_file"' \
+    '  elif [ "${unit%.timer}" != "$unit" ]; then' \
+    '    printf "active\n"' \
+    '  else' \
+    '    printf "inactive\n"' \
+    '  fi' \
+    '  ;;' \
+    'stop)' \
+    '  printf "inactive\n" >"$SYSTEMCTL_STATE_DIRECTORY/$2"' \
+    '  ;;' \
+    'start)' \
+    '  printf "active\n" >"$SYSTEMCTL_STATE_DIRECTORY/$2"' \
+    '  ;;' \
+    'esac' \
+    >"$SYSTEMCTL_PROBE"
+  chmod +x "$SYSTEMCTL_PROBE"
+}
+
+invoke_installer() {
+  env \
+    NH_CLEANUP_TEST_GCROOT="$INSTALL_GCROOT" \
+    NH_CLEANUP_TEST_LOCK_DIRECTORY="$INSTALL_LOCK_DIRECTORY" \
+    NH_CLEANUP_TEST_SYSTEMCTL_BIN="$SYSTEMCTL_PROBE" \
+    NH_CLEANUP_TEST_TARGET_DIRECTORY="$INSTALL_TARGET" \
+    SYSTEMCTL_FAIL_COMMAND="${SYSTEMCTL_FAIL_COMMAND:-}" \
+    SYSTEMCTL_LOG="$SYSTEMCTL_LOG" \
+    SYSTEMCTL_STATE_DIRECTORY="$SYSTEMCTL_STATE_DIRECTORY" \
+    "$INSTALLER"
 }
 
 @test "system service runs the shared policy as the configured user" {
@@ -52,51 +115,52 @@ setup() {
   grep -Fqx "Persistent=true" "$RESULT_ROOT_TIMER"
 }
 
-@test "installer switches the system GC root only after successful reload" {
-  grep -Fq "/nix/var/nix/gcroots/nh-cleanup-systemd" "$INSTALLER"
-  grep -Eq '^readonly unit_tree=/nix/store/.+-nh-cleanup-systemd-units$' "$INSTALLER"
-  grep -Fq 'ln -sfnT "$unit_tree" "$next_gcroot"' "$INSTALLER"
-  local restart_line root_switch_line
-  restart_line=$(grep -n 'systemctl restart' "$INSTALLER" | cut -d: -f1)
-  root_switch_line=$(grep -n 'mv -Tf "\$next_gcroot" "\$gcroot"' "$INSTALLER" | cut -d: -f1)
-  [ "$restart_line" -lt "$root_switch_line" ]
+@test "installer reloads and restarts before switching the GC root" {
+  run invoke_installer
+
+  [ "$status" -eq 0 ]
+  cmp "$SERVICE" "$INSTALL_TARGET/nh-clean.service"
+  cmp "$TIMER" "$INSTALL_TARGET/nh-clean.timer"
+  cmp "$RESULT_ROOT_SERVICE" "$INSTALL_TARGET/nh-clean-result-roots.service"
+  cmp "$RESULT_ROOT_TIMER" "$INSTALL_TARGET/nh-clean-result-roots.timer"
+  [ -L "$INSTALL_GCROOT" ]
+  [ ! -e "$INSTALL_GCROOT.next" ]
+  [[ "$(readlink "$INSTALL_GCROOT")" == /nix/store/*-nh-cleanup-systemd-units ]]
+  grep -Fqx 'locks=present' "$SYSTEMCTL_LOG"
+  grep -Fqx 'next-root=present' "$SYSTEMCTL_LOG"
+  grep -Fqx 'units=present' "$SYSTEMCTL_LOG"
+  grep -Fqx 'restart-root=absent' "$SYSTEMCTL_LOG"
+  ! grep -Fq 'systemctl start ' "$SYSTEMCTL_LOG"
+
+  local reload_line enable_line restart_line
+  reload_line=$(grep -nF 'systemctl daemon-reload' "$SYSTEMCTL_LOG" | cut -d: -f1)
+  enable_line=$(grep -nF 'systemctl enable nh-clean.timer nh-clean-result-roots.timer' "$SYSTEMCTL_LOG" | cut -d: -f1)
+  restart_line=$(grep -nF 'systemctl restart nh-clean.timer nh-clean-result-roots.timer' "$SYSTEMCTL_LOG" | cut -d: -f1)
+  [ "$reload_line" -lt "$enable_line" ]
+  [ "$enable_line" -lt "$restart_line" ]
 }
 
-@test "service and installer serialize cleanup with unit and GC root replacement" {
-  grep -Fqx 'readonly lock_directory=/run/nh-cleanup-systemd' "$INSTALLER"
-  grep -Fqx 'readonly cleanup_lock_file=/run/nh-cleanup-systemd/cleanup.lock' "$INSTALLER"
-  grep -Fqx 'readonly installer_lock_file=/run/nh-cleanup-systemd/installer.lock' "$INSTALLER"
-  ! grep -Fq '/run/lock' "$INSTALLER"
+@test "installer failure preserves the old GC root and restores quiesced timers" {
+  local old_unit_tree="$BATS_TEST_TMPDIR/old-unit-tree"
+  mkdir -p "$old_unit_tree" "$(dirname "$INSTALL_GCROOT")"
+  ln -s "$old_unit_tree" "$INSTALL_GCROOT"
+  SYSTEMCTL_FAIL_COMMAND=daemon-reload
+
+  run invoke_installer
+
+  [ "$status" -eq 42 ]
+  [ "$(readlink "$INSTALL_GCROOT")" = "$old_unit_tree" ]
+  [ -L "$INSTALL_GCROOT.next" ]
+  [[ "$(readlink "$INSTALL_GCROOT.next")" == /nix/store/*-nh-cleanup-systemd-units ]]
+  grep -Fqx 'systemctl start nh-clean.timer' "$SYSTEMCTL_LOG"
+  grep -Fqx 'systemctl start nh-clean-result-roots.timer' "$SYSTEMCTL_LOG"
+}
+
+@test "system services serialize cleanup on the shared lock" {
   grep -Eq '^ExecStart=/nix/store/.+/bin/flock --exclusive /run/nh-cleanup-systemd/cleanup.lock ' \
     "$SERVICE"
   grep -Eq '^ExecStart=/nix/store/.+/bin/flock --exclusive /run/nh-cleanup-systemd/cleanup.lock ' \
     "$RESULT_ROOT_SERVICE"
-  grep -Fq 'install -d -o root -g root -m 0755 "$lock_directory"' "$INSTALLER"
-  grep -Fq 'flock --exclusive 8' "$INSTALLER"
-  grep -Fq 'chown "$cleanup_user" "$cleanup_lock_file"' "$INSTALLER"
-  grep -Fq 'chmod 0600 "$cleanup_lock_file"' "$INSTALLER"
-  grep -Fq 'trap nh_cleanup_restore_timers EXIT' "$INSTALLER"
-  grep -Fq 'trap - EXIT' "$INSTALLER"
-  grep -Fq 'nh_cleanup_quiesce_timer nh-clean.timer' "$INSTALLER"
-  grep -Fq 'nh_cleanup_quiesce_timer nh-clean-result-roots.timer' "$INSTALLER"
-  grep -Fq 'nh_cleanup_wait_until_stopped nh-clean.service' "$INSTALLER"
-  grep -Fq 'nh_cleanup_wait_until_stopped nh-clean-result-roots.service' "$INSTALLER"
-  local umask_line installer_lock_line timer_stop_line service_wait_line lock_line next_root_line trap_clear_line root_switch_line
-  umask_line=$(grep -n 'umask 0077' "$INSTALLER" | cut -d: -f1)
-  installer_lock_line=$(grep -n 'flock --exclusive 8' "$INSTALLER" | cut -d: -f1)
-  timer_stop_line=$(grep -n 'nh_cleanup_quiesce_timer nh-clean.timer' "$INSTALLER" | cut -d: -f1)
-  service_wait_line=$(grep -n 'nh_cleanup_wait_until_stopped nh-clean.service' "$INSTALLER" | cut -d: -f1)
-  lock_line=$(grep -n 'flock --exclusive 9' "$INSTALLER" | cut -d: -f1)
-  next_root_line=$(grep -n 'ln -sfnT ' "$INSTALLER" | cut -d: -f1)
-  trap_clear_line=$(grep -n 'trap - EXIT' "$INSTALLER" | cut -d: -f1)
-  root_switch_line=$(grep -n 'mv -Tf "\$next_gcroot" "\$gcroot"' "$INSTALLER" | cut -d: -f1)
-  [ "$umask_line" -lt "$installer_lock_line" ]
-  [ "$installer_lock_line" -lt "$timer_stop_line" ]
-  [ "$umask_line" -lt "$lock_line" ]
-  [ "$timer_stop_line" -lt "$service_wait_line" ]
-  [ "$service_wait_line" -lt "$lock_line" ]
-  [ "$lock_line" -lt "$next_root_line" ]
-  [ "$trap_clear_line" -lt "$root_switch_line" ]
 }
 
 @test "installer waits through every non-terminal oneshot state" {
