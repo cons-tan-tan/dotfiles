@@ -17,6 +17,19 @@ permissions:
   actions: read
   contents: read
 
+env:
+  NIX_EXTRA_SUBSTITUTERS: >-
+    https://cache.numtide.com
+    https://nix-community.cachix.org
+  NIX_EXTRA_TRUSTED_PUBLIC_KEYS: >-
+    niks3.numtide.com-1:DTx8wZduET09hRmMtKdQDxNNthLQETkc/yaX7M4qK0g=
+    nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
+  HESTIA_VERSION: v3.0.0
+  HESTIA_UPSTREAM_CACHE_KEY_NAMES: >-
+    cache.nixos.org-1
+    niks3.numtide.com-1
+    nix-community.cachix.org-1
+
 jobs:
   collect:
     name: collect
@@ -24,7 +37,7 @@ jobs:
       github.event.workflow_run.event == 'push'
       || github.event.workflow_run.event == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 45
     steps:
       # workflow_runはdefault branch上のcollectorを実行する。観測対象のcommitを
       # checkoutすると、信頼境界をsource run側へ戻してしまう。
@@ -33,9 +46,6 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ github.sha }}
-          sparse-checkout: |
-            modules/features/ci/_schemas
-            modules/features/ci/_scripts
       - id: download
         name: Download source telemetry fragments
         continue-on-error: true
@@ -63,10 +73,80 @@ jobs:
             --system aarch64-darwin \
             --system x86_64-linux
       - name: Upload run telemetry
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: >-
             ci-telemetry-run-v1-source-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}-collector-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/ci-telemetry/final
+          if-no-files-found: error
+          retention-days: 90
+      - name: Capture source workflow timing
+        if: github.event.workflow_run.conclusion == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+          TELEMETRY_TIMING: ${{ runner.temp }}/ci-telemetry/workflow-timing.json
+        run: >-
+          python3 modules/features/ci/_scripts/capture_workflow_timing.py
+          --repository "${{ github.repository }}"
+          --run-id "$SOURCE_RUN_ID"
+          --run-attempt "$SOURCE_RUN_ATTEMPT"
+          --output "$TELEMETRY_TIMING"
+      - name: Download telemetry history
+        if: github.event.workflow_run.conclusion == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TELEMETRY_CURRENT: ${{ runner.temp }}/ci-telemetry/final
+          TELEMETRY_HISTORY: ${{ runner.temp }}/ci-telemetry/history
+        run: >-
+          python3 modules/features/ci/_scripts/download_ci_telemetry_history.py
+          --repository "${{ github.repository }}"
+          --current "$TELEMETRY_CURRENT"
+          --current-timing "${{ runner.temp }}/ci-telemetry/workflow-timing.json"
+          --output "$TELEMETRY_HISTORY"
+          --maximum-runs 10
+      - name: Install Nix
+        if: github.event.workflow_run.conclusion == 'success'
+        uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
+        with:
+          enable_kvm: false
+          nix_conf: |
+            extra-substituters = ${{ env.NIX_EXTRA_SUBSTITUTERS }}
+            extra-trusted-public-keys = ${{ env.NIX_EXTRA_TRUSTED_PUBLIC_KEYS }}
+      - name: Start Hestia
+        if: github.event.workflow_run.conclusion == 'success'
+        uses: Mic92/hestia@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320 # v3.0.0
+        with:
+          version: ${{ env.HESTIA_VERSION }}
+          upstream-cache-filter: true
+          upstream-cache-key-names: ${{ env.HESTIA_UPSTREAM_CACHE_KEY_NAMES }}
+      - name: Install matrix planner
+        if: github.event.workflow_run.conclusion == 'success'
+        run: >-
+          nix profile add
+          --file modules/features/ci/_packages/matrix-planner/runtime.nix
+      - name: Plan shadow matrix
+        if: github.event.workflow_run.conclusion == 'success'
+        env:
+          TELEMETRY_CURRENT: ${{ runner.temp }}/ci-telemetry/final
+          TELEMETRY_HISTORY: ${{ runner.temp }}/ci-telemetry/history
+          TELEMETRY_OPTIMIZATION: ${{ runner.temp }}/ci-telemetry/optimization/plan.json
+          TELEMETRY_TIMING: ${{ runner.temp }}/ci-telemetry/workflow-timing.json
+        run: >-
+          plan-ci-matrix
+          --target "$TELEMETRY_CURRENT"
+          --history-root "$TELEMETRY_HISTORY"
+          --timing "$TELEMETRY_TIMING"
+          --output "$TELEMETRY_OPTIMIZATION"
+          --schema modules/features/ci/_schemas/ci-optimization-v1.schema.json
+      - name: Upload shadow optimization
+        if: github.event.workflow_run.conclusion == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: >-
+            ci-matrix-plan-v1-source-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}-collector-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci-telemetry/optimization
           if-no-files-found: error
           retention-days: 90

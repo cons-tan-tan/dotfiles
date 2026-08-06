@@ -8,6 +8,7 @@ let
   support = import ./gha-lint-support.nix { inherit lib pkgs; };
   package = pkgs.dotfilesPackages.gha-lint;
   closure = pkgs.closureInfo { rootPaths = [ package ]; };
+  plannerPython = pkgs.dotfilesPackages.ci-matrix-planner.python;
   smoke =
     pkgs.runCommand "gha-lint-smoke"
       {
@@ -39,17 +40,20 @@ let
       {
         nativeBuildInputs = [
           pkgs.check-jsonschema
-          pkgs.python3
+          plannerPython
         ];
       }
       ''
         cd ${repoRoot}
         export PYTHONPYCACHEPREFIX="$TMPDIR/pycache"
-        python3 -m py_compile modules/features/ci/_scripts/*.py
-        python3 -m unittest \
+        ${plannerPython}/bin/python3 -m py_compile modules/features/ci/_scripts/*.py
+        ${plannerPython}/bin/python3 -m unittest \
+          modules/features/ci/_tests/test_capture_workflow_timing.py \
           modules/features/ci/_tests/test_collect_ci_telemetry.py \
           modules/features/ci/_tests/test_ci_telemetry.py \
-          modules/features/ci/_tests/test_optimize_hestia_matrix.py
+          modules/features/ci/_tests/test_download_ci_telemetry_history.py \
+          modules/features/ci/_tests/test_optimize_hestia_matrix.py \
+          modules/features/ci/_tests/test_plan_ci_matrix.py
         touch "$out"
       ''
   );
@@ -72,6 +76,8 @@ let
           ${repoRoot}/modules/features/ci/_schemas/telemetry-v1.schema.json
         check-jsonschema --check-metaschema \
           ${repoRoot}/modules/features/ci/_schemas/telemetry-run-index-v1.schema.json
+        check-jsonschema --check-metaschema \
+          ${repoRoot}/modules/features/ci/_schemas/ci-optimization-v1.schema.json
         touch "$out"
       ''
   );
@@ -85,7 +91,9 @@ in
     }
   ];
   checks = {
-    ci-python-tests = pythonTests;
     ci-source-lint = sourceLint;
+  }
+  // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+    ci-python-tests = pythonTests;
   };
 }

@@ -24,6 +24,7 @@ let
   platformNames =
     if pkgs.stdenv.hostPlatform.isLinux then
       [
+        "ci-matrix-planner"
         "drawio-headless"
         "wsl-open"
         "wsl-set-ssh-auth-sock"
@@ -66,6 +67,7 @@ in
     expr =
       if pkgs.stdenv.hostPlatform.isLinux then
         local ? drawio-headless
+        && local ? ci-matrix-planner
         && local ? wsl-open
         && local ? wsl-set-ssh-auth-sock
         && pkgs.lib.isDerivation local.wsl-open
@@ -76,6 +78,7 @@ in
         && local ? sleepctl
         && pkgs.lib.isDerivation local.sleepctl
         && !(local ? drawio-headless)
+        && !(local ? ci-matrix-planner)
         && !(local ? wsl-open)
         && !(local ? wsl-set-ssh-auth-sock);
     expected = true;

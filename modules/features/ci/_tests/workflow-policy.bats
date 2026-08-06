@@ -516,8 +516,7 @@ YAML
       == "${{ github.sha }}")
     and ([.jobs.collect.steps[] | select(
       (.uses // "") | test("^actions/checkout@")
-    )][0].with."sparse-checkout"
-      | contains("modules/features/ci/_schemas"))
+    )][0].with | has("sparse-checkout") | not)
     and ([.jobs.collect.steps[] | select(.id == "download")][0]."continue-on-error"
       == true)
     and ([.jobs.collect.steps[] | select(.id == "download")][0].with.pattern
@@ -549,6 +548,28 @@ YAML
     )][0].run
       | contains("--system x86_64-linux"))
     and ([.jobs.collect.steps[] | select(
+      (.run // "") | contains("capture_workflow_timing.py")
+    )][0].env.SOURCE_RUN_ATTEMPT
+      == "${{ github.event.workflow_run.run_attempt }}")
+    and ([.jobs.collect.steps[] | select(
+      (.run // "") | contains("capture_workflow_timing.py")
+    )][0].run | contains("--run-attempt \"$SOURCE_RUN_ATTEMPT\""))
+    and ([.jobs.collect.steps[] | select(
+      (.run // "") | contains("download_ci_telemetry_history.py")
+    )] | length) == 1
+    and ([.jobs.collect.steps[] | select(
+      (.uses // "") | test("^nixbuild/nix-quick-install-action@")
+    )] | length) == 1
+    and ([.jobs.collect.steps[] | select(
+      (.uses // "") | test("^Mic92/hestia@")
+    )] | length) == 1
+    and ([.jobs.collect.steps[] | select(
+      (.run // "") | contains("nix profile add")
+    )][0].run | contains("modules/features/ci/_packages/matrix-planner/runtime.nix"))
+    and ([.jobs.collect.steps[] | select(
+      (.run // "") | contains("plan-ci-matrix")
+    )][0].run | contains("--max-jobs-per-system") | not)
+    and ([.jobs.collect.steps[] | select(
       (.uses // "") | test("^actions/upload-artifact@")
     )][0].with.name
       | contains("source-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}"))
@@ -556,10 +577,21 @@ YAML
       (.uses // "") | test("^actions/upload-artifact@")
     )][0].with.name
       | contains("collector-${{ github.run_id }}-${{ github.run_attempt }}"))
+    and ([.jobs.collect.steps | to_entries | .[]
+      | select(.value.name == "Upload run telemetry") | .key][0])
+      < ([.jobs.collect.steps | to_entries | .[]
+        | select(.value.name == "Install Nix") | .key][0])
+    and ([.jobs.collect.steps[] | select(.name == "Upload run telemetry")][0].if
+      == "always()")
     and ([.jobs.collect.steps[] | select(
       (.uses // "") | test("^actions/upload-artifact@")
-    )][0].with."retention-days"
-      == 90)
+    )] | length) == 2
+    and ([.jobs.collect.steps[] | select(
+      (.uses // "") | test("^actions/upload-artifact@")
+    ) | .with."retention-days" == 90] | all)
+    and ([.jobs.collect.steps[] | select(
+      (.uses // "") | test("^actions/upload-artifact@")
+    ) | .with.name | select(contains("ci-matrix-plan-v1-source-"))] | length) == 1
   ' "$TELEMETRY_WORKFLOW"
   [ "$status" -eq 0 ]
 }

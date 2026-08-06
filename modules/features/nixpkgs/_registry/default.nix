@@ -79,6 +79,7 @@ in
     ;
 }
 // lib.optionalAttrs hostPlatform.isLinux {
+  ci-matrix-planner = pkgs.callPackage ciPackageSources.matrixPlanner { };
   drawio-headless = pkgs.callPackage drawioPackageSources.headless { };
   wsl-open = pkgs.callPackage platformPackageSources.wslOpen { };
   wsl-set-ssh-auth-sock = pkgs.callPackage securityPackageSources.wslSetSshAuthSock { };
