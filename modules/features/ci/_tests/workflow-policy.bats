@@ -622,6 +622,12 @@ YAML
     and (.jobs.result.needs | join(",")) == "evaluate,build"
     and .jobs.result.if == "always()"
     and ([.jobs.result.steps[] | select(
+      (.uses // "") | test("^actions/checkout@")
+    )][0].with."persist-credentials") == false
+    and ([.jobs.result.steps[] | select(
+      (.uses // "") | test("^actions/checkout@")
+    )][0].with."sparse-checkout") == "modules/features/ci/_scripts"
+    and ([.jobs.result.steps[] | select(
       .run == "bash modules/features/ci/_scripts/verify_hestia_result.sh"
     )] | length) == 1
   ' "$HESTIA_WORKFLOW"
@@ -633,6 +639,12 @@ YAML
     .jobs.required.name == "required"
     and (.jobs.required.needs | join(",")) == "flake-eval,linux,darwin"
     and .jobs.required.if == "always()"
+    and ([.jobs.required.steps[] | select(
+      (.uses // "") | test("^actions/checkout@")
+    )][0].with."persist-credentials") == false
+    and ([.jobs.required.steps[] | select(
+      (.uses // "") | test("^actions/checkout@")
+    )][0].with."sparse-checkout") == "modules/features/ci/_scripts"
     and ([.jobs.required.steps[] | select(
       .run == "bash modules/features/ci/_scripts/verify_required_results.sh"
     )] | length) == 1

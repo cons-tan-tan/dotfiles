@@ -166,6 +166,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Check out CI scripts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: modules/features/ci/_scripts
       - name: Verify system result
         env:
           ANY_JOBS: ${{ needs.evaluate.outputs.any-jobs }}
