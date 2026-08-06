@@ -63,4 +63,14 @@ done
 if [[ $prefetch_succeeded != true ]]; then
   echo "::warning::Hestia closure prefetch failed; falling back to normal Nix substitution"
 fi
+if [[ -n ${PREFETCH_RESULT_FILE:-} ]]; then
+  if [[ $prefetch_succeeded == true ]]; then
+    printf 'imported\n' >"$PREFETCH_RESULT_FILE"
+  else
+    printf 'fallback\n' >"$PREFETCH_RESULT_FILE"
+  fi
+fi
+if [[ ${PREFETCH_ONLY:-false} == true ]]; then
+  exit 0
+fi
 nix build "${installables[@]}"

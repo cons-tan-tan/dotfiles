@@ -56,27 +56,45 @@ jobs:
       - name: Evaluate Hestia matrix
         id: hestia-matrix
         uses: Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320 # v3.0.0
+        env:
+          HESTIA_EVAL_CAPTURE: ${{ runner.temp }}/ci-telemetry/hestia-eval.jsonl
         with:
           flake: ".#hydraJobs.ci.${{ inputs.system }}"
           # 16 GB runner上で評価workerの再起動を避けつつ、OSとNix daemon用に
           # 4 GBを残す。
-          nix-eval-jobs: >-
-            nix run
-            nixpkgs#nix-eval-jobs
-            --inputs-from .
-            --
-            --workers 1
-            --max-memory-size 12288
+          nix-eval-jobs: python3 modules/features/ci/_scripts/capture_hestia_eval.py
           attr-prefix: "hydraJobs.ci.${{ inputs.system }}"
+      - id: optimized-matrix
+        name: Optimize system matrix
+        shell: bash
+        env:
+          CI_TELEMETRY_LANE: ${{ runner.temp }}/ci-telemetry/lane-${{ inputs.system }}.json
+          HESTIA_ANY_JOBS: ${{ steps.hestia-matrix.outputs.any-jobs }}
+          HESTIA_EVAL_CAPTURE: ${{ runner.temp }}/ci-telemetry/hestia-eval.jsonl
+          HESTIA_MANIFEST_VERSION: ${{ steps.hestia-matrix.outputs.manifest-version }}
+          HESTIA_MATRIX: ${{ steps.hestia-matrix.outputs.matrix }}
+          SYSTEM: ${{ inputs.system }}
+          TELEMETRY_ATTR_PREFIX: hydraJobs.ci.${{ inputs.system }}
+        run: python3 modules/features/ci/_scripts/optimize_hestia_matrix.py
       - id: matrix
         name: Validate system matrix
         shell: bash
         env:
           HESTIA_ANY_JOBS: ${{ steps.hestia-matrix.outputs.any-jobs }}
           HESTIA_MANIFEST_VERSION: ${{ steps.hestia-matrix.outputs.manifest-version }}
-          HESTIA_MATRIX: ${{ steps.hestia-matrix.outputs.matrix }}
+          HESTIA_MATRIX: ${{ steps.optimized-matrix.outputs.matrix }}
+          HESTIA_ORIGINAL_MATRIX: ${{ steps.hestia-matrix.outputs.matrix }}
           SYSTEM: ${{ inputs.system }}
         run: python3 modules/features/ci/_scripts/validate_hestia_matrix.py
+      - name: Upload evaluation telemetry
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-telemetry-fragment-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.system }}-lane
+          path: ${{ runner.temp }}/ci-telemetry/lane-${{ inputs.system }}.json
+          if-no-files-found: ignore
+          retention-days: 7
 
   # 評価済みのdrv closureを引き継ぎ、評価とbuildが別のderivationを選ぶ余地を
   # 作らない。
@@ -92,6 +110,10 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.evaluate.outputs.matrix) }}
     steps:
+      - name: Record build job start
+        env:
+          CI_JOB_STARTED_AT: ${{ runner.temp }}/ci-job-started-at
+        run: date +%s > "$CI_JOB_STARTED_AT"
       - name: Check out CI scripts
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -115,8 +137,25 @@ jobs:
         run: bash modules/features/ci/_scripts/verify_binary_substituters.sh
       - name: Prefetch derivation closure and build
         env:
+          CI_JOB_STARTED_AT: ${{ runner.temp }}/ci-job-started-at
+          CI_TELEMETRY_JOB: ${{ runner.temp }}/ci-telemetry/job-${{ matrix.telemetryKey }}.json
+          HESTIA_PREFETCH_SCRIPT: modules/features/ci/_scripts/prefetch_hestia_closure_and_build.sh
           INSTALLABLES: ${{ matrix.installables }}
-        run: bash modules/features/ci/_scripts/prefetch_hestia_closure_and_build.sh
+          SYSTEM: ${{ matrix.system }}
+          TELEMETRY_JOB_ID: ${{ matrix.jobId }}
+          TELEMETRY_JOB_NAME: ${{ matrix.name }}
+          TELEMETRY_KEY: ${{ matrix.telemetryKey }}
+          TELEMETRY_RUNNER_LABELS: ${{ join(matrix.os, ',') }}
+        run: python3 modules/features/ci/_scripts/run_hestia_build.py
+      - name: Upload build telemetry
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-telemetry-fragment-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.system }}-${{ matrix.telemetryKey }}
+          path: ${{ runner.temp }}/ci-telemetry/job-${{ matrix.telemetryKey }}.json
+          if-no-files-found: warn
+          retention-days: 7
 
   result:
     name: result

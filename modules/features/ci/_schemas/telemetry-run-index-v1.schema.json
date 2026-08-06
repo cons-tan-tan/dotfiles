@@ -1,0 +1,216 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/cons-tan-tan/dotfiles/main/modules/features/ci/_schemas/telemetry-run-index-v1.schema.json",
+  "title": "dotfiles CI telemetry run index v1",
+  "type": "object",
+  "required": [
+    "$schema",
+    "schema_version",
+    "document_type",
+    "producer",
+    "observed_at",
+    "source",
+    "collector",
+    "artifact_download_status",
+    "collection_status",
+    "expected_systems",
+    "systems"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "const": "https://raw.githubusercontent.com/cons-tan-tan/dotfiles/main/modules/features/ci/_schemas/telemetry-run-index-v1.schema.json"
+    },
+    "schema_version": { "const": 1 },
+    "document_type": { "const": "run_index" },
+    "producer": {
+      "type": "object",
+      "required": ["name", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "const": "dotfiles-ci-telemetry" },
+        "version": { "type": "string", "minLength": 1 }
+      }
+    },
+    "observed_at": { "type": "string", "format": "date-time" },
+    "source": {
+      "type": "object",
+      "required": [
+        "repository",
+        "repository_id",
+        "workflow_id",
+        "workflow_name",
+        "workflow_path",
+        "run_id",
+        "run_attempt",
+        "event",
+        "head_sha",
+        "head_branch",
+        "conclusion",
+        "created_at",
+        "run_started_at",
+        "updated_at",
+        "trust_tier"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "repository_id": { "type": "string", "minLength": 1 },
+        "workflow_id": { "type": "string", "minLength": 1 },
+        "workflow_name": { "const": "CI" },
+        "workflow_path": { "const": ".github/workflows/ci.yaml" },
+        "run_id": { "type": "string", "minLength": 1 },
+        "run_attempt": { "type": "integer", "minimum": 1 },
+        "event": { "enum": ["push", "workflow_dispatch"] },
+        "head_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "head_branch": { "type": "string", "minLength": 1 },
+        "conclusion": {
+          "enum": [
+            "action_required",
+            "cancelled",
+            "failure",
+            "neutral",
+            "skipped",
+            "stale",
+            "startup_failure",
+            "success",
+            "timed_out"
+          ]
+        },
+        "created_at": { "$ref": "#/$defs/nullableTimestamp" },
+        "run_started_at": { "$ref": "#/$defs/nullableTimestamp" },
+        "updated_at": { "$ref": "#/$defs/nullableTimestamp" },
+        "trust_tier": { "const": "trusted_default_branch" }
+      }
+    },
+    "collector": {
+      "type": "object",
+      "required": ["run_id", "run_attempt", "commit_sha"],
+      "additionalProperties": false,
+      "properties": {
+        "run_id": { "type": "string", "minLength": 1 },
+        "run_attempt": { "type": "integer", "minimum": 1 },
+        "commit_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" }
+      }
+    },
+    "artifact_download_status": { "enum": ["success", "failed"] },
+    "collection_status": { "enum": ["complete", "partial", "failed"] },
+    "expected_systems": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "systems": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/system" },
+      "minItems": 1
+    }
+  },
+  "$defs": {
+    "nullableTimestamp": {
+      "anyOf": [
+        { "type": "string", "format": "date-time" },
+        { "type": "null" }
+      ]
+    },
+    "system": {
+      "type": "object",
+      "required": [
+        "system",
+        "artifact_status",
+        "reason_code",
+        "bundle_path",
+        "bundle_sha256",
+        "bundle_collection_status",
+        "execution_conclusion"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": { "artifact_status": { "const": "available" } },
+            "required": ["artifact_status"]
+          },
+          "then": {
+            "properties": {
+              "reason_code": { "enum": ["bundle_incomplete", null] },
+              "bundle_path": { "type": "string", "pattern": "^systems/[A-Za-z0-9._+-]+\\.json$" },
+              "bundle_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+              "bundle_collection_status": { "enum": ["complete", "partial", "failed"] }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "artifact_status": { "const": "missing" } },
+            "required": ["artifact_status"]
+          },
+          "then": {
+            "properties": {
+              "reason_code": { "const": "lane_missing" },
+              "bundle_path": { "type": "null" },
+              "bundle_sha256": { "type": "null" },
+              "bundle_collection_status": { "type": "null" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "artifact_status": { "const": "invalid" } },
+            "required": ["artifact_status"]
+          },
+          "then": {
+            "properties": {
+              "reason_code": {
+                "enum": [
+                  "artifact_download_failed",
+                  "artifact_inventory_invalid",
+                  "duplicate_lane",
+                  "fragment_invalid"
+                ]
+              },
+              "bundle_path": { "type": "null" },
+              "bundle_sha256": { "type": "null" },
+              "bundle_collection_status": { "type": "null" }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "system": { "type": "string", "minLength": 1 },
+        "artifact_status": { "enum": ["available", "missing", "invalid"] },
+        "reason_code": {
+          "enum": [
+            "artifact_download_failed",
+            "artifact_inventory_invalid",
+            "bundle_incomplete",
+            "duplicate_lane",
+            "fragment_invalid",
+            "lane_missing",
+            null
+          ]
+        },
+        "bundle_path": {
+          "anyOf": [
+            { "type": "string", "pattern": "^systems/[A-Za-z0-9._+-]+\\.json$" },
+            { "type": "null" }
+          ]
+        },
+        "bundle_sha256": {
+          "anyOf": [
+            { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            { "type": "null" }
+          ]
+        },
+        "bundle_collection_status": {
+          "type": ["string", "null"],
+          "enum": ["complete", "partial", "failed", null]
+        },
+        "execution_conclusion": {
+          "enum": ["success", "failure", "cancelled", "skipped", "timed_out", "unknown"]
+        }
+      }
+    }
+  }
+}

@@ -8,12 +8,16 @@ setup() {
   WORKFLOW_DIR="$REPO_ROOT/.github/workflows"
   WORKFLOW="$WORKFLOW_DIR/update-pins-smoke.yaml"
   CI_WORKFLOW="$WORKFLOW_DIR/ci.yaml"
+  TELEMETRY_WORKFLOW="$WORKFLOW_DIR/ci-telemetry.yaml"
   HESTIA_WORKFLOW="$WORKFLOW_DIR/hestia-system.yaml"
   CACHE_GC_WORKFLOW="$WORKFLOW_DIR/cache-gc.yaml"
   CACHE_SETTINGS="$REPO_ROOT/modules/features/platform/nix-settings/_data/cache.nix"
   CI_SCRIPT_DIR="$REPO_ROOT/modules/features/ci/_scripts"
+  HESTIA_MATRIX_OPTIMIZER="$CI_SCRIPT_DIR/optimize_hestia_matrix.py"
   HESTIA_MATRIX_VALIDATOR="$CI_SCRIPT_DIR/validate_hestia_matrix.py"
   HESTIA_BUILD_SCRIPT="$CI_SCRIPT_DIR/prefetch_hestia_closure_and_build.sh"
+  TELEMETRY_SCHEMA="$REPO_ROOT/modules/features/ci/_schemas/telemetry-v1.schema.json"
+  TELEMETRY_INDEX_SCHEMA="$REPO_ROOT/modules/features/ci/_schemas/telemetry-run-index-v1.schema.json"
   SUBSTITUTER_CHECK_SCRIPT="$CI_SCRIPT_DIR/verify_binary_substituters.sh"
 }
 
@@ -39,7 +43,9 @@ check_universal_workflow_policy() {
   for workflow in "${workflows[@]}"; do
     yq -e '
       .permissions.contents == "read"
-      and (.permissions | length) == 1
+      and ((.permissions.actions // "read") == "read")
+      and ([.permissions | keys[] | select(. != "contents" and . != "actions")]
+        | length) == 0
       and ((.jobs | kind) == "map")
       and ((.jobs | length) > 0)
       and ([.jobs[] | select(has("uses") | not) | has("timeout-minutes")] | all)
@@ -116,6 +122,77 @@ run_hestia_matrix_validation() {
     MATRIX_OUTPUT_MAX_CHARS="$matrix_output_max_chars" \
     SYSTEM="$system" \
     python3 "$HESTIA_MATRIX_VALIDATOR"
+}
+
+run_hestia_matrix_optimization() {
+  local matrix=$1
+  local nix_status=${2:-0}
+  local stub_dir="$BATS_TEST_TMPDIR/matrix-optimizer-stubs"
+  MATRIX_OUTPUT="$BATS_TEST_TMPDIR/optimized-matrix-output"
+  EVAL_CAPTURE="$BATS_TEST_TMPDIR/hestia-eval.jsonl"
+  LANE_OUTPUT="$BATS_TEST_TMPDIR/lane-x86_64-linux.json"
+  : >"$MATRIX_OUTPUT"
+  mkdir -p "$stub_dir"
+
+  jq -c '.include[] | .installables / " " | .[] | {
+    attr: (. | capture("-(?<name>[^/]+)\\.drv\\^\\*").name),
+    drvPath: sub("\\^\\*$"; ""),
+    system: "x86_64-linux",
+    isCached: false
+  }' <<<"$matrix" >"$EVAL_CAPTURE"
+
+  write_bash_stub "$stub_dir/nix" <<'SH'
+if [[ ${1:-} == --version ]]; then
+  printf 'nix (Nix) 2.34.0\n'
+  exit 0
+fi
+if [[ $OPTIMIZER_NIX_STATUS -ne 0 ]]; then
+  printf 'dry-run failed\n' >&2
+  exit "$OPTIMIZER_NIX_STATUS"
+fi
+index=0
+for suffix in shared-1 shared-2 config-1 config-2 config-3 config-4 config-5 config-6 config-7 config-8 eval-1 quality-1; do
+  index=$((index + 1))
+  printf '  /nix/store/%032d-%s.drv\n' "$index" "$suffix" >&2
+done
+printf '[]\n'
+SH
+  write_bash_stub "$stub_dir/nix-store" <<'SH'
+case "$3" in
+  *-configurations.drv)
+    index=0
+    for suffix in shared-1 shared-2 config-1 config-2 config-3 config-4 config-5 config-6 config-7 config-8; do
+      index=$((index + 1))
+      printf '/nix/store/%032d-%s.drv\n' "$index" "$suffix"
+    done
+    ;;
+  *-eval-tests.drv)
+    printf '/nix/store/%032d-shared-1.drv\n' 1
+    printf '/nix/store/%032d-shared-2.drv\n' 2
+    printf '/nix/store/%032d-eval-1.drv\n' 11
+    ;;
+  *-quality.drv)
+    printf '/nix/store/%032d-quality-1.drv\n' 12
+    ;;
+esac
+SH
+
+  run env \
+    CI_TELEMETRY_LANE="$LANE_OUTPUT" \
+    GITHUB_OUTPUT="$MATRIX_OUTPUT" \
+    HESTIA_ANY_JOBS=true \
+    HESTIA_EVAL_CAPTURE="$EVAL_CAPTURE" \
+    HESTIA_MANIFEST_VERSION=12 \
+    HESTIA_MATRIX="$matrix" \
+    MATRIX_OPTIMIZER_CRITICAL_PATH_SLACK=0.1 \
+    MATRIX_OPTIMIZER_MAX_WORKERS=1 \
+    MATRIX_OPTIMIZER_MIN_SHARED_DERIVATIONS=2 \
+    MATRIX_OPTIMIZER_MIN_SHARED_RATIO=0.5 \
+    OPTIMIZER_NIX_STATUS="$nix_status" \
+    PATH="$stub_dir:$PATH" \
+    SYSTEM=x86_64-linux \
+    TELEMETRY_ATTR_PREFIX=hydraJobs.ci.x86_64-linux \
+    python3 "$HESTIA_MATRIX_OPTIMIZER"
 }
 
 run_ci_build_step() {
@@ -504,15 +581,33 @@ YAML
     and ([.jobs.evaluate.steps[] | select(
       .uses == "Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320"
     )][0].with."nix-eval-jobs"
-      == "nix run nixpkgs#nix-eval-jobs --inputs-from . -- --workers 1 --max-memory-size 12288")
+      == "python3 modules/features/ci/_scripts/capture_hestia_eval.py")
+    and ([.jobs.evaluate.steps[] | select(
+      .uses == "Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320"
+    )][0].env.HESTIA_EVAL_CAPTURE)
+      == "${{ runner.temp }}/ci-telemetry/hestia-eval.jsonl"
     and ([.jobs.evaluate.steps[] | select(.id == "matrix")]
       | length) == 1
+    and ([.jobs.evaluate.steps[] | select(.id == "optimized-matrix")]
+      | length) == 1
+    and ([.jobs.evaluate.steps[] | select(.id == "optimized-matrix")][0].name)
+      == "Optimize system matrix"
+    and ([.jobs.evaluate.steps[] | select(.id == "optimized-matrix")][0].shell)
+      == "bash"
+    and ([.jobs.evaluate.steps[] | select(.id == "optimized-matrix")][0].env.HESTIA_MATRIX)
+      == "${{ steps.hestia-matrix.outputs.matrix }}"
+    and ([.jobs.evaluate.steps[] | select(.id == "optimized-matrix")][0].run)
+      == "python3 modules/features/ci/_scripts/optimize_hestia_matrix.py"
     and ([.jobs.evaluate.steps[] | select(.id == "matrix")][0].name)
       == "Validate system matrix"
     and ([.jobs.evaluate.steps[] | select(.id == "matrix")][0].shell)
       == "bash"
     and ([.jobs.evaluate.steps[] | select(.id == "matrix")][0].run)
       == "python3 modules/features/ci/_scripts/validate_hestia_matrix.py"
+    and ([.jobs.evaluate.steps[] | select(.id == "matrix")][0].env.HESTIA_MATRIX)
+      == "${{ steps.optimized-matrix.outputs.matrix }}"
+    and ([.jobs.evaluate.steps[] | select(.id == "matrix")][0].env.HESTIA_ORIGINAL_MATRIX)
+      == "${{ steps.hestia-matrix.outputs.matrix }}"
   ' "$HESTIA_WORKFLOW"
   [ "$status" -eq 0 ]
 }
@@ -532,6 +627,46 @@ YAML
   [ "$status" -eq 0 ]
   [ "$(sed -n 's/^any-jobs=//p' "$MATRIX_OUTPUT")" = false ]
   [ "$(sed -n 's/^matrix=//p' "$MATRIX_OUTPUT")" = "$empty" ]
+}
+
+@test "system matrix optimization merges only beneficial static groups" {
+  local matrix='{"include":[{"drvPath":"/nix/store/00000000000000000000000000000000-configurations.drv","system":"x86_64-linux","name":"configurations","os":["ubuntu-latest"],"installables":"/nix/store/00000000000000000000000000000000-configurations.drv^*"},{"drvPath":"/nix/store/11111111111111111111111111111111-eval-tests.drv","system":"x86_64-linux","name":"eval-tests","os":["ubuntu-latest"],"installables":"/nix/store/11111111111111111111111111111111-eval-tests.drv^*"},{"drvPath":"/nix/store/22222222222222222222222222222222-quality.drv","system":"x86_64-linux","name":"quality","os":["ubuntu-latest"],"installables":"/nix/store/22222222222222222222222222222222-quality.drv^*"}]}'
+
+  run_hestia_matrix_optimization "$matrix"
+  [ "$status" -eq 0 ]
+  run jq -e '
+    .include | length == 2
+    and .[0].name == "configurations+eval-tests"
+    and (.[0].installables | contains("configurations.drv^*"))
+    and (.[0].installables | contains("eval-tests.drv^*"))
+    and .[1].name == "quality"
+  ' <<<"$(sed -n 's/^matrix=//p' "$MATRIX_OUTPUT")"
+  [ "$status" -eq 0 ]
+  run jq -e '
+    (.data.checks | map({key: .display_name, value: (.plan.dependency_drv_ids | length)}) | from_entries)
+      == {configurations: 10, "eval-tests": 3, quality: 1}
+  ' "$LANE_OUTPUT"
+  [ "$status" -eq 0 ]
+  if command -v check-jsonschema >/dev/null; then
+    run check-jsonschema --schemafile "$TELEMETRY_SCHEMA" "$LANE_OUTPUT"
+    [ "$status" -eq 0 ]
+  fi
+}
+
+@test "system matrix optimization falls back after a dry-run failure" {
+  local matrix='{"include":[{"drvPath":"/nix/store/00000000000000000000000000000000-configurations.drv","system":"x86_64-linux","name":"configurations","os":["ubuntu-latest"],"installables":"/nix/store/00000000000000000000000000000000-configurations.drv^*"},{"drvPath":"/nix/store/11111111111111111111111111111111-eval-tests.drv","system":"x86_64-linux","name":"eval-tests","os":["ubuntu-latest"],"installables":"/nix/store/11111111111111111111111111111111-eval-tests.drv^*"}]}'
+
+  run_hestia_matrix_optimization "$matrix" 1
+  [ "$status" -eq 0 ]
+  [[ $output == *"Hestia matrix optimization skipped"* ]]
+  run jq -e --argjson original "$matrix" '
+    (([.include[].installables] | sort)
+      == ([$original.include[].installables] | sort))
+    and (([.include[].name] | sort)
+      == ([$original.include[].name] | sort))
+  ' <<<"$(sed -n 's/^matrix=//p' "$MATRIX_OUTPUT")"
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.data.decision.status' "$LANE_OUTPUT")" = fallback ]
 }
 
 @test "system matrix validation requires a matching manifest registration" {
@@ -610,7 +745,10 @@ YAML
     and ([.jobs.build.steps[] | select(
       .name == "Prefetch derivation closure and build"
     )][0].run)
-      == "bash modules/features/ci/_scripts/prefetch_hestia_closure_and_build.sh"
+      == "python3 modules/features/ci/_scripts/run_hestia_build.py"
+    and ([.jobs.build.steps[] | select(
+      .name == "Prefetch derivation closure and build"
+    )][0].env.TELEMETRY_JOB_ID) == "${{ matrix.jobId }}"
     and ([.jobs.build.steps[] | select(
       .name == "Verify binary substituters"
     )][0].run)
@@ -625,14 +763,107 @@ YAML
   [ "$status" -eq 0 ]
 }
 
+@test "system lane persists versioned telemetry without gating builds" {
+  run yq -e '
+    [
+      ([.jobs.evaluate.steps[] | select(.name == "Upload evaluation telemetry")][0].if
+        == "always()"),
+      ([.jobs.evaluate.steps[] | select(.name == "Upload evaluation telemetry")][0]."continue-on-error"
+        == true),
+      ([.jobs.evaluate.steps[] | select(.name == "Upload evaluation telemetry")][0].with."retention-days"
+        == 7),
+      ([.jobs.build.steps[] | select(.name == "Upload build telemetry")][0].if
+        == "always()"),
+      ([.jobs.build.steps[] | select(.name == "Upload build telemetry")][0]."continue-on-error"
+        == true),
+      ([.jobs.build.steps[] | select(.name == "Upload build telemetry")][0].with."retention-days"
+        == 7),
+      ([.jobs.result.steps[] | select(
+        .name == "Download telemetry fragments"
+        or .name == "Assemble telemetry bundle"
+        or .name == "Upload telemetry bundle"
+      )] | length) == 0
+    ] | all
+  ' "$HESTIA_WORKFLOW"
+  [ "$status" -eq 0 ]
+}
+
+@test "completed CI runs are collected independently with attempt isolation" {
+  run yq -e '
+    (.on.workflow_run.workflows | length) == 1
+    and .on.workflow_run.workflows[0] == "CI"
+    and (.on.workflow_run.types | length) == 1
+    and .on.workflow_run.types[0] == "completed"
+    and (.on.workflow_run.branches | length) == 1
+    and .on.workflow_run.branches[0] == "main"
+    and .concurrency.group
+      == "ci-telemetry-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}"
+    and .concurrency."cancel-in-progress" == false
+    and .permissions.actions == "read"
+    and .permissions.contents == "read"
+    and (.permissions | length) == 2
+    and (.jobs.collect.if | contains("github.event.workflow_run.event == '\''push'\''"))
+    and (.jobs.collect.if | contains("github.event.workflow_run.event == '\''workflow_dispatch'\''"))
+    and ([.jobs.collect.steps[] | select(.name == "Check out telemetry collector")][0].with.ref
+      == "${{ github.sha }}")
+    and ([.jobs.collect.steps[] | select(.name == "Check out telemetry collector")][0].with."sparse-checkout"
+      | contains("modules/features/ci/_schemas"))
+    and ([.jobs.collect.steps[] | select(.name == "Download source telemetry fragments")][0]."continue-on-error"
+      == true)
+    and ([.jobs.collect.steps[] | select(.name == "Download source telemetry fragments")][0].id
+      == "download")
+    and ([.jobs.collect.steps[] | select(.name == "Download source telemetry fragments")][0].with.pattern
+      == "ci-telemetry-fragment-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}-*")
+    and ([.jobs.collect.steps[] | select(.name == "Download source telemetry fragments")][0].with."run-id"
+      == "${{ github.event.workflow_run.id }}")
+    and ([.jobs.collect.steps[] | select(.name == "Download source telemetry fragments")][0].with."github-token"
+      == "${{ github.token }}")
+    and ([.jobs.collect.steps[] | select(.name == "Download source telemetry fragments")][0].with."merge-multiple"
+      == false)
+    and ([.jobs.collect.steps[] | select(.name == "Assemble run telemetry")][0].run
+      | contains("collect_ci_telemetry.py"))
+    and ([.jobs.collect.steps[] | select(.name == "Assemble run telemetry")][0].env.TELEMETRY_DOWNLOAD_OUTCOME
+      == "${{ steps.download.outcome }}")
+    and ([.jobs.collect.steps[] | select(.name == "Assemble run telemetry")][0].run
+      | contains("--download-outcome \"$TELEMETRY_DOWNLOAD_OUTCOME\""))
+    and ([.jobs.collect.steps[] | select(.name == "Assemble run telemetry")][0].run
+      | contains("--system aarch64-darwin"))
+    and ([.jobs.collect.steps[] | select(.name == "Assemble run telemetry")][0].run
+      | contains("--system x86_64-linux"))
+    and ([.jobs.collect.steps[] | select(.name == "Upload run telemetry")][0].with.name
+      | contains("source-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}"))
+    and ([.jobs.collect.steps[] | select(.name == "Upload run telemetry")][0].with.name
+      | contains("collector-${{ github.run_id }}-${{ github.run_attempt }}"))
+    and ([.jobs.collect.steps[] | select(.name == "Upload run telemetry")][0].with."retention-days"
+      == 90)
+  ' "$TELEMETRY_WORKFLOW"
+  [ "$status" -eq 0 ]
+}
+
 @test "Hestia CI scripts pass static checks" {
   run shellcheck "$HESTIA_BUILD_SCRIPT" "$SUBSTITUTER_CHECK_SCRIPT"
   [ "$status" -eq 0 ]
 
   run env \
     PYTHONPYCACHEPREFIX="$BATS_TEST_TMPDIR/pycache" \
-    python3 -m py_compile "$HESTIA_MATRIX_VALIDATOR"
+    python3 -m py_compile "$CI_SCRIPT_DIR"/*.py
   [ "$status" -eq 0 ]
+
+  run env \
+    PYTHONPYCACHEPREFIX="$BATS_TEST_TMPDIR/pycache" \
+    python3 -m unittest \
+      "$REPO_ROOT/modules/features/ci/_tests/test_collect_ci_telemetry.py" \
+      "$REPO_ROOT/modules/features/ci/_tests/test_ci_telemetry.py" \
+      "$REPO_ROOT/modules/features/ci/_tests/test_optimize_hestia_matrix.py"
+  [ "$status" -eq 0 ]
+
+  if command -v check-jsonschema >/dev/null; then
+    run check-jsonschema --check-metaschema "$TELEMETRY_SCHEMA"
+    [ "$status" -eq 0 ]
+
+    run check-jsonschema --check-metaschema "$TELEMETRY_INDEX_SCHEMA"
+    [ "$status" -eq 0 ]
+  fi
 }
 
 @test "system lane requires all binary substituters" {

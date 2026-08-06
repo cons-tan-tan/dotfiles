@@ -5,6 +5,7 @@
 import json
 import os
 import re
+import shlex
 import sys
 
 UINT64_MAX = 18_446_744_073_709_551_615
@@ -21,7 +22,9 @@ def is_nonempty_string(value: object) -> bool:
     return isinstance(value, str) and bool(value)
 
 
-def validate_row(row: object, expected_system: str) -> str:
+def validate_row(
+    row: object, expected_system: str, *, require_telemetry: bool = False
+) -> str:
     if not isinstance(row, dict):
         raise ValueError("Hestia matrix row must be an object")
 
@@ -44,10 +47,21 @@ def validate_row(row: object, expected_system: str) -> str:
 
     if row.get("system") != expected_system:
         raise ValueError("Hestia matrix row belongs to another system")
+    if require_telemetry:
+        if not re.fullmatch(r"[0-9a-f]{64}", str(row.get("jobId", ""))):
+            raise ValueError("optimized matrix row has an invalid jobId")
+        if not re.fullmatch(r"[0-9a-f]{20}", str(row.get("telemetryKey", ""))):
+            raise ValueError("optimized matrix row has an invalid telemetryKey")
     return drv_path
 
 
-def validate_matrix(raw_matrix: str, any_jobs: str, expected_system: str) -> str:
+def validate_matrix(
+    raw_matrix: str,
+    any_jobs: str,
+    expected_system: str,
+    *,
+    require_telemetry: bool = False,
+) -> str:
     matrix = json.loads(raw_matrix)
     if not isinstance(matrix, dict) or not isinstance(matrix.get("include"), list):
         raise ValueError("Hestia matrix must contain an include array")
@@ -59,10 +73,53 @@ def validate_matrix(raw_matrix: str, any_jobs: str, expected_system: str) -> str
     if len(rows) > 256:
         raise ValueError("Hestia matrix exceeds 256 rows")
 
-    drv_paths = [validate_row(row, expected_system) for row in rows]
+    drv_paths = [
+        validate_row(row, expected_system, require_telemetry=require_telemetry)
+        for row in rows
+    ]
     if len(drv_paths) != len(set(drv_paths)):
         raise ValueError("Hestia matrix contains duplicate drvPaths")
+    if require_telemetry:
+        job_ids = [str(row["jobId"]) for row in rows]
+        telemetry_keys = [str(row["telemetryKey"]) for row in rows]
+        if len(job_ids) != len(set(job_ids)) or len(telemetry_keys) != len(
+            set(telemetry_keys)
+        ):
+            raise ValueError("optimized matrix contains duplicate telemetry identities")
     return json.dumps({"include": rows}, ensure_ascii=False, separators=(",", ":"))
+
+
+def matrix_assignments(
+    matrix: dict[str, object],
+) -> dict[str, tuple[str, tuple[str, ...]]]:
+    rows = matrix["include"]
+    assert isinstance(rows, list)
+    result: dict[str, tuple[str, tuple[str, ...]]] = {}
+    for row in rows:
+        assert isinstance(row, dict)
+        values = shlex.split(str(row["installables"]))
+        if len(values) != len(set(values)):
+            raise ValueError("matrix row contains duplicate installables")
+        if f"{row['drvPath']}^*" not in values:
+            raise ValueError("matrix row representative is not scheduled")
+        assignment = (
+            str(row["system"]),
+            tuple(sorted(str(label) for label in row["os"])),
+        )
+        for value in values:
+            if value in result:
+                raise ValueError("matrix schedules an installable more than once")
+            result[value] = assignment
+    return result
+
+
+def validate_conservation(original_raw: str, optimized_raw: str) -> None:
+    original = json.loads(original_raw)
+    optimized = json.loads(optimized_raw)
+    original_assignments = matrix_assignments(original)
+    optimized_assignments = matrix_assignments(optimized)
+    if original_assignments != optimized_assignments:
+        raise ValueError("optimized matrix does not conserve Hestia assignments")
 
 
 def validate_manifest_version(raw_version: str, any_jobs: str) -> str:
@@ -82,11 +139,15 @@ def validate_output_limit(raw_limit: str) -> int:
 
 def main() -> None:
     any_jobs = require_env("HESTIA_ANY_JOBS")
+    original_matrix = os.environ.get("HESTIA_ORIGINAL_MATRIX")
     matrix = validate_matrix(
         require_env("HESTIA_MATRIX"),
         any_jobs,
         require_env("SYSTEM"),
+        require_telemetry=original_matrix is not None,
     )
+    if original_matrix is not None:
+        validate_conservation(original_matrix, matrix)
     manifest_version = validate_manifest_version(
         require_env("HESTIA_MANIFEST_VERSION"), any_jobs
     )

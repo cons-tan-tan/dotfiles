@@ -1,0 +1,270 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/cons-tan-tan/dotfiles/main/modules/features/ci/_schemas/telemetry-v1.schema.json",
+  "title": "dotfiles CI telemetry v1",
+  "oneOf": [
+    { "$ref": "#/$defs/laneDocument" },
+    { "$ref": "#/$defs/jobDocument" },
+    { "$ref": "#/$defs/bundleDocument" }
+  ],
+  "$defs": {
+    "producer": {
+      "type": "object",
+      "required": ["name", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "const": "dotfiles-ci-telemetry" },
+        "version": { "type": "string", "minLength": 1 }
+      }
+    },
+    "run": {
+      "type": "object",
+      "required": ["repository", "repository_id", "run_id", "run_attempt", "workflow", "event", "ref", "commit_sha", "system"],
+      "additionalProperties": false,
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "repository_id": { "type": "string", "minLength": 1 },
+        "run_id": { "type": "string", "minLength": 1 },
+        "run_attempt": { "type": "integer", "minimum": 1 },
+        "workflow": { "type": "string", "minLength": 1 },
+        "event": { "type": "string", "minLength": 1 },
+        "ref": { "type": "string", "minLength": 1 },
+        "commit_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "system": { "type": "string", "minLength": 1 }
+      }
+    },
+    "envelope": {
+      "type": "object",
+      "required": ["$schema", "schema_version", "document_type", "producer", "run", "observed_at", "data"],
+      "properties": {
+        "$schema": { "const": "https://raw.githubusercontent.com/cons-tan-tan/dotfiles/main/modules/features/ci/_schemas/telemetry-v1.schema.json" },
+        "schema_version": { "const": 1 },
+        "document_type": { "enum": ["lane", "job", "bundle"] },
+        "producer": { "$ref": "#/$defs/producer" },
+        "run": { "$ref": "#/$defs/run" },
+        "observed_at": { "type": "string", "format": "date-time" },
+        "data": { "type": "object" }
+      }
+    },
+    "stringArray": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "plan": {
+      "type": "object",
+      "required": ["status", "dependency_drv_ids"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "enum": ["success", "failed", "timeout", "not_observed"] },
+        "dependency_drv_ids": { "$ref": "#/$defs/stringArray" }
+      }
+    },
+    "derivation": {
+      "type": "object",
+      "required": ["drv_id", "drv_path"],
+      "additionalProperties": false,
+      "properties": {
+        "drv_id": { "type": "string", "pattern": "^[0-9a-z]{32}$" },
+        "drv_path": { "type": "string", "pattern": "^/nix/store/[0-9a-z]{32}-.+\\.drv$" }
+      }
+    },
+    "check": {
+      "type": "object",
+      "required": ["check_id", "attr_path", "display_name", "drv_id", "drv_path", "system", "runner_labels", "static_affinity_group", "selection", "plan"],
+      "additionalProperties": false,
+      "properties": {
+        "check_id": { "type": "string", "minLength": 1 },
+        "attr_path": { "type": "string", "minLength": 1 },
+        "display_name": { "type": "string", "minLength": 1 },
+        "drv_id": { "type": "string", "pattern": "^[0-9a-z]{32}$" },
+        "drv_path": { "type": "string", "pattern": "^/nix/store/[0-9a-z]{32}-.+\\.drv$" },
+        "system": { "type": "string", "minLength": 1 },
+        "runner_labels": { "$ref": "#/$defs/stringArray" },
+        "static_affinity_group": { "type": ["string", "null"] },
+        "selection": { "enum": ["scheduled", "cached_filtered", "unknown"] },
+        "plan": { "$ref": "#/$defs/plan" }
+      }
+    },
+    "group": {
+      "type": "object",
+      "required": ["name", "system", "runner_labels", "member_check_ids", "root_drv_ids", "plan"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "system": { "type": "string", "minLength": 1 },
+        "runner_labels": { "$ref": "#/$defs/stringArray" },
+        "member_check_ids": { "$ref": "#/$defs/stringArray" },
+        "root_drv_ids": { "$ref": "#/$defs/stringArray" },
+        "plan": { "$ref": "#/$defs/plan" }
+      }
+    },
+    "parameters": {
+      "type": "object",
+      "required": ["critical_path_slack", "min_shared_derivations", "min_shared_ratio"],
+      "additionalProperties": false,
+      "properties": {
+        "critical_path_slack": { "type": "number", "minimum": 0, "maximum": 1 },
+        "min_shared_derivations": { "type": "integer", "minimum": 1 },
+        "min_shared_ratio": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "decisionJob": {
+      "type": "object",
+      "required": ["job_id", "telemetry_key", "name", "system", "runner_labels", "member_check_ids", "root_drv_ids", "planned_drv_ids"],
+      "additionalProperties": false,
+      "properties": {
+        "job_id": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "telemetry_key": { "type": "string", "pattern": "^[0-9a-f]{20}$" },
+        "name": { "type": "string", "minLength": 1 },
+        "system": { "type": "string", "minLength": 1 },
+        "runner_labels": { "$ref": "#/$defs/stringArray" },
+        "member_check_ids": { "$ref": "#/$defs/stringArray" },
+        "root_drv_ids": { "$ref": "#/$defs/stringArray" },
+        "planned_drv_ids": { "$ref": "#/$defs/stringArray" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": ["hestia_version", "manifest_version", "nix_version", "plan_method", "plan_duration_ms"],
+      "additionalProperties": false,
+      "properties": {
+        "hestia_version": { "type": "string", "minLength": 1 },
+        "manifest_version": { "type": "string", "minLength": 1 },
+        "nix_version": { "type": "string", "minLength": 1 },
+        "plan_method": { "const": "single-dry-run-and-store-requisites-v1" },
+        "plan_duration_ms": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "lane": {
+      "type": "object",
+      "required": ["collection_status", "source", "derivations", "checks", "static_groups", "decision"],
+      "additionalProperties": false,
+      "properties": {
+        "collection_status": { "enum": ["complete", "partial", "failed"] },
+        "source": { "$ref": "#/$defs/source" },
+        "derivations": { "type": "array", "items": { "$ref": "#/$defs/derivation" } },
+        "checks": { "type": "array", "items": { "$ref": "#/$defs/check" } },
+        "static_groups": { "type": "array", "items": { "$ref": "#/$defs/group" } },
+        "decision": {
+          "type": "object",
+          "required": ["algorithm", "algorithm_version", "status", "reason_code", "parameters", "input_fingerprint", "jobs"],
+          "additionalProperties": false,
+          "properties": {
+            "algorithm": { "const": "hestia-overlap" },
+            "algorithm_version": { "const": "1" },
+            "status": { "enum": ["optimized", "unchanged", "fallback", "not_needed"] },
+            "reason_code": { "type": ["string", "null"] },
+            "parameters": { "$ref": "#/$defs/parameters" },
+            "input_fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+            "jobs": { "type": "array", "items": { "$ref": "#/$defs/decisionJob" } }
+          }
+        }
+      }
+    },
+    "phase": {
+      "type": "object",
+      "required": ["status", "duration_ms", "exit_code"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "enum": ["success", "fallback", "failure", "not_run"] },
+        "duration_ms": { "type": "integer", "minimum": 0 },
+        "exit_code": { "type": ["integer", "null"] }
+      }
+    },
+    "derivationEvent": {
+      "type": "object",
+      "required": ["drv_id", "drv_path", "outcome", "duration_ms"],
+      "additionalProperties": false,
+      "properties": {
+        "drv_id": { "type": "string", "pattern": "^[0-9a-z]{32}$" },
+        "drv_path": { "type": "string", "pattern": "^/nix/store/[0-9a-z]{32}-.+\\.drv$" },
+        "outcome": { "enum": ["completed", "interrupted"] },
+        "duration_ms": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "substitutionEvent": {
+      "type": "object",
+      "required": ["store_id", "store_path", "outcome", "duration_ms"],
+      "additionalProperties": false,
+      "properties": {
+        "store_id": { "type": "string", "minLength": 1 },
+        "store_path": { "type": "string", "pattern": "^/nix/store/" },
+        "outcome": { "enum": ["completed", "interrupted"] },
+        "duration_ms": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "job": {
+      "type": "object",
+      "required": ["job_id", "telemetry_key", "name", "system", "runner_labels", "root_drv_ids", "status", "phases", "derivation_events", "substitution_events", "measurement_quality", "nix_version", "event_parser_version", "event_parse_status", "total_duration_ms"],
+      "additionalProperties": false,
+      "properties": {
+        "job_id": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "telemetry_key": { "type": "string", "pattern": "^[0-9a-f]{20}$" },
+        "name": { "type": "string", "minLength": 1 },
+        "system": { "type": "string", "minLength": 1 },
+        "runner_labels": { "$ref": "#/$defs/stringArray" },
+        "root_drv_ids": { "$ref": "#/$defs/stringArray" },
+        "status": { "enum": ["success", "failure", "interrupted"] },
+        "phases": {
+          "type": "object",
+          "required": ["github_job_setup", "prefetch", "nix_build"],
+          "additionalProperties": false,
+          "properties": {
+            "github_job_setup": { "$ref": "#/$defs/phase" },
+            "prefetch": { "$ref": "#/$defs/phase" },
+            "nix_build": { "$ref": "#/$defs/phase" }
+          }
+        },
+        "derivation_events": { "type": "array", "items": { "$ref": "#/$defs/derivationEvent" } },
+        "substitution_events": { "type": "array", "items": { "$ref": "#/$defs/substitutionEvent" } },
+        "measurement_quality": { "enum": ["structured_nix_events", "job_wall_clock"] },
+        "nix_version": { "type": "string", "minLength": 1 },
+        "event_parser_version": { "const": "1" },
+        "event_parse_status": { "enum": ["events_observed", "no_events"] },
+        "total_duration_ms": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "laneDocument": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        { "properties": { "document_type": { "const": "lane" }, "data": { "$ref": "#/$defs/lane" } } }
+      ],
+      "unevaluatedProperties": false
+    },
+    "jobDocument": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        { "properties": { "document_type": { "const": "job" }, "data": { "$ref": "#/$defs/job" } } }
+      ],
+      "unevaluatedProperties": false
+    },
+    "bundle": {
+      "type": "object",
+      "required": ["collection_status", "lane", "jobs", "missing_job_ids", "missing_fragments"],
+      "additionalProperties": false,
+      "properties": {
+        "collection_status": { "enum": ["complete", "partial", "failed"] },
+        "lane": { "anyOf": [{ "$ref": "#/$defs/laneDocument" }, { "type": "null" }] },
+        "jobs": { "type": "array", "items": { "$ref": "#/$defs/jobDocument" } },
+        "missing_job_ids": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "uniqueItems": true
+        },
+        "missing_fragments": {
+          "type": "array",
+          "items": { "const": "lane" },
+          "uniqueItems": true
+        }
+      }
+    },
+    "bundleDocument": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        { "properties": { "document_type": { "const": "bundle" }, "data": { "$ref": "#/$defs/bundle" } } }
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}

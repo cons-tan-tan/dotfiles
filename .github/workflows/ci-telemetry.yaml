@@ -1,0 +1,72 @@
+name: CI telemetry
+
+# source runのcodeは実行せず、artifactもsource identity・schema・inventoryを
+# collector側で検証する。権限はread-onlyに限定する。
+on: # zizmor: ignore[dangerous-triggers]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: >-
+    ci-telemetry-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+  cancel-in-progress: false
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  collect:
+    name: collect
+    if: >-
+      github.event.workflow_run.event == 'push'
+      || github.event.workflow_run.event == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # workflow_runはdefault branch上のcollectorを実行する。観測対象のcommitを
+      # checkoutすると、信頼境界をsource run側へ戻してしまう。
+      - name: Check out telemetry collector
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          sparse-checkout: |
+            modules/features/ci/_schemas
+            modules/features/ci/_scripts
+      - id: download
+        name: Download source telemetry fragments
+        continue-on-error: true
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          pattern: ci-telemetry-fragment-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}-*
+          path: ${{ runner.temp }}/ci-telemetry/fragments
+          merge-multiple: false
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - name: Assemble run telemetry
+        env:
+          TELEMETRY_EVENT: ${{ github.event_path }}
+          TELEMETRY_DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}
+          TELEMETRY_INPUT: ${{ runner.temp }}/ci-telemetry/fragments
+          TELEMETRY_OUTPUT: ${{ runner.temp }}/ci-telemetry/final
+        run: |
+          python3 modules/features/ci/_scripts/collect_ci_telemetry.py \
+            --event "$TELEMETRY_EVENT" \
+            --download-outcome "$TELEMETRY_DOWNLOAD_OUTCOME" \
+            --input "$TELEMETRY_INPUT" \
+            --output "$TELEMETRY_OUTPUT" \
+            --schema modules/features/ci/_schemas/telemetry-v1.schema.json \
+            --index-schema modules/features/ci/_schemas/telemetry-run-index-v1.schema.json \
+            --system aarch64-darwin \
+            --system x86_64-linux
+      - name: Upload run telemetry
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: >-
+            ci-telemetry-run-v1-source-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}-collector-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci-telemetry/final
+          if-no-files-found: error
+          retention-days: 90
