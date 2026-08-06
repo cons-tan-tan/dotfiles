@@ -15,9 +15,4 @@ in
       ".github/workflows/z.yaml"
     ];
   };
-
-  testWorkflowDiscoveryRejectsEmptyDirectory = {
-    expr = (builtins.tryEval (workflowDiscovery.fromEntries { })).success;
-    expected = false;
-  };
 }

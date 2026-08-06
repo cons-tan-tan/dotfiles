@@ -63,17 +63,4 @@ jobs:
           DARWIN_RESULT: ${{ needs.darwin.result }}
           FLAKE_EVAL_RESULT: ${{ needs.flake-eval.result }}
           LINUX_RESULT: ${{ needs.linux.result }}
-        run: |
-          set -euo pipefail
-          if [[ "$FLAKE_EVAL_RESULT" != success ]]; then
-            echo "flake evaluation failed: $FLAKE_EVAL_RESULT" >&2
-            exit 1
-          fi
-          if [[ "$LINUX_RESULT" != success ]]; then
-            echo "Linux lane failed: $LINUX_RESULT" >&2
-            exit 1
-          fi
-          if [[ "$DARWIN_RESULT" != success ]]; then
-            echo "Darwin lane failed: $DARWIN_RESULT" >&2
-            exit 1
-          fi
+        run: bash modules/features/ci/_scripts/verify_required_results.sh

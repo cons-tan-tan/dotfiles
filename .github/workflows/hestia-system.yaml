@@ -171,23 +171,4 @@ jobs:
           ANY_JOBS: ${{ needs.evaluate.outputs.any-jobs }}
           BUILD_RESULT: ${{ needs.build.result }}
           EVAL_RESULT: ${{ needs.evaluate.result }}
-        run: |
-          set -euo pipefail
-          if [[ "$EVAL_RESULT" != success ]]; then
-            echo "matrix evaluation failed: $EVAL_RESULT" >&2
-            exit 1
-          fi
-          if [[ "$ANY_JOBS" == true ]]; then
-            if [[ "$BUILD_RESULT" != success ]]; then
-              echo "matrix build failed: $BUILD_RESULT" >&2
-              exit 1
-            fi
-          elif [[ "$ANY_JOBS" == false ]]; then
-            if [[ "$BUILD_RESULT" != skipped ]]; then
-              echo "unexpected empty matrix result: $BUILD_RESULT" >&2
-              exit 1
-            fi
-          else
-            echo "invalid any-jobs output: $ANY_JOBS" >&2
-            exit 1
-          fi
+        run: bash modules/features/ci/_scripts/verify_hestia_result.sh

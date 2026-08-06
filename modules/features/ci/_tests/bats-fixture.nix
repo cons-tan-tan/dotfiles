@@ -4,10 +4,6 @@
 }:
 {
   nativeBuildInputs = [
-    pkgs.check-jsonschema
-    pkgs.jq
-    pkgs.python3
-    pkgs.shellcheck
     pkgs.yq-go
   ];
   environment = {

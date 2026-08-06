@@ -22,6 +22,13 @@ def is_nonempty_string(value: object) -> bool:
     return isinstance(value, str) and bool(value)
 
 
+def parse_matrix(raw_matrix: str) -> object:
+    try:
+        return json.loads(raw_matrix)
+    except json.JSONDecodeError as error:
+        raise ValueError("Hestia matrix is not valid JSON") from error
+
+
 def validate_row(
     row: object, expected_system: str, *, require_telemetry: bool = False
 ) -> str:
@@ -62,7 +69,7 @@ def validate_matrix(
     *,
     require_telemetry: bool = False,
 ) -> str:
-    matrix = json.loads(raw_matrix)
+    matrix = parse_matrix(raw_matrix)
     if not isinstance(matrix, dict) or not isinstance(matrix.get("include"), list):
         raise ValueError("Hestia matrix must contain an include array")
 
@@ -114,8 +121,8 @@ def matrix_assignments(
 
 
 def validate_conservation(original_raw: str, optimized_raw: str) -> None:
-    original = json.loads(original_raw)
-    optimized = json.loads(optimized_raw)
+    original = parse_matrix(original_raw)
+    optimized = parse_matrix(optimized_raw)
     original_assignments = matrix_assignments(original)
     optimized_assignments = matrix_assignments(optimized)
     if original_assignments != optimized_assignments:

@@ -36,15 +36,7 @@ jobs:
             nix-community.cachix.org-1
       - name: Build private smoke executable
         id: build
-        run: |
-          smoke_path="$(
-            nix build \
-              .#checks.x86_64-linux.update-pins-smoke \
-              --no-link \
-              --no-write-lock-file \
-              --print-out-paths
-          )"
-          printf 'path=%s\n' "$smoke_path" >> "$GITHUB_OUTPUT"
+        run: bash modules/features/ci/_scripts/update_pins_smoke.sh build-private
       # live contract検査はcloneやproduction updaterと作業treeを共有しないため、
       # build完了後すぐに開始する。waitはbackground側の失敗もjobへ反映する。
       - name: Check live upstream contracts
@@ -52,39 +44,16 @@ jobs:
         background: true
         env:
           UPDATE_PINS_SMOKE: ${{ steps.build.outputs.path }}/bin/update-pins-smoke
-        run: |
-          cd "$RUNNER_TEMP" || exit 1
-          "$UPDATE_PINS_SMOKE"
+        run: bash modules/features/ci/_scripts/update_pins_smoke.sh live-upstream
       - name: Create disposable updater checkout
         env:
           UPDATE_PINS_CHECKOUT: ${{ runner.temp }}/update-pins-check
-        run: |
-          test ! -e "$UPDATE_PINS_CHECKOUT"
-          git clone \
-            --no-local \
-            --no-checkout \
-            --single-branch \
-            --depth=1 \
-            --no-tags \
-            "$GITHUB_WORKSPACE" \
-            "$UPDATE_PINS_CHECKOUT"
-          git -C "$UPDATE_PINS_CHECKOUT" checkout --quiet --detach "$GITHUB_SHA"
-          test "$(git -C "$UPDATE_PINS_CHECKOUT" rev-parse HEAD)" = "$GITHUB_SHA"
-          git -C "$UPDATE_PINS_CHECKOUT" remote remove origin
-          clone_status="$(git -C "$UPDATE_PINS_CHECKOUT" status --short)"
-          test -z "$clone_status"
+        run: bash modules/features/ci/_scripts/update_pins_smoke.sh create-checkout
       - name: Exercise production difit updater
         working-directory: ${{ runner.temp }}/update-pins-check
-        run: |
-          timeout 15m nix run .#update-pins -- --force --check difit
-          git diff --exit-code
-          clone_status="$(git status --short)"
-          test -z "$clone_status"
+        run: bash modules/features/ci/_scripts/update_pins_smoke.sh exercise-updater
       - name: Wait for live upstream contracts
         wait: live-upstream
       - name: Verify repository remained unchanged
         if: always()
-        run: |
-          git -C "$GITHUB_WORKSPACE" diff --exit-code
-          original_status="$(git -C "$GITHUB_WORKSPACE" status --short)"
-          test -z "$original_status"
+        run: bash modules/features/ci/_scripts/update_pins_smoke.sh verify-original
