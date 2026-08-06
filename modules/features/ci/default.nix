@@ -93,8 +93,8 @@ in
         {
           home.packages = [
             pkgs.pinact
-            pkgs.zizmor
             pkgs.dotfilesPackages.gha-lint
+            pkgs.dotfilesPackages.zizmor
           ];
         };
     };

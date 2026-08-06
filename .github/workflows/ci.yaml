@@ -22,13 +22,16 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Check out repository
+        id: checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        background: true
         with:
           persist-credentials: false
       - name: Install Nix
         uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
         with:
           enable_kvm: false
+      - wait: checkout
       # Hestiaのsystem laneとは独立して開始する。eval時のIFDを排除して
       # あるため、Darwinを含む全systemをLinuxで評価できる。
       - name: Evaluate flake outputs
@@ -36,13 +39,13 @@ jobs:
 
   linux:
     name: linux
-    uses: ./.github/workflows/hestia-system.yaml
+    uses: $/.github/workflows/hestia-system.yaml
     with:
       system: x86_64-linux
 
   darwin:
     name: darwin
-    uses: ./.github/workflows/hestia-system.yaml
+    uses: $/.github/workflows/hestia-system.yaml
     with:
       system: aarch64-darwin
 

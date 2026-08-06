@@ -6,12 +6,13 @@
 }:
 let
   ghaLintSupport = import ../../ci/_tests/gha-lint-support.nix { inherit lib pkgs; };
+  zizmor = pkgs.dotfilesPackages.zizmor;
   # Duplicating diagnostics across the structural and security analyzers would
   # couple one tool's upgrade to both contracts. Repository bytes are the only
   # inputs, so a Darwin rerun would not add platform coverage either.
   workflowLint = ciCheck.annotate (ciCheck.targets.linux "repo-quality") (
-    assert lib.assertMsg (lib.versionAtLeast pkgs.zizmor.version "1.28.0")
-      "workflow-lint-tests requires zizmor 1.28.0 or newer";
+    assert lib.assertMsg (lib.versionAtLeast zizmor.version "1.29.0")
+      "workflow-lint-tests requires zizmor 1.29.0 or newer for self-repository references";
     pkgs.runCommand "workflow-lint-tests"
       {
         # Normal CLI runs follow the current upstream schema. The commit gate
@@ -20,13 +21,13 @@ let
         GHA_LINT_WORKFLOW_SCHEMA = ghaLintSupport.schemas.workflow;
         nativeBuildInputs = [
           pkgs.dotfilesPackages.gha-lint
-          pkgs.zizmor
+          zizmor
         ];
       }
       ''
         cd ${repoRoot}
         gha-lint
-        zizmor --offline --collect=workflows --persona=regular .
+        zizmor --offline --persona=regular .
         touch "$out"
       ''
   );

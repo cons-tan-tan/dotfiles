@@ -1,0 +1,45 @@
+name: Set up Nix and Hestia
+description: Install Nix and start the repository's pinned Hestia cache daemon
+
+inputs:
+  upstream-cache-filter:
+    description: Skip store paths signed by the configured public caches
+    required: false
+    default: "true"
+  wait-manifest-version:
+    description: Minimum Hestia manifest version to observe before continuing
+    required: false
+    default: "0"
+
+outputs:
+  nix-extra-substituters:
+    description: Public substituters configured while installing Nix
+    value: >-
+      https://cache.numtide.com
+      https://nix-community.cachix.org
+  hestia-version:
+    description: Hestia version started by this action
+    value: v3.0.0
+
+runs:
+  using: composite
+  steps:
+    # GitHub Actions cannot read flake.nix before Nix is installed. Keep the
+    # bootstrap cache configuration here and verify it against the Nix source.
+    - name: Install Nix
+      uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
+      with:
+        enable_kvm: false
+        nix_conf: |
+          extra-substituters = https://cache.numtide.com https://nix-community.cachix.org
+          extra-trusted-public-keys = niks3.numtide.com-1:DTx8wZduET09hRmMtKdQDxNNthLQETkc/yaX7M4qK0g= nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
+    - name: Start Hestia
+      uses: Mic92/hestia@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320 # v3.0.0
+      with:
+        version: v3.0.0
+        upstream-cache-filter: ${{ inputs.upstream-cache-filter }}
+        upstream-cache-key-names: >-
+          cache.nixos.org-1
+          niks3.numtide.com-1
+          nix-community.cachix.org-1
+        wait-manifest-version: ${{ inputs.wait-manifest-version }}

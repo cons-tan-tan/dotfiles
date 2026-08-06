@@ -70,6 +70,7 @@ in
     hunkInput = inputs.hunk;
   };
   shellfirm = pkgs.callPackage agentPackageSources.shellfirm { inherit ghApiGet; };
+  zizmor = pkgs.callPackage ciPackageSources.zizmor { };
 
   inherit
     aws

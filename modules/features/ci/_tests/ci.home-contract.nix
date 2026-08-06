@@ -9,7 +9,7 @@
     {
       ghaLint = hasPackage pkgs.dotfilesPackages.gha-lint;
       pinact = hasPackage pkgs.pinact;
-      zizmor = hasPackage pkgs.zizmor;
+      zizmor = hasPackage pkgs.dotfilesPackages.zizmor;
     };
   expected = _: {
     ghaLint = true;

@@ -31,14 +31,10 @@ jobs:
       actions: write
       contents: read
     steps:
-      - name: Install Nix
-        uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
+      - name: Set up Nix and Hestia
+        uses: $/.github/actions/setup-hestia
         with:
-          enable_kvm: false
-      - name: Start Hestia
-        uses: Mic92/hestia@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320 # v3.0.0
-        with:
-          version: v3.0.0
+          upstream-cache-filter: "false"
       - name: Run Hestia garbage collection
         run: |
           "$HESTIA_BIN" gc \

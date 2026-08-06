@@ -11,6 +11,7 @@ let
     "gha-lint"
     "ghq-fetch-all"
     "shellfirm"
+    "zizmor"
   ];
   familyNames = [
     "aws"

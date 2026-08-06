@@ -11,21 +11,6 @@ on:
 permissions:
   contents: read
 
-# GitHub Actionsはflake.nixのnixConfigをNixのインストール前には読めない。
-# 公開cache設定はここで宣言し、Nix側との一致をworkflow-policy-testsで検証する。
-env:
-  NIX_EXTRA_SUBSTITUTERS: >-
-    https://cache.numtide.com
-    https://nix-community.cachix.org
-  NIX_EXTRA_TRUSTED_PUBLIC_KEYS: >-
-    niks3.numtide.com-1:DTx8wZduET09hRmMtKdQDxNNthLQETkc/yaX7M4qK0g=
-    nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
-  HESTIA_VERSION: v3.0.0
-  HESTIA_UPSTREAM_CACHE_KEY_NAMES: >-
-    cache.nixos.org-1
-    niks3.numtide.com-1
-    nix-community.cachix.org-1
-
 jobs:
   evaluate:
     name: evaluate
@@ -37,22 +22,15 @@ jobs:
       manifest-version: ${{ steps.matrix.outputs.manifest-version }}
     steps:
       - name: Check out repository
+        id: checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        background: true
         with:
           persist-credentials: false
-      - name: Install Nix
-        uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
-        with:
-          enable_kvm: false
-          nix_conf: |
-            extra-substituters = ${{ env.NIX_EXTRA_SUBSTITUTERS }}
-            extra-trusted-public-keys = ${{ env.NIX_EXTRA_TRUSTED_PUBLIC_KEYS }}
-      - name: Start Hestia
-        uses: Mic92/hestia@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320 # v3.0.0
-        with:
-          version: ${{ env.HESTIA_VERSION }}
-          upstream-cache-filter: true
-          upstream-cache-key-names: ${{ env.HESTIA_UPSTREAM_CACHE_KEY_NAMES }}
+      - name: Set up Nix and Hestia
+        id: setup-hestia
+        uses: $/.github/actions/setup-hestia
+      - wait: checkout
       - name: Evaluate Hestia matrix
         id: hestia-matrix
         uses: Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320 # v3.0.0
@@ -73,9 +51,21 @@ jobs:
           HESTIA_EVAL_CAPTURE: ${{ runner.temp }}/ci-telemetry/hestia-eval.jsonl
           HESTIA_MANIFEST_VERSION: ${{ steps.hestia-matrix.outputs.manifest-version }}
           HESTIA_MATRIX: ${{ steps.hestia-matrix.outputs.matrix }}
+          HESTIA_VERSION: ${{ steps.setup-hestia.outputs.hestia-version }}
           SYSTEM: ${{ inputs.system }}
           TELEMETRY_ATTR_PREFIX: hydraJobs.ci.${{ inputs.system }}
         run: python3 modules/features/ci/_scripts/optimize_hestia_matrix.py
+      - name: Upload evaluation telemetry
+        id: upload-evaluation-telemetry
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        background: true
+        with:
+          name: ci-telemetry-fragment-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.system }}-lane
+          path: ${{ runner.temp }}/ci-telemetry/lane-${{ inputs.system }}.json
+          if-no-files-found: ignore
+          retention-days: 7
       - id: matrix
         name: Validate system matrix
         shell: bash
@@ -86,15 +76,7 @@ jobs:
           HESTIA_ORIGINAL_MATRIX: ${{ steps.hestia-matrix.outputs.matrix }}
           SYSTEM: ${{ inputs.system }}
         run: python3 modules/features/ci/_scripts/validate_hestia_matrix.py
-      - name: Upload evaluation telemetry
-        if: always()
-        continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ci-telemetry-fragment-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.system }}-lane
-          path: ${{ runner.temp }}/ci-telemetry/lane-${{ inputs.system }}.json
-          if-no-files-found: ignore
-          retention-days: 7
+      - wait: upload-evaluation-telemetry
 
   # 評価済みのdrv closureを引き継ぎ、評価とbuildが別のderivationを選ぶ余地を
   # 作らない。
@@ -115,25 +97,21 @@ jobs:
           CI_JOB_STARTED_AT: ${{ runner.temp }}/ci-job-started-at
         run: date +%s > "$CI_JOB_STARTED_AT"
       - name: Check out CI scripts
+        id: checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        background: true
         with:
           persist-credentials: false
           sparse-checkout: modules/features/ci/_scripts
-      - name: Install Nix
-        uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
+      - name: Set up Nix and Hestia
+        id: setup-hestia
+        uses: $/.github/actions/setup-hestia
         with:
-          enable_kvm: false
-          nix_conf: |
-            extra-substituters = ${{ env.NIX_EXTRA_SUBSTITUTERS }}
-            extra-trusted-public-keys = ${{ env.NIX_EXTRA_TRUSTED_PUBLIC_KEYS }}
-      - name: Start Hestia
-        uses: Mic92/hestia@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320 # v3.0.0
-        with:
-          version: ${{ env.HESTIA_VERSION }}
-          upstream-cache-filter: true
-          upstream-cache-key-names: ${{ env.HESTIA_UPSTREAM_CACHE_KEY_NAMES }}
           wait-manifest-version: ${{ needs.evaluate.outputs.manifest-version }}
+      - wait: checkout
       - name: Verify binary substituters
+        env:
+          NIX_EXTRA_SUBSTITUTERS: ${{ steps.setup-hestia.outputs.nix-extra-substituters }}
         run: bash modules/features/ci/_scripts/verify_binary_substituters.sh
       - name: Prefetch derivation closure and build
         env:

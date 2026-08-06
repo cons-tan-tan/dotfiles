@@ -103,12 +103,12 @@ jobs:
     expect(diagnostics.every(diagnostic => diagnostic.line > 0 && diagnostic.column > 0)).toBe(true);
   });
 
-  test("checks local reusable workflow required inputs", async () => {
+  test("checks self-repository reusable workflow required inputs", async () => {
     const root = await repository({
       ".github/workflows/caller.yaml": `on: push
 jobs:
   call:
-    uses: ./.github/workflows/callee.yaml
+    uses: $/.github/workflows/callee.yaml
 `,
       ".github/workflows/callee.yaml": `on:
   workflow_call:
