@@ -98,7 +98,7 @@ let
       throw "${label}.dotfiles.source must be a non-empty string"
     else
       {
-        inherit environment source;
+        inherit environment source system;
         inherit (target) entityName outputName;
         windows = resolveWindows {
           inherit dotfiles environment label;
@@ -153,6 +153,7 @@ let
       context
       // {
         inherit homedir userName;
+        standalone = true;
       };
 
   hosts = den.hosts.${system} or { };
@@ -183,6 +184,8 @@ if lib.hasSuffix "-darwin" system then
     inherit (context) windows;
     contexts.darwin = context // {
       inherit (primary) username;
+      homedir = "/Users/${primary.username}";
+      standalone = false;
     };
   }
 else if lib.hasSuffix "-linux" system then
@@ -254,6 +257,7 @@ else if lib.hasSuffix "-linux" system then
         nixosWsl = nixosWsl // {
           inherit (primary) username;
           homedir = linuxHome.homedir;
+          standalone = false;
         };
         home = {
           linux = linuxHome;

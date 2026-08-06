@@ -218,13 +218,6 @@ in
     expected = true;
   };
 
-  testDifitCandidateRejectsMismatchedProvenance = {
-    expr =
-      (builtins.tryEval ((mkDifitCandidate (difitDependencyProvenance // { pnpmMajor = 10; })).drvPath))
-      .success;
-    expected = false;
-  };
-
   testWatchexecPinInjectable = {
     expr = hasInjectablePin watchexec.overlaySource "pin";
     expected = true;

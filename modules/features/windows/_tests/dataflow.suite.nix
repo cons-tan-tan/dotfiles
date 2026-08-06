@@ -5,6 +5,11 @@
   repoRoot ? ../../../..,
 }:
 let
+  meta = {
+    checkName = "windows-class-dataflow-tests";
+    execution = "build";
+    hestiaGroup = "configurations";
+  };
   windowsRoot = repoRoot + "/modules/features/windows";
   testImports = lib.optional (inputs ? flake-parts) inputs.den.flakeOutputs.flake ++ [
     (inputs.den.namespace "features" false)
@@ -584,7 +589,7 @@ let
 in
 if caseName == null then
   {
-    inherit failureCases tests;
+    inherit failureCases meta tests;
   }
 else
   failureCases.${caseName}.expression

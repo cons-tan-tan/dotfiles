@@ -33,18 +33,24 @@ let
   };
 in
 {
-  producers = [
+  buildProducers = [
     {
       owner = "bootstrap eval suites";
-      inherit (bootstrap) checks;
-    }
-    {
-      owner = "auto eval suites";
-      checks = harness.positiveChecks inventory.testFiles;
+      checks = bootstrap.buildChecks;
     }
     {
       owner = "failure eval suites";
       checks = harness.failureChecks inventory.failureTestFiles;
+    }
+  ];
+  evaluationCompleteProducers = [
+    {
+      owner = "bootstrap eval suites";
+      checks = bootstrap.evaluationCompleteChecks;
+    }
+    {
+      owner = "auto eval suites";
+      checks = harness.positiveValues inventory.testFiles;
     }
   ];
 }

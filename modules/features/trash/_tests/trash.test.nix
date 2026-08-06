@@ -6,14 +6,18 @@
 let
   commandPolicyInterface = import ../../agents/base/_interface/command-policy.nix;
   policyFeatures = (import ../command-policy.nix { inherit lib; }).features;
+  trashPolicyFeature = policyFeatures.trash {
+    config.name = "feature/trash";
+  };
   safeDeletionFeatures =
     (import ../../safe-deletion/default.nix {
       features.trash = { };
       inherit lib;
     }).features;
-  policyEntries =
-    policyFeatures.trash.agent-command-policy
-    ++ safeDeletionFeatures.safe-deletion.agent-command-policy;
+  safeDeletionFeature = safeDeletionFeatures.safe-deletion {
+    config.name = "feature/safe-deletion";
+  };
+  policyEntries = trashPolicyFeature.agent-command-policy ++ safeDeletionFeature.agent-command-policy;
   aggregatedPolicy = commandPolicyInterface.aggregate { inherit lib; } policyEntries;
   evaluatedPolicy =
     (lib.evalModules {
@@ -79,7 +83,7 @@ in
 {
   testFeatureOwnedPolicyPreservesRecoverableDeletionBoundary = {
     expr = {
-      sources = aggregatedPolicy.sources;
+      owners = aggregatedPolicy.owners;
       exactDenied = map (rule: rule.argvPrefix) compiledPolicy.guardPolicy.exact;
       semanticCommands = map (rule: rule.commandPrefix) compiledPolicy.guardPolicy.semantic;
       nativeTrash =
@@ -92,7 +96,7 @@ in
           ];
     };
     expected = {
-      sources = [
+      owners = [
         "feature/trash"
         "feature/safe-deletion"
       ];

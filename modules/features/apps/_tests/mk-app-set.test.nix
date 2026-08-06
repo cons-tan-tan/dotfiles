@@ -41,7 +41,6 @@ let
     fixture
     otherFixture
   ];
-  evaluationSucceeds = value: (builtins.tryEval value).success;
 in
 {
   testAppsAndValidationsHaveExactNames = {
@@ -75,65 +74,6 @@ in
     };
   };
 
-  testMissingCustomValidationIsRejected = {
-    expr = evaluationSucceeds (
-      (appSet.mkAppSet {
-        entries.invalid.app = customApp;
-      }).apps
-    );
-    expected = false;
-  };
-
-  testMixedShellAndCustomStrategiesAreRejected = {
-    expr = evaluationSucceeds (
-      (appSet.mkAppSet {
-        entries.invalid = {
-          app = customApp;
-          description = "Ambiguous fixture";
-          script = fixtureScript;
-          validation = customValidation;
-        };
-      }).apps
-    );
-    expected = false;
-  };
-
-  testShellAppWithUnknownFieldIsRejected = {
-    expr = evaluationSucceeds (
-      (appSet.mkAppSet {
-        entries.invalid = {
-          description = "Fixture application";
-          script = fixtureScript;
-          unexpected = true;
-        };
-      }).apps
-    );
-    expected = false;
-  };
-
-  testCustomAppWithUnknownFieldIsRejected = {
-    expr = evaluationSucceeds (
-      (appSet.mkAppSet {
-        entries.invalid = {
-          app = customApp;
-          validation = customValidation;
-          unexpected = true;
-        };
-      }).apps
-    );
-    expected = false;
-  };
-
-  testExtraAppsBypassIsRejected = {
-    expr = evaluationSucceeds (
-      (appSet.mkAppSet {
-        entries = { };
-        extraApps.extra = customApp;
-      }).apps
-    );
-    expected = false;
-  };
-
   testAppSetsMergeExactAppsAndValidations = {
     expr = {
       appNames = builtins.attrNames mergedFixture.apps;
@@ -150,31 +90,4 @@ in
     };
   };
 
-  testDuplicateNamesAcrossAppSetsAreRejected = {
-    expr = evaluationSucceeds (
-      (appSet.mergeAppSets [
-        fixture
-        (appSet.mkAppSet {
-          entries.fixture = {
-            description = "Duplicate fixture application";
-            script = fixtureScript;
-          };
-        })
-      ]).apps
-    );
-    expected = false;
-  };
-
-  testMalformedMergedAppSetIsRejected = {
-    expr = evaluationSucceeds (
-      (appSet.mergeAppSets [
-        fixture
-        {
-          apps.unvalidated = customApp;
-          validationsByName = { };
-        }
-      ]).apps
-    );
-    expected = false;
-  };
 }

@@ -8,9 +8,7 @@
 }:
 let
   protocol = import ../_lib/home-contract-protocol.nix { inherit lib; };
-  username = "constantan";
-  canonicalLinux = "/home/${username}/ghq/github.com/cons-tan-tan/dotfiles";
-  canonicalDarwin = "/Users/${username}/ghq/github.com/cons-tan-tan/dotfiles";
+  username = entityContexts.linuxX86.username;
 
   standalone = target: {
     config = flake.homeConfigurations.${target}.config;
@@ -27,51 +25,42 @@ let
     inherit (flake.darwinConfigurations.${entityContexts.darwin.darwin}) pkgs;
   };
 
-  withFacts = entry: facts: entry // { inherit facts; };
-  targets = {
-    "${username}@linux-x86_64" = withFacts (standalone entityContexts.linuxX86.home.linux) {
-      environment = "linux";
-      homeDirectory = "/home/${username}";
-      registryPath = canonicalLinux;
-      system = "x86_64-linux";
-    };
-    "${username}@linux-aarch64" = withFacts (standalone entityContexts.linuxAarch64.home.linux) {
-      environment = "linux";
-      homeDirectory = "/home/${username}";
-      registryPath = canonicalLinux;
-      system = "aarch64-linux";
-    };
-    "${username}@wsl-x86_64" = withFacts (standalone entityContexts.linuxX86.home.wsl) {
-      environment = "wsl";
-      homeDirectory = "/home/${username}";
-      registryPath = canonicalLinux;
-      system = "x86_64-linux";
-    };
-    "${username}@wsl-aarch64" = withFacts (standalone entityContexts.linuxAarch64.home.wsl) {
-      environment = "wsl";
-      homeDirectory = "/home/${username}";
-      registryPath = canonicalLinux;
-      system = "aarch64-linux";
-    };
-    wsl = withFacts (integratedWsl entityContexts.linuxX86) {
-      environment = "wsl";
-      homeDirectory = "/home/${username}";
-      registryPath = toString inputs.self.outPath;
-      system = "x86_64-linux";
-    };
-    wsl-aarch64 = withFacts (integratedWsl entityContexts.linuxAarch64) {
-      environment = "wsl";
-      homeDirectory = "/home/${username}";
-      registryPath = toString inputs.self.outPath;
-      system = "aarch64-linux";
-    };
-    darwin = withFacts integratedDarwin {
-      environment = "darwin";
-      homeDirectory = "/Users/${username}";
-      registryPath = canonicalDarwin;
-      system = "aarch64-darwin";
+  factsFrom = context: {
+    inherit (context)
+      environment
+      standalone
+      system
+      windows
+      ;
+    homeDirectory = context.homedir;
+    registryPath = context.source;
+  };
+  standaloneEntry = context: environment: {
+    name = "home:${context.home.${environment}}";
+    value = (standalone context.home.${environment}) // {
+      facts = factsFrom context.contexts.home.${environment};
     };
   };
+  integratedWslEntry = context: {
+    name = "nixos:${context.nixosWsl}";
+    value = (integratedWsl context) // {
+      facts = factsFrom context.contexts.nixosWsl;
+    };
+  };
+  targets = builtins.listToAttrs [
+    (standaloneEntry entityContexts.linuxX86 "linux")
+    (standaloneEntry entityContexts.linuxAarch64 "linux")
+    (standaloneEntry entityContexts.linuxX86 "wsl")
+    (standaloneEntry entityContexts.linuxAarch64 "wsl")
+    (integratedWslEntry entityContexts.linuxX86)
+    (integratedWslEntry entityContexts.linuxAarch64)
+    {
+      name = "darwin:${entityContexts.darwin.darwin}";
+      value = integratedDarwin // {
+        facts = factsFrom entityContexts.darwin.contexts.darwin;
+      };
+    }
+  ];
 
   mkContract =
     {
@@ -96,7 +85,6 @@ let
   ) (lib.filesystem.listFilesRecursive (repoRoot + "/modules/features"));
   contractName = path: lib.removeSuffix contractSuffix (baseNameOf path);
   contractNames = map contractName contractFiles;
-  expectedContractNames = import ../_data/home-contracts.nix;
   context = {
     inherit
       inputs
@@ -113,9 +101,7 @@ let
       inherit mkContract;
       source = toString path;
     };
-  validation = protocol.validateLedger {
-    inherit contractNames expectedContractNames;
-  };
+  validation = protocol.validateDiscovery { inherit contractNames; };
 in
 builtins.seq validation (
   pkgs.linkFarm "home-feature-contract" (

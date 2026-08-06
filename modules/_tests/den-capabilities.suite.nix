@@ -5,64 +5,11 @@
   repoRoot ? ../..,
 }:
 let
-  configurationTargets = import (repoRoot + "/modules/flake/_interface/configuration-targets.nix") {
-    inherit lib;
+  meta = builtins.seq repoRoot {
+    checkName = "den-capability-tests";
+    execution = "build";
+    hestiaGroup = "eval-tests";
   };
-  targetWindows = {
-    enable = true;
-    username = "alice-win";
-    homedir = "/mnt/c/Users/alice-win";
-  };
-  targetUser = {
-    userName = "alice";
-    dotfiles.primary = true;
-  };
-  targetDen = {
-    hosts.x86_64-linux.wsl = {
-      dotfiles = {
-        environment = "wsl";
-        source = "/nix/store/wsl-source";
-        windows = targetWindows;
-      };
-      intoAttr = [
-        "nixosConfigurations"
-        "wsl"
-      ];
-      users.alice = targetUser;
-    };
-    homes.x86_64-linux = {
-      linux = {
-        userName = "alice";
-        dotfiles = {
-          environment = "linux";
-          source = "/home/alice/source";
-        };
-        intoAttr = [
-          "homeConfigurations"
-          "alice@linux"
-        ];
-      };
-      wsl = {
-        userName = "alice";
-        dotfiles = {
-          environment = "wsl";
-          source = "/home/alice/source";
-          windows = targetWindows;
-        };
-        intoAttr = [
-          "homeConfigurations"
-          "alice@wsl"
-        ];
-      };
-    };
-  };
-  resolveTargetFixture =
-    den:
-    configurationTargets {
-      inherit den;
-      system = "x86_64-linux";
-    };
-
   projectMetadataType = lib.types.submodule {
     options = {
       managed = lib.mkOption {
@@ -282,79 +229,44 @@ let
       ];
     };
   evaluate = module: select: builtins.deepSeq (select (evalDen module).config) true;
+  evaluateNixosOutput =
+    module:
+    builtins.deepSeq ((lib.evalModules {
+      specialArgs = { inherit inputs; };
+      modules = [
+        inputs.den.flakeOutputs.nixosConfigurations
+        inputs.den.flakeModule
+        module
+      ];
+    }).config.flake.nixosConfigurations.collision.config.warnings
+    ) true;
 
   failureCases = {
-    configurationTargetMissingEnvironment = {
-      expression = resolveTargetFixture (targetDen // { homes.x86_64-linux = { }; });
-      expectedFragments = [
-        "standalone Linux Home Manager target requires exactly one linux entity"
-        "found 0"
-      ];
-    };
-    configurationTargetDuplicatePrimaryUser = {
-      expression = resolveTargetFixture (
-        targetDen
-        // {
-          hosts.x86_64-linux.wsl = targetDen.hosts.x86_64-linux.wsl // {
-            users = targetDen.hosts.x86_64-linux.wsl.users // {
-              bob = {
-                userName = "bob";
-                dotfiles.primary = true;
-              };
-            };
+    classModuleArgsRejectCollisions = {
+      expression = evaluateNixosOutput (
+        { den, ... }:
+        {
+          den.aspects.arg-collision = {
+            name = "class-module-arg-collision";
+            nixos.imports = [
+              { _module.args.host = "from-module-system"; }
+              (
+                { host, ... }:
+                {
+                  networking.hostName = host.name;
+                }
+              )
+            ];
           };
+          den.hosts.x86_64-linux.collision.aspect = den.aspects.arg-collision;
         }
       );
       expectedFragments = [
-        "NixOS-WSL configuration target wsl.users requires exactly one dotfiles.primary user"
-        "found 2"
+        "class module arg 'host' collides with module-system arg"
+        "set collisionPolicy to resolve"
       ];
     };
-    configurationTargetMissingSource = {
-      expression = resolveTargetFixture (
-        targetDen
-        // {
-          hosts.x86_64-linux.wsl = targetDen.hosts.x86_64-linux.wsl // {
-            dotfiles = removeAttrs targetDen.hosts.x86_64-linux.wsl.dotfiles [ "source" ];
-          };
-        }
-      );
-      expectedFragments = [
-        "NixOS-WSL configuration target wsl.dotfiles.source must be a non-empty string"
-      ];
-    };
-    configurationTargetMissingWindowsUsername = {
-      expression = resolveTargetFixture (
-        targetDen
-        // {
-          hosts.x86_64-linux.wsl = targetDen.hosts.x86_64-linux.wsl // {
-            dotfiles = targetDen.hosts.x86_64-linux.wsl.dotfiles // {
-              windows = removeAttrs targetWindows [ "username" ];
-            };
-          };
-        }
-      );
-      expectedFragments = [
-        "NixOS-WSL configuration target wsl.dotfiles.windows.username is required"
-      ];
-    };
-    configurationTargetWindowsPathMismatch = {
-      expression = resolveTargetFixture (
-        targetDen
-        // {
-          hosts.x86_64-linux.wsl = targetDen.hosts.x86_64-linux.wsl // {
-            dotfiles = targetDen.hosts.x86_64-linux.wsl.dotfiles // {
-              windows = targetWindows // {
-                homedir = "/mnt/c/Users/bob";
-              };
-            };
-          };
-        }
-      );
-      expectedFragments = [
-        "NixOS-WSL configuration target wsl.dotfiles.windows.homedir must equal /mnt/c/Users/<dotfiles.windows.username>"
-      ];
-    };
+
     hostUnknownProjectField = {
       expression = evaluate {
         den.hosts.x86_64-linux.igloo.dotfiles.unknown = true;
@@ -431,7 +343,7 @@ let
 in
 if caseName == null then
   {
-    inherit failureCases tests;
+    inherit failureCases meta tests;
   }
 else
   failureCases.${caseName}.expression

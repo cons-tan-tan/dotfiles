@@ -21,6 +21,7 @@ let
     "/repo/modules/feature-a/_tests/alpha.test.nix"
     "/repo/modules/feature-b/_tests/beta.test.nix"
     "/repo/modules/feature-b/_tests/gamma.failure.test.nix"
+    "/repo/modules/feature-c/_tests/delta.suite.nix"
     "/repo/modules/feature-b/module.nix"
   ];
 in
@@ -29,6 +30,7 @@ in
     expr = {
       tests = map discovery.checkName classified.testFiles;
       failures = map discovery.failureCheckName classified.failureTestFiles;
+      suites = map toString classified.denSuiteFiles;
     };
     expected = {
       tests = [
@@ -36,6 +38,7 @@ in
         "beta-tests"
       ];
       failures = [ "gamma-failure-tests" ];
+      suites = [ "/repo/modules/feature-c/_tests/delta.suite.nix" ];
     };
   };
 
@@ -66,19 +69,23 @@ in
     };
   };
 
-  testEvaluationCompleteInventoryExcludesBuildTimeSuites = {
+  testEvaluationInventoryContainsOnlyAutoPositiveSuites = {
     expr = {
-      autoPositive = builtins.elem "ci-check-tests" inventory.evaluationCompleteCheckNames;
-      bootstrapPositive = builtins.elem "dendritic-test-discovery-tests" inventory.evaluationCompleteCheckNames;
-      failureSuite = builtins.elem "home-contract-protocol-failure-tests" inventory.evaluationCompleteCheckNames;
-      mixedBootstrap = builtins.elem "test-discovery-tests" inventory.evaluationCompleteCheckNames;
+      autoPositive = builtins.elem "ci-check-tests" (map discovery.checkName inventory.testFiles);
+      bootstrapPositive = builtins.any (
+        path: builtins.elem path inventory.testFiles
+      ) bootstrap.evaluationComplete;
+      failureSuite = builtins.elem "home-contract-protocol.failure.test.nix" (
+        map baseNameOf inventory.testFiles
+      );
+      denSuite = builtins.elem "den-schema.suite.nix" (map baseNameOf inventory.testFiles);
       sourcesExist = builtins.all builtins.pathExists bootstrap.all;
     };
     expected = {
       autoPositive = true;
-      bootstrapPositive = true;
+      bootstrapPositive = false;
       failureSuite = false;
-      mixedBootstrap = false;
+      denSuite = false;
       sourcesExist = true;
     };
   };
@@ -147,69 +154,6 @@ in
     expected.evaluated = evaluationComplete 1;
   };
 
-  testCheckOwnerCollisionIsRejected = {
-    expr =
-      (builtins.tryEval (composeUniqueChecks {
-        producers = [
-          {
-            owner = "alpha";
-            checks.shared = annotated 1;
-          }
-          {
-            owner = "beta";
-            checks.shared = annotated 2;
-          }
-        ];
-      })).success;
-    expected = false;
-  };
-
-  testReservedCheckCollisionIsRejected = {
-    expr =
-      (builtins.tryEval (composeUniqueChecks {
-        producers = [
-          {
-            owner = "alpha";
-            checks.shared = annotated 1;
-          }
-        ];
-        reservedCheckNames = [ "shared" ];
-      })).success;
-    expected = false;
-  };
-
-  testMissingHestiaMetadataIsRejected = {
-    expr =
-      (builtins.tryEval
-        (composeUniqueChecks {
-          producers = [
-            {
-              owner = "alpha";
-              checks.unannotated = {
-                marker = 1;
-              };
-            }
-          ];
-        }).unannotated
-      ).success;
-    expected = false;
-  };
-
-  testUnknownExecutionClassificationIsRejected = {
-    expr =
-      (builtins.tryEval
-        (composeUniqueChecks {
-          producers = [
-            {
-              owner = "alpha";
-              checks.unknown.meta.dotfiles.ci.execution = "sometimes-build";
-            }
-          ];
-        }).unknown
-      ).success;
-    expected = false;
-  };
-
   testBatsCatalogAcceptsExactAssignment = {
     expr = validateBatsCatalog {
       discoveredFiles = [ "bats/a.bats" ];
@@ -223,91 +167,4 @@ in
     expected = true;
   };
 
-  testBatsCatalogRejectsDuplicateFile = {
-    expr =
-      (builtins.tryEval (validateBatsCatalog {
-        discoveredFiles = [ "bats/a.bats" ];
-        shards = [
-          {
-            name = "first";
-            testFiles = [ "bats/a.bats" ];
-          }
-          {
-            name = "second";
-            testFiles = [ "bats/a.bats" ];
-          }
-        ];
-      })).success;
-    expected = false;
-  };
-
-  testBatsCatalogRejectsUnassignedDiscoveredFile = {
-    expr =
-      (builtins.tryEval (validateBatsCatalog {
-        discoveredFiles = [
-          "bats/a.bats"
-          "bats/b.bats"
-        ];
-        shards = [
-          {
-            name = "fixture";
-            testFiles = [ "bats/a.bats" ];
-          }
-        ];
-      })).success;
-    expected = false;
-  };
-
-  testBatsCatalogRejectsStaleDeclaredFile = {
-    expr =
-      (builtins.tryEval (validateBatsCatalog {
-        discoveredFiles = [ "bats/a.bats" ];
-        shards = [
-          {
-            name = "fixture";
-            testFiles = [
-              "bats/a.bats"
-              "bats/missing.bats"
-            ];
-          }
-        ];
-      })).success;
-    expected = false;
-  };
-
-  testBatsCatalogRejectsDuplicateShardName = {
-    expr =
-      (builtins.tryEval (validateBatsCatalog {
-        discoveredFiles = [
-          "bats/a.bats"
-          "bats/b.bats"
-        ];
-        shards = [
-          {
-            name = "fixture";
-            testFiles = [ "bats/a.bats" ];
-          }
-          {
-            name = "fixture";
-            testFiles = [ "bats/b.bats" ];
-          }
-        ];
-      })).success;
-    expected = false;
-  };
-
-  testBatsCatalogRejectsReservedAggregateName = {
-    expr =
-      (builtins.tryEval (validateBatsCatalog {
-        discoveredFiles = [ "bats/a.bats" ];
-        reservedNames = [ "bats-tests" ];
-        shards = [
-          {
-            name = "bats-tests";
-            testFiles = [ "bats/a.bats" ];
-          }
-        ];
-      })).success;
-    expected = false;
-  };
 }

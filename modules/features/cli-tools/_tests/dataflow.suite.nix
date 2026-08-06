@@ -5,6 +5,11 @@
   repoRoot ? ../../../..,
 }:
 let
+  meta = {
+    checkName = "cli-tools-dataflow-tests";
+    execution = "build";
+    hestiaGroup = "eval-tests";
+  };
   testImports = lib.optional (inputs ? flake-parts) inputs.den.flakeOutputs.flake ++ [
     (inputs.den.namespace "features" false)
     {
@@ -216,7 +221,7 @@ let
 in
 if caseName == null then
   {
-    inherit failureCases tests;
+    inherit failureCases meta tests;
   }
 else
   failureCases.${caseName}.expression

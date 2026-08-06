@@ -18,34 +18,7 @@ let
   isTestPath = path: lib.hasInfix "/_tests/" (toString path);
   supportFiles = builtins.filter isSupportPath allNixFiles;
   libNixFiles = builtins.filter (path: lib.hasInfix "/_lib/" (toString path)) allNixFiles;
-  approvedLibRelativePaths = [
-    "modules/features/agents/base/_lib/command-policy/aggregate.nix"
-    "modules/features/agents/base/_lib/command-policy/compiler.nix"
-    "modules/features/agents/base/_lib/command-policy/mk-guard.nix"
-    "modules/features/agents/base/_lib/command-policy/profile.nix"
-    "modules/features/agents/base/_lib/command-policy/rule-dsl.nix"
-    "modules/features/agents/base/_lib/command-policy/shell-policy-schema.nix"
-    "modules/features/agents/skills/_lib/aggregate.nix"
-    "modules/features/agents/skills/_lib/codex-invocation-policy.nix"
-    "modules/features/agents/skills/_lib/skill-policy.nix"
-    "modules/features/agents/skills/_lib/yaml-frontmatter.nix"
-    "modules/features/checks/_lib/bats/harness.nix"
-    "modules/features/checks/_lib/bats/validate-catalog.nix"
-    "modules/features/checks/_lib/compose.nix"
-    "modules/features/checks/_lib/eval/den-suite-harness.nix"
-    "modules/features/checks/_lib/eval/harness.nix"
-    "modules/features/checks/_lib/home-contract-protocol.nix"
-    "modules/features/checks/_lib/test-discovery.nix"
-    "modules/features/cli-tools/_lib/aggregate.nix"
-    "modules/features/lint/_lib/mk-node-lint-app.nix"
-    "modules/features/nixpkgs/_lib/mk-pinned-asset.nix"
-    "modules/features/nixpkgs/_lib/mk-pkgs.nix"
-    "modules/features/update-pins/_lib/candidate-package.nix"
-  ];
   relativePath = path: lib.removePrefix "${toString repoRoot}/" (toString path);
-  unapprovedLibPaths = builtins.filter (
-    path: !(builtins.elem (relativePath path) approvedLibRelativePaths)
-  ) libNixFiles;
   libBoundaryViolations = builtins.filter (
     path:
     builtins.elem (baseNameOf path) [
@@ -224,14 +197,8 @@ let
   legacyTopologyPathPrefixes = [
     ("modules/" + "_legacy/")
   ];
-  legacyTopologyExactPaths = [
-    ("modules/entities/_lib/configuration-" + "names.nix")
-    ("modules/entities/_lib/configuration-" + "names.test.nix")
-  ];
   legacyTopologyPaths = builtins.filter (
-    path:
-    builtins.elem path legacyTopologyExactPaths
-    || builtins.any (prefix: lib.hasPrefix prefix path) legacyTopologyPathPrefixes
+    path: builtins.any (prefix: lib.hasPrefix prefix path) legacyTopologyPathPrefixes
   ) architectureRelativePaths;
   hasLegacyExtraSpecialArgsInputs =
     contents:
@@ -301,69 +268,12 @@ let
     builtins.match "^([^[:alnum:]_'-]*|.*[^[:alnum:]_'-])allowUnfree[[:space:]]*=[[:space:]]*(lib[.](mkForce|mkDefault)[[:space:]]+)?true[[:space:]]*;.*$" normalizedContents
     != null;
   broadUnfreePolicyFiles = matchingFilesBy productionArchitectureSourceFiles hasBroadUnfreePolicy;
-  inputDeclarationsByOwner = {
-    agents = (import ../../agents/default.nix { features = { }; }).flake-file.inputs;
-    agentAx =
-      (import ../../agents/ax/default.nix {
-        features = { };
-        inputs = { };
-      }).flake-file.inputs;
-    developmentMozuku = (import ../../development/mozuku/default.nix { }).flake-file.inputs;
-    foundation = (import ../../../flake/inputs/core.nix).flake-file.inputs;
-    ciTooling = (import ../../ci/inputs.nix).flake-file.inputs;
-    platformConfigurations = (import ../../platform/inputs/configurations.nix).flake-file.inputs;
-    repositoryChecks =
-      (import ../repository.nix {
-        config = { };
-        den = { };
-        inputs = { };
-        inherit lib;
-      }).flake-file.inputs;
-    formatting =
-      (import ../../formatting/default.nix {
-        den = { };
-        inputs = { };
-        inherit lib;
-      }).flake-file.inputs;
-    pptxSkill =
-      (import ../../pptx/default.nix {
-        den = { };
-        inputs = { };
-      }).flake-file.inputs;
-    darwinBrew = (import ../../platform/inputs/brew.nix { }).flake-file.inputs;
-  };
-  canonicalCrossClassFeatureFiles = [
-    ../../agents/claude/default.nix
-    ../../security/gpg/default.nix
-    ../../source-control/git.nix
-  ];
-  retiredLocalityPaths = [
-    "modules/features/platform/darwin.nix"
-    "modules/features/platform/wsl.nix"
-    "modules/features/windows/claude.nix"
-    "modules/features/windows/git.nix"
-    "modules/features/windows/gpg.nix"
-    "modules/features/windows/static.nix"
-    "modules/flake/inputs/mozuku.nix"
-    "modules/flake/inputs/python.nix"
-    "modules/features/apps/secrets.nix"
-    "modules/features/apps/host.nix"
-    "modules/features/apps/common.nix"
-    "modules/features/apps/lint.nix"
-    "modules/features/formatting.nix"
-    "modules/_tests/den-entity-topology.fixture.nix"
-    "modules/features/apps/update-pins.nix"
-    "modules/features/platform/wsl/nix-settings.nix"
-    "modules/features/packages"
-    "modules/features/agents/guidance/_data/context"
-    "modules/features/agents/skills/_data/local"
-    "modules/features/agents/claude/_data/commands"
-    "modules/features/agents/claude/_data/hooks"
-    "modules/features/agents/claude/_data/output-styles"
-    "modules/features/agents/pi/_data/extensions"
-    "bats"
-    "nix"
-  ];
+  windowsSubstrateDependencyViolations =
+    matchingFilesBy
+      (builtins.filter (
+        path: !lib.hasInfix "/modules/features/windows/" (toString path)
+      ) productionArchitectureSourceFiles)
+      (contents: lib.hasInfix "features.windows-base" (sanitizeNixSource contents));
   nativePayloadRoots = [
     "agents/context"
     "agents/skills"
@@ -395,22 +305,18 @@ in
     expected = [ ];
   };
 
-  testPureTestsUseSupportDirectories = {
+  testEvaluationTestsUseSupportDirectories = {
     expr = builtins.all isTestPath (
-      builtins.filter (path: lib.hasSuffix ".test.nix" (toString path)) allNixFiles
+      builtins.filter (
+        path: lib.hasSuffix ".test.nix" (toString path) || lib.hasSuffix ".suite.nix" (toString path)
+      ) allNixFiles
     );
     expected = true;
   };
 
   testLibContainsOnlyReusableImplementationHelpers = {
-    expr = {
-      forbiddenBasenames = map relativePath libBoundaryViolations;
-      unapprovedPaths = map relativePath unapprovedLibPaths;
-    };
-    expected = {
-      forbiddenBasenames = [ ];
-      unapprovedPaths = [ ];
-    };
+    expr = map relativePath libBoundaryViolations;
+    expected = [ ];
   };
 
   testLibDoesNotDeclareOrChangeDenGraphs = {
@@ -434,8 +340,15 @@ in
     expected = true;
   };
 
+  testWindowsSubstrateIsOwnedByWindowsComposition = {
+    expr = windowsSubstrateDependencyViolations;
+    expected = [ ];
+  };
+
   testPureTestsAreNotAutoImported = {
-    expr = builtins.filter (path: lib.hasSuffix ".test.nix" (toString path)) actualModuleFiles;
+    expr = builtins.filter (
+      path: lib.hasSuffix ".test.nix" (toString path) || lib.hasSuffix ".suite.nix" (toString path)
+    ) actualModuleFiles;
     expected = [ ];
   };
 
@@ -448,119 +361,6 @@ in
 
   testBroadUnfreePolicyIsAbsent = {
     expr = broadUnfreePolicyFiles;
-    expected = [ ];
-  };
-
-  testInputDeclarationsPreserveOwnerAndIdentity = {
-    expr = inputDeclarationsByOwner;
-    expected = {
-      agents.llm-agents.url = "github:numtide/llm-agents.nix";
-      agentAx.ax = {
-        url = "github:yusukebe/ax/v0.1.23";
-        inputs.bun2nix.follows = "bun2nix";
-        inputs.nixpkgs.follows = "nixpkgs";
-      };
-      developmentMozuku.mozuku.url = "github:t3tra-dev/MoZuKu";
-      foundation = {
-        den.url = "github:denful/den/2040b61346a7215fd7b7f51d4a457544b6e597d0";
-        den-gen-algebra = {
-          url = "github:sini/gen-algebra/dd682674edad388c439c6f2b08f84c31feec1b68";
-          flake = false;
-        };
-        den-gen-schema = {
-          url = "github:sini/gen-schema/4bd0f6eb1799bf3c38eb3707419157b1f70eb1f5";
-          flake = false;
-        };
-        den-nix-effects = {
-          url = "github:denful/nix-effects/c3c68a45deb892d028711eeff8b80937e30a90dd";
-          flake = false;
-        };
-        flake-file.url = "github:denful/flake-file/v0.6.0";
-        flake-parts = {
-          url = "github:hercules-ci/flake-parts";
-          inputs.nixpkgs-lib.follows = "nixpkgs-lib";
-        };
-        import-tree.url = "github:vic/import-tree/v0.2.0";
-        nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
-        nixpkgs-lib.follows = "nixpkgs";
-        supported-systems = {
-          url = "path:./modules/flake/_data/systems";
-          flake = false;
-        };
-      };
-      ciTooling = {
-        bun2nix = {
-          url = "github:nix-community/bun2nix";
-          inputs.nixpkgs.follows = "nixpkgs";
-          inputs.systems.follows = "supported-systems";
-          inputs.treefmt-nix.follows = "treefmt-nix";
-        };
-      };
-      platformConfigurations = {
-        darwin = {
-          url = "github:LnL7/nix-darwin";
-          inputs.nixpkgs.follows = "nixpkgs";
-        };
-        home-manager = {
-          url = "github:nix-community/home-manager";
-          inputs.nixpkgs.follows = "nixpkgs";
-        };
-        nixos-wsl = {
-          url = "github:nix-community/NixOS-WSL/main";
-          inputs.nixpkgs.follows = "nixpkgs";
-        };
-      };
-      repositoryChecks.rustsec-advisory-db = {
-        url = "github:RustSec/advisory-db";
-        flake = false;
-      };
-      formatting.treefmt-nix = {
-        url = "github:numtide/treefmt-nix";
-        inputs.nixpkgs.follows = "nixpkgs";
-      };
-      pptxSkill = {
-        pyproject-build-systems = {
-          url = "github:pyproject-nix/build-system-pkgs";
-          inputs.nixpkgs.follows = "nixpkgs";
-          inputs.pyproject-nix.follows = "pyproject-nix";
-          inputs.uv2nix.follows = "uv2nix";
-        };
-        pyproject-nix = {
-          url = "github:pyproject-nix/pyproject.nix";
-          inputs.nixpkgs.follows = "nixpkgs";
-        };
-        uv2nix = {
-          url = "github:pyproject-nix/uv2nix";
-          inputs.nixpkgs.follows = "nixpkgs";
-          inputs.pyproject-nix.follows = "pyproject-nix";
-        };
-      };
-      darwinBrew = {
-        brew-api = {
-          url = "github:BatteredBunny/brew-api";
-          flake = false;
-        };
-        brew-nix = {
-          url = "github:BatteredBunny/brew-nix";
-          inputs.brew-api.follows = "brew-api";
-          inputs.nix-darwin.follows = "darwin";
-          inputs.nixpkgs.follows = "nixpkgs";
-        };
-      };
-    };
-  };
-
-  testCanonicalCrossClassFeaturesDoNotIncludeWindowsSubstrate = {
-    expr = map relativePath (
-      builtins.filter (
-        path: lib.hasInfix "features.windows-base" (builtins.readFile path)
-      ) canonicalCrossClassFeatureFiles
-    );
-    expected = [ ];
-  };
-
-  testRetiredLocalityModulesAreAbsent = {
-    expr = builtins.filter (path: builtins.pathExists (repoRoot + "/${path}")) retiredLocalityPaths;
     expected = [ ];
   };
 

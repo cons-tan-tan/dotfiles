@@ -12,7 +12,6 @@ let
 in
 {
   inherit testFiles;
+  inherit (classifiedTests) denSuiteFiles;
   inherit (classifiedTests) failureTestFiles;
-  evaluationCompleteCheckNames =
-    map testDiscovery.checkName testFiles ++ map testDiscovery.checkName bootstrap.evaluationComplete;
 }

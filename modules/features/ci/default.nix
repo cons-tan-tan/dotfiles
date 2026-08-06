@@ -15,9 +15,15 @@ let
   checksBySystem = lib.genAttrs config.systems (
     system: withSystem system ({ config, ... }: config.checks)
   );
-  evaluationCompleteCheckNamesBySystem = lib.genAttrs config.systems (
-    system: withSystem system ({ config, ... }: config.dotfiles.ci.evaluationCompleteCheckNames)
+  evaluationCompleteCheckProducersBySystem = lib.genAttrs config.systems (
+    system: withSystem system ({ config, ... }: config.dotfiles.ci.evaluationCompleteCheckProducers)
   );
+  evaluationCompleteCompositionBySystem = lib.mapAttrs (
+    _: producers: ciCheck.composeEvaluationCompleteProducers producers
+  ) evaluationCompleteCheckProducersBySystem;
+  evaluationCompleteCheckNamesBySystem = lib.mapAttrs (
+    _: composition: composition.checkNames
+  ) evaluationCompleteCompositionBySystem;
   buildChecksBySystem = lib.genAttrs hestiaSystems (
     system:
     ciCheck.selectBuildChecks {
@@ -36,19 +42,27 @@ let
 in
 {
   options.perSystem = flake-parts-lib.mkPerSystemOption {
-    # metadataから導出すると除外前にcheck値を強制するため、ownerが名前indexも
-    # 寄与する。通常flake評価のcontractがmetadataとの一致を検証する。
-    options.dotfiles.ci.evaluationCompleteCheckNames = lib.mkOption {
-      type = lib.types.listOf lib.types.str;
+    # check値のmetadataを読むとeval suiteを強制し得る。producerは名前と値を
+    # attrset境界で分離し、attrNamesだけから安全に除外indexを構成する。
+    options.dotfiles.ci.evaluationCompleteCheckProducers = lib.mkOption {
+      type = lib.types.listOf (
+        lib.types.submodule {
+          options = {
+            owner = lib.mkOption { type = lib.types.nonEmptyStr; };
+            checks = lib.mkOption { type = lib.types.lazyAttrsOf lib.types.raw; };
+          };
+        }
+      );
       default = [ ];
       internal = true;
-      description = "Checks whose assertions finish before derivation build";
+      description = "Lazily indexed checks whose assertions finish before derivation build";
     };
   };
 
   config = {
     perSystem =
       {
+        config,
         pkgs,
         system,
         ...
@@ -58,15 +72,18 @@ in
           "modules/features/ci/_packages/gha-lint/bun.nix"
         ];
 
-        dotfiles.ci.evaluationCompleteCheckNames = lib.optionals (system == "x86_64-linux") [
-          validationCheckName
+        dotfiles.ci.evaluationCompleteCheckProducers = lib.optionals (system == "x86_64-linux") [
+          {
+            owner = "CI validation";
+            checks.${validationCheckName} = builtins.seq validation (
+              pkgs.runCommand validationCheckName { } ''touch "$out"''
+            );
+          }
         ];
 
-        checks = lib.optionalAttrs (system == "x86_64-linux") {
-          ${validationCheckName} = ciCheck.evaluationComplete (
-            builtins.seq validation (pkgs.runCommand validationCheckName { } ''touch "$out"'')
-          );
-        };
+        checks =
+          (ciCheck.composeEvaluationCompleteProducers config.dotfiles.ci.evaluationCompleteCheckProducers)
+          .checks;
       };
 
     features.ci-tools = {

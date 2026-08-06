@@ -82,33 +82,35 @@ let
   };
 in
 {
-  features.cli-tool-fd = {
-    name = "feature/cli-tools/fd";
-    cli-tools = [
-      {
-        id = "fd";
-        nix = {
-          route = "home-packages";
-          nixpkgsAttr = "fd";
-        };
-        winget = {
-          packageId = "sharkdp.fd";
-          description = "fd";
-        };
-      }
-    ];
-    agent-command-policy = [
-      {
-        source = "feature/cli-tools/fd";
-        policy.commands.fd = (commandPolicy.guarded lib) profile {
-          deny.execution = {
-            reason = "fd command execution options are disabled for coding agents.";
-            alternatives = [
-              "List matching paths first, then run a separately reviewed command."
-            ];
+  features.cli-tool-fd =
+    { config, ... }:
+    {
+      name = "feature/cli-tools/fd";
+      cli-tools = [
+        {
+          id = "fd";
+          nix = {
+            route = "home-packages";
+            nixpkgsAttr = "fd";
           };
-        };
-      }
-    ];
-  };
+          winget = {
+            packageId = "sharkdp.fd";
+            description = "fd";
+          };
+        }
+      ];
+      agent-command-policy = [
+        {
+          owner = config.name;
+          policy.commands.fd = (commandPolicy.guarded lib) profile {
+            deny.execution = {
+              reason = "fd command execution options are disabled for coding agents.";
+              alternatives = [
+                "List matching paths first, then run a separately reviewed command."
+              ];
+            };
+          };
+        }
+      ];
+    };
 }

@@ -5,6 +5,11 @@
   repoRoot ? ../../../..,
 }:
 let
+  meta = {
+    checkName = "agent-den-dataflow-tests";
+    execution = "build";
+    hestiaGroup = "eval-tests";
+  };
   agentsRoot = repoRoot + "/modules/features/agents";
 
   testImports = lib.optional (inputs ? flake-parts) inputs.den.flakeOutputs.flake ++ [
@@ -65,18 +70,28 @@ let
           tux = { };
         };
 
-        den.aspects.policy-alpha.agent-command-policy = [
+        den.aspects.policy-alpha =
+          { config, ... }:
           {
-            source = "fixture/policy-alpha";
-            policy.commands.alpha = true;
-          }
-        ];
-        den.aspects.policy-beta.agent-command-policy = [
+            name = "fixture/policy-alpha";
+            agent-command-policy = [
+              {
+                owner = config.name;
+                policy.commands.alpha = true;
+              }
+            ];
+          };
+        den.aspects.policy-beta =
+          { config, ... }:
           {
-            source = "fixture/policy-beta";
-            policy.commands.beta = false;
-          }
-        ];
+            name = "fixture/policy-beta";
+            agent-command-policy = [
+              {
+                owner = config.name;
+                policy.commands.beta = false;
+              }
+            ];
+          };
         den.aspects.tux = {
           includes = [
             features.agents-base
@@ -139,18 +154,28 @@ let
           pingu = { };
           tux = { };
         };
-        den.aspects.policy-alpha.agent-command-policy = [
+        den.aspects.policy-alpha =
+          { config, ... }:
           {
-            source = "fixture/policy-alpha";
-            policy.commands.alpha = true;
-          }
-        ];
-        den.aspects.policy-beta.agent-command-policy = [
+            name = "fixture/policy-alpha";
+            agent-command-policy = [
+              {
+                owner = config.name;
+                policy.commands.alpha = true;
+              }
+            ];
+          };
+        den.aspects.policy-beta =
+          { config, ... }:
           {
-            source = "fixture/policy-beta";
-            policy.commands.beta = false;
-          }
-        ];
+            name = "fixture/policy-beta";
+            agent-command-policy = [
+              {
+                owner = config.name;
+                policy.commands.beta = false;
+              }
+            ];
+          };
         den.aspects.pingu.includes = [
           den.aspects.policy-beta
           features.agents-base
@@ -411,7 +436,7 @@ let
 in
 if caseName == null then
   {
-    inherit failureCases tests;
+    inherit failureCases meta tests;
   }
 else
   failureCases.${caseName}.expression

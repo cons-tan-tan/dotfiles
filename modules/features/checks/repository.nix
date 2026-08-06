@@ -14,13 +14,6 @@ let
   evalInventory = import ./_interface/eval/inventory.nix {
     inherit modulesRoot testDiscovery;
   };
-  repositoryEvaluationCompleteCheckNames = [
-    "den-entity-topology-tests"
-    "den-unfree-capability-tests"
-    "flake-public-api-contract"
-    "home-feature-contract"
-    "platform-feature-contract"
-  ];
   externallyOwnedCheckNames = [
     "app-scripts"
     "check-flake-file"
@@ -39,23 +32,8 @@ let
     "nixos-wsl-tarball-builder"
     "treefmt"
   ];
-in
-{
-  flake-file.inputs.rustsec-advisory-db = {
-    url = "github:RustSec/advisory-db";
-    flake = false;
-  };
-
-  perSystem =
-    { system, ... }:
-    {
-      dotfiles.ci.evaluationCompleteCheckNames =
-        evalInventory.evaluationCompleteCheckNames
-        ++ lib.optionals (system == "x86_64-linux") repositoryEvaluationCompleteCheckNames;
-    };
-
-  den.aspects.repository-checks.checks =
-    { pkgs, system, ... }:
+  repositoryChecks =
+    { pkgs, system }:
     let
       entityContext = configurationTargets { inherit den system; };
       username = entityContext.username;
@@ -73,135 +51,87 @@ in
           system = "aarch64-linux";
         };
       };
-      baseChecks = lib.optionalAttrs (system == "x86_64-linux") {
-        den-capability-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
-          import ./_lib/eval/den-suite-harness.nix {
-            inherit inputs lib pkgs;
-            fixtureRoot = ../../..;
-          }
-        );
-        den-schema-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
-          import ./_lib/eval/den-suite-harness.nix {
-            inherit inputs lib pkgs;
-            checkName = "den-schema-tests";
-            fixturePath = ../../_tests/den-schema.suite.nix;
-            fixtureRoot = ../../..;
-            schemaModule = ../../schema/entities.nix;
-          }
-        );
-        den-entity-topology-tests = ciCheck.evaluationComplete (
-          import ../../entities/_tests/topology-check.nix {
+      denSuiteProducer =
+        if system == "x86_64-linux" then
+          (import ./_lib/eval/den-suite-harness.nix {
             inherit
-              den
+              ciCheck
               inputs
               lib
               pkgs
               ;
-            flake = config.flake;
-          }
-        );
-        den-unfree-capability-tests = ciCheck.evaluationComplete (
-          import ../../_tests/den-unfree-capability.check.nix {
-            inherit inputs lib pkgs;
-          }
-        );
-        agent-den-dataflow-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
-          import ./_lib/eval/den-suite-harness.nix {
-            inherit inputs lib pkgs;
-            checkName = "agent-den-dataflow-tests";
-            fixturePath = ../agents/_tests/dataflow.suite.nix;
-            fixtureRoot = ../../..;
-          }
-        );
-        agent-skills-dataflow-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
-          import ./_lib/eval/den-suite-harness.nix {
-            inherit inputs lib pkgs;
-            checkName = "agent-skills-dataflow-tests";
-            fixturePath = ../agents/skills/_tests/dataflow.suite.nix;
-            fixtureRoot = ../../..;
-          }
-        );
-        cli-tools-dataflow-tests = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
-          import ./_lib/eval/den-suite-harness.nix {
-            inherit inputs lib pkgs;
-            checkName = "cli-tools-dataflow-tests";
-            fixturePath = ../cli-tools/_tests/dataflow.suite.nix;
-            fixtureRoot = ../../..;
-          }
-        );
-        home-feature-contract = ciCheck.evaluationComplete (
-          import ./_interface/home-contract.nix {
-            inherit
-              entityContexts
-              inputs
-              lib
-              pkgs
-              ;
-            flake = config.flake;
             repoRoot = ../../..;
-          }
-        );
-        platform-feature-contract = ciCheck.evaluationComplete (
-          import ../platform/_tests/feature-contract.nix {
+          }).producer
+            evalInventory.denSuiteFiles
+        else
+          {
+            buildChecks = { };
+            evaluationCompleteChecks = { };
+          };
+      repositoryEvaluationCompleteChecks = lib.optionalAttrs (system == "x86_64-linux") {
+        den-entity-topology-tests = import ../../entities/_tests/topology-check.nix {
+          inherit
+            den
+            inputs
+            lib
+            pkgs
+            ;
+          flake = config.flake;
+        };
+        home-feature-contract = import ./_interface/home-contract.nix {
+          inherit
+            entityContexts
+            inputs
+            lib
+            pkgs
+            ;
+          flake = config.flake;
+          repoRoot = ../../..;
+        };
+        platform-feature-contract = import ../platform/_tests/feature-contract.nix {
+          inherit
+            entityContexts
+            lib
+            pkgs
+            ;
+          featuresRoot = ../.;
+          flake = config.flake;
+        };
+        flake-public-api-contract = import ../../flake/_tests/public-api-contract.nix {
+          inherit lib pkgs;
+          systems = config.systems;
+          inherit (config.flake)
+            apps
+            checks
+            darwinConfigurations
+            devShells
+            formatter
+            homeConfigurations
+            nixosConfigurations
+            packages
+            ;
+          rootPackagesPresent = config.flake ? packages;
+          rootHydraCiPresent = config.flake ? hydraJobs && config.flake.hydraJobs ? ci;
+        };
+      };
+      repositoryBuildChecks = lib.optionalAttrs (system == "x86_64-linux") {
+        windows-class-contract = ciCheck.annotate (ciCheck.targets.linux "configurations") (
+          import ../windows/_tests/class-contract.nix {
             inherit
               entityContexts
               lib
               pkgs
               ;
-            featuresRoot = ../.;
             flake = config.flake;
-          }
-        );
-        windows-class-contract =
-          let
-            outputContract = import ../windows/_tests/class-contract.nix {
-              inherit
-                entityContexts
-                inputs
-                lib
-                pkgs
-                ;
-              flake = config.flake;
-            };
-            dataflowContract = import ./_lib/eval/den-suite-harness.nix {
-              inherit inputs lib pkgs;
-              checkName = "windows-class-dataflow-tests";
-              fixturePath = ../windows/_tests/dataflow.suite.nix;
-              fixtureRoot = ../../..;
-            };
-          in
-          ciCheck.annotate (ciCheck.targets.linux "configurations") (
-            pkgs.linkFarm "windows-class-contract" [
-              {
-                name = "outputs";
-                path = outputContract;
-              }
-              {
-                name = "dataflow";
-                path = dataflowContract;
-              }
-            ]
-          );
-        flake-public-api-contract = ciCheck.evaluationComplete (
-          import ../../flake/_tests/public-api-contract.nix {
-            inherit lib pkgs;
-            systems = config.systems;
-            inherit (config.flake)
-              apps
-              checks
-              darwinConfigurations
-              devShells
-              formatter
-              homeConfigurations
-              nixosConfigurations
-              packages
-              ;
-            rootPackagesPresent = config.flake ? packages;
-            rootHydraCiPresent = config.flake ? hydraJobs && config.flake.hydraJobs ? ci;
           }
         );
       };
-      testChecks = import ./_interface/repository-tests.nix {
+      repositoryOwnedNames =
+        builtins.attrNames repositoryBuildChecks
+        ++ builtins.attrNames denSuiteProducer.buildChecks
+        ++ builtins.attrNames repositoryEvaluationCompleteChecks
+        ++ builtins.attrNames denSuiteProducer.evaluationCompleteChecks;
+      testCheckSet = import ./_interface/repository-tests.nix {
         inherit
           ciCheck
           den
@@ -217,22 +147,65 @@ in
         llmAgents = inputs.llm-agents;
         publicApps = config.flake.apps.${system};
         repoRoot = ../../..;
-        reservedCheckNames = externallyOwnedCheckNames ++ builtins.attrNames baseChecks;
+        reservedCheckNames = externallyOwnedCheckNames ++ repositoryOwnedNames;
       };
-    in
-    composeUniqueChecks {
-      producers = [
+      evaluationCompleteComposition = ciCheck.composeEvaluationCompleteProducers [
         {
           owner = "repository base checks";
-          checks = baseChecks;
+          checks = repositoryEvaluationCompleteChecks;
+        }
+        {
+          owner = "Den suites";
+          checks = denSuiteProducer.evaluationCompleteChecks;
         }
         {
           owner = "repository test checks";
-          checks = testChecks;
+          checks = testCheckSet.evaluationCompleteChecks;
         }
       ];
-      reservedCheckNames = externallyOwnedCheckNames;
+      buildChecks = composeUniqueChecks {
+        producers = [
+          {
+            owner = "repository base checks";
+            checks = repositoryBuildChecks;
+          }
+          {
+            owner = "Den suites";
+            checks = denSuiteProducer.buildChecks;
+          }
+          {
+            owner = "repository test checks";
+            checks = testCheckSet.buildChecks;
+          }
+        ];
+        reservedCheckNames = externallyOwnedCheckNames ++ evaluationCompleteComposition.checkNames;
+      };
+    in
+    {
+      inherit buildChecks;
+      evaluationCompleteChecks = evaluationCompleteComposition.values;
     };
+in
+{
+  flake-file.inputs.rustsec-advisory-db = {
+    url = "github:RustSec/advisory-db";
+    flake = false;
+  };
+
+  perSystem =
+    { pkgs, system, ... }:
+    {
+      dotfiles.ci.evaluationCompleteCheckProducers = [
+        {
+          owner = "repository checks";
+          checks = (repositoryChecks { inherit pkgs system; }).evaluationCompleteChecks;
+        }
+      ];
+    };
+
+  den.aspects.repository-checks.checks =
+    { pkgs, system, ... }:
+    (repositoryChecks { inherit pkgs system; }).buildChecks;
 
   den.schema.flake-parts.includes = [ den.aspects.repository-checks ];
 }

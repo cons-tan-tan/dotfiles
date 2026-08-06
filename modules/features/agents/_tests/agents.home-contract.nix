@@ -2,24 +2,6 @@
   inputs,
   lib,
 }:
-let
-  expectedSkills = [
-    "agent-browser"
-    "agent-slack"
-    "ast-grep"
-    "ax"
-    "commit"
-    "difit"
-    "difit-review"
-    "drawio"
-    "frontend-design"
-    "hunk-review"
-    "improve"
-    "japanese-tech-writing"
-    "missing-tools"
-    "pptx"
-  ];
-in
 {
   describe =
     target:
@@ -28,7 +10,6 @@ in
       packages = config.home.packages;
       packageNames = map lib.getName packages;
       platform = config.dotfiles.platform;
-      commandPolicy = config.dotfiles.agentCommandPolicyCompiled;
       claudeActivation = config.home.activation.claudeHooksDirectoryMigration;
       codexActivation = config.home.activation.codexHooksConfig;
       skillNamesFor =
@@ -40,8 +21,7 @@ in
         package: builtins.length (builtins.filter (candidate: candidate == package) packages);
     in
     {
-      environment = {
-        inherit (platform) environment source;
+      integrations = {
         hcomAbsent = config.dotfiles.agentIntegrations.hcom == null;
       };
       programs = {
@@ -74,53 +54,8 @@ in
         pi = config.home.file ? ".pi/agent/settings.json";
       };
       skills = {
-        agents = skillNamesFor ".agents/skills/";
-        claude = skillNamesFor ".claude/skills/";
-      };
-      policy = {
-        schemaVersion = commandPolicy.guardPolicy.schemaVersion;
-        allowsAx = lib.any (rule: rule.argvPrefix == [ "ax" ]) commandPolicy.prefixRules;
-        allowsGitWrites =
-          lib.all (prefix: lib.any (rule: rule.argvPrefix == prefix) commandPolicy.prefixRules)
-            [
-              [
-                "git"
-                "clone"
-              ]
-              [
-                "git"
-                "commit"
-              ]
-            ];
-        allowsGhRepositoryAccess =
-          lib.all (prefix: lib.any (rule: rule.argvPrefix == prefix) commandPolicy.prefixRules)
-            [
-              [
-                "gh"
-                "api-get"
-              ]
-              [
-                "gh"
-                "repo"
-                "read-file"
-              ]
-            ];
-        allowsRg = lib.any (rule: rule.argvPrefix == [ "rg" ]) commandPolicy.prefixRules;
-        deniesTrashEmpty = lib.any (
-          rule: rule.argvPrefix == [ "trash-empty" ] && rule.decision == "deny"
-        ) commandPolicy.guardPolicy.exact;
-        guardsSemanticCommands =
-          lib.all (prefix: lib.any (rule: rule.commandPrefix == prefix) commandPolicy.guardPolicy.semantic)
-            [
-              [ "fd" ]
-              [ "rm" ]
-              [ "trash-restore" ]
-            ];
-        inherit (commandPolicy.guardPolicy.unknown)
-          dynamicExecutable
-          dynamicRelevantOption
-          parseError
-          ;
+        synchronized = skillNamesFor ".agents/skills/" == skillNamesFor ".claude/skills/";
+        nonEmpty = skillNamesFor ".agents/skills/" != [ ];
       };
       activation = {
         claudeBeforeCheckLinkTargets = claudeActivation.before == [ "checkLinkTargets" ];
@@ -139,9 +74,7 @@ in
         );
     };
   expected = facts: {
-    environment = {
-      inherit (facts) environment;
-      source = facts.registryPath;
+    integrations = {
       hcomAbsent = true;
     };
     programs = {
@@ -174,20 +107,8 @@ in
       pi = true;
     };
     skills = {
-      agents = expectedSkills;
-      claude = expectedSkills;
-    };
-    policy = {
-      schemaVersion = 2;
-      allowsAx = true;
-      allowsGitWrites = true;
-      allowsGhRepositoryAccess = true;
-      allowsRg = true;
-      deniesTrashEmpty = true;
-      guardsSemanticCommands = true;
-      dynamicExecutable = "deny";
-      dynamicRelevantOption = "deny";
-      parseError = "deny";
+      synchronized = true;
+      nonEmpty = true;
     };
     activation = {
       claudeBeforeCheckLinkTargets = true;

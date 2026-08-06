@@ -10,27 +10,27 @@ let
   };
   force = entries: builtins.deepSeq (aggregate entries) true;
   cases = {
-    duplicateSource = {
+    duplicateOwner = {
       expression = force [
         {
-          source = "feature/same";
+          owner = "feature/same";
           policy.commands.alpha = true;
         }
         {
-          source = "feature/same";
+          owner = "feature/same";
           policy.commands.beta = true;
         }
       ];
-      expectedFragment = "agent-command-policy contains duplicate sources: feature/same";
+      expectedFragment = "agent-command-policy contains duplicate owners: feature/same";
     };
     exactOwnershipConflict = {
       expression = force [
         {
-          source = "feature/allow";
+          owner = "feature/allow";
           policy.commands.tool = true;
         }
         {
-          source = "feature/deny";
+          owner = "feature/deny";
           policy.commands.tool = false;
         }
       ];
@@ -39,11 +39,11 @@ let
     sameValueExactOwnershipConflict = {
       expression = force [
         {
-          source = "feature/first";
+          owner = "feature/first";
           policy.commands.tool = true;
         }
         {
-          source = "feature/second";
+          owner = "feature/second";
           policy.commands.tool = true;
         }
       ];
@@ -52,11 +52,11 @@ let
     prefixOwnershipConflict = {
       expression = force [
         {
-          source = "feature/branch";
+          owner = "feature/branch";
           policy.commands.tool.safe = true;
         }
         {
-          source = "feature/leaf";
+          owner = "feature/leaf";
           policy.commands.tool = false;
         }
       ];
@@ -65,7 +65,7 @@ let
     unknownPolicyField = {
       expression = force [
         {
-          source = "feature/unknown";
+          owner = "feature/unknown";
           policy.unknown = true;
         }
       ];

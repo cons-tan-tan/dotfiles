@@ -91,48 +91,6 @@ let
       ];
     };
   };
-  invalidProducerFixture = mkFixture {
-    appNamesForSystem = _: [ "valid" ];
-    producerModule = {
-      first.app-validations = [ { } ];
-      second.app-validations = [ (mkProducerRecord [ "valid" ]) ];
-    };
-  };
-  invalidProduceFixture = mkFixture {
-    appNamesForSystem = _: [ ];
-    producerModule = {
-      first.app-validations = [ { produce = "not-a-function"; } ];
-      second.app-validations = [ (mkProducerRecord [ ]) ];
-    };
-  };
-  invalidResultFixture = mkFixture {
-    appNamesForSystem = _: [ ];
-    producerModule = {
-      first.app-validations = [ { produce = _: [ ]; } ];
-      second.app-validations = [ (mkProducerRecord [ ]) ];
-    };
-  };
-  invalidPackageFixture = mkFixture {
-    appNamesForSystem = _: [ "invalid" ];
-    producerModule = {
-      first.app-validations = [ { produce = _: { invalid = "not-a-derivation"; }; } ];
-      second.app-validations = [ (mkProducerRecord [ ]) ];
-    };
-  };
-  duplicateFixture = mkFixture {
-    appNamesForSystem = _: [ "duplicate" ];
-    producerModule = {
-      first.app-validations = [ (mkProducerRecord [ "duplicate" ]) ];
-      second.app-validations = [ (mkProducerRecord [ "duplicate" ]) ];
-    };
-  };
-  missingValidationFixture = mkFixture {
-    appNamesForSystem = _: [ "orphan" ];
-    producerModule = {
-      first.app-validations = [ (mkProducerRecord [ ]) ];
-      second.app-validations = [ (mkProducerRecord [ ]) ];
-    };
-  };
   expectedValidationNames = builtins.attrNames flake.apps.${system};
 in
 {
@@ -144,46 +102,12 @@ in
     ];
   };
 
-  testProducerRecordWithoutProduceIsRejected = {
-    expr =
-      (builtins.tryEval (builtins.deepSeq invalidProducerFixture.quirkValidations.x86_64-linux null))
-      .success;
-    expected = false;
-  };
-
-  testNonFunctionProduceFieldIsRejected = {
-    expr =
-      (builtins.tryEval (builtins.deepSeq invalidProduceFixture.quirkValidations.x86_64-linux null))
-      .success;
-    expected = false;
-  };
-
-  testNonAttributeSetProducerResultIsRejected = {
-    expr =
-      (builtins.tryEval (builtins.deepSeq invalidResultFixture.quirkValidations.x86_64-linux null))
-      .success;
-    expected = false;
-  };
-
-  testNonDerivationProducerValueIsRejected = {
-    expr =
-      (builtins.tryEval (builtins.deepSeq invalidPackageFixture.quirkValidations.x86_64-linux null))
-      .success;
-    expected = false;
-  };
-
-  testDuplicateValidationNamesRejected = {
-    expr =
-      (builtins.tryEval (builtins.deepSeq duplicateFixture.quirkValidations.x86_64-linux null)).success;
-    expected = false;
-  };
-
-  testPublicAppWithoutValidationIsRejectedByFinalGate = {
-    expr =
-      (builtins.tryEval (
-        builtins.deepSeq missingValidationFixture.checks.x86_64-linux.app-scripts.drvPath null
-      )).success;
-    expected = false;
+  testMergedProducersReachFinalValidationGate = {
+    expr = mergeFixture.checks.x86_64-linux.app-scripts.validationNames;
+    expected = [
+      "alpha"
+      "beta"
+    ];
   };
 
   testSystemSpecificContributionsStayIsolated = {

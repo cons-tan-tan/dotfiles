@@ -90,6 +90,57 @@ let
       expectedFragment = ''{"name":"unannotated","owner":"alpha"}'';
     };
 
+    unknownExecutionClassification = {
+      expression = force (
+        (composeUniqueChecks {
+          producers = [
+            {
+              owner = "alpha";
+              checks.unknown.meta.dotfiles.ci.execution = "sometimes-build";
+            }
+          ];
+        }).unknown
+      );
+      expectedFragment = ''{"name":"unknown","owner":"alpha"}'';
+    };
+
+    duplicateBatsFile = {
+      expression = force (validateBatsCatalog {
+        discoveredFiles = [ "bats/a.bats" ];
+        shards = [
+          {
+            name = "first";
+            testFiles = [ "bats/a.bats" ];
+          }
+          {
+            name = "second";
+            testFiles = [ "bats/a.bats" ];
+          }
+        ];
+      });
+      expectedFragment = ''Bats files assigned to multiple shards: ["bats/a.bats"]'';
+    };
+
+    duplicateBatsShardName = {
+      expression = force (validateBatsCatalog {
+        discoveredFiles = [
+          "bats/a.bats"
+          "bats/b.bats"
+        ];
+        shards = [
+          {
+            name = "fixture";
+            testFiles = [ "bats/a.bats" ];
+          }
+          {
+            name = "fixture";
+            testFiles = [ "bats/b.bats" ];
+          }
+        ];
+      });
+      expectedFragment = ''duplicate Bats shard names: ["fixture"]'';
+    };
+
     staleBatsCatalogEntry = {
       expression = force (validateBatsCatalog {
         discoveredFiles = [ "bats/a.bats" ];

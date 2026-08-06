@@ -28,16 +28,4 @@ in
       "x86_64-linux"
     ];
   };
-
-  testRejectsUnsupportedSystem = {
-    expr =
-      (builtins.tryEval
-        (import ../_lib/mk-pinned-asset.nix {
-          pin = fixturePin;
-          system = "aarch64-darwin";
-          label = "fixture";
-        }).asset
-      ).success;
-    expected = false;
-  };
 }

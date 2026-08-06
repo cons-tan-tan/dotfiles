@@ -8,13 +8,9 @@ let
   mkContract = descriptor: fakeDerivation descriptor.name;
 in
 {
-  testAcceptsCompleteSortedLedger = {
-    expr = builtins.seq (protocol.validateLedger {
+  testAcceptsDiscoveredContracts = {
+    expr = builtins.seq (protocol.validateDiscovery {
       contractNames = [
-        "alpha"
-        "beta"
-      ];
-      expectedContractNames = [
         "alpha"
         "beta"
       ];

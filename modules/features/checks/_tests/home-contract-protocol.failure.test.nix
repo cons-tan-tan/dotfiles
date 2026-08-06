@@ -24,38 +24,24 @@ let
       }
     );
   cases = {
-    emptyLedger = {
+    emptyDiscovery = {
       expression = force (
-        protocol.validateLedger {
+        protocol.validateDiscovery {
           contractNames = [ ];
-          expectedContractNames = [ ];
         }
       );
       expectedFragment = "No Feature-owned Home contracts were discovered";
     };
     duplicateName = {
       expression = force (
-        protocol.validateLedger {
+        protocol.validateDiscovery {
           contractNames = [
             "demo"
             "demo"
           ];
-          expectedContractNames = [ "demo" ];
         }
       );
       expectedFragment = ''Duplicate Feature-owned Home contract names: ["demo"]'';
-    };
-    incompleteLedger = {
-      expression = force (
-        protocol.validateLedger {
-          contractNames = [ "alpha" ];
-          expectedContractNames = [
-            "alpha"
-            "beta"
-          ];
-        }
-      );
-      expectedFragment = "Feature-owned Home contract ledger mismatch";
     };
     missingRequiredArgument = {
       expression = load ({ unavailable }: unavailable);

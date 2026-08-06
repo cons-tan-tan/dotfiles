@@ -1,14 +1,11 @@
 {
   entityContexts,
   flake,
-  inputs,
   lib,
   pkgs,
 }:
 let
   guidancePayload = import ../../agents/guidance/_interface/payload.nix;
-  username = "constantan";
-  canonicalSource = "/home/${username}/ghq/github.com/cons-tan-tan/dotfiles";
   describeWsl =
     config:
     let
@@ -54,14 +51,11 @@ let
       throw "Windows class contract: dev.winget deployment is missing"
     else
       file.source;
-  expectedFor = source: {
+  expectedFor = context: {
     metadata = {
-      enable = true;
-      environment = "wsl";
-      homedir = "/mnt/c/Users/zhouc";
-      linuxHomedir = "/home/${username}";
-      inherit source;
-      username = "zhouc";
+      inherit (context) environment source;
+      inherit (context.windows) enable homedir username;
+      linuxHomedir = context.homedir;
       wingetEnabled = true;
     };
     deployments = [
@@ -114,7 +108,7 @@ let
         ];
       };
     };
-    staticSource = "${source}/${guidancePayload.repositoryRelative.globalContext}";
+    staticSource = "${context.source}/${guidancePayload.repositoryRelative.globalContext}";
   };
   actual = {
     delivery = {
@@ -136,14 +130,12 @@ let
     (integratedConfig entityContexts.linuxX86)
     (standaloneConfig entityContexts.linuxX86)
   ];
-  integratedExpected = expectedFor (toString inputs.self.outPath);
-  standaloneExpected = expectedFor canonicalSource;
   expected = {
     delivery = {
-      integratedX86 = integratedExpected;
-      integratedAarch64 = integratedExpected;
-      standaloneX86 = standaloneExpected;
-      standaloneAarch64 = standaloneExpected;
+      integratedX86 = expectedFor entityContexts.linuxX86.contexts.nixosWsl;
+      integratedAarch64 = expectedFor entityContexts.linuxAarch64.contexts.nixosWsl;
+      standaloneX86 = expectedFor entityContexts.linuxX86.contexts.home.wsl;
+      standaloneAarch64 = expectedFor entityContexts.linuxAarch64.contexts.home.wsl;
     };
     isolation = {
       linux = false;

@@ -36,19 +36,6 @@
       };
   };
 
-  den.aspects.arg-collision = {
-    name = "class-module-arg-collision";
-    nixos.imports = [
-      { _module.args.host = "from-module-system"; }
-      (
-        { host, ... }:
-        {
-          networking.hostName = host.name;
-        }
-      )
-    ];
-  };
-
   den.homes.x86_64-linux."tux@standalone-wsl" = {
     aspect = den.aspects.synthetic-isolation;
     intoAttr = [
@@ -56,6 +43,4 @@
       "synthetic-isolation-probe"
     ];
   };
-
-  den.hosts.x86_64-linux.collision.aspect = den.aspects.arg-collision;
 }

@@ -4,6 +4,7 @@ let
   discovery = import ../_lib/test-discovery.nix { inherit lib; };
   isTestSource = path: lib.hasSuffix ".test.nix" (baseNameOf path);
   isFailureTest = path: lib.hasSuffix ".failure.test.nix" (baseNameOf path);
+  isDenSuite = path: lib.hasSuffix ".suite.nix" (baseNameOf path);
   isSupportPath = path: lib.hasInfix "/_tests/" (toString path);
   candidateFiles = builtins.filter (path: isSupportPath path && isTestSource path) (
     lib.filesystem.listFilesRecursive modulesRoot
@@ -11,6 +12,9 @@ let
   expected = {
     testFiles = builtins.filter (path: !isFailureTest path) candidateFiles;
     failureTestFiles = builtins.filter isFailureTest candidateFiles;
+    denSuiteFiles = builtins.filter isDenSuite (
+      builtins.filter isSupportPath (lib.filesystem.listFilesRecursive modulesRoot)
+    );
   };
   repositoryDiscovery = discovery.discoverRepository { inherit modulesRoot; };
   actual = discovery.classify repositoryDiscovery.files;
@@ -25,6 +29,11 @@ in
   testDendriticFailureTestsAreDiscovered = {
     expr = sortPaths actual.failureTestFiles;
     expected = sortPaths expected.failureTestFiles;
+  };
+
+  testDendriticDenSuitesAreDiscovered = {
+    expr = sortPaths actual.denSuiteFiles;
+    expected = sortPaths expected.denSuiteFiles;
   };
 
   testRepositoryDiscoveryUsesModulesSourceRoot = {

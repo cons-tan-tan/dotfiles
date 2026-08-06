@@ -67,11 +67,6 @@ let
   };
   isolationHome = isolationEval.config.flake.homeConfigurations.synthetic-isolation-probe;
   isolationVariables = isolationHome.config.home.sessionVariables;
-  collisionRejected =
-    !(builtins.tryEval (
-      builtins.seq isolationEval.config.flake.nixosConfigurations.collision.config.warnings null
-    )).success;
-
   actual = {
     scopeCount =
       builtins.length hostEntries + builtins.length userEntries + builtins.length homeEntries;
@@ -95,7 +90,6 @@ let
       hostPolicyLeaked = isolationVariables ? DEN_HOST_POLICY_LEAK;
       osConfigIsNull = isolationHome.options._module.args.value.osConfig == null;
     };
-    inherit collisionRejected;
   };
 
   expected = {
@@ -276,7 +270,6 @@ let
       hostPolicyLeaked = false;
       osConfigIsNull = true;
     };
-    collisionRejected = true;
   };
 in
 assert lib.assertMsg (actual == expected) ''

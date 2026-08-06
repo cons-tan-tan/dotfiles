@@ -6,6 +6,7 @@
 }:
 let
   mergeValidationProducers = import ./_interface/validation-producers.nix { inherit lib; };
+  validateNames = import ./_interface/validation-names.nix;
   ciCheck = import ../ci/_interface/check.nix { inherit lib; };
 in
 {
@@ -56,8 +57,10 @@ in
     den.aspects.app-validation-check.checks =
       { config, pkgs, ... }:
       let
-        appNames = builtins.attrNames config.apps;
-        validationNames = builtins.attrNames config.dotfiles.appValidations;
+        names = validateNames {
+          apps = config.apps;
+          validations = config.dotfiles.appValidations;
+        };
         validationPaths = builtins.attrValues config.dotfiles.appValidations;
         gate =
           (pkgs.linkFarm "app-scripts" (
@@ -65,18 +68,15 @@ in
           ))
           // {
             paths = validationPaths;
-            inherit validationNames;
+            inherit (names) validationNames;
           };
       in
-      if appNames != validationNames then
-        throw "public app and validation names must match exactly: apps=${builtins.toJSON appNames}, validations=${builtins.toJSON validationNames}"
-      else
-        {
-          app-scripts = ciCheck.annotate (ciCheck.targets.bySystem {
-            darwin = "configurations";
-            linux = "repo-quality";
-          }) gate;
-        };
+      builtins.seq names {
+        app-scripts = ciCheck.annotate (ciCheck.targets.bySystem {
+          darwin = "configurations";
+          linux = "repo-quality";
+        }) gate;
+      };
 
     den.schema.flake-parts.includes = [
       den.policies.app-validation-gate-to-flake-parts

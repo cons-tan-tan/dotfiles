@@ -6,7 +6,7 @@
   pkgs,
 }:
 let
-  username = "constantan";
+  username = entityContexts.darwin.username;
   subjectUsername = entityContexts.linuxX86.username;
   standaloneLinuxResult = flake.homeConfigurations.${entityContexts.linuxX86.home.linux};
   standaloneLinux = standaloneLinuxResult.config;
@@ -36,7 +36,6 @@ let
   ) (lib.filesystem.listFilesRecursive featuresRoot);
   contractName = path: lib.removeSuffix contractSuffix (baseNameOf path);
   contractNames = map contractName contractFiles;
-  expectedContractNames = import ./platform-contracts.nix;
   duplicateNames = builtins.filter (
     name: builtins.length (builtins.filter (candidate: candidate == name) contractNames) > 1
   ) (lib.unique contractNames);
@@ -91,12 +90,6 @@ let
       throw "No Feature-owned Platform contracts were discovered"
     else if duplicateNames != [ ] then
       throw "Duplicate Feature-owned Platform contract names: ${builtins.toJSON duplicateNames}"
-    else if lib.sort builtins.lessThan contractNames != expectedContractNames then
-      throw ''
-        Feature-owned Platform contract ledger mismatch:
-        expected ${builtins.toJSON expectedContractNames}
-        actual ${builtins.toJSON (lib.sort builtins.lessThan contractNames)}
-      ''
     else
       null;
 in

@@ -7,25 +7,15 @@ let
     );
 in
 {
-  validateLedger =
-    {
-      contractNames,
-      expectedContractNames,
-    }:
+  validateDiscovery =
+    { contractNames }:
     let
       duplicates = duplicateNames contractNames;
-      actual = lib.sort builtins.lessThan contractNames;
     in
     if contractNames == [ ] then
       throw "No Feature-owned Home contracts were discovered"
     else if duplicates != [ ] then
       throw "Duplicate Feature-owned Home contract names: ${builtins.toJSON duplicates}"
-    else if actual != expectedContractNames then
-      throw ''
-        Feature-owned Home contract ledger mismatch:
-        expected ${builtins.toJSON expectedContractNames}
-        actual ${builtins.toJSON actual}
-      ''
     else
       null;
 

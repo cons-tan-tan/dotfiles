@@ -1,8 +1,15 @@
 {
+  caseName ? null,
   inputs,
   lib,
+  repoRoot ? ../..,
 }:
 let
+  meta = builtins.seq repoRoot {
+    checkName = "den-unfree-capability-tests";
+    execution = "evaluation-complete";
+    hestiaGroup = null;
+  };
   evalTest =
     module:
     (lib.evalModules {
@@ -89,80 +96,87 @@ let
     allowed = true;
     denied = false;
   };
+  tests = {
+    testNixosClassUsesSelectiveUnfreePredicate = evalTest (
+      { den, igloo, ... }:
+      {
+        den.hosts.x86_64-linux.igloo = { };
+        den.aspects.igloo.includes = [
+          fixturePackages
+          (den.batteries.unfree [ "den-allowed-fixture" ])
+        ];
+
+        expr = igloo.denUnfreeProbe;
+        expected = expectedProbe;
+      }
+    );
+
+    testDarwinClassUsesSelectiveUnfreePredicate = evalTest (
+      { den, apple, ... }:
+      {
+        den.hosts.aarch64-darwin.apple = { };
+        den.aspects.apple.includes = [
+          fixturePackages
+          (den.batteries.unfree [ "den-allowed-fixture" ])
+        ];
+
+        expr = apple.denUnfreeProbe;
+        expected = expectedProbe;
+      }
+    );
+
+    testIntegratedHomeManagerUsesHostPredicate = evalTest (
+      {
+        den,
+        igloo,
+        tuxHm,
+        ...
+      }:
+      {
+        den.hosts.x86_64-linux.igloo.users.tux.classes = [ "homeManager" ];
+        den.aspects.igloo = {
+          includes = [ fixturePackages ];
+          nixos.home-manager.useGlobalPkgs = true;
+        };
+        den.aspects.tux.includes = [
+          den.batteries.define-user
+          fixtureProbe
+          (den.batteries.unfree [ "den-allowed-fixture" ])
+        ];
+
+        expr = {
+          host = igloo.denUnfreeProbe;
+          home = tuxHm.denUnfreeProbe;
+          useGlobalPkgs = igloo.home-manager.useGlobalPkgs;
+        };
+        expected = {
+          host = expectedProbe;
+          home = expectedProbe;
+          useGlobalPkgs = true;
+        };
+      }
+    );
+
+    testStandaloneHomeManagerUsesOwnPredicate = evalTest (
+      { den, config, ... }:
+      {
+        den.homes.x86_64-linux."tux@standalone".aspect = den.aspects.standalone;
+        den.aspects.standalone.includes = [
+          den.batteries.define-user
+          fixturePackages
+          (den.batteries.unfree [ "den-allowed-fixture" ])
+        ];
+
+        expr = config.flake.homeConfigurations."tux@standalone".config.denUnfreeProbe;
+        expected = expectedProbe;
+      }
+    );
+  };
+  failureCases = { };
 in
-{
-  testNixosClassUsesSelectiveUnfreePredicate = evalTest (
-    { den, igloo, ... }:
-    {
-      den.hosts.x86_64-linux.igloo = { };
-      den.aspects.igloo.includes = [
-        fixturePackages
-        (den.batteries.unfree [ "den-allowed-fixture" ])
-      ];
-
-      expr = igloo.denUnfreeProbe;
-      expected = expectedProbe;
-    }
-  );
-
-  testDarwinClassUsesSelectiveUnfreePredicate = evalTest (
-    { den, apple, ... }:
-    {
-      den.hosts.aarch64-darwin.apple = { };
-      den.aspects.apple.includes = [
-        fixturePackages
-        (den.batteries.unfree [ "den-allowed-fixture" ])
-      ];
-
-      expr = apple.denUnfreeProbe;
-      expected = expectedProbe;
-    }
-  );
-
-  testIntegratedHomeManagerUsesHostPredicate = evalTest (
-    {
-      den,
-      igloo,
-      tuxHm,
-      ...
-    }:
-    {
-      den.hosts.x86_64-linux.igloo.users.tux.classes = [ "homeManager" ];
-      den.aspects.igloo = {
-        includes = [ fixturePackages ];
-        nixos.home-manager.useGlobalPkgs = true;
-      };
-      den.aspects.tux.includes = [
-        den.batteries.define-user
-        fixtureProbe
-        (den.batteries.unfree [ "den-allowed-fixture" ])
-      ];
-
-      expr = {
-        host = igloo.denUnfreeProbe;
-        home = tuxHm.denUnfreeProbe;
-        useGlobalPkgs = igloo.home-manager.useGlobalPkgs;
-      };
-      expected = {
-        host = expectedProbe;
-        home = expectedProbe;
-        useGlobalPkgs = true;
-      };
-    }
-  );
-
-  testStandaloneHomeManagerUsesOwnPredicate = evalTest (
-    { den, config, ... }:
-    {
-      den.homes.x86_64-linux."tux@standalone".aspect = den.aspects.standalone;
-      den.aspects.standalone.includes = [
-        den.batteries.define-user
-        fixturePackages
-        (den.batteries.unfree [ "den-allowed-fixture" ])
-      ];
-
-      expr = config.flake.homeConfigurations."tux@standalone".config.denUnfreeProbe;
-      expected = expectedProbe;
-    }
-  );
-}
+if caseName == null then
+  {
+    inherit failureCases meta tests;
+  }
+else
+  throw "den-unfree-capability has no failure cases"

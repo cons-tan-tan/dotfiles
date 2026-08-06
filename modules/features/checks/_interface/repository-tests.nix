@@ -87,13 +87,20 @@ let
     subjects = rust.subjects;
   };
 in
-composeUniqueChecks {
-  producers =
-    eval.producers
-    ++ [
-      rust.producer
-      bats.producer
-    ]
-    ++ manual.producers;
-  inherit reservedCheckNames;
+let
+  evaluationCompleteComposition = ciCheck.composeEvaluationCompleteProducers eval.evaluationCompleteProducers;
+  buildChecks = composeUniqueChecks {
+    producers =
+      eval.buildProducers
+      ++ [
+        rust.producer
+        bats.producer
+      ]
+      ++ manual.producers;
+    reservedCheckNames = reservedCheckNames ++ evaluationCompleteComposition.checkNames;
+  };
+in
+{
+  inherit buildChecks;
+  evaluationCompleteChecks = evaluationCompleteComposition.values;
 }

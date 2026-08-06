@@ -7,39 +7,41 @@ let
   policyRoot = ./_lib/command-policy;
 in
 {
-  features.agent-command-policy-defaults = {
-    name = "feature/agents/command-policy/defaults";
-    agent-command-policy = [
-      {
-        source = "feature/agents/command-policy/defaults";
-        policy = {
-          shell.redirection.emptyFile = false;
-          shellfirm = {
-            enabled = true;
-            minimumSeverity = "High";
-            categories = {
-              aws = true;
-              docker = true;
-              fs = true;
-              gcp = true;
-              git = true;
-              github = true;
-              kubernetes = true;
-              network = true;
-              npm = true;
-              shell = true;
+  features.agent-command-policy-defaults =
+    { config, ... }:
+    {
+      name = "feature/agents/command-policy/defaults";
+      agent-command-policy = [
+        {
+          owner = config.name;
+          policy = {
+            shell.redirection.emptyFile = false;
+            shellfirm = {
+              enabled = true;
+              minimumSeverity = "High";
+              categories = {
+                aws = true;
+                docker = true;
+                fs = true;
+                gcp = true;
+                git = true;
+                github = true;
+                kubernetes = true;
+                network = true;
+                npm = true;
+                shell = true;
+              };
+              ruleNamespaces = {
+                fs-strict = false;
+                git-strict = false;
+                kubernetes-strict = false;
+              };
+              rules.fs.flush_file_content = false;
             };
-            ruleNamespaces = {
-              fs-strict = false;
-              git-strict = false;
-              kubernetes-strict = false;
-            };
-            rules.fs.flush_file_content = false;
           };
-        };
-      }
-    ];
-  };
+        }
+      ];
+    };
 
   features.agents-base = {
     name = "feature/agents/base";

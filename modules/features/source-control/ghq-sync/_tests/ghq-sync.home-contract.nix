@@ -11,42 +11,99 @@
       launchdAgents = lib.attrByPath [ "launchd" "agents" ] { } config;
       countPackage =
         package: builtins.length (builtins.filter (candidate: candidate == package) config.home.packages);
+      providers = {
+        launchd = launchdAgents ? ghq-fetch;
+        systemd = systemdServices ? ghq-fetch && systemdTimers ? ghq-fetch;
+      };
+      service =
+        (
+          if providers.launchd then
+            {
+              backend = "launchd";
+              schedule = {
+                interval = launchdAgents.ghq-fetch.config.StartInterval;
+                invokesFetchAll = lib.any (
+                  command: lib.hasInfix "ghq-fetch-all" command
+                ) launchdAgents.ghq-fetch.config.ProgramArguments;
+              };
+              durability = {
+                nice = launchdAgents.ghq-fetch.config.Nice;
+                processType = launchdAgents.ghq-fetch.config.ProcessType;
+              };
+            }
+          else if providers.systemd then
+            {
+              backend = "systemd";
+              schedule = {
+                interval = systemdTimers.ghq-fetch.Timer.OnUnitActiveSec;
+                timeout = systemdServices.ghq-fetch.Service.TimeoutStartSec;
+                type = systemdServices.ghq-fetch.Service.Type;
+                invokesFetchAll = lib.any (
+                  command: lib.hasInfix "ghq-fetch-all" command
+                ) systemdServices.ghq-fetch.Service.ExecStart;
+              };
+              durability = {
+                persistent = systemdTimers.ghq-fetch.Timer.Persistent;
+                bootDelay = systemdTimers.ghq-fetch.Timer.OnBootSec;
+                randomizedDelay = systemdTimers.ghq-fetch.Timer.RandomizedDelaySec;
+                afterNetworkOnline = builtins.elem "network-online.target" systemdServices.ghq-fetch.Unit.After;
+                wantsNetworkOnline = builtins.elem "network-online.target" systemdServices.ghq-fetch.Unit.Wants;
+                nice = systemdServices.ghq-fetch.Service.Nice;
+                ioSchedulingClass = systemdServices.ghq-fetch.Service.IOSchedulingClass;
+              };
+            }
+          else
+            { backend = "missing"; }
+        )
+        // {
+          inherit providers;
+        };
     in
     {
       package = countPackage pkgs.ghq;
-      systemd = systemdServices ? ghq-fetch && systemdTimers ? ghq-fetch;
-      launchd = launchdAgents ? ghq-fetch;
-      schedule =
-        if launchdAgents ? ghq-fetch then
-          launchdAgents.ghq-fetch.config.StartInterval == 600
-          && lib.any (
-            command: lib.hasInfix "ghq-fetch-all" command
-          ) launchdAgents.ghq-fetch.config.ProgramArguments
-        else
-          systemdTimers.ghq-fetch.Timer.OnUnitActiveSec == "10min"
-          && systemdServices.ghq-fetch.Service.TimeoutStartSec == 600
-          && systemdServices.ghq-fetch.Service.Type == "oneshot"
-          && lib.any (
-            command: lib.hasInfix "ghq-fetch-all" command
-          ) systemdServices.ghq-fetch.Service.ExecStart;
-      durability =
-        if launchdAgents ? ghq-fetch then
-          launchdAgents.ghq-fetch.config.Nice == 10
-          && launchdAgents.ghq-fetch.config.ProcessType == "Background"
-        else
-          systemdTimers.ghq-fetch.Timer.Persistent
-          && systemdTimers.ghq-fetch.Timer.OnBootSec == "2min"
-          && systemdTimers.ghq-fetch.Timer.RandomizedDelaySec == "30s"
-          && builtins.elem "network-online.target" systemdServices.ghq-fetch.Unit.After
-          && builtins.elem "network-online.target" systemdServices.ghq-fetch.Unit.Wants
-          && systemdServices.ghq-fetch.Service.Nice == 10
-          && systemdServices.ghq-fetch.Service.IOSchedulingClass == "idle";
+      inherit service;
     };
   expected = facts: {
     package = 1;
-    systemd = facts.environment != "darwin";
-    launchd = facts.environment == "darwin";
-    schedule = true;
-    durability = true;
+    service =
+      if facts.environment == "darwin" then
+        {
+          backend = "launchd";
+          providers = {
+            launchd = true;
+            systemd = false;
+          };
+          schedule = {
+            interval = 600;
+            invokesFetchAll = true;
+          };
+          durability = {
+            nice = 10;
+            processType = "Background";
+          };
+        }
+      else
+        {
+          backend = "systemd";
+          providers = {
+            launchd = false;
+            systemd = true;
+          };
+          schedule = {
+            interval = "10min";
+            timeout = 600;
+            type = "oneshot";
+            invokesFetchAll = true;
+          };
+          durability = {
+            persistent = true;
+            bootDelay = "2min";
+            randomizedDelay = "30s";
+            afterNetworkOnline = true;
+            wantsNetworkOnline = true;
+            nice = 10;
+            ioSchedulingClass = "idle";
+          };
+        };
   };
 }

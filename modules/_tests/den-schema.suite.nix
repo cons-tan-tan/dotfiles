@@ -3,9 +3,14 @@
   inputs,
   lib,
   repoRoot ? ../..,
-  schemaModule,
 }:
 let
+  meta = {
+    checkName = "den-schema-tests";
+    execution = "build";
+    hestiaGroup = "eval-tests";
+  };
+  schemaModule = repoRoot + "/modules/schema/entities.nix";
   evalDen =
     module:
     lib.evalModules {
@@ -31,15 +36,6 @@ let
     enable = true;
     username = "windows-user";
     homedir = "/mnt/c/Users/windows-user";
-  };
-
-  platformContext =
-    (import (repoRoot + "/modules/features/platform/context.nix") { inherit lib; }).features;
-  profileOwner = environment: {
-    dotfiles = {
-      inherit environment;
-      source = "/tmp/dotfiles";
-    };
   };
 
   tests = {
@@ -69,30 +65,6 @@ let
             home = config.den.homes.x86_64-linux."test@standalone-wsl".dotfiles;
           });
       expected = true;
-    };
-    testMatchingEnvironmentProfilesAreAccepted = {
-      expr = [
-        (enforceAssertions
-          (platformContext.platform-context-darwin-host.homeManager {
-            host = profileOwner "darwin";
-          }).assertions
-        )
-        (enforceAssertions
-          (platformContext.platform-context-linux-home.homeManager {
-            home = profileOwner "linux";
-          }).assertions
-        )
-        (enforceAssertions
-          (platformContext.platform-context-wsl-host.nixos {
-            host = profileOwner "wsl";
-          }).assertions
-        )
-      ];
-      expected = [
-        true
-        true
-        true
-      ];
     };
   };
 
@@ -239,51 +211,11 @@ let
         enforceAssertions evaluated.config.den.homes.x86_64-linux."test@standalone-linux".assertions;
       expectedFragments = [ "non-WSL dotfiles.windows metadata must be disabled and empty" ];
     };
-    darwinProfileRejectsLinuxOwner = {
-      expression =
-        enforceAssertions
-          (platformContext.platform-context-darwin-host.homeManager {
-            host = profileOwner "linux";
-          }).assertions;
-      expectedFragments = [
-        "dotfiles darwin environment aspect requires owner.dotfiles.environment = darwin"
-      ];
-    };
-    linuxProfileRejectsWslOwner = {
-      expression =
-        enforceAssertions
-          (platformContext.platform-context-linux-home.homeManager {
-            home = profileOwner "wsl";
-          }).assertions;
-      expectedFragments = [
-        "dotfiles linux environment aspect requires owner.dotfiles.environment = linux"
-      ];
-    };
-    integratedWslProfileRejectsLinuxHost = {
-      expression =
-        enforceAssertions
-          (platformContext.platform-context-wsl-host.nixos {
-            host = profileOwner "linux";
-          }).assertions;
-      expectedFragments = [
-        "dotfiles wsl environment aspect requires owner.dotfiles.environment = wsl"
-      ];
-    };
-    standaloneWslProfileRejectsLinuxHome = {
-      expression =
-        enforceAssertions
-          (platformContext.platform-context-wsl-home.homeManager {
-            home = profileOwner "linux";
-          }).assertions;
-      expectedFragments = [
-        "dotfiles wsl environment aspect requires owner.dotfiles.environment = wsl"
-      ];
-    };
   };
 in
 if caseName == null then
   {
-    inherit failureCases tests;
+    inherit failureCases meta tests;
   }
 else
   failureCases.${caseName}.expression

@@ -5,6 +5,11 @@
   repoRoot ? ../../../../..,
 }:
 let
+  meta = {
+    checkName = "agent-skills-dataflow-tests";
+    execution = "build";
+    hestiaGroup = "eval-tests";
+  };
   skillsRoot = repoRoot + "/modules/features/agents/skills";
   aggregateSkills = import (skillsRoot + "/_lib/aggregate.nix") { inherit lib; };
 
@@ -288,7 +293,7 @@ let
 in
 if caseName == null then
   {
-    inherit failureCases tests;
+    inherit failureCases meta tests;
   }
 else
   failureCases.${caseName}.expression

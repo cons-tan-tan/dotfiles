@@ -112,6 +112,59 @@ let
 
   evaluationCompleteSet = lib.mapAttrs (_: evaluationComplete);
 
+  composeEvaluationCompleteProducers =
+    producers:
+    let
+      indexedProducers = lib.imap0 (index: producer: { inherit index producer; }) producers;
+      invalidProducerIndexes = map (entry: entry.index) (
+        builtins.filter (
+          entry:
+          let
+            inherit (entry) producer;
+          in
+          !builtins.isAttrs producer
+          ||
+            builtins.attrNames producer != [
+              "checks"
+              "owner"
+            ]
+          || !builtins.isString producer.owner
+          || producer.owner == ""
+          || !builtins.isAttrs producer.checks
+        ) indexedProducers
+      );
+      entries = lib.concatMap (
+        producer:
+        map (name: {
+          inherit name;
+          inherit (producer) owner;
+        }) (builtins.attrNames producer.checks)
+      ) producers;
+      names = map (entry: entry.name) entries;
+      duplicateNames = builtins.filter (
+        name: builtins.length (builtins.filter (candidate: candidate == name) names) > 1
+      ) (lib.unique names);
+      collisions = map (name: {
+        inherit name;
+        owners = map (entry: entry.owner) (builtins.filter (entry: entry.name == name) entries);
+      }) duplicateNames;
+      validation =
+        if invalidProducerIndexes != [ ] then
+          throw "invalid evaluation-complete check producers: ${builtins.toJSON invalidProducerIndexes}"
+        else if collisions != [ ] then
+          throw "evaluation-complete check producer collisions: ${builtins.toJSON collisions}"
+        else
+          null;
+      values = builtins.seq validation (
+        lib.foldl' (result: producer: result // producer.checks) { } producers
+      );
+    in
+    {
+      checkNames = builtins.seq validation names;
+      inherit values;
+      checks = evaluationCompleteSet values;
+    };
+
   getExecution =
     check:
     let
@@ -286,7 +339,6 @@ let
         system:
         let
           checks = checksBySystem.${system};
-          checkNames = builtins.attrNames checks;
           declaredNames = evaluationCompleteCheckNamesBySystem.${system};
           ignoredNames = ignoredCheckNamesBySystem.${system} or [ ];
           duplicateNames = builtins.filter (
@@ -294,21 +346,19 @@ let
           ) (lib.unique declaredNames);
           unknown = builtins.filter (name: !(builtins.hasAttr name checks)) declaredNames;
           ignoredWithoutListing = builtins.filter (name: !(builtins.elem name declaredNames)) ignoredNames;
-          classifiedNames = lib.subtractLists ignoredNames checkNames;
           declaredClassifiedNames = lib.subtractLists ignoredNames declaredNames;
+          knownDeclaredClassifiedNames = builtins.filter (
+            name: builtins.hasAttr name checks
+          ) declaredClassifiedNames;
           listedWithoutMarker = builtins.filter (
             name: !isEvaluationComplete checks.${name}
-          ) declaredClassifiedNames;
-          markerWithoutListing = builtins.filter (
-            name: isEvaluationComplete checks.${name} && !(builtins.elem name declaredNames)
-          ) classifiedNames;
+          ) knownDeclaredClassifiedNames;
         in
         if
           duplicateNames != [ ]
           || unknown != [ ]
           || ignoredWithoutListing != [ ]
           || listedWithoutMarker != [ ]
-          || markerWithoutListing != [ ]
         then
           throw "invalid evaluation-complete CI checks for ${system}: ${
             builtins.toJSON {
@@ -316,7 +366,6 @@ let
                 duplicateNames
                 ignoredWithoutListing
                 listedWithoutMarker
-                markerWithoutListing
                 unknown
                 ;
             }
@@ -400,6 +449,7 @@ in
   inherit
     annotate
     annotateSet
+    composeEvaluationCompleteProducers
     evaluationComplete
     evaluationCompleteSet
     isClassified

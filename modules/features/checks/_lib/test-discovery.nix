@@ -2,6 +2,7 @@
 let
   testSuffix = ".test.nix";
   failureTestSuffix = ".failure.test.nix";
+  denSuiteSuffix = ".suite.nix";
 
   testStem = path: lib.removeSuffix testSuffix (baseNameOf path);
   failureStem = path: lib.removeSuffix failureTestSuffix (baseNameOf path);
@@ -47,13 +48,14 @@ in
     files:
     let
       failureTestFiles = builtins.filter (path: lib.hasSuffix failureTestSuffix (baseNameOf path)) files;
+      denSuiteFiles = builtins.filter (path: lib.hasSuffix denSuiteSuffix (baseNameOf path)) files;
       testFiles = builtins.filter (
         path:
         lib.hasSuffix testSuffix (baseNameOf path) && !lib.hasSuffix failureTestSuffix (baseNameOf path)
       ) files;
     in
     {
-      inherit failureTestFiles testFiles;
+      inherit denSuiteFiles failureTestFiles testFiles;
     };
 
   checkName = path: "${testStem path}-tests";

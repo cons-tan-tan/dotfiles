@@ -3,11 +3,11 @@ let
   aggregate = import ../../_lib/command-policy/aggregate.nix { inherit lib; };
   result = aggregate [
     {
-      source = "feature/alpha";
+      owner = "feature/alpha";
       policy.commands.alpha = true;
     }
     {
-      source = "feature/beta";
+      owner = "feature/beta";
       policy = {
         commands.beta = false;
         shell.redirection.emptyFile = false;
@@ -16,11 +16,11 @@ let
   ];
   repeated = aggregate [
     {
-      source = "feature/repeated";
+      owner = "feature/repeated";
       policy.commands.repeated = true;
     }
     {
-      source = "feature/repeated";
+      owner = "feature/repeated";
       policy.commands.repeated = true;
     }
   ];
@@ -28,23 +28,23 @@ in
 {
   testIdenticalContributionReachedThroughMultiplePathsIsIdempotent = {
     expr = {
-      inherit (repeated) sources;
+      inherit (repeated) owners;
       moduleCount = builtins.length repeated.modules;
     };
     expected = {
-      sources = [ "feature/repeated" ];
+      owners = [ "feature/repeated" ];
       moduleCount = 1;
     };
   };
 
-  testContributionsBecomeSourceAttributedModules = {
+  testContributionsBecomeOwnerAttributedModules = {
     expr = {
-      inherit (result) sources;
+      inherit (result) owners;
       files = map (module: module._file) result.modules;
       policies = map (module: module.config.agentCommandPolicy) result.modules;
     };
     expected = {
-      sources = [
+      owners = [
         "feature/alpha"
         "feature/beta"
       ];

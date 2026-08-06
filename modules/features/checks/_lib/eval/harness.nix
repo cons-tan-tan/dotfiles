@@ -244,15 +244,19 @@ let
         ''
       );
     };
-in
-{
-  positiveChecks =
+
+  positiveValues =
     files:
     let
       entries = map mkEvalCheck files;
       uniqueness = validateUniqueCheckNames "positive eval suites" (map (entry: entry.name) entries);
     in
-    builtins.seq uniqueness (ciCheck.evaluationCompleteSet (lib.listToAttrs entries));
+    builtins.seq uniqueness (lib.listToAttrs entries);
+in
+{
+  inherit positiveValues;
+
+  positiveChecks = files: ciCheck.evaluationCompleteSet (positiveValues files);
   failureChecks =
     files:
     let
