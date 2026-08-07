@@ -66,7 +66,27 @@ class TelemetryTests(unittest.TestCase):
                     self.assertEqual(capture(["--flake", ".#checks"], target), 0)
                     self.assertEqual(output.getvalue(), '{"attr":"quality"}\n')
             self.assertEqual(target.read_text(), '{"attr":"quality"}\n')
-        self.assertEqual(command([])[0:3], ["nix", "run", "nixpkgs#nix-eval-jobs"])
+        self.assertEqual(
+            command([]),
+            [
+                "nix",
+                "run",
+                "nix-eval-jobs#nix-eval-jobs",
+                "--inputs-from",
+                ".",
+                "--",
+                "--workers",
+                "1",
+                "--max-memory-size",
+                "12288",
+                "--option",
+                "stalled-download-timeout",
+                "30",
+                "--option",
+                "filetransfer-retry-attempts",
+                "2",
+            ],
+        )
 
     def test_eval_capture_rejects_conflicting_derivation_groups(self) -> None:
         class Process:
