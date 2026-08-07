@@ -38,8 +38,7 @@ jobs:
           HESTIA_EVAL_CAPTURE: ${{ runner.temp }}/ci-telemetry/hestia-eval.jsonl
         with:
           flake: ".#lib.hestiaJobs.ci.${{ inputs.system }}"
-          # 16 GB runner上で評価workerの再起動を避けつつ、OSとNix daemon用に
-          # 4 GBを残す。
+          # 16 GB runner上で評価workerの再起動を避けつつ、OSとNix daemon用に4 GBを残す。
           nix-eval-jobs: python3 modules/features/ci/_scripts/capture_hestia_eval.py
           attr-prefix: "lib.hestiaJobs.ci.${{ inputs.system }}"
       - id: optimized-matrix
@@ -78,8 +77,7 @@ jobs:
         run: python3 modules/features/ci/_scripts/validate_hestia_matrix.py
       - wait: upload-evaluation-telemetry
 
-  # 評価済みのdrv closureを引き継ぎ、評価とbuildが別のderivationを選ぶ余地を
-  # 作らない。
+  # 評価済みのdrv closureを引き継ぎ、評価とbuildが別のderivationを選ぶ余地を作らない。
   build:
     name: build / ${{ matrix.name }}
     needs: evaluate

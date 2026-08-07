@@ -1,7 +1,7 @@
 name: CI telemetry
 
-# source runのcodeは実行せず、artifactもsource identity・schema・inventoryを
-# collector側で検証する。権限はread-onlyに限定する。
+# source runのcodeは実行せず、artifactもsource identity・schema・inventoryをcollector側で検証する。
+# 権限はread-onlyに限定する。
 on: # zizmor: ignore[dangerous-triggers]
   workflow_run:
     workflows: [CI]
@@ -26,8 +26,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      # workflow_runはdefault branch上のcollectorを実行する。観測対象のcommitを
-      # checkoutすると、信頼境界をsource run側へ戻してしまう。
+      # workflow_runはdefault branch上のcollectorを実行する。
+      # 観測対象のcommitをcheckoutすると、信頼境界をsource run側へ戻してしまう。
       - name: Check out telemetry collector
         id: checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

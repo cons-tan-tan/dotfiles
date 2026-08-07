@@ -6,8 +6,8 @@ on:
   pull_request:
   workflow_dispatch:
 
-# 同一refの旧runをキャンセルする。build matrixがmozuku-lspをソースから
-# ビルドするため、force-push時の並走を避ける。
+# 同一refの旧runをキャンセルする。
+# build matrixがmozuku-lspをソースからビルドするため、force-push時の並走を避ける。
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -39,8 +39,8 @@ jobs:
         with:
           enable_kvm: false
       - wait: checkout
-      # Hestiaのsystem laneとは独立して開始する。eval時のIFDを排除して
-      # あるため、Darwinを含む各systemをLinuxで並列評価できる。
+      # Hestiaのsystem laneとは独立して開始する。
+      # eval時のIFDを排除してあるため、Darwinを含む各systemをLinuxで並列評価できる。
       - name: Evaluate flake outputs
         env:
           FLAKE_EVAL_SYSTEM: ${{ matrix.system }}
@@ -58,8 +58,8 @@ jobs:
     with:
       system: aarch64-darwin
 
-  # matrixの行数はcache状態で変わるため、固定名のcheckでflake評価と
-  # system laneの完了を集約する。branch protectionはこのjobだけを参照できる。
+  # Hestia build matrixの行数はcache状態で変わるため、固定名のcheckでflake評価とsystem laneの完了を集約する。
+  # branch protectionはこのjobだけを参照できる。
   required:
     name: required
     needs:

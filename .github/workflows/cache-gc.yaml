@@ -2,8 +2,7 @@ name: Cache GC
 
 on:
   schedule:
-    # デフォルトブランチで、生存中の root から参照されなくなったキャッシュを
-    # 毎日回収する。
+    # デフォルトブランチで、生存中のrootから参照されなくなったキャッシュを毎日回収する。
     - cron: "23 3 * * *"
   workflow_dispatch:
     inputs:
@@ -12,7 +11,7 @@ on:
         type: boolean
         default: false
 
-# GC 同士のrepackと削除が競合しないよう、手動実行も直列化する。
+# GC間のrepackと削除が競合しないよう、手動実行も直列化する。
 concurrency:
   group: hestia-gc
   cancel-in-progress: false
@@ -22,8 +21,7 @@ permissions:
 
 jobs:
   gc:
-    # workflow_dispatch では任意の ref を選べるが、Hestia GC はデフォルト
-    # ブランチの cache view を基準に実行する必要がある。
+    # workflow_dispatchでは任意のrefを選べるが、Hestia GCはデフォルトブランチのcache viewを基準に実行する必要がある。
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
     timeout-minutes: 30
