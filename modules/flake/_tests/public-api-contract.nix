@@ -10,6 +10,7 @@
   packages,
   pkgs,
   rootPackagesPresent,
+  rootHestiaCiPresent,
   rootHydraCiPresent,
   systems,
 }:
@@ -152,6 +153,7 @@ let
       invalidDevShells
       invalidFormatters
       missingRequiredChecks
+      rootHestiaCiPresent
       rootHydraCiPresent
       rootPackagesPresent
       ;
@@ -182,7 +184,8 @@ let
     packageNames = lib.genAttrs expectedSystems (_: expectedFlakeFilePackages);
     packageSystems = expectedSystems;
     rootPackagesPresent = true;
-    rootHydraCiPresent = true;
+    rootHestiaCiPresent = true;
+    rootHydraCiPresent = false;
     nixosConfigurations = [
       "wsl"
       "wsl-aarch64"

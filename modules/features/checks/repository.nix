@@ -65,7 +65,7 @@ let
             evalInventory.denSuiteFiles
         else
           {
-            buildChecks = { };
+            buildEntries = { };
             evaluationCompleteChecks = { };
           };
       repositoryEvaluationCompleteChecks = lib.optionalAttrs (system == "x86_64-linux") {
@@ -111,11 +111,13 @@ let
             packages
             ;
           rootPackagesPresent = config.flake ? packages;
+          rootHestiaCiPresent =
+            config.flake ? lib && config.flake.lib ? hestiaJobs && config.flake.lib.hestiaJobs ? ci;
           rootHydraCiPresent = config.flake ? hydraJobs && config.flake.hydraJobs ? ci;
         };
       };
-      repositoryBuildChecks = lib.optionalAttrs (system == "x86_64-linux") {
-        windows-class-contract = ciCheck.annotate (ciCheck.targets.linux "configurations") (
+      repositoryBuildEntries = lib.optionalAttrs (system == "x86_64-linux") {
+        windows-class-contract = ciCheck.buildEntry (ciCheck.targets.linux "configurations") (
           import ../windows/_tests/class-contract.nix {
             inherit
               entityContexts
@@ -127,8 +129,8 @@ let
         );
       };
       repositoryOwnedNames =
-        builtins.attrNames repositoryBuildChecks
-        ++ builtins.attrNames denSuiteProducer.buildChecks
+        builtins.attrNames repositoryBuildEntries
+        ++ builtins.attrNames denSuiteProducer.buildEntries
         ++ builtins.attrNames repositoryEvaluationCompleteChecks
         ++ builtins.attrNames denSuiteProducer.evaluationCompleteChecks;
       testCheckSet = import ./_interface/repository-tests.nix {
@@ -163,30 +165,34 @@ let
           checks = testCheckSet.evaluationCompleteChecks;
         }
       ];
-      buildChecks = composeUniqueChecks {
+      buildComposition = composeUniqueChecks {
         producers = [
-          {
+          (ciCheck.mkBuildProducer {
             owner = "repository base checks";
-            checks = repositoryBuildChecks;
-          }
-          {
+            entries = repositoryBuildEntries;
+          })
+          (ciCheck.mkBuildProducer {
             owner = "Den suites";
-            checks = denSuiteProducer.buildChecks;
-          }
+            entries = denSuiteProducer.buildEntries;
+          })
           {
             owner = "repository test checks";
             checks = testCheckSet.buildChecks;
+            routes = testCheckSet.buildRoutes;
           }
         ];
         reservedCheckNames = externallyOwnedCheckNames ++ evaluationCompleteComposition.checkNames;
       };
     in
     {
-      inherit buildChecks;
+      buildChecks = buildComposition.checks;
+      buildRoutes = buildComposition.routes;
       evaluationCompleteChecks = evaluationCompleteComposition.values;
     };
 in
 {
+  imports = [ ../ci/_interface/options.nix ];
+
   flake-file.inputs.rustsec-advisory-db = {
     url = "github:RustSec/advisory-db";
     flake = false;
@@ -199,6 +205,12 @@ in
         {
           owner = "repository checks";
           checks = (repositoryChecks { inherit pkgs system; }).evaluationCompleteChecks;
+        }
+      ];
+      dotfiles.ci.buildRouteProducers = [
+        {
+          owner = "repository checks";
+          routes = (repositoryChecks { inherit pkgs system; }).buildRoutes;
         }
       ];
     };

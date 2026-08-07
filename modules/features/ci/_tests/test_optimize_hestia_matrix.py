@@ -17,7 +17,7 @@ from optimize_hestia_matrix import optimize_rows
 def row(name: str, index: int, *, os: str = "ubuntu-latest") -> dict[str, object]:
     drv = f"/nix/store/{index:032d}-{name}.drv"
     return {
-        "attr": f"hydraJobs.ci.x86_64-linux.{name}",
+        "attr": f"lib.hestiaJobs.ci.x86_64-linux.{name}",
         "drvPath": drv,
         "installables": f"{drv}^*",
         "name": name,

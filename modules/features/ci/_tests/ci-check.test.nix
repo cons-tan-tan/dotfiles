@@ -3,6 +3,7 @@ let
   ciCheck = import ../_interface/check.nix { inherit lib; };
   linuxSystem = "x86_64-linux";
   darwinSystem = "aarch64-darwin";
+  additionalSystem = "aarch64-linux";
   fakeCheck = {
     drvPath = "/nix/store/00000000000000000000000000000000-ci-check.drv";
     meta.description = "preserved metadata";
@@ -103,30 +104,56 @@ in
     };
   };
 
-  testIgnoredValidationCheckIsNotForced = {
-    expr = ciCheck.validateEvaluationCompleteChecks {
-      checksBySystem = {
-        ${linuxSystem}.contract = throw "validation contract was forced";
-        ${darwinSystem} = { };
+  testBuildProducerKeepsRoutesIndependentFromCheckValues = {
+    expr =
+      (ciCheck.mkBuildProducer {
+        owner = "fixture";
+        entries.lazy = ciCheck.buildEntry (ciCheck.targets.linux "eval-tests") (
+          throw "build check value was forced"
+        );
+      }).routes;
+    expected.lazy = ciCheck.targets.linux "eval-tests";
+  };
+
+  testBuildProducerMaterializesCanonicalMetadata = {
+    expr =
+      let
+        producer = ciCheck.mkBuildProducer {
+          owner = "fixture";
+          entries.example = ciCheck.buildEntry (ciCheck.targets.both "repo-quality") fakeCheck;
+        };
+      in
+      {
+        route = producer.routes.example;
+        metadata = producer.checks.example.meta.dotfiles.hestia.targets;
+        description = producer.checks.example.meta.description;
+      };
+    expected = {
+      route = ciCheck.targets.both "repo-quality";
+      metadata = ciCheck.targets.both "repo-quality";
+      description = "preserved metadata";
+    };
+  };
+
+  testValidLightweightManifest = {
+    expr = ciCheck.validateCheckManifest {
+      checkNamesBySystem = {
+        ${linuxSystem} = [
+          "contract"
+          "example"
+        ];
+        ${darwinSystem} = [ "example" ];
+        ${additionalSystem} = [ ];
       };
       evaluationCompleteCheckNamesBySystem = {
         ${linuxSystem} = [ "contract" ];
         ${darwinSystem} = [ ];
+        ${additionalSystem} = [ ];
       };
-      ignoredCheckNamesBySystem.${linuxSystem} = [ "contract" ];
-    };
-    expected = true;
-  };
-
-  testValidationDoesNotForceUnlistedBuildChecks = {
-    expr = ciCheck.validateEvaluationCompleteChecks {
-      checksBySystem = {
-        ${linuxSystem}.build = throw "unlisted build check was forced";
-        ${darwinSystem} = { };
-      };
-      evaluationCompleteCheckNamesBySystem = {
-        ${linuxSystem} = [ ];
-        ${darwinSystem} = [ ];
+      buildRoutesBySystem = {
+        ${linuxSystem}.example = ciCheck.targets.both "eval-tests";
+        ${darwinSystem}.example = ciCheck.targets.both "eval-tests";
+        ${additionalSystem} = { };
       };
     };
     expected = true;
@@ -139,13 +166,23 @@ in
         linux = "repo-quality";
       };
       jobs = ciCheck.mkHestiaJobs {
-        ${linuxSystem}.example = ciCheck.annotate checkTargets fakeCheck;
-        ${darwinSystem}.example = ciCheck.annotate checkTargets (
-          fakeCheck
-          // {
-            system = darwinSystem;
-          }
-        );
+        checksBySystem = {
+          ${linuxSystem}.example = ciCheck.annotate checkTargets fakeCheck;
+          ${darwinSystem}.example = ciCheck.annotate checkTargets (
+            fakeCheck
+            // {
+              system = darwinSystem;
+            }
+          );
+        };
+        evaluationCompleteCheckNamesBySystem = {
+          ${linuxSystem} = [ ];
+          ${darwinSystem} = [ ];
+        };
+        routesBySystem = {
+          ${linuxSystem}.example = checkTargets;
+          ${darwinSystem}.example = checkTargets;
+        };
       };
     in
     {
@@ -180,13 +217,29 @@ in
       linuxTargets = ciCheck.targets.linux "repo-quality";
       darwinTargets = ciCheck.targets.darwin "configurations";
       jobs = ciCheck.mkHestiaJobs {
-        ${linuxSystem} = {
-          both = ciCheck.annotate bothTargets (fakeFor "both-linux" linuxSystem);
-          linuxOnly = ciCheck.annotate linuxTargets (fakeFor "linux-only" linuxSystem);
+        checksBySystem = {
+          ${linuxSystem} = {
+            both = ciCheck.annotate bothTargets (fakeFor "both-linux" linuxSystem);
+            linuxOnly = ciCheck.annotate linuxTargets (fakeFor "linux-only" linuxSystem);
+          };
+          ${darwinSystem} = {
+            both = ciCheck.annotate bothTargets (fakeFor "both-darwin" darwinSystem);
+            darwinOnly = ciCheck.annotate darwinTargets (fakeFor "darwin-only" darwinSystem);
+          };
         };
-        ${darwinSystem} = {
-          both = ciCheck.annotate bothTargets (fakeFor "both-darwin" darwinSystem);
-          darwinOnly = ciCheck.annotate darwinTargets (fakeFor "darwin-only" darwinSystem);
+        evaluationCompleteCheckNamesBySystem = {
+          ${linuxSystem} = [ ];
+          ${darwinSystem} = [ ];
+        };
+        routesBySystem = {
+          ${linuxSystem} = {
+            both = bothTargets;
+            linuxOnly = linuxTargets;
+          };
+          ${darwinSystem} = {
+            both = bothTargets;
+            darwinOnly = darwinTargets;
+          };
         };
       };
     in
@@ -218,22 +271,21 @@ in
   testSystemPartitionDoesNotForceSiblingChecks = {
     expr = builtins.attrNames (
       (ciCheck.mkHestiaJobs {
-        ${linuxSystem}.example = ciCheck.annotate (ciCheck.targets.linux "eval-tests") fakeCheck;
-        ${darwinSystem} = throw "sibling system was forced";
+        checksBySystem = {
+          ${linuxSystem}.example = ciCheck.annotate (ciCheck.targets.linux "eval-tests") fakeCheck;
+          ${darwinSystem} = throw "sibling system was forced";
+        };
+        evaluationCompleteCheckNamesBySystem = {
+          ${linuxSystem} = [ ];
+          ${darwinSystem} = throw "sibling evaluation-complete names were forced";
+        };
+        routesBySystem = {
+          ${linuxSystem}.example = ciCheck.targets.linux "eval-tests";
+          ${darwinSystem} = throw "sibling routes were forced";
+        };
       }).${linuxSystem}
     );
     expected = [ "example" ];
   };
 
-  testValidHestiaJobsReturnTrue = {
-    expr = ciCheck.validateHestiaJobs {
-      ${linuxSystem}.example = ciCheck.annotate (ciCheck.targets.both "eval-tests") (
-        fakeFor "linux" linuxSystem
-      );
-      ${darwinSystem}.example = ciCheck.annotate (ciCheck.targets.both "eval-tests") (
-        fakeFor "darwin" darwinSystem
-      );
-    };
-    expected = true;
-  };
 }

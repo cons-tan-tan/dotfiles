@@ -52,16 +52,16 @@ let
       &&
         lib.sort builtins.lessThan (builtins.attrNames descriptor) == [
           "artifacts"
-          "checks"
+          "buildEntries"
           "owner"
         ]
       && builtins.isString descriptor.owner
       && builtins.isList descriptor.artifacts
-      && builtins.isAttrs descriptor.checks
+      && builtins.isAttrs descriptor.buildEntries
     then
       descriptor
     else
-      throw "${toString path} must declare exactly owner, artifacts, and checks"
+      throw "${toString path} must declare exactly owner, artifacts, and buildEntries"
   ) descriptorFiles;
   artifacts = lib.concatMap (descriptor: descriptor.artifacts) descriptors;
   invalidArtifacts = builtins.filter (
@@ -89,12 +89,16 @@ let
       throw "Manual check artifact names have multiple owners: ${builtins.toJSON duplicateArtifactNames}"
     else
       null;
-  descriptorProducers = map (descriptor: {
-    inherit (descriptor) owner checks;
-  }) descriptors;
-  packageSmokeProducer = {
+  descriptorProducers = map (
+    descriptor:
+    ciCheck.mkBuildProducer {
+      inherit (descriptor) owner;
+      entries = descriptor.buildEntries;
+    }
+  ) descriptors;
+  packageSmokeProducer = ciCheck.mkBuildProducer {
     owner = "Feature-owned package smoke checks";
-    checks.package-smoke-tests = ciCheck.annotate (ciCheck.targets.both "package-smoke") (
+    entries.package-smoke-tests = ciCheck.buildEntry (ciCheck.targets.both "package-smoke") (
       pkgs.linkFarm "package-smoke-tests" artifacts
     );
   };

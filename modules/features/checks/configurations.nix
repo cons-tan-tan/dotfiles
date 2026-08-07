@@ -118,7 +118,7 @@ let
           }
         ];
     };
-  buildChecks =
+  buildComposition =
     { pkgs, system }:
     let
       context = checkContext { inherit pkgs system; };
@@ -132,9 +132,7 @@ let
         ;
       hcomProfile =
         homeConfiguration: import ../agents/hcom/_tests/profile-check.nix { inherit homeConfiguration; };
-    in
-    ciCheck.annotateSet (ciCheck.targets.darwin "configurations") (
-      lib.optionalAttrs (system == darwinSystem) {
+      darwinChecks = lib.optionalAttrs (system == darwinSystem) {
         darwin-system = darwinConfigurations.${targets.darwin}.system;
         home-darwin-hcom-profile =
           (darwinConfigurations.${targets.darwin}.extendModules {
@@ -142,40 +140,51 @@ let
               { home-manager.users.${username}.dotfiles.hcom.enable = true; }
             ];
           }).system;
-      }
-    )
-    // ciCheck.annotateSet (ciCheck.targets.linux "configurations") (
-      lib.optionalAttrs (lib.hasSuffix "-linux" system) {
-        nixos-wsl-system = nixosWslConfiguration.config.system.build.toplevel;
-        nixos-wsl-tarball-builder = nixosWslConfiguration.config.system.build.tarballBuilder;
-        claude-userprofile-contract = import ../agents/claude/_tests/userprofile-contract.nix {
-          inherit lib pkgs;
-          expectedUserProfile = targets.contexts.home.wsl.windows.homedir;
-          linuxSettings =
-            homeConfigurations.${targets.home.linux}.config.home.file.".claude/settings.json".source;
-          wslSettings =
-            homeConfigurations.${targets.home.wsl}.config.home.file.".claude/settings.json".source;
-        };
-      }
-    )
-    // ciCheck.annotateSet (ciCheck.targets.linux "configurations") (
-      lib.optionalAttrs (lib.hasSuffix "-linux" system) (
-        lib.listToAttrs (
-          lib.concatMap (entry: [
-            {
-              name = "home-${entry.hostKind}";
-              value = homeConfigurations.${entry.name}.activationPackage;
-            }
-            {
-              name = "home-${entry.hostKind}-hcom-profile";
-              value = hcomProfile homeConfigurations.${entry.name};
-            }
-          ]) homeEntries
-        )
-      )
-    );
+      };
+      linuxChecks =
+        lib.optionalAttrs (lib.hasSuffix "-linux" system) {
+          nixos-wsl-system = nixosWslConfiguration.config.system.build.toplevel;
+          nixos-wsl-tarball-builder = nixosWslConfiguration.config.system.build.tarballBuilder;
+          claude-userprofile-contract = import ../agents/claude/_tests/userprofile-contract.nix {
+            inherit lib pkgs;
+            expectedUserProfile = targets.contexts.home.wsl.windows.homedir;
+            linuxSettings =
+              homeConfigurations.${targets.home.linux}.config.home.file.".claude/settings.json".source;
+            wslSettings =
+              homeConfigurations.${targets.home.wsl}.config.home.file.".claude/settings.json".source;
+          };
+        }
+        // lib.optionalAttrs (lib.hasSuffix "-linux" system) (
+          lib.listToAttrs (
+            lib.concatMap (entry: [
+              {
+                name = "home-${entry.hostKind}";
+                value = homeConfigurations.${entry.name}.activationPackage;
+              }
+              {
+                name = "home-${entry.hostKind}-hcom-profile";
+                value = hcomProfile homeConfigurations.${entry.name};
+              }
+            ]) homeEntries
+          )
+        );
+    in
+    ciCheck.composeBuildProducers {
+      producers = [
+        (ciCheck.mkBuildProducer {
+          owner = "Darwin configuration checks";
+          entries = ciCheck.buildEntrySet (ciCheck.targets.darwin "configurations") darwinChecks;
+        })
+        (ciCheck.mkBuildProducer {
+          owner = "Linux configuration checks";
+          entries = ciCheck.buildEntrySet (ciCheck.targets.linux "configurations") linuxChecks;
+        })
+      ];
+    };
 in
 {
+  imports = [ ../ci/_interface/options.nix ];
+
   perSystem =
     { pkgs, system, ... }:
     {
@@ -185,11 +194,17 @@ in
           checks = evaluationCompleteChecks { inherit pkgs system; };
         }
       ];
+      dotfiles.ci.buildRouteProducers = [
+        {
+          owner = "configuration checks";
+          routes = (buildComposition { inherit pkgs system; }).routes;
+        }
+      ];
     };
 
   den.aspects.configuration-checks.checks =
     { pkgs, system, ... }:
-    buildChecks { inherit pkgs system; };
+    (buildComposition { inherit pkgs system; }).checks;
 
   den.schema.flake-parts.includes = [ den.aspects.configuration-checks ];
 }

@@ -27,15 +27,15 @@ in
 {
   owner = "Pi package checks";
   artifacts = [ ];
-  checks = {
-    pi-package-layout = ciCheck.annotate (ciCheck.targets.both "package-smoke") (
+  buildEntries = {
+    pi-package-layout = ciCheck.buildEntry (ciCheck.targets.both "package-smoke") (
       pkgs.runCommand "pi-package-layout" { } ''
         test -f ${pkgs.pi}/libexec/pi/package.json
         test -x ${pkgs.pi}/libexec/pi/pi
         touch "$out"
       ''
     );
-    pi-command-guard-extension = ciCheck.annotate (ciCheck.targets.both "rust-and-bats") (
+    pi-command-guard-extension = ciCheck.buildEntry (ciCheck.targets.both "rust-and-bats") (
       pkgs.runCommand "pi-command-guard-extension"
         {
           nativeBuildInputs = [ pkgs.pi ];

@@ -106,7 +106,7 @@ SH
     OPTIMIZER_NIX_STATUS="$nix_status" \
     PATH="$stub_dir:$PATH" \
     SYSTEM=x86_64-linux \
-    TELEMETRY_ATTR_PREFIX=hydraJobs.ci.x86_64-linux \
+    TELEMETRY_ATTR_PREFIX=lib.hestiaJobs.ci.x86_64-linux \
     python3 "$HESTIA_MATRIX_OPTIMIZER"
 }
 

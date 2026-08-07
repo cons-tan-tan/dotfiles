@@ -1,6 +1,5 @@
 {
   config,
-  flake-parts-lib,
   lib,
   withSystem,
   ...
@@ -24,40 +23,24 @@ let
   evaluationCompleteCheckNamesBySystem = lib.mapAttrs (
     _: composition: composition.checkNames
   ) evaluationCompleteCompositionBySystem;
-  buildChecksBySystem = lib.genAttrs hestiaSystems (
-    system:
-    ciCheck.selectBuildChecks {
-      checks = checksBySystem.${system};
-      evaluationCompleteCheckNames = evaluationCompleteCheckNamesBySystem.${system};
-      inherit system;
-    }
+  checkNamesBySystem = lib.mapAttrs (_: checks: builtins.attrNames checks) checksBySystem;
+  buildRouteProducersBySystem = lib.genAttrs config.systems (
+    system: withSystem system ({ config, ... }: config.dotfiles.ci.buildRouteProducers)
   );
-  validation = builtins.all (result: result) [
-    (ciCheck.validateEvaluationCompleteChecks {
-      inherit checksBySystem evaluationCompleteCheckNamesBySystem;
-      ignoredCheckNamesBySystem.x86_64-linux = [ validationCheckName ];
-    })
-    (ciCheck.validateHestiaJobs buildChecksBySystem)
-  ];
+  buildRoutesBySystem = lib.mapAttrs (
+    _: producers: ciCheck.composeRouteProducers producers
+  ) buildRouteProducersBySystem;
+  hestiaChecksBySystem = lib.genAttrs hestiaSystems (system: checksBySystem.${system});
+  hestiaEvaluationCompleteCheckNamesBySystem = lib.genAttrs hestiaSystems (
+    system: evaluationCompleteCheckNamesBySystem.${system}
+  );
+  hestiaRoutesBySystem = lib.genAttrs hestiaSystems (system: buildRoutesBySystem.${system});
+  validation = ciCheck.validateCheckManifest {
+    inherit buildRoutesBySystem checkNamesBySystem evaluationCompleteCheckNamesBySystem;
+  };
 in
 {
-  options.perSystem = flake-parts-lib.mkPerSystemOption {
-    # check値のmetadataを読むとeval suiteを強制し得る。producerは名前と値を
-    # attrset境界で分離し、attrNamesだけから安全に除外indexを構成する。
-    options.dotfiles.ci.evaluationCompleteCheckProducers = lib.mkOption {
-      type = lib.types.listOf (
-        lib.types.submodule {
-          options = {
-            owner = lib.mkOption { type = lib.types.nonEmptyStr; };
-            checks = lib.mkOption { type = lib.types.lazyAttrsOf lib.types.raw; };
-          };
-        }
-      );
-      default = [ ];
-      internal = true;
-      description = "Lazily indexed checks whose assertions finish before derivation build";
-    };
-  };
+  imports = [ ./_interface/options.nix ];
 
   config = {
     perSystem =
@@ -99,6 +82,10 @@ in
         };
     };
 
-    flake.hydraJobs.ci = ciCheck.mkHestiaJobs buildChecksBySystem;
+    flake.lib.hestiaJobs.ci = ciCheck.mkHestiaJobs {
+      checksBySystem = hestiaChecksBySystem;
+      evaluationCompleteCheckNamesBySystem = hestiaEvaluationCompleteCheckNamesBySystem;
+      routesBySystem = hestiaRoutesBySystem;
+    };
   };
 }

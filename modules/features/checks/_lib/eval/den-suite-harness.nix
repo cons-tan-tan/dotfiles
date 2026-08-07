@@ -258,7 +258,7 @@ let
       name = checkName;
       inherit execution;
       value = check;
-      buildValue = ciCheck.annotate (ciCheck.targets.linux hestiaGroup) check;
+      buildEntry = ciCheck.buildEntry (ciCheck.targets.linux hestiaGroup) check;
     };
 
   producer =
@@ -272,14 +272,14 @@ let
           inherit (check) name value;
         }) (builtins.filter (check: check.execution == "evaluation-complete") checks)
       );
-      buildChecks = lib.listToAttrs (
+      buildEntries = lib.listToAttrs (
         map (check: {
           inherit (check) name;
-          value = check.buildValue;
+          value = check.buildEntry;
         }) (builtins.filter (check: check.execution == "build") checks)
       );
     in
-    builtins.seq identitiesValid { inherit buildChecks evaluationCompleteChecks; };
+    builtins.seq identitiesValid { inherit buildEntries evaluationCompleteChecks; };
 in
 {
   inherit producer validateFixture validateSuiteIdentities;
@@ -289,5 +289,9 @@ in
     let
       result = producer files;
     in
-    result.buildChecks // ciCheck.evaluationCompleteSet result.evaluationCompleteChecks;
+    (ciCheck.mkBuildProducer {
+      owner = "Den suites";
+      entries = result.buildEntries;
+    }).checks
+    // ciCheck.evaluationCompleteSet result.evaluationCompleteChecks;
 }

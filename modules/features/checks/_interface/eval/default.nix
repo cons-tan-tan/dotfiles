@@ -34,14 +34,14 @@ let
 in
 {
   buildProducers = [
-    {
+    (ciCheck.mkBuildProducer {
       owner = "bootstrap eval suites";
-      checks = bootstrap.buildChecks;
-    }
-    {
+      entries = bootstrap.buildEntries;
+    })
+    (ciCheck.mkBuildProducer {
       owner = "failure eval suites";
-      checks = harness.failureChecks inventory.failureTestFiles;
-    }
+      entries = harness.failureEntries inventory.failureTestFiles;
+    })
   ];
   evaluationCompleteProducers = [
     {

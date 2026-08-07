@@ -430,9 +430,9 @@ YAML
     and ([.jobs.evaluate.steps[] | select(.id == "hestia-matrix")][0].uses
       | test("^Mic92/hestia/matrix@"))
     and ([.jobs.evaluate.steps[] | select(.id == "hestia-matrix")][0].with.flake)
-      == ".#hydraJobs.ci.${{ inputs.system }}"
+      == ".#lib.hestiaJobs.ci.${{ inputs.system }}"
     and ([.jobs.evaluate.steps[] | select(.id == "hestia-matrix")][0].with."attr-prefix")
-      == "hydraJobs.ci.${{ inputs.system }}"
+      == "lib.hestiaJobs.ci.${{ inputs.system }}"
     and ([.jobs.evaluate.steps[] | select(.id == "hestia-matrix")][0].with."nix-eval-jobs"
       == "python3 modules/features/ci/_scripts/capture_hestia_eval.py")
     and ([.jobs.evaluate.steps[] | select(.id == "hestia-matrix")][0].env.HESTIA_EVAL_CAPTURE)
@@ -445,6 +445,8 @@ YAML
       == "${{ steps.hestia-matrix.outputs.matrix }}"
     and ([.jobs.evaluate.steps[] | select(.id == "optimized-matrix")][0].env.HESTIA_VERSION)
       == "${{ steps.setup-hestia.outputs.hestia-version }}"
+    and ([.jobs.evaluate.steps[] | select(.id == "optimized-matrix")][0].env.TELEMETRY_ATTR_PREFIX)
+      == "lib.hestiaJobs.ci.${{ inputs.system }}"
     and ([.jobs.evaluate.steps[] | select(.id == "optimized-matrix")][0].run)
       == "python3 modules/features/ci/_scripts/optimize_hestia_matrix.py"
     and ([.jobs.evaluate.steps[] | select(.id == "matrix")][0].run)

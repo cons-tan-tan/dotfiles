@@ -200,7 +200,7 @@ let
   shardEntries = map (
     shard:
     lib.nameValuePair shard.name (
-      ciCheck.annotate (shard.ciTargets or (ciCheck.targets.both "rust-and-bats")) (
+      ciCheck.buildEntry (shard.ciTargets or (ciCheck.targets.both "rust-and-bats")) (
         harness (
           removeAttrs shard [
             "ciTargets"
@@ -213,19 +213,19 @@ let
   shardChecks = lib.listToAttrs shardEntries;
   # The aggregate contains a Linux-only policy shard; portable shards are
   # already built individually on Darwin, so a fake Darwin aggregate adds no signal.
-  aggregate = ciCheck.annotate (ciCheck.targets.linux "rust-and-bats") (
+  aggregate = ciCheck.buildEntry (ciCheck.targets.linux "rust-and-bats") (
     pkgs.linkFarm "bats-tests" (
       map (shard: {
         inherit (shard) name;
-        path = shardChecks.${shard.name};
+        path = shardChecks.${shard.name}.value;
       }) applicableShards
     )
   );
 in
 {
-  producer = {
+  producer = ciCheck.mkBuildProducer {
     owner = "Bats checks";
-    checks = builtins.seq catalogValidation (
+    entries = builtins.seq catalogValidation (
       lib.listToAttrs (shardEntries ++ [ (lib.nameValuePair "bats-tests" aggregate) ])
     );
   };

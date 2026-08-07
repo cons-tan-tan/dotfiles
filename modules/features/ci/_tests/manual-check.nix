@@ -35,7 +35,7 @@ let
 
         touch "$out"
       '';
-  pythonTests = ciCheck.annotate (ciCheck.targets.linux "rust-and-bats") (
+  pythonTests = ciCheck.buildEntry (ciCheck.targets.linux "rust-and-bats") (
     pkgs.runCommand "ci-python-tests"
       {
         nativeBuildInputs = [
@@ -57,7 +57,7 @@ let
         touch "$out"
       ''
   );
-  sourceLint = ciCheck.annotate (ciCheck.targets.linux "rust-and-bats") (
+  sourceLint = ciCheck.buildEntry (ciCheck.targets.linux "rust-and-bats") (
     pkgs.runCommand "ci-source-lint"
       {
         nativeBuildInputs = [
@@ -89,7 +89,7 @@ in
       path = smoke;
     }
   ];
-  checks = {
+  buildEntries = {
     ci-source-lint = sourceLint;
   }
   // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {

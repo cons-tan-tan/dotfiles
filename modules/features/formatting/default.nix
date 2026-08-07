@@ -12,6 +12,14 @@ let
       formatter = self'.formatter;
       inherit pkgs;
     };
+  checkProducer =
+    { config, ... }:
+    ciCheck.mkBuildProducer {
+      owner = "formatting checks";
+      entries.treefmt = ciCheck.buildEntry (ciCheck.targets.linux "repo-quality") (
+        config.treefmt.build.check config.treefmt.projectRoot
+      );
+    };
 in
 {
   flake-file.inputs.treefmt-nix = {
@@ -19,7 +27,10 @@ in
     inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  imports = [ inputs.treefmt-nix.flakeModule ];
+  imports = [
+    inputs.treefmt-nix.flakeModule
+    ../ci/_interface/options.nix
+  ];
 
   den.aspects.formatting = {
     flake-parts.treefmt = {
@@ -53,12 +64,19 @@ in
     ];
     checks =
       { config, ... }:
-      {
-        treefmt = ciCheck.annotate (ciCheck.targets.linux "repo-quality") (
-          config.treefmt.build.check config.treefmt.projectRoot
-        );
-      };
+      (checkProducer { inherit config; }).checks;
   };
+
+  perSystem =
+    { config, ... }:
+    {
+      dotfiles.ci.buildRouteProducers = [
+        {
+          owner = "formatting checks";
+          routes = (checkProducer { inherit config; }).routes;
+        }
+      ];
+    };
 
   den.schema.flake-parts.includes = [ den.aspects.formatting ];
 }

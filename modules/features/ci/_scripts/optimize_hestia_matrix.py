@@ -284,7 +284,7 @@ def optimize_rows(
     min_shared_derivations: int,
     min_shared_ratio: float,
     member_ids: Sequence[frozenset[str]] | None = None,
-    attr_prefix: str = "hydraJobs.ci.x86_64-linux",
+    attr_prefix: str = "lib.hestiaJobs.ci.x86_64-linux",
 ) -> list[dict[str, object]]:
     if len(rows) != len(plans):
         raise ValueError("Hestia rows and Nix plans have different lengths")
@@ -470,7 +470,7 @@ def decision_jobs(
         )
         if not member_ids:
             member_ids = sorted(
-                inferred_check_ids(row, "hydraJobs.ci." + str(row["system"]))
+                inferred_check_ids(row, "lib.hestiaJobs.ci." + str(row["system"]))
             )
         planned = frozenset().union(
             *(plans_by_check.get(identity, frozenset()) for identity in member_ids)
@@ -531,7 +531,7 @@ def main() -> None:
     matrix = json.loads(raw_matrix)
     rows = matrix["include"]
     prefix = os.environ.get(
-        "TELEMETRY_ATTR_PREFIX", f"hydraJobs.ci.{require_env('SYSTEM')}"
+        "TELEMETRY_ATTR_PREFIX", f"lib.hestiaJobs.ci.{require_env('SYSTEM')}"
     )
     telemetry_path = Path(require_env("CI_TELEMETRY_LANE"))
     parameters = {

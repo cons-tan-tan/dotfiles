@@ -14,5 +14,5 @@ in
       path = smoke;
     }
   ];
-  checks = { };
+  buildEntries = { };
 }

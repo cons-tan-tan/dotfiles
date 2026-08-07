@@ -8,8 +8,40 @@ let
   mergeValidationProducers = import ./_interface/validation-producers.nix { inherit lib; };
   validateNames = import ./_interface/validation-names.nix;
   ciCheck = import ../ci/_interface/check.nix { inherit lib; };
+  checkProducer =
+    {
+      config,
+      pkgs,
+      ...
+    }:
+    let
+      names = validateNames {
+        apps = config.apps;
+        validations = config.dotfiles.appValidations;
+      };
+      validationPaths = builtins.attrValues config.dotfiles.appValidations;
+      gate =
+        (pkgs.linkFarm "app-scripts" (
+          lib.mapAttrsToList (name: path: { inherit name path; }) config.dotfiles.appValidations
+        ))
+        // {
+          paths = validationPaths;
+          inherit (names) validationNames;
+        };
+    in
+    builtins.seq names (
+      ciCheck.mkBuildProducer {
+        owner = "app validation checks";
+        entries.app-scripts = ciCheck.buildEntry (ciCheck.targets.bySystem {
+          darwin = "configurations";
+          linux = "repo-quality";
+        }) gate;
+      }
+    );
 in
 {
+  imports = [ ../ci/_interface/options.nix ];
+
   options.perSystem = flake-parts-lib.mkPerSystemOption {
     options.dotfiles.appValidations = lib.mkOption {
       type = lib.types.attrsOf lib.types.package;
@@ -56,26 +88,21 @@ in
 
     den.aspects.app-validation-check.checks =
       { config, pkgs, ... }:
-      let
-        names = validateNames {
-          apps = config.apps;
-          validations = config.dotfiles.appValidations;
-        };
-        validationPaths = builtins.attrValues config.dotfiles.appValidations;
-        gate =
-          (pkgs.linkFarm "app-scripts" (
-            lib.mapAttrsToList (name: path: { inherit name path; }) config.dotfiles.appValidations
-          ))
-          // {
-            paths = validationPaths;
-            inherit (names) validationNames;
-          };
-      in
-      builtins.seq names {
-        app-scripts = ciCheck.annotate (ciCheck.targets.bySystem {
-          darwin = "configurations";
-          linux = "repo-quality";
-        }) gate;
+      (checkProducer { inherit config pkgs; }).checks;
+
+    perSystem =
+      {
+        config,
+        pkgs,
+        ...
+      }:
+      {
+        dotfiles.ci.buildRouteProducers = [
+          {
+            owner = "app validation checks";
+            routes = (checkProducer { inherit config pkgs; }).routes;
+          }
+        ];
       };
 
     den.schema.flake-parts.includes = [

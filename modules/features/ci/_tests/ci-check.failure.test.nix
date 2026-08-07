@@ -115,78 +115,6 @@ let
       expectedFragment = ''evaluation-complete CI checks are missing for x86_64-linux: ["renamed"]'';
     };
 
-    evaluationCompleteListingRequiresMarker = {
-      expression = force (
-        ciCheck.validateEvaluationCompleteChecks {
-          checksBySystem = {
-            ${linuxSystem}.missingMarker = fakeCheck;
-            ${darwinSystem} = { };
-          };
-          evaluationCompleteCheckNamesBySystem = {
-            ${linuxSystem} = [ "missingMarker" ];
-            ${darwinSystem} = [ ];
-          };
-        }
-      );
-      expectedFragment = ''"listedWithoutMarker":["missingMarker"]'';
-    };
-
-    evaluationCompleteListingRejectsUnknownNames = {
-      expression = force (
-        ciCheck.validateEvaluationCompleteChecks {
-          checksBySystem = {
-            ${linuxSystem} = { };
-            ${darwinSystem} = { };
-          };
-          evaluationCompleteCheckNamesBySystem = {
-            ${linuxSystem} = [ "unknown" ];
-            ${darwinSystem} = [ ];
-          };
-        }
-      );
-      expectedFragment = ''"unknown":["unknown"]'';
-    };
-
-    evaluationCompleteListingRejectsDuplicateOwners = {
-      expression = force (
-        ciCheck.validateEvaluationCompleteChecks {
-          checksBySystem = {
-            ${linuxSystem}.evaluated = ciCheck.evaluationComplete fakeCheck;
-            ${darwinSystem} = { };
-          };
-          evaluationCompleteCheckNamesBySystem = {
-            ${linuxSystem} = [
-              "evaluated"
-              "evaluated"
-            ];
-            ${darwinSystem} = [ ];
-          };
-        }
-      );
-      expectedFragment = ''"duplicateNames":["evaluated"]'';
-    };
-
-    evaluationCompleteListingRejectsIgnoredUnknownSystem = {
-      expression = force (
-        ciCheck.validateEvaluationCompleteChecks {
-          checksBySystem = {
-            ${linuxSystem} = { };
-            ${darwinSystem} = { };
-          };
-          evaluationCompleteCheckNamesBySystem = {
-            ${linuxSystem} = [ ];
-            ${darwinSystem} = [ ];
-          };
-          ignoredCheckNamesBySystem = {
-            ${linuxSystem} = [ ];
-            ${darwinSystem} = [ ];
-            ${additionalSystem} = [ ];
-          };
-        }
-      );
-      expectedFragment = "evaluation-complete checks must use matching systems";
-    };
-
     evaluationCompleteProducerRejectsDuplicateNames = {
       expression = force (
         (ciCheck.composeEvaluationCompleteProducers [
@@ -244,15 +172,242 @@ let
       expectedFragment = "invalid evaluation-complete check producers: [0]";
     };
 
+    evaluationManifestRejectsUnknownName = {
+      expression = force (
+        ciCheck.validateCheckManifest {
+          checkNamesBySystem = {
+            ${linuxSystem} = [ ];
+            ${darwinSystem} = [ ];
+            ${additionalSystem} = [ ];
+          };
+          evaluationCompleteCheckNamesBySystem = {
+            ${linuxSystem} = [ "unknown" ];
+            ${darwinSystem} = [ ];
+            ${additionalSystem} = [ ];
+          };
+          buildRoutesBySystem = {
+            ${linuxSystem} = { };
+            ${darwinSystem} = { };
+            ${additionalSystem} = { };
+          };
+        }
+      );
+      expectedFragment = ''"unknown":["unknown"]'';
+    };
+
+    evaluationManifestRejectsDuplicateName = {
+      expression = force (
+        ciCheck.validateCheckManifest {
+          checkNamesBySystem = {
+            ${linuxSystem} = [ "evaluated" ];
+            ${darwinSystem} = [ ];
+            ${additionalSystem} = [ ];
+          };
+          evaluationCompleteCheckNamesBySystem = {
+            ${linuxSystem} = [
+              "evaluated"
+              "evaluated"
+            ];
+            ${darwinSystem} = [ ];
+            ${additionalSystem} = [ ];
+          };
+          buildRoutesBySystem = {
+            ${linuxSystem} = { };
+            ${darwinSystem} = { };
+            ${additionalSystem} = { };
+          };
+        }
+      );
+      expectedFragment = ''"duplicateNames":["evaluated"]'';
+    };
+
+    buildManifestRejectsMissingRoute = {
+      expression = force (
+        ciCheck.validateCheckManifest {
+          checkNamesBySystem = {
+            ${linuxSystem} = [ "unrouted" ];
+            ${darwinSystem} = [ ];
+            ${additionalSystem} = [ ];
+          };
+          evaluationCompleteCheckNamesBySystem = {
+            ${linuxSystem} = [ ];
+            ${darwinSystem} = [ ];
+            ${additionalSystem} = [ ];
+          };
+          buildRoutesBySystem = {
+            ${linuxSystem} = { };
+            ${darwinSystem} = { };
+            ${additionalSystem} = { };
+          };
+        }
+      );
+      expectedFragment = ''"missing":["unrouted"]'';
+    };
+
+    buildManifestRejectsUnexpectedRoute = {
+      expression = force (
+        ciCheck.validateCheckManifest {
+          checkNamesBySystem = {
+            ${linuxSystem} = [ ];
+            ${darwinSystem} = [ ];
+            ${additionalSystem} = [ ];
+          };
+          evaluationCompleteCheckNamesBySystem = {
+            ${linuxSystem} = [ ];
+            ${darwinSystem} = [ ];
+            ${additionalSystem} = [ ];
+          };
+          buildRoutesBySystem = {
+            ${linuxSystem}.stale = ciCheck.targets.linux "eval-tests";
+            ${darwinSystem} = { };
+            ${additionalSystem} = { };
+          };
+        }
+      );
+      expectedFragment = ''"unexpected":["stale"]'';
+    };
+
+    buildManifestRejectsMissingDeclaredSystem = {
+      expression = force (
+        ciCheck.validateCheckManifest {
+          checkNamesBySystem = {
+            ${linuxSystem} = [ "example" ];
+            ${darwinSystem} = [ ];
+            ${additionalSystem} = [ ];
+          };
+          evaluationCompleteCheckNamesBySystem = {
+            ${linuxSystem} = [ ];
+            ${darwinSystem} = [ ];
+            ${additionalSystem} = [ ];
+          };
+          buildRoutesBySystem = {
+            ${linuxSystem}.example = ciCheck.targets.both "eval-tests";
+            ${darwinSystem} = { };
+            ${additionalSystem} = { };
+          };
+        }
+      );
+      expectedFragment = ''"declaredButMissing":["aarch64-darwin.example"]'';
+    };
+
+    buildManifestRejectsInconsistentTargets = {
+      expression = force (
+        ciCheck.validateCheckManifest {
+          checkNamesBySystem = {
+            ${linuxSystem} = [ "example" ];
+            ${darwinSystem} = [ "example" ];
+            ${additionalSystem} = [ ];
+          };
+          evaluationCompleteCheckNamesBySystem = {
+            ${linuxSystem} = [ ];
+            ${darwinSystem} = [ ];
+            ${additionalSystem} = [ ];
+          };
+          buildRoutesBySystem = {
+            ${linuxSystem}.example = ciCheck.targets.linux "eval-tests";
+            ${darwinSystem}.example = ciCheck.targets.darwin "eval-tests";
+            ${additionalSystem} = { };
+          };
+        }
+      );
+      expectedFragment = ''"inconsistent":["example"]'';
+    };
+
+    buildManifestRejectsUnmirroredAdditionalSystemCheck = {
+      expression = force (
+        ciCheck.validateCheckManifest {
+          checkNamesBySystem = {
+            ${linuxSystem} = [ ];
+            ${darwinSystem} = [ ];
+            ${additionalSystem} = [ "arm-only" ];
+          };
+          evaluationCompleteCheckNamesBySystem = {
+            ${linuxSystem} = [ ];
+            ${darwinSystem} = [ ];
+            ${additionalSystem} = [ ];
+          };
+          buildRoutesBySystem = {
+            ${linuxSystem} = { };
+            ${darwinSystem} = { };
+            ${additionalSystem}.arm-only = ciCheck.targets.linux "eval-tests";
+          };
+        }
+      );
+      expectedFragment = ''"declaredButMissing":["x86_64-linux.arm-only"]'';
+    };
+
     additionalHestiaBuildSystem = {
       expression = force (
         ciCheck.mkHestiaJobs {
-          ${linuxSystem} = { };
-          ${darwinSystem} = { };
-          ${additionalSystem} = { };
+          checksBySystem = {
+            ${linuxSystem} = { };
+            ${darwinSystem} = { };
+            ${additionalSystem} = { };
+          };
+          evaluationCompleteCheckNamesBySystem = {
+            ${linuxSystem} = [ ];
+            ${darwinSystem} = [ ];
+            ${additionalSystem} = [ ];
+          };
+          routesBySystem = {
+            ${linuxSystem} = { };
+            ${darwinSystem} = { };
+            ${additionalSystem} = { };
+          };
         }
       );
       expectedFragment = "Hestia jobs must provide every build system";
+    };
+
+    hestiaJobsRejectRouteMetadataMismatch = {
+      expression = force (
+        ciCheck.mkHestiaChecks {
+          system = linuxSystem;
+          checks.example = ciCheck.annotate (ciCheck.targets.darwin "eval-tests") fakeCheck;
+          routes.example = ciCheck.targets.linux "eval-tests";
+        }
+      );
+      expectedFragment = ''"metadataMismatch":["example"]'';
+    };
+
+    hestiaJobsRejectMissingEvaluationCompleteMarker = {
+      expression = force (
+        (ciCheck.mkHestiaJobs {
+          checksBySystem = {
+            ${linuxSystem}.evaluated = fakeCheck;
+            ${darwinSystem} = { };
+          };
+          evaluationCompleteCheckNamesBySystem = {
+            ${linuxSystem} = [ "evaluated" ];
+            ${darwinSystem} = [ ];
+          };
+          routesBySystem = {
+            ${linuxSystem} = { };
+            ${darwinSystem} = { };
+          };
+        }).${linuxSystem}
+      );
+      expectedFragment = ''"invalidEvaluationComplete":["evaluated"]'';
+    };
+
+    hestiaJobsRejectUnknownEvaluationCompleteName = {
+      expression = force (
+        (ciCheck.mkHestiaJobs {
+          checksBySystem = {
+            ${linuxSystem} = { };
+            ${darwinSystem} = { };
+          };
+          evaluationCompleteCheckNamesBySystem = {
+            ${linuxSystem} = [ "unknown" ];
+            ${darwinSystem} = [ ];
+          };
+          routesBySystem = {
+            ${linuxSystem} = { };
+            ${darwinSystem} = { };
+          };
+        }).${linuxSystem}
+      );
+      expectedFragment = ''"unknown":["unknown"]'';
     };
 
     missingAnnotation = {
@@ -262,7 +417,7 @@ let
           checks.unclassified = fakeCheck;
         }
       );
-      expectedFragment = ''{"conflictingDrvPaths":[],"invalid":[],"missing":["unclassified"],"wrongSystem":[]}'';
+      expectedFragment = ''"missing":["unclassified"]'';
     };
 
     incompleteTargets = {
@@ -333,41 +488,6 @@ let
         }
       );
       expectedFragment = ''"wrongSystem":["example"]'';
-    };
-
-    declaredTargetMustExist = {
-      expression = force (
-        ciCheck.validateHestiaJobs {
-          ${linuxSystem}.example = ciCheck.annotate (ciCheck.targets.both "eval-tests") fakeCheck;
-          ${darwinSystem} = { };
-        }
-      );
-      expectedFragment = ''"declaredButMissing":["aarch64-darwin.example"]'';
-    };
-
-    hestiaJobWithoutAnnotation = {
-      expression = force (
-        ciCheck.validateHestiaJobs {
-          ${linuxSystem}.example = fakeCheck;
-          ${darwinSystem} = { };
-        }
-      );
-      expectedFragment = ''{"invalid":[],"missing":["x86_64-linux.example"]}'';
-    };
-
-    crossSystemTargetsMustMatch = {
-      expression = force (
-        ciCheck.validateHestiaJobs {
-          ${linuxSystem}.example = ciCheck.annotate (ciCheck.targets.linux "eval-tests") fakeCheck;
-          ${darwinSystem}.example = ciCheck.annotate (ciCheck.targets.darwin "eval-tests") (
-            fakeCheck
-            // {
-              system = darwinSystem;
-            }
-          );
-        }
-      );
-      expectedFragment = ''"inconsistent":["example"]'';
     };
 
     conflictingDerivationGroups = {

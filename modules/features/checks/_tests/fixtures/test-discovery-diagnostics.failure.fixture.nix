@@ -21,10 +21,13 @@ let
     pkgs = { };
     testContext = { };
   };
-  annotated = marker: {
-    inherit marker;
-    meta.dotfiles.hestia.targets = [ "fixture" ];
-  };
+  checkTargets = ciCheck.targets.linux "eval-tests";
+  producer =
+    owner: name: marker:
+    ciCheck.mkBuildProducer {
+      inherit owner;
+      entries.${name} = ciCheck.buildEntry checkTargets { inherit marker; };
+    };
   force = value: builtins.deepSeq value true;
   cases = {
     duplicatePositiveEvalChecks = {
@@ -39,7 +42,7 @@ let
 
     duplicateFailureEvalChecks = {
       expression = force (
-        harness.failureChecks [
+        harness.failureEntries [
           "/fixture/first/shared.failure.test.nix"
           "/fixture/second/shared.failure.test.nix"
         ]
@@ -50,14 +53,8 @@ let
     checkOwnerCollision = {
       expression = force (composeUniqueChecks {
         producers = [
-          {
-            owner = "alpha";
-            checks.shared = annotated 1;
-          }
-          {
-            owner = "beta";
-            checks.shared = annotated 2;
-          }
+          (producer "alpha" "shared" 1)
+          (producer "beta" "shared" 2)
         ];
       });
       expectedFragment = ''"owners":["alpha","beta"]'';
@@ -66,10 +63,7 @@ let
     reservedCheckCollision = {
       expression = force (composeUniqueChecks {
         producers = [
-          {
-            owner = "alpha";
-            checks.shared = annotated 1;
-          }
+          (producer "alpha" "shared" 1)
         ];
         reservedCheckNames = [ "shared" ];
       });
@@ -84,24 +78,21 @@ let
             checks.unannotated = {
               marker = 1;
             };
+            routes = { };
           }
         ];
       });
-      expectedFragment = ''{"name":"unannotated","owner":"alpha"}'';
+      expectedFragment = "invalid CI build check producers: [0]";
     };
 
     unknownExecutionClassification = {
       expression = force (
-        (composeUniqueChecks {
-          producers = [
-            {
-              owner = "alpha";
-              checks.unknown.meta.dotfiles.ci.execution = "sometimes-build";
-            }
-          ];
-        }).unknown
+        ciCheck.mkBuildProducer {
+          owner = "alpha";
+          entries.unknown = ciCheck.buildEntry (ciCheck.targets.both "unknown-group") { };
+        }
       );
-      expectedFragment = ''{"name":"unknown","owner":"alpha"}'';
+      expectedFragment = "CI check targets contain invalid groups for systems";
     };
 
     duplicateBatsFile = {

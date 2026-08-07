@@ -257,14 +257,14 @@ in
   inherit positiveValues;
 
   positiveChecks = files: ciCheck.evaluationCompleteSet (positiveValues files);
-  failureChecks =
+  failureEntries =
     files:
     let
       entries = map (path: mkFailureCheck { inherit path; }) files;
       uniqueness = validateUniqueCheckNames "failure eval suites" (map (entry: entry.name) entries);
     in
     builtins.seq uniqueness (
-      ciCheck.annotateSet (ciCheck.targets.both "eval-tests") (lib.listToAttrs entries)
+      ciCheck.buildEntrySet (ciCheck.targets.both "eval-tests") (lib.listToAttrs entries)
     );
 
   isolatedFailureCheck =

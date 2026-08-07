@@ -41,9 +41,9 @@ in
 {
   owner = "agent command policy checks";
   artifacts = [ ];
-  checks = {
+  buildEntries = {
     # host構成とpkgs.codexを共有し、cold cache時の別runner重複buildを避ける。
-    codex-command-policy = ciCheck.annotate (ciCheck.targets.both "configurations") (
+    codex-command-policy = ciCheck.buildEntry (ciCheck.targets.both "configurations") (
       pkgs.runCommand "codex-command-policy"
         {
           nativeBuildInputs = [
@@ -85,7 +85,7 @@ in
           touch "$out"
         ''
     );
-    agent-command-shellfirm-catalog = ciCheck.annotate (ciCheck.targets.both "rust-and-bats") (
+    agent-command-shellfirm-catalog = ciCheck.buildEntry (ciCheck.targets.both "rust-and-bats") (
       pkgs.runCommand "agent-command-shellfirm-catalog"
         {
           nativeBuildInputs = [

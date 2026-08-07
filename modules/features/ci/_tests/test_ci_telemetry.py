@@ -69,7 +69,7 @@ class TelemetryTests(unittest.TestCase):
         self.assertEqual(command([])[0:3], ["nix", "run", "nixpkgs#nix-eval-jobs"])
 
     def test_stable_ids_do_not_depend_on_drv_hashes(self) -> None:
-        identity = check_id("x86_64-linux", "hydraJobs.ci.x86_64-linux.quality")
+        identity = check_id("x86_64-linux", "lib.hestiaJobs.ci.x86_64-linux.quality")
         first = job_identity(
             system="x86_64-linux",
             runner_labels=["ubuntu-latest"],
@@ -139,7 +139,7 @@ class TelemetryTests(unittest.TestCase):
             },
         ]
         members, checks, complete = member_ids_for_rows(
-            [row("group", [root])], records, "hydraJobs.ci.x86_64-linux"
+            [row("group", [root])], records, "lib.hestiaJobs.ci.x86_64-linux"
         )
 
         self.assertTrue(complete)
@@ -152,7 +152,7 @@ class TelemetryTests(unittest.TestCase):
     def test_missing_manifest_members_create_unknown_root_placeholders(self) -> None:
         roots = [drv(1, "first"), drv(2, "second")]
         members, checks, complete = member_ids_for_rows(
-            [row("group", roots)], [], "hydraJobs.ci.x86_64-linux"
+            [row("group", roots)], [], "lib.hestiaJobs.ci.x86_64-linux"
         )
 
         self.assertFalse(complete)
@@ -207,7 +207,7 @@ class TelemetryTests(unittest.TestCase):
             )
 
     def test_bundle_marks_absent_job_as_missing_not_cancelled(self) -> None:
-        identity = "x86_64-linux:hydraJobs.ci.x86_64-linux.check"
+        identity = "x86_64-linux:lib.hestiaJobs.ci.x86_64-linux.check"
         root = drv(1, "root")
         job_id, key = job_identity(
             system="x86_64-linux",
@@ -230,7 +230,7 @@ class TelemetryTests(unittest.TestCase):
                 "checks": [
                     {
                         "check_id": identity,
-                        "attr_path": "hydraJobs.ci.x86_64-linux.check",
+                        "attr_path": "lib.hestiaJobs.ci.x86_64-linux.check",
                         "display_name": "check",
                         "drv_id": "0" * 31 + "1",
                         "drv_path": root,

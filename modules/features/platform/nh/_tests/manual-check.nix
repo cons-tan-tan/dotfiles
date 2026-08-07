@@ -52,7 +52,7 @@ let
     nh = nhCleanArgumentProbe;
     nix = nhCleanNixProbe;
   };
-  argumentCheck = ciCheck.annotate (ciCheck.targets.both "package-smoke") (
+  argumentCheck = ciCheck.buildEntry (ciCheck.targets.both "package-smoke") (
     pkgs.runCommand "nh-clean-user-arguments" { } ''
       export NH_CLEAN_ARGUMENT_PROBE="$TMPDIR/called"
 
@@ -63,7 +63,7 @@ let
       touch "$out"
     ''
   );
-  smokeCheck = ciCheck.annotate (ciCheck.targets.linux "package-smoke") (
+  smokeCheck = ciCheck.buildEntry (ciCheck.targets.linux "package-smoke") (
     pkgs.runCommand "nh-clean-user-smoke" { } ''
       mkdir -p "$TMPDIR/home"
 
@@ -83,7 +83,7 @@ in
 {
   owner = "nh checks";
   artifacts = [ ];
-  checks = lib.listToAttrs (
+  buildEntries = lib.listToAttrs (
     [ (lib.nameValuePair "nh-clean-user-arguments" argumentCheck) ]
     ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [
       (lib.nameValuePair "nh-clean-user-smoke" smokeCheck)

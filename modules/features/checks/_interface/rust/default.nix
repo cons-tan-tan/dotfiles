@@ -91,7 +91,7 @@ let
     };
 
   rustBuildEntries = map (
-    variant: lib.nameValuePair variant.checkName (ciCheck.annotate variant.ciTargets variant.package)
+    variant: lib.nameValuePair variant.checkName (ciCheck.buildEntry variant.ciTargets variant.package)
   ) rustBuildVariants;
   rustTests = pkgs.linkFarm "rust-tests" (
     map (variant: {
@@ -180,14 +180,16 @@ let
   );
   aggregateEntries = [
     (lib.nameValuePair "rust-clippy" (
-      ciCheck.annotate (ciCheck.targets.both "rust-and-bats") rustClippy
+      ciCheck.buildEntry (ciCheck.targets.both "rust-and-bats") rustClippy
     ))
     # The advisory database and lockfiles are platform-independent, so a second
     # Darwin build would only duplicate the same source-level decision.
     (lib.nameValuePair "rust-advisories" (
-      ciCheck.annotate (ciCheck.targets.linux "rust-and-bats") rustAdvisories
+      ciCheck.buildEntry (ciCheck.targets.linux "rust-and-bats") rustAdvisories
     ))
-    (lib.nameValuePair "rust-tests" (ciCheck.annotate (ciCheck.targets.both "rust-and-bats") rustTests))
+    (lib.nameValuePair "rust-tests" (
+      ciCheck.buildEntry (ciCheck.targets.both "rust-and-bats") rustTests
+    ))
   ];
   checkEntries = rustBuildEntries ++ aggregateEntries;
   duplicateCheckNames = rustCatalog.duplicates (map (entry: entry.name) checkEntries);
@@ -199,9 +201,9 @@ let
 in
 {
   inherit subjects;
-  producer = {
+  producer = ciCheck.mkBuildProducer {
     owner = "Rust checks";
-    checks = builtins.seq rustInventoryValidation (
+    entries = builtins.seq rustInventoryValidation (
       builtins.seq rustSubjectValidation (builtins.seq checkNameValidation (lib.listToAttrs checkEntries))
     );
   };

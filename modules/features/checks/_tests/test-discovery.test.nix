@@ -9,14 +9,13 @@ let
   };
   composeUniqueChecks = import ../_lib/compose.nix { inherit ciCheck lib; };
   validateBatsCatalog = import ../_lib/bats/validate-catalog.nix { inherit lib; };
-  annotated = marker: {
-    inherit marker;
-    meta.dotfiles.hestia.targets = [ "fixture" ];
-  };
-  evaluationComplete = marker: {
-    inherit marker;
-    meta.dotfiles.ci.execution = "evaluation-complete";
-  };
+  checkTargets = ciCheck.targets.linux "eval-tests";
+  producer =
+    owner: name: value:
+    ciCheck.mkBuildProducer {
+      inherit owner;
+      entries.${name} = ciCheck.buildEntry checkTargets value;
+    };
   classified = discovery.classify [
     "/repo/modules/feature-a/_tests/alpha.test.nix"
     "/repo/modules/feature-b/_tests/beta.test.nix"
@@ -124,34 +123,44 @@ in
   };
 
   testUniqueCheckOwnersCompose = {
-    expr = composeUniqueChecks {
-      producers = [
-        {
-          owner = "alpha";
-          checks.alpha = annotated 1;
-        }
-        {
-          owner = "beta";
-          checks.beta = annotated 2;
-        }
-      ];
-    };
+    expr =
+      let
+        composition = composeUniqueChecks {
+          producers = [
+            (producer "alpha" "alpha" { marker = 1; })
+            (producer "beta" "beta" { marker = 2; })
+          ];
+        };
+      in
+      {
+        checkNames = builtins.attrNames composition.checks;
+        markers = lib.mapAttrs (_: check: check.marker) composition.checks;
+        inherit (composition) routes;
+      };
     expected = {
-      alpha = annotated 1;
-      beta = annotated 2;
+      checkNames = [
+        "alpha"
+        "beta"
+      ];
+      markers = {
+        alpha = 1;
+        beta = 2;
+      };
+      routes = {
+        alpha = checkTargets;
+        beta = checkTargets;
+      };
     };
   };
 
-  testEvaluationCompleteCheckOwnerComposes = {
-    expr = composeUniqueChecks {
-      producers = [
-        {
-          owner = "evaluated";
-          checks.evaluated = evaluationComplete 1;
-        }
-      ];
-    };
-    expected.evaluated = evaluationComplete 1;
+  testBuildRouteCompositionDoesNotForceCheckValues = {
+    expr =
+      (composeUniqueChecks {
+        producers = [
+          (producer "lazy" "lazy" (throw "build check value was forced"))
+        ];
+      }).routes;
+    expected.lazy = checkTargets;
   };
 
   testBatsCatalogAcceptsExactAssignment = {

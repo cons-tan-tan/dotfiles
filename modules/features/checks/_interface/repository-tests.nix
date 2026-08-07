@@ -89,7 +89,7 @@ let
 in
 let
   evaluationCompleteComposition = ciCheck.composeEvaluationCompleteProducers eval.evaluationCompleteProducers;
-  buildChecks = composeUniqueChecks {
+  buildComposition = composeUniqueChecks {
     producers =
       eval.buildProducers
       ++ [
@@ -101,6 +101,7 @@ let
   };
 in
 {
-  inherit buildChecks;
+  buildChecks = buildComposition.checks;
+  buildRoutes = buildComposition.routes;
   evaluationCompleteChecks = evaluationCompleteComposition.values;
 }

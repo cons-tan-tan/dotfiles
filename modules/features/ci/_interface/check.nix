@@ -210,6 +210,123 @@ let
 
   annotateSet = checkTargets: lib.mapAttrs (_: annotate checkTargets);
 
+  buildEntry = checkTargets: value: {
+    targets = builtins.seq (validateTargets checkTargets) checkTargets;
+    inherit value;
+  };
+
+  buildEntrySet = checkTargets: lib.mapAttrs (_: buildEntry checkTargets);
+
+  mkBuildProducer =
+    {
+      entries,
+      owner,
+    }:
+    let
+      names = builtins.attrNames entries;
+      invalid = builtins.filter (
+        name:
+        let
+          entry = entries.${name};
+        in
+        !builtins.isAttrs entry
+        ||
+          builtins.attrNames entry != [
+            "targets"
+            "value"
+          ]
+        || !(isValidTargets entry.targets)
+      ) names;
+      validation =
+        if !builtins.isString owner || owner == "" then
+          throw "CI build check producer owner must be a non-empty string"
+        else if invalid != [ ] then
+          throw "invalid CI build check entries for ${owner}: ${builtins.toJSON invalid}"
+        else
+          null;
+    in
+    {
+      inherit owner;
+      checks = builtins.seq validation (
+        lib.mapAttrs (_: entry: annotate entry.targets entry.value) entries
+      );
+      routes = builtins.seq validation (lib.mapAttrs (_: entry: entry.targets) entries);
+    };
+
+  composeBuildProducers =
+    {
+      producers,
+      reservedCheckNames ? [ ],
+    }:
+    let
+      indexedProducers = lib.imap0 (index: producer: { inherit index producer; }) producers;
+      invalidProducerIndexes = map (entry: entry.index) (
+        builtins.filter (
+          entry:
+          let
+            inherit (entry) producer;
+          in
+          !builtins.isAttrs producer
+          ||
+            builtins.attrNames producer != [
+              "checks"
+              "owner"
+              "routes"
+            ]
+          || !builtins.isString producer.owner
+          || producer.owner == ""
+          || !builtins.isAttrs producer.checks
+          || !builtins.isAttrs producer.routes
+          || builtins.attrNames producer.checks != builtins.attrNames producer.routes
+        ) indexedProducers
+      );
+      producerEntries = lib.concatMap (
+        producer:
+        map (name: {
+          inherit name;
+          inherit (producer) owner;
+        }) (builtins.attrNames producer.routes)
+      ) producers;
+      reservedEntries = map (name: {
+        inherit name;
+        owner = "reserved";
+      }) reservedCheckNames;
+      entries = producerEntries ++ reservedEntries;
+      names = map (entry: entry.name) entries;
+      duplicateNames = builtins.filter (
+        name: builtins.length (builtins.filter (candidate: candidate == name) names) > 1
+      ) (lib.unique names);
+      collisions = map (name: {
+        inherit name;
+        owners = map (entry: entry.owner) (builtins.filter (entry: entry.name == name) entries);
+      }) duplicateNames;
+      validation =
+        if invalidProducerIndexes != [ ] then
+          throw "invalid CI build check producers: ${builtins.toJSON invalidProducerIndexes}"
+        else if collisions != [ ] then
+          throw "check owner collisions: ${builtins.toJSON collisions}"
+        else
+          null;
+      mergeField =
+        field:
+        builtins.seq validation (lib.foldl' (result: producer: result // producer.${field}) { } producers);
+    in
+    {
+      checkNames = builtins.seq validation (map (entry: entry.name) producerEntries);
+      checks = mergeField "checks";
+      routes = mergeField "routes";
+    };
+
+  composeRouteProducers =
+    producers:
+    let
+      asBuildProducer = producer: {
+        inherit (producer) owner routes;
+        checks = lib.genAttrs (builtins.attrNames producer.routes) (_: null);
+      };
+    in
+    (composeBuildProducers { producers = map asBuildProducer producers; }).routes;
+
   isClassified =
     check:
     let
@@ -238,32 +355,35 @@ let
   mkHestiaChecks =
     {
       checks,
+      routes ? lib.mapAttrs (_: getTargets) checks,
       system,
     }:
     let
       prefix = systemPrefixes.${system} or (throw "unsupported Hestia build system: ${system}");
       checkNames = builtins.attrNames checks;
-      missing = builtins.filter (name: getTargets checks.${name} == null) checkNames;
+      routeNames = builtins.attrNames routes;
+      missingRoutes = lib.subtractLists routeNames checkNames;
+      unexpectedRoutes = lib.subtractLists checkNames routeNames;
+      sharedNames = builtins.filter (name: builtins.hasAttr name routes) checkNames;
+      missing = builtins.filter (name: getTargets checks.${name} == null) sharedNames;
       invalid = builtins.filter (
         name:
         let
           checkTargets = getTargets checks.${name};
         in
         checkTargets != null && !(isValidTargets checkTargets)
-      ) checkNames;
+      ) sharedNames;
+      invalidRoutes = builtins.filter (name: !(isValidTargets routes.${name})) routeNames;
+      metadataMismatch = builtins.filter (name: getTargets checks.${name} != routes.${name}) sharedNames;
       selectedNames = builtins.filter (
-        name:
-        let
-          checkTargets = getTargets checks.${name};
-        in
-        checkTargets != null && checkTargets.${system} != null
-      ) checkNames;
+        name: isValidTargets routes.${name} && routes.${name}.${system} != null
+      ) sharedNames;
       wrongSystem = builtins.filter (name: (checks.${name}.system or null) != system) selectedNames;
       entries = map (
         name:
         let
           check = checks.${name};
-          group = (getTargets check).${system};
+          group = routes.${name}.${system};
         in
         {
           inherit group name;
@@ -275,11 +395,28 @@ let
         _: drvEntries: builtins.length (lib.unique (map (entry: entry.group) drvEntries)) > 1
       ) entriesByDrv;
     in
-    if missing != [ ] || invalid != [ ] || wrongSystem != [ ] || conflictingDrvs != { } then
+    if
+      missingRoutes != [ ]
+      || unexpectedRoutes != [ ]
+      || missing != [ ]
+      || invalid != [ ]
+      || invalidRoutes != [ ]
+      || metadataMismatch != [ ]
+      || wrongSystem != [ ]
+      || conflictingDrvs != { }
+    then
       throw "invalid Hestia CI checks for ${system}: ${
         builtins.toJSON {
           conflictingDrvPaths = builtins.attrNames conflictingDrvs;
-          inherit invalid missing wrongSystem;
+          inherit
+            invalid
+            invalidRoutes
+            metadataMismatch
+            missing
+            missingRoutes
+            unexpectedRoutes
+            wrongSystem
+            ;
         }
       }"
     else
@@ -288,7 +425,7 @@ let
         let
           check = checks.${name};
           oldMeta = check.meta or { };
-          group = (getTargets check).${system};
+          group = routes.${name}.${system};
         in
         check
         // {
@@ -301,14 +438,47 @@ let
       );
 
   mkHestiaJobs =
-    checksBySystem:
+    {
+      checksBySystem,
+      evaluationCompleteCheckNamesBySystem,
+      routesBySystem,
+    }:
     let
-      configuredSystems = builtins.attrNames checksBySystem;
+      checkSystems = builtins.attrNames checksBySystem;
+      evaluationCompleteSystems = builtins.attrNames evaluationCompleteCheckNamesBySystem;
+      routeSystems = builtins.attrNames routesBySystem;
     in
-    if configuredSystems != systemNames then
+    if
+      checkSystems != systemNames
+      || evaluationCompleteSystems != systemNames
+      || routeSystems != systemNames
+    then
       throw "Hestia jobs must provide every build system: ${builtins.toJSON systemNames}"
     else
-      lib.mapAttrs (system: checks: mkHestiaChecks { inherit checks system; }) checksBySystem;
+      lib.genAttrs systemNames (
+        system:
+        let
+          checks = checksBySystem.${system};
+          evaluationCompleteCheckNames = evaluationCompleteCheckNamesBySystem.${system};
+          unknown = builtins.filter (name: !(builtins.hasAttr name checks)) evaluationCompleteCheckNames;
+          knownEvaluationCompleteNames = builtins.filter (
+            name: builtins.hasAttr name checks
+          ) evaluationCompleteCheckNames;
+          invalidEvaluationComplete = builtins.filter (
+            name: !(isEvaluationComplete checks.${name})
+          ) knownEvaluationCompleteNames;
+        in
+        if unknown != [ ] || invalidEvaluationComplete != [ ] then
+          throw "invalid evaluation-complete CI checks for ${system}: ${
+            builtins.toJSON { inherit invalidEvaluationComplete unknown; }
+          }"
+        else
+          mkHestiaChecks {
+            checks = removeAttrs checks evaluationCompleteCheckNames;
+            routes = routesBySystem.${system};
+            inherit system;
+          }
+      );
 
   selectBuildChecks =
     {
@@ -324,143 +494,115 @@ let
     else
       removeAttrs checks evaluationCompleteCheckNames;
 
-  validateEvaluationCompleteChecks =
+  validateCheckManifest =
     {
-      checksBySystem,
+      buildRoutesBySystem,
+      checkNamesBySystem,
       evaluationCompleteCheckNamesBySystem,
-      ignoredCheckNamesBySystem ? { },
     }:
     let
-      configuredSystems = builtins.attrNames checksBySystem;
+      configuredSystems = builtins.attrNames checkNamesBySystem;
       declaredSystems = builtins.attrNames evaluationCompleteCheckNamesBySystem;
-      ignoredSystems = builtins.attrNames ignoredCheckNamesBySystem;
-      unexpectedIgnoredSystems = lib.subtractLists configuredSystems ignoredSystems;
-      validateSystem =
+      routeSystems = builtins.attrNames buildRoutesBySystem;
+      validateEvaluationCompleteSystem =
         system:
         let
-          checks = checksBySystem.${system};
+          checkNames = checkNamesBySystem.${system};
           declaredNames = evaluationCompleteCheckNamesBySystem.${system};
-          ignoredNames = ignoredCheckNamesBySystem.${system} or [ ];
           duplicateNames = builtins.filter (
-            name: builtins.length (builtins.filter (other: other == name) declaredNames) > 1
+            name: builtins.length (builtins.filter (candidate: candidate == name) declaredNames) > 1
           ) (lib.unique declaredNames);
-          unknown = builtins.filter (name: !(builtins.hasAttr name checks)) declaredNames;
-          ignoredWithoutListing = builtins.filter (name: !(builtins.elem name declaredNames)) ignoredNames;
-          declaredClassifiedNames = lib.subtractLists ignoredNames declaredNames;
-          knownDeclaredClassifiedNames = builtins.filter (
-            name: builtins.hasAttr name checks
-          ) declaredClassifiedNames;
-          listedWithoutMarker = builtins.filter (
-            name: !isEvaluationComplete checks.${name}
-          ) knownDeclaredClassifiedNames;
+          unknown = builtins.filter (name: !(builtins.elem name checkNames)) declaredNames;
         in
-        if
-          duplicateNames != [ ]
-          || unknown != [ ]
-          || ignoredWithoutListing != [ ]
-          || listedWithoutMarker != [ ]
-        then
-          throw "invalid evaluation-complete CI checks for ${system}: ${
-            builtins.toJSON {
-              inherit
-                duplicateNames
-                ignoredWithoutListing
-                listedWithoutMarker
-                unknown
-                ;
-            }
+        if duplicateNames != [ ] || unknown != [ ] then
+          throw "invalid evaluation-complete CI check manifest for ${system}: ${
+            builtins.toJSON { inherit duplicateNames unknown; }
           }"
         else
           true;
-    in
-    if configuredSystems != declaredSystems || unexpectedIgnoredSystems != [ ] then
-      throw "evaluation-complete checks must use matching systems: ${
-        builtins.toJSON {
-          inherit configuredSystems declaredSystems unexpectedIgnoredSystems;
-        }
-      }"
-    else
-      builtins.all validateSystem configuredSystems;
-
-  validateHestiaJobs =
-    checksBySystem:
-    let
-      configuredSystems = builtins.attrNames checksBySystem;
-      checkRefs = lib.concatMap (
+      validateBuildSystem =
+        system:
+        let
+          checkNames = checkNamesBySystem.${system};
+          evaluationCompleteNames = evaluationCompleteCheckNamesBySystem.${system};
+          expectedBuildNames = lib.subtractLists evaluationCompleteNames checkNames;
+          routes = buildRoutesBySystem.${system};
+          routeNames = builtins.attrNames routes;
+          missing = lib.subtractLists routeNames expectedBuildNames;
+          unexpected = lib.subtractLists expectedBuildNames routeNames;
+          invalid = builtins.filter (name: !(isValidTargets routes.${name})) routeNames;
+        in
+        if missing != [ ] || unexpected != [ ] || invalid != [ ] then
+          throw "invalid Hestia build check manifest for ${system}: ${
+            builtins.toJSON { inherit invalid missing unexpected; }
+          }"
+        else
+          true;
+      routeRefs = lib.concatMap (
         system:
         map (name: {
-          check = checksBySystem.${system}.${name};
           inherit name system;
-        }) (builtins.attrNames checksBySystem.${system})
-      ) configuredSystems;
-      missing = map (ref: "${ref.system}.${ref.name}") (
-        builtins.filter (ref: getTargets ref.check == null) checkRefs
-      );
-      invalid = map (ref: "${ref.system}.${ref.name}") (
-        builtins.filter (
-          ref:
-          let
-            checkTargets = getTargets ref.check;
-          in
-          checkTargets != null && !(isValidTargets checkTargets)
-        ) checkRefs
-      );
-      checkNames = lib.unique (map (ref: ref.name) checkRefs);
-      refsFor = name: builtins.filter (ref: ref.name == name) checkRefs;
+          targets = buildRoutesBySystem.${system}.${name};
+        }) (builtins.attrNames buildRoutesBySystem.${system})
+      ) routeSystems;
+      routeNames = lib.unique (map (ref: ref.name) routeRefs);
+      refsFor = name: builtins.filter (ref: ref.name == name) routeRefs;
       inconsistent = builtins.filter (
         name:
         let
-          targetSets = map (ref: getTargets ref.check) (refsFor name);
-          first = builtins.head targetSets;
+          targetSets = map (ref: ref.targets) (refsFor name);
         in
-        !(builtins.all (checkTargets: checkTargets == first) targetSets)
-      ) checkNames;
-      targetsByName = lib.genAttrs checkNames (name: getTargets (builtins.head (refsFor name)).check);
+        !(builtins.all (targets: targets == builtins.head targetSets) targetSets)
+      ) routeNames;
+      targetsByName = lib.genAttrs routeNames (name: (builtins.head (refsFor name)).targets);
       declaredButMissing = lib.concatMap (
         name:
         map (system: "${system}.${name}") (
           builtins.filter (
-            system: targetsByName.${name}.${system} != null && !(builtins.hasAttr name checksBySystem.${system})
+            system:
+            targetsByName.${name}.${system} != null && !(builtins.hasAttr name buildRoutesBySystem.${system})
           ) systemNames
         )
-      ) checkNames;
-      jobsValid = builtins.all (
-        system:
-        builtins.seq (mkHestiaChecks {
-          checks = checksBySystem.${system};
-          inherit system;
-        }) true
-      ) systemNames;
+      ) routeNames;
     in
-    if configuredSystems != systemNames then
-      throw "Hestia jobs must provide every build system: ${builtins.toJSON systemNames}"
-    else if missing != [ ] || invalid != [ ] then
-      throw "invalid canonical Hestia metadata: ${builtins.toJSON { inherit invalid missing; }}"
-    else if inconsistent != [ ] || declaredButMissing != [ ] then
-      throw "inconsistent cross-system Hestia metadata: ${
-        builtins.toJSON {
-          inherit declaredButMissing inconsistent;
-        }
+    if configuredSystems != declaredSystems then
+      throw "evaluation-complete checks must use matching systems: ${
+        builtins.toJSON { inherit configuredSystems declaredSystems; }
       }"
-    else if jobsValid then
-      true
+    else if routeSystems != configuredSystems then
+      throw "build check manifests must use matching systems: ${
+        builtins.toJSON { inherit configuredSystems routeSystems; }
+      }"
+    else if !(builtins.all validateEvaluationCompleteSystem configuredSystems) then
+      throw "evaluation-complete manifest validation returned false"
+    else if !(builtins.all validateBuildSystem routeSystems) then
+      throw "Hestia build manifest validation returned false"
+    else if inconsistent != [ ] || declaredButMissing != [ ] then
+      throw "inconsistent cross-system Hestia manifest: ${
+        builtins.toJSON { inherit declaredButMissing inconsistent; }
+      }"
     else
-      throw "Hestia job realization returned false";
+      true;
+
 in
 {
   inherit
     annotate
     annotateSet
+    buildEntry
+    buildEntrySet
+    composeBuildProducers
     composeEvaluationCompleteProducers
+    composeRouteProducers
     evaluationComplete
     evaluationCompleteSet
     isClassified
     isEvaluationComplete
     mkHestiaChecks
     mkHestiaJobs
+    mkBuildProducer
     selectBuildChecks
     targets
-    validateEvaluationCompleteChecks
-    validateHestiaJobs
+    validateCheckManifest
     ;
 }

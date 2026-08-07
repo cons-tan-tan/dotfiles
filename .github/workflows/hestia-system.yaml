@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       system:
-        description: Nix system exposed under hydraJobs.ci
+        description: Nix system exposed under lib.hestiaJobs.ci
         required: true
         type: string
 
@@ -37,11 +37,11 @@ jobs:
         env:
           HESTIA_EVAL_CAPTURE: ${{ runner.temp }}/ci-telemetry/hestia-eval.jsonl
         with:
-          flake: ".#hydraJobs.ci.${{ inputs.system }}"
+          flake: ".#lib.hestiaJobs.ci.${{ inputs.system }}"
           # 16 GB runner上で評価workerの再起動を避けつつ、OSとNix daemon用に
           # 4 GBを残す。
           nix-eval-jobs: python3 modules/features/ci/_scripts/capture_hestia_eval.py
-          attr-prefix: "hydraJobs.ci.${{ inputs.system }}"
+          attr-prefix: "lib.hestiaJobs.ci.${{ inputs.system }}"
       - id: optimized-matrix
         name: Optimize system matrix
         shell: bash
@@ -53,7 +53,7 @@ jobs:
           HESTIA_MATRIX: ${{ steps.hestia-matrix.outputs.matrix }}
           HESTIA_VERSION: ${{ steps.setup-hestia.outputs.hestia-version }}
           SYSTEM: ${{ inputs.system }}
-          TELEMETRY_ATTR_PREFIX: hydraJobs.ci.${{ inputs.system }}
+          TELEMETRY_ATTR_PREFIX: lib.hestiaJobs.ci.${{ inputs.system }}
         run: python3 modules/features/ci/_scripts/optimize_hestia_matrix.py
       - name: Upload evaluation telemetry
         id: upload-evaluation-telemetry

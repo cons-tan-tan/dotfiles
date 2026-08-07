@@ -26,7 +26,7 @@ let
     name = "test-discovery-diagnostics";
     path = ../_tests/fixtures/test-discovery-diagnostics.failure.fixture.nix;
   };
-  buildChecks.${discoveryCheckName} = ciCheck.annotate (ciCheck.targets.both "eval-tests") (
+  buildEntries.${discoveryCheckName} = ciCheck.buildEntry (ciCheck.targets.both "eval-tests") (
     pkgs.linkFarm discoveryCheckName [
       {
         name = "positive";
@@ -43,5 +43,5 @@ in
 {
   inherit paths;
   names = map testDiscovery.checkName paths;
-  inherit buildChecks evaluationCompleteChecks;
+  inherit buildEntries evaluationCompleteChecks;
 }
