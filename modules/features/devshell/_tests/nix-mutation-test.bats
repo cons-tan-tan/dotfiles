@@ -17,6 +17,17 @@ run_mutation_test() {
   run "$NIX_MUTATION_TEST_BIN" --root "$TEST_ROOT" "$@" target.nix
 }
 
+@test "help exposes the command contract" {
+  run "$NIX_MUTATION_TEST_BIN" --help
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Test command environment:"* ]]
+  [[ "$output" == *"Source annotations:"* ]]
+  [[ "$output" == *"Exit status:"* ]]
+  [[ "$output" == *"0  Every executed valid mutant was killed, --list completed, or help was shown"* ]]
+  [[ "$output" == *"2  Invalid arguments or input, a failing or timed-out baseline, or a runner error"* ]]
+}
+
 @test "candidate listing uses the lossless Nix syntax tree" {
   write_target '{ value = true; text = "true"; # true
   }'
@@ -49,7 +60,7 @@ run_mutation_test() {
 
   run_mutation_test \
     --operator boolean \
-    --test-command '[[ $NIX_MUTATION_ID == baseline || ( $NIX_MUTATION_ID =~ ^[0-9a-f]{16}$ && $NIX_MUTATION_KIND == boolean-true && $NIX_MUTATION_TARGET == target.nix ) ]] && [[ $(nix-instantiate --store dummy:// --eval --strict --json target.nix) == true ]]'
+    --test-command '[[ ( $NIX_MUTATION_ID == baseline && $NIX_MUTATION_KIND == baseline && -z $NIX_MUTATION_TARGET ) || ( $NIX_MUTATION_ID =~ ^[0-9a-f]{16}$ && $NIX_MUTATION_KIND == boolean-true && $NIX_MUTATION_TARGET == target.nix ) ]] && [[ $(nix-instantiate --store dummy:// --eval --strict --json target.nix) == true ]]'
 
   [ "$status" -eq 0 ]
   [[ "$output" == *"MUTANT 1/1 killed boolean-true target.nix:1:1"* ]]

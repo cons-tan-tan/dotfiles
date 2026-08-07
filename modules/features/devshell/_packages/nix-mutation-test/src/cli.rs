@@ -17,10 +17,19 @@ Options:
   --list               Print candidate mutants as JSON lines without running tests
   -h, --help           Show this help
 
+Test command environment:
+  NIX_MUTATION_ID      Deterministic ID for the current source, or "baseline"
+  NIX_MUTATION_KIND    Mutation kind, or "baseline" for the baseline run
+  NIX_MUTATION_TARGET  Repository-relative target path; empty for the baseline run
+
+Source annotations:
+  # nix-mutation-test: ignore
+                       Ignore mutation candidates on that line
+
 Exit status:
-  0  Every executed valid mutant was killed, or --list completed
+  0  Every executed valid mutant was killed, --list completed, or help was shown
   1  At least one mutant survived or timed out
-  2  Invalid arguments, invalid input, or a failing baseline test
+  2  Invalid arguments or input, a failing or timed-out baseline, or a runner error
 "#;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -177,5 +186,21 @@ mod tests {
             parse(args(&["target.nix"])).err().as_deref(),
             Some("--test-command is required unless --list is used")
         );
+    }
+
+    #[test]
+    fn help_documents_the_test_command_contract() {
+        for expected in [
+            "  NIX_MUTATION_ID      Deterministic ID for the current source, or \"baseline\"",
+            "  NIX_MUTATION_KIND    Mutation kind, or \"baseline\" for the baseline run",
+            "  NIX_MUTATION_TARGET  Repository-relative target path; empty for the baseline run",
+            "  # nix-mutation-test: ignore",
+            "                       Ignore mutation candidates on that line",
+            "  0  Every executed valid mutant was killed, --list completed, or help was shown",
+            "  1  At least one mutant survived or timed out",
+            "  2  Invalid arguments or input, a failing or timed-out baseline, or a runner error",
+        ] {
+            assert!(USAGE.lines().any(|line| line == expected));
+        }
     }
 }
