@@ -31,6 +31,32 @@ sourceを直接使うテストは短いfeedbackのための補助とし、packag
 
 Live testは、再現可能なcommit gateへ混在させない。上流の状態を固定できない失敗とrepositoryの退行を区別できなくなるためである。
 
+## Nix式のmutation test
+
+`nix-mutation-test`は、rnix-parserのlossless syntax treeからboolean、論理演算子、等価演算子のtokenを探し、1か所ずつ変更してテストを実行する。default development shellから、対象と狭いテストコマンドを指定して使う。
+
+```bash
+nix develop --command nix-mutation-test \
+  --operator boolean \
+  --test-command 'nix build --no-link .#checks.x86_64-linux.ci-check-tests' \
+  modules/features/ci/_interface/check.nix
+```
+
+runnerは現在のrepositoryを一時directoryへ複製し、そこでmutantを適用する。元のworktreeは変更しない。テストコマンドは一時repositoryのrootで実行され、`NIX_MUTATION_ID`、`NIX_MUTATION_KIND`、`NIX_MUTATION_TARGET`から現在のmutantを参照できる。IDは対象の相対path、source hash、tokenのbyte range、mutation kindから決まる。
+
+候補だけを確認する場合は`--list`を使う。出力は1候補1行のJSONであり、`--max-mutants`で実行数を制限できる。
+
+```bash
+nix develop --command nix-mutation-test \
+  --list \
+  --operator logical \
+  modules/features/ci/_interface/check.nix
+```
+
+変更前後で観測可能な結果が同じになる等価mutantは、対象と同じ行へ`# nix-mutation-test: ignore`を記述して候補から除外する。値を`builtins.seq`で強制するだけの場合など、等価である理由も同じコメントへ残す。
+
+終了statusは、すべての有効なmutantを検出できた場合に`0`、surviveまたはtimeoutしたmutantがある場合に`1`、引数、入力、baseline testに問題がある場合に`2`となる。mutation testは候補ごとにテストを再実行するため、通常のcommit gateへは含めず、テストを変更した後の診断に使う。
+
 ## Dendritic moduleとテストの境界
 
 `modules/`では、pathに`/_`を含まないNixファイルを構成moduleとして自動importする。純粋関数、fixture、評価テストは`_lib/`または`_tests/`へ置き、構成moduleと同じtreeで管理しつつ自動importの対象外にする。

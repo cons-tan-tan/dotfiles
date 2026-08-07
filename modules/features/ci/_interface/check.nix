@@ -85,7 +85,7 @@ let
     else if invalidGroups != [ ] then
       throw "CI check targets contain invalid groups for systems: ${builtins.toJSON invalidGroups}"
     else
-      true;
+      true; # Only strictness is observed by annotate; nix-mutation-test: ignore
 
   evaluationComplete =
     check:
@@ -442,8 +442,10 @@ let
           inherit declaredButMissing inconsistent;
         }
       }"
+    else if jobsValid then
+      true
     else
-      builtins.seq jobsValid true;
+      throw "Hestia job realization returned false";
 in
 {
   inherit

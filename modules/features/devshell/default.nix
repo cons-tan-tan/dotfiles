@@ -1,13 +1,17 @@
 { den, ... }:
 {
-  den.aspects.development-shells.devShells =
+  den.aspects.devshell.devShells =
     { pkgs, ... }:
+    let
+      nixMutationTest = pkgs.callPackage ./_packages/nix-mutation-test { };
+    in
     {
       default = pkgs.mkShell {
         packages = with pkgs; [
           bats
           git
           jq
+          nixMutationTest
           reuse
           shellcheck
           sops
@@ -26,5 +30,5 @@
       };
     };
 
-  den.schema.flake-parts.includes = [ den.aspects.development-shells ];
+  den.schema.flake-parts.includes = [ den.aspects.devshell ];
 }

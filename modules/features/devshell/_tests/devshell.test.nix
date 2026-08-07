@@ -21,6 +21,7 @@ let
     "GH_API_GET_EXTENSION_ROOT"
     "GH_API_GET_PUBLIC_BIN"
     "GH_API_GET_TEST_BIN"
+    "NIX_MUTATION_TEST_BIN"
     "UPDATE_PINS_TEST_BIN"
   ];
   rustTools = with pkgs; [
@@ -33,6 +34,7 @@ let
     bats
     git
     jq
+    (callPackage ../_packages/nix-mutation-test { })
     reuse
     shellcheck
     sops

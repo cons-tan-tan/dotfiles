@@ -224,4 +224,16 @@ in
     );
     expected = [ "example" ];
   };
+
+  testValidHestiaJobsReturnTrue = {
+    expr = ciCheck.validateHestiaJobs {
+      ${linuxSystem}.example = ciCheck.annotate (ciCheck.targets.both "eval-tests") (
+        fakeFor "linux" linuxSystem
+      );
+      ${darwinSystem}.example = ciCheck.annotate (ciCheck.targets.both "eval-tests") (
+        fakeFor "darwin" darwinSystem
+      );
+    };
+    expected = true;
+  };
 }
