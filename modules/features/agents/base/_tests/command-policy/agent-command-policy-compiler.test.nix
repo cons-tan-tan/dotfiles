@@ -21,6 +21,45 @@ let
         ;
     };
 
+  compileUnchecked =
+    policy: import ../../_lib/command-policy/compiler.nix ({ inherit lib; } // policy);
+
+  shellfirmDefaults = {
+    enabled = false;
+    minimumSeverity = "High";
+    categories = { };
+    ruleNamespaces = { };
+    rules = { };
+  };
+
+  defaultShellfirmPolicy = compileUnchecked {
+    commands.safe = true;
+  };
+
+  categoryOnlyPolicy = compileUnchecked {
+    commands = { };
+    shellfirm = shellfirmDefaults // {
+      enabled = true;
+      categories.git = true;
+    };
+  };
+
+  namespaceOnlyPolicy = compileUnchecked {
+    commands = { };
+    shellfirm = shellfirmDefaults // {
+      enabled = true;
+      ruleNamespaces.git = true;
+    };
+  };
+
+  ruleOnlyPolicy = compileUnchecked {
+    commands = { };
+    shellfirm = shellfirmDefaults // {
+      enabled = true;
+      rules.git.force_push = true;
+    };
+  };
+
   semanticCommand = aliases: {
     decision = true;
     optionSyntax = {
@@ -194,6 +233,24 @@ in
         "git:force_push" = false;
       };
     };
+  };
+
+  testDefaultShellfirmRemainsDisabledForPrefixOnlyPolicy = {
+    expr = defaultShellfirmPolicy.guardPolicy.shellfirm;
+    expected = shellfirmDefaults;
+  };
+
+  testEachShellfirmSelectorSourceCanProvideTheOnlyDecision = {
+    expr = map (policy: policy.guardPolicy.shellfirm.enabled) [
+      categoryOnlyPolicy
+      namespaceOnlyPolicy
+      ruleOnlyPolicy
+    ];
+    expected = [
+      true
+      true
+      true
+    ];
   };
 
   testGeneratedPolicyKeepsFailClosedBehaviorVersioned = {

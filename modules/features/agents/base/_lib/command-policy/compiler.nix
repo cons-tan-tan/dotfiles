@@ -288,8 +288,9 @@ let
       || lib.any (decision: decision) (builtins.attrValues shellfirmPolicy.rules)
     );
 
-  hasDecision =
-    prefixRules != [ ] || semanticRules != [ ] || shellPolicy != { } || shellfirmHasPositiveSelector;
+  # Semantic rules come from command terminals and therefore always contribute
+  # a prefix rule as well; counting them separately cannot change this decision.
+  hasDecision = prefixRules != [ ] || shellPolicy != { } || shellfirmHasPositiveSelector;
   checkedPolicy = builtins.deepSeq [
     prefixRules
     semanticRules

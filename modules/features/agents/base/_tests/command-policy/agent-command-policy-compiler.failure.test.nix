@@ -54,6 +54,13 @@ let
   };
 
   force = value: builtins.deepSeq value true;
+  compileDenyRule =
+    rule:
+    force (compileUnchecked {
+      commands.demo = (semanticCommand [ "-x" ]) // {
+        deny = [ rule ];
+      };
+    });
   commandTreeDiagnostic = "agentCommandPolicy.commands must be a recursive command tree with boolean leaves or valid decision terminals";
 
   cases = {
@@ -92,12 +99,60 @@ let
       expectedFragment = commandTreeDiagnostic;
     };
 
+    uncheckedExecutableTokenUsingArgumentOnlySyntax = {
+      expression = force (compileUnchecked {
+        commands."safe/path" = true;
+      });
+      expectedFragment = "agent command policy has an invalid command token";
+    };
+
     uncheckedEmptyTerminalDenyRules = {
       expression = force (compileUnchecked {
         commands.demo = {
           decision = true;
           optionSyntax = { };
           deny = [ ];
+        };
+      });
+      expectedFragment = "agent command policy command terminal is invalid";
+    };
+
+    uncheckedNonBooleanTerminalDecision = {
+      expression = force (compileUnchecked {
+        commands.demo = (semanticCommand [ "-x" ]) // {
+          decision = "allow";
+        };
+      });
+      expectedFragment = "agent command policy command terminal is invalid";
+    };
+
+    uncheckedTerminalWithUnknownField = {
+      expression = force (compileUnchecked {
+        commands.demo = (semanticCommand [ "-x" ]) // {
+          unexpected = true;
+        };
+      });
+      expectedFragment = "agent command policy command terminal is invalid";
+    };
+
+    uncheckedTerminalWithoutDeny = {
+      expression = force (compileUnchecked {
+        commands.demo = removeAttrs (semanticCommand [ "-x" ]) [ "deny" ];
+      });
+      expectedFragment = "agent command policy command terminal is invalid";
+    };
+
+    uncheckedTerminalWithoutOptionSyntax = {
+      expression = force (compileUnchecked {
+        commands.demo = removeAttrs (semanticCommand [ "-x" ]) [ "optionSyntax" ];
+      });
+      expectedFragment = "agent command policy command terminal is invalid";
+    };
+
+    uncheckedTerminalWithNonListDeny = {
+      expression = force (compileUnchecked {
+        commands.demo = (semanticCommand [ "-x" ]) // {
+          deny = "deny";
         };
       });
       expectedFragment = "agent command policy command terminal is invalid";
@@ -135,6 +190,102 @@ let
       expectedFragment = "agent command policy semantic option aliases must not overlap";
     };
 
+    uncheckedOptionListIsNotAList = {
+      expression = force (compileUnchecked {
+        commands.demo = (semanticCommand [ "-x" ]) // {
+          optionSyntax.valueTaking = "-C";
+        };
+      });
+      expectedFragment = "agent command policy semantic optionSyntax.valueTaking must contain valid command options";
+    };
+
+    uncheckedOptionListContainsInvalidSyntax = {
+      expression = force (compileUnchecked {
+        commands.demo = (semanticCommand [ "-x" ]) // {
+          optionSyntax.valueTaking = [ "not an option" ];
+        };
+      });
+      expectedFragment = "agent command policy semantic optionSyntax.valueTaking must contain valid command options";
+    };
+
+    uncheckedOptionSyntaxHasUnknownField = {
+      expression = force (compileUnchecked {
+        commands.demo = (semanticCommand [ "-x" ]) // {
+          optionSyntax.unexpected = [ ];
+        };
+      });
+      expectedFragment = "agent command policy semantic optionSyntax is invalid";
+    };
+
+    uncheckedDenyRuleIsNotAnAttributeSet = {
+      expression = compileDenyRule "deny";
+      expectedFragment = "agent command policy semantic deny condition is invalid";
+    };
+
+    uncheckedDenyRuleHasUnknownField = {
+      expression = compileDenyRule ((denyRule [ "-x" ]) // { unexpected = true; });
+      expectedFragment = "agent command policy semantic deny condition is invalid";
+    };
+
+    uncheckedDenyRuleWithoutWhen = {
+      expression = compileDenyRule (removeAttrs (denyRule [ "-x" ]) [ "when" ]);
+      expectedFragment = "agent command policy semantic deny condition is invalid";
+    };
+
+    uncheckedDenyWhenIsNotAnAttributeSet = {
+      expression = compileDenyRule ((denyRule [ "-x" ]) // { when = "always"; });
+      expectedFragment = "agent command policy semantic deny condition is invalid";
+    };
+
+    uncheckedDenyWhenHasUnknownField = {
+      expression = compileDenyRule (
+        (denyRule [ "-x" ])
+        // {
+          when = (denyRule [ "-x" ]).when // {
+            unexpected = true;
+          };
+        }
+      );
+      expectedFragment = "agent command policy semantic deny condition is invalid";
+    };
+
+    uncheckedDenyWhenWithoutOptions = {
+      expression = compileDenyRule ((denyRule [ "-x" ]) // { when = { }; });
+      expectedFragment = "agent command policy semantic deny condition is invalid";
+    };
+
+    uncheckedDenyOptionsIsNotAnAttributeSet = {
+      expression = compileDenyRule ((denyRule [ "-x" ]) // { when.options = "-x"; });
+      expectedFragment = "agent command policy semantic deny condition is invalid";
+    };
+
+    uncheckedDenyOptionsHasUnknownField = {
+      expression = compileDenyRule (
+        (denyRule [ "-x" ])
+        // {
+          when.options = (denyRule [ "-x" ]).when.options // {
+            unexpected = true;
+          };
+        }
+      );
+      expectedFragment = "agent command policy semantic deny condition is invalid";
+    };
+
+    uncheckedDenyOptionsWithoutAll = {
+      expression = compileDenyRule ((denyRule [ "-x" ]) // { when.options = { }; });
+      expectedFragment = "agent command policy semantic deny condition is invalid";
+    };
+
+    uncheckedDenyAllIsNotAList = {
+      expression = compileDenyRule ((denyRule [ "-x" ]) // { when.options.all = "-x"; });
+      expectedFragment = "agent command policy semantic deny condition is invalid";
+    };
+
+    uncheckedDenyAllIsEmpty = {
+      expression = compileDenyRule ((denyRule [ "-x" ]) // { when.options.all = [ ]; });
+      expectedFragment = "agent command policy semantic deny condition is invalid";
+    };
+
     uncheckedDuplicateDenyAliases = {
       expression = force (compileUnchecked {
         commands.demo = (semanticCommand [ "-x" ]) // {
@@ -152,6 +303,109 @@ let
         };
       });
       expectedFragment = "agent command policy semantic deny option aliases must be unique";
+    };
+
+    uncheckedDenyRuleWithoutAlternatives = {
+      expression = compileDenyRule (removeAttrs (denyRule [ "-x" ]) [ "alternatives" ]);
+      expectedFragment = "agent command policy semantic deny alternatives are invalid";
+    };
+
+    uncheckedDenyAlternativesIsNotAList = {
+      expression = compileDenyRule ((denyRule [ "-x" ]) // { alternatives = "Use the safe command."; });
+      expectedFragment = "agent command policy semantic deny alternatives are invalid";
+    };
+
+    uncheckedDenyAlternativesIsEmpty = {
+      expression = compileDenyRule ((denyRule [ "-x" ]) // { alternatives = [ ]; });
+      expectedFragment = "agent command policy semantic deny alternatives are invalid";
+    };
+
+    uncheckedDenyAlternativeIsBlank = {
+      expression = compileDenyRule ((denyRule [ "-x" ]) // { alternatives = [ " " ]; });
+      expectedFragment = "agent command policy semantic deny alternatives are invalid";
+    };
+
+    uncheckedDenyAlternativesAreDuplicated = {
+      expression = compileDenyRule (
+        (denyRule [ "-x" ])
+        // {
+          alternatives = [
+            "Use the safe command."
+            "Use the safe command."
+          ];
+        }
+      );
+      expectedFragment = "agent command policy semantic deny alternatives are invalid";
+    };
+
+    uncheckedShellfirmHasUnknownField = {
+      expression = force (compileUnchecked {
+        commands.safe = true;
+        shellfirm = validShellfirm // {
+          unexpected = true;
+        };
+      });
+      expectedFragment = "agent command policy Shellfirm configuration is invalid";
+    };
+
+    uncheckedShellfirmWithoutEnabled = {
+      expression = force (compileUnchecked {
+        commands.safe = true;
+        shellfirm = removeAttrs validShellfirm [ "enabled" ];
+      });
+      expectedFragment = "agent command policy Shellfirm configuration is invalid";
+    };
+
+    uncheckedShellfirmWithNonBooleanEnabled = {
+      expression = force (compileUnchecked {
+        commands.safe = true;
+        shellfirm = validShellfirm // {
+          enabled = "false";
+        };
+      });
+      expectedFragment = "agent command policy Shellfirm configuration is invalid";
+    };
+
+    uncheckedShellfirmWithoutMinimumSeverity = {
+      expression = force (compileUnchecked {
+        commands.safe = true;
+        shellfirm = removeAttrs validShellfirm [ "minimumSeverity" ];
+      });
+      expectedFragment = "agent command policy Shellfirm configuration is invalid";
+    };
+
+    uncheckedShellfirmWithInvalidMinimumSeverity = {
+      expression = force (compileUnchecked {
+        commands.safe = true;
+        shellfirm = validShellfirm // {
+          minimumSeverity = "Emergency";
+        };
+      });
+      expectedFragment = "agent command policy Shellfirm configuration is invalid";
+    };
+
+    uncheckedShellfirmWithoutCategories = {
+      expression = force (compileUnchecked {
+        commands.safe = true;
+        shellfirm = removeAttrs validShellfirm [ "categories" ];
+      });
+      expectedFragment = "agent command policy Shellfirm configuration is invalid";
+    };
+
+    uncheckedShellfirmWithoutRuleNamespaces = {
+      expression = force (compileUnchecked {
+        commands.safe = true;
+        shellfirm = removeAttrs validShellfirm [ "ruleNamespaces" ];
+      });
+      expectedFragment = "agent command policy Shellfirm configuration is invalid";
+    };
+
+    uncheckedShellfirmWithoutRules = {
+      expression = force (compileUnchecked {
+        commands.safe = true;
+        shellfirm = removeAttrs validShellfirm [ "rules" ];
+      });
+      expectedFragment = "agent command policy Shellfirm configuration is invalid";
     };
 
     uncheckedInvalidShellfirmCategorySelector = {
@@ -216,6 +470,16 @@ let
 
     checkedPolicyWithoutDecision = {
       expression = force (evalPolicy { });
+      expectedFragment = "agent command policy must define at least one decision";
+    };
+
+    uncheckedDisabledShellfirmSelectorWithoutOtherDecision = {
+      expression = force (compileUnchecked {
+        commands = { };
+        shellfirm = validShellfirm // {
+          categories.git = true;
+        };
+      });
       expectedFragment = "agent command policy must define at least one decision";
     };
 
