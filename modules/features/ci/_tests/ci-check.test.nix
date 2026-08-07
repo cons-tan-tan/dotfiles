@@ -311,6 +311,26 @@ in
     expected = [ "build" ];
   };
 
+  testHestiaJobIndexDoesNotForceBuildChecks = {
+    expr = builtins.attrNames (
+      (ciCheck.mkHestiaJobs {
+        checksBySystem = {
+          ${linuxSystem}.build = throw "build check was forced while indexing jobs";
+          ${darwinSystem} = { };
+        };
+        evaluationCompleteCheckNamesBySystem = {
+          ${linuxSystem} = [ ];
+          ${darwinSystem} = [ ];
+        };
+        routesBySystem = {
+          ${linuxSystem}.build = ciCheck.targets.linux "eval-tests";
+          ${darwinSystem} = { };
+        };
+      }).${linuxSystem}
+    );
+    expected = [ "build" ];
+  };
+
   testHestiaJobsDistributeEvaluationCompleteChecks = {
     expr =
       let

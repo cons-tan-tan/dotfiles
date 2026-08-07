@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -29,6 +30,7 @@ def command(arguments: list[str]) -> list[str]:
 
 def capture(arguments: list[str], target: Path) -> int:
     target.parent.mkdir(parents=True, exist_ok=True)
+    groups_by_drv: dict[str, set[str]] = {}
     with tempfile.NamedTemporaryFile(
         "w", encoding="utf-8", dir=target.parent, delete=False
     ) as output:
@@ -44,11 +46,33 @@ def capture(arguments: list[str], target: Path) -> int:
             sys.stdout.write(line)
             sys.stdout.flush()
             output.write(line)
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(record, dict):
+                continue
+            drv_path = record.get("drvPath")
+            meta = record.get("meta")
+            hestia = meta.get("hestia") if isinstance(meta, dict) else None
+            group = hestia.get("group") if isinstance(hestia, dict) else None
+            if isinstance(drv_path, str) and isinstance(group, str):
+                groups_by_drv.setdefault(drv_path, set()).add(group)
         return_code = process.wait()
 
     # A partial capture is diagnostically valuable and is explicitly marked by
     # the lane producer when the child exits unsuccessfully.
     temporary.replace(target)
+    conflicting_drv_paths = sorted(
+        drv_path for drv_path, groups in groups_by_drv.items() if len(groups) > 1
+    )
+    if return_code == 0 and conflicting_drv_paths:
+        print(
+            "error: Hestia derivations have conflicting groups: "
+            + json.dumps(conflicting_drv_paths),
+            file=sys.stderr,
+        )
+        return 1
     return return_code
 
 

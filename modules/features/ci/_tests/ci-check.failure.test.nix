@@ -101,7 +101,7 @@ let
           };
         }
       );
-      expectedFragment = ''"missing":["example"]'';
+      expectedFragment = ''"invalidRoutes":["example"]'';
     };
 
     buildSelectionRejectsStaleNames = {
@@ -370,6 +370,23 @@ let
       expectedFragment = ''"metadataMismatch":["example"]'';
     };
 
+    hestiaJobsValidateChecksExcludedFromCurrentSystem = {
+      expression = force (
+        ciCheck.mkHestiaChecks {
+          system = linuxSystem;
+          checks = {
+            excluded = ciCheck.annotate (ciCheck.targets.linux "eval-tests") fakeCheck;
+            selected = ciCheck.annotate (ciCheck.targets.linux "eval-tests") fakeCheck;
+          };
+          routes = {
+            excluded = ciCheck.targets.darwin "eval-tests";
+            selected = ciCheck.targets.linux "eval-tests";
+          };
+        }
+      );
+      expectedFragment = ''"metadataMismatch":["excluded"]'';
+    };
+
     hestiaJobsRejectMissingEvaluationCompleteMarker = {
       expression = force (
         (ciCheck.mkHestiaJobs {
@@ -440,7 +457,7 @@ let
           checks.unclassified = fakeCheck;
         }
       );
-      expectedFragment = ''"missing":["unclassified"]'';
+      expectedFragment = ''"invalidRoutes":["unclassified"]'';
     };
 
     incompleteTargets = {
@@ -474,7 +491,7 @@ let
           };
         }
       );
-      expectedFragment = ''"invalid":["example"]'';
+      expectedFragment = ''"invalidRoutes":["example"]'';
     };
 
     canonicalTargetsRejectAllNullSystems = {
@@ -487,7 +504,7 @@ let
           };
         }
       );
-      expectedFragment = ''"invalid":["example"]'';
+      expectedFragment = ''"invalidRoutes":["example"]'';
     };
 
     canonicalTargetsRejectUnknownGroup = {
@@ -500,7 +517,7 @@ let
           };
         }
       );
-      expectedFragment = ''"invalid":["example"]'';
+      expectedFragment = ''"invalidRoutes":["example"]'';
     };
 
     wrongDerivationSystem = {
@@ -511,19 +528,6 @@ let
         }
       );
       expectedFragment = ''"wrongSystem":["example"]'';
-    };
-
-    conflictingDerivationGroups = {
-      expression = force (
-        ciCheck.mkHestiaChecks {
-          system = linuxSystem;
-          checks = {
-            first = ciCheck.annotate (ciCheck.targets.linux "eval-tests") fakeCheck;
-            second = ciCheck.annotate (ciCheck.targets.linux "package-smoke") fakeCheck;
-          };
-        }
-      );
-      expectedFragment = ''"conflictingDrvPaths":["/nix/store/00000000000000000000000000000000-ci-check.drv"]'';
     };
 
     canonicalHestiaGroup = {

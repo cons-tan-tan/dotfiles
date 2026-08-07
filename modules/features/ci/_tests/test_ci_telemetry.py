@@ -68,6 +68,44 @@ class TelemetryTests(unittest.TestCase):
             self.assertEqual(target.read_text(), '{"attr":"quality"}\n')
         self.assertEqual(command([])[0:3], ["nix", "run", "nixpkgs#nix-eval-jobs"])
 
+    def test_eval_capture_rejects_conflicting_derivation_groups(self) -> None:
+        class Process:
+            stdout = iter(
+                [
+                    '{"attr":"first","drvPath":"/nix/store/shared.drv",'
+                    '"meta":{"hestia":{"group":"linux-first"}}}\n',
+                    '{"attr":"second","drvPath":"/nix/store/shared.drv",'
+                    '"meta":{"hestia":{"group":"linux-second"}}}\n',
+                ]
+            )
+
+            @staticmethod
+            def wait() -> int:
+                return 0
+
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "eval.jsonl"
+            with patch("capture_hestia_eval.subprocess.Popen", return_value=Process()):
+                with patch("capture_hestia_eval.sys.stdout", new=StringIO()):
+                    self.assertEqual(capture(["--flake", ".#checks"], target), 1)
+            self.assertEqual(len(target.read_text().splitlines()), 2)
+
+    def test_eval_capture_preserves_non_record_lines(self) -> None:
+        class Process:
+            stdout = iter(["\n", "not-json\n", "[]\n"])
+
+            @staticmethod
+            def wait() -> int:
+                return 0
+
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "eval.jsonl"
+            with patch("capture_hestia_eval.subprocess.Popen", return_value=Process()):
+                with patch("capture_hestia_eval.sys.stdout", new=StringIO()) as output:
+                    self.assertEqual(capture(["--flake", ".#checks"], target), 0)
+                    self.assertEqual(output.getvalue(), "\nnot-json\n[]\n")
+            self.assertEqual(target.read_text(), "\nnot-json\n[]\n")
+
     def test_stable_ids_do_not_depend_on_drv_hashes(self) -> None:
         identity = check_id("x86_64-linux", "lib.hestiaJobs.ci.x86_64-linux.quality")
         first = job_identity(

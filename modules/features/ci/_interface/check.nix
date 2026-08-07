@@ -364,77 +364,77 @@ let
       routeNames = builtins.attrNames routes;
       missingRoutes = lib.subtractLists routeNames checkNames;
       unexpectedRoutes = lib.subtractLists checkNames routeNames;
-      sharedNames = builtins.filter (name: builtins.hasAttr name routes) checkNames;
-      missing = builtins.filter (name: getTargets checks.${name} == null) sharedNames;
-      invalid = builtins.filter (
-        name:
-        let
-          checkTargets = getTargets checks.${name};
-        in
-        checkTargets != null && !(isValidTargets checkTargets)
-      ) sharedNames;
       invalidRoutes = builtins.filter (name: !(isValidTargets routes.${name})) routeNames;
-      metadataMismatch = builtins.filter (name: getTargets checks.${name} != routes.${name}) sharedNames;
       selectedNames = builtins.filter (
         name: isValidTargets routes.${name} && routes.${name}.${system} != null
-      ) sharedNames;
-      wrongSystem = builtins.filter (name: (checks.${name}.system or null) != system) selectedNames;
-      entries = map (
-        name:
-        let
-          check = checks.${name};
-          group = routes.${name}.${system};
-        in
-        {
-          inherit group name;
-          drvPath = check.drvPath;
-        }
-      ) selectedNames;
-      entriesByDrv = builtins.groupBy (entry: builtins.unsafeDiscardStringContext entry.drvPath) entries;
-      conflictingDrvs = lib.filterAttrs (
-        _: drvEntries: builtins.length (lib.unique (map (entry: entry.group) drvEntries)) > 1
-      ) entriesByDrv;
+      ) routeNames;
+      assignments = lib.imap0 (index: name: {
+        inherit name;
+        jobName =
+          let
+            jobCount = builtins.length selectedNames;
+          in
+          builtins.elemAt selectedNames (index - (builtins.div index jobCount) * jobCount);
+      }) routeNames;
     in
-    if
-      missingRoutes != [ ]
-      || unexpectedRoutes != [ ]
-      || missing != [ ]
-      || invalid != [ ]
-      || invalidRoutes != [ ]
-      || metadataMismatch != [ ]
-      || wrongSystem != [ ]
-      || conflictingDrvs != { }
-    then
+    if missingRoutes != [ ] || unexpectedRoutes != [ ] || invalidRoutes != [ ] then
       throw "invalid Hestia CI checks for ${system}: ${
         builtins.toJSON {
-          conflictingDrvPaths = builtins.attrNames conflictingDrvs;
           inherit
-            invalid
             invalidRoutes
-            metadataMismatch
-            missing
             missingRoutes
             unexpectedRoutes
-            wrongSystem
             ;
         }
       }"
+    else if routeNames != [ ] && selectedNames == [ ] then
+      throw "Hestia routes for ${system} require at least one selected build job"
     else
       lib.genAttrs selectedNames (
         name:
         let
           check = checks.${name};
+          assignedNames = map (assignment: assignment.name) (
+            builtins.filter (assignment: assignment.jobName == name) assignments
+          );
+          missing = builtins.filter (assignedName: getTargets checks.${assignedName} == null) assignedNames;
+          invalid = builtins.filter (
+            assignedName:
+            let
+              checkTargets = getTargets checks.${assignedName};
+            in
+            checkTargets != null && !(isValidTargets checkTargets)
+          ) assignedNames;
+          metadataMismatch = builtins.filter (
+            assignedName: getTargets checks.${assignedName} != routes.${assignedName}
+          ) assignedNames;
+          wrongSystem = builtins.filter (
+            assignedName:
+            routes.${assignedName}.${system} != null && (checks.${assignedName}.system or null) != system
+          ) assignedNames;
           oldMeta = check.meta or { };
           group = routes.${name}.${system};
         in
-        check
-        // {
-          meta = oldMeta // {
-            hestia = (oldMeta.hestia or { }) // {
-              group = "${prefix}-${group}";
+        if missing != [ ] || invalid != [ ] || metadataMismatch != [ ] || wrongSystem != [ ] then
+          throw "invalid Hestia CI checks for ${system}: ${
+            builtins.toJSON {
+              inherit
+                invalid
+                metadataMismatch
+                missing
+                wrongSystem
+                ;
+            }
+          }"
+        else
+          check
+          // {
+            meta = oldMeta // {
+              hestia = (oldMeta.hestia or { }) // {
+                group = "${prefix}-${group}";
+              };
             };
-          };
-        }
+          }
       );
 
   mkHestiaJobs =
