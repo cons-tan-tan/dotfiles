@@ -53,6 +53,7 @@ jobs:
           HESTIA_VERSION: ${{ steps.setup-hestia.outputs.hestia-version }}
           SYSTEM: ${{ inputs.system }}
           TELEMETRY_ATTR_PREFIX: lib.hestiaJobs.ci.${{ inputs.system }}
+          TELEMETRY_RUNNER_NAME: ${{ runner.name }}
         run: python3 modules/features/ci/_scripts/optimize_hestia_matrix.py
       - name: Upload evaluation telemetry
         id: upload-evaluation-telemetry
@@ -122,6 +123,7 @@ jobs:
           TELEMETRY_JOB_NAME: ${{ matrix.name }}
           TELEMETRY_KEY: ${{ matrix.telemetryKey }}
           TELEMETRY_RUNNER_LABELS: ${{ join(matrix.os, ',') }}
+          TELEMETRY_RUNNER_NAME: ${{ runner.name }}
         run: python3 modules/features/ci/_scripts/run_hestia_build.py
       - name: Upload build telemetry
         if: always()
@@ -132,24 +134,3 @@ jobs:
           path: ${{ runner.temp }}/ci-telemetry/job-${{ matrix.telemetryKey }}.json
           if-no-files-found: warn
           retention-days: 7
-
-  result:
-    name: result
-    needs:
-      - evaluate
-      - build
-    if: always()
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Check out CI scripts
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          sparse-checkout: modules/features/ci/_scripts
-      - name: Verify system result
-        env:
-          ANY_JOBS: ${{ needs.evaluate.outputs.any-jobs }}
-          BUILD_RESULT: ${{ needs.build.result }}
-          EVAL_RESULT: ${{ needs.evaluate.result }}
-        run: bash modules/features/ci/_scripts/verify_hestia_result.sh

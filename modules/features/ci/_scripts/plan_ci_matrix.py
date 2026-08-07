@@ -19,15 +19,16 @@ import re
 import shutil
 import sys
 from collections import defaultdict
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 from ci_telemetry import atomic_write_json, read_document, stable_hash
 from ortools.sat.python import cp_model
 
-SCHEMA_ID = "https://raw.githubusercontent.com/cons-tan-tan/dotfiles/main/modules/features/ci/_schemas/ci-optimization-v1.schema.json"
+SCHEMA_ID = "https://raw.githubusercontent.com/cons-tan-tan/dotfiles/main/modules/features/ci/_schemas/ci-optimization-v2.schema.json"
 ALGORITHM = "cp-sat-set-union-load-balancing"
 ALGORITHM_VERSION = "1"
 PRODUCER = {"name": "dotfiles-ci-matrix-planner", "version": "1.0.0"}
@@ -60,13 +61,9 @@ class Timing:
     workflow_queue_ms: int
     flake_start_ms: int
     flake_eval_ms: int
-    required_dispatch_ms: int
-    required_ms: int
     evaluate_start_ms: dict[str, int]
     evaluate_ms: dict[str, int]
     dispatch_ms: dict[str, int]
-    result_dispatch_ms: dict[str, int]
-    result_ms: dict[str, int]
     wrapper_overhead_ms: dict[str, tuple[int, ...]]
 
 
@@ -100,7 +97,7 @@ class PlannedJob:
 @dataclass(frozen=True)
 class SolverResult:
     jobs: tuple[PlannedJob, ...]
-    makespan_before_required_ms: int
+    makespan_ms: int
     total_runner_ms: int
     stage_statuses: tuple[str, ...]
     wall_time_ms: int
@@ -550,7 +547,7 @@ def build_cost_model(
 
 def parse_timing(path: Path, target: RunTelemetry) -> Timing:
     value = require_mapping(json.loads(path.read_text()), "workflow timing")
-    if value.get("schema_version") != 1:
+    if value.get("schema_version") not in {1, 2}:
         raise ValueError("unsupported workflow timing")
     source = require_mapping(target.index.get("source"), "run source")
     if (
@@ -563,13 +560,153 @@ def parse_timing(path: Path, target: RunTelemetry) -> Timing:
     raw_jobs = value.get("jobs")
     if not isinstance(raw_jobs, list):
         raise ValueError("workflow timing has no jobs")
-    jobs = {
-        require_nonempty_string(job.get("name"), "workflow job name"): require_mapping(
-            job, "workflow job"
+    workflow_start = timestamp_ms(value.get("started_at"), "workflow start")
+    observed_duration = duration_ms(
+        source.get("created_at"), source.get("updated_at"), "workflow"
+    )
+    if value.get("schema_version") == 2:
+        return parse_structured_timing(
+            raw_jobs,
+            target,
+            observed_duration=observed_duration,
+            workflow_start=workflow_start,
+            workflow_created=timestamp_ms(
+                source.get("created_at"), "workflow creation"
+            ),
         )
+    return parse_legacy_timing(
+        raw_jobs,
+        target,
+        observed_duration=observed_duration,
+        workflow_start=workflow_start,
+        workflow_created=timestamp_ms(source.get("created_at"), "workflow creation"),
+    )
+
+
+def parse_structured_timing(
+    raw_jobs: list[object],
+    target: RunTelemetry,
+    *,
+    observed_duration: int,
+    workflow_start: int,
+    workflow_created: int,
+) -> Timing:
+    jobs = [require_mapping(raw, "workflow job") for raw in raw_jobs]
+
+    def select(role: str, system: str | None = None) -> list[dict[str, Any]]:
+        return [
+            job
+            for job in jobs
+            if job.get("role") == role
+            and (system is None or job.get("system") == system)
+        ]
+
+    def exactly_one(role: str, system: str) -> dict[str, Any]:
+        matches = select(role, system)
+        if len(matches) != 1:
+            raise ValueError(f"expected one {role} workflow job for {system}")
+        return matches[0]
+
+    flake_jobs = select("flake-eval")
+    if not flake_jobs:
+        raise ValueError("workflow timing has no flake evaluation jobs")
+    flake_started = min(
+        timestamp_ms(job.get("started_at"), "flake evaluation start")
+        for job in flake_jobs
+    )
+    flake_completed = max(
+        timestamp_ms(job.get("completed_at"), "flake evaluation completion")
+        for job in flake_jobs
+    )
+    evaluate: dict[str, int] = {}
+    evaluate_start: dict[str, int] = {}
+    dispatch: dict[str, int] = {}
+    wrapper: dict[str, tuple[int, ...]] = {}
+    for system in sorted(target.bundles):
+        evaluate_job = exactly_one("system-evaluate", system)
+        evaluate_start[system] = max(
+            0,
+            timestamp_ms(evaluate_job.get("started_at"), "system evaluation start")
+            - workflow_start,
+        )
+        evaluate[system] = duration_ms(
+            evaluate_job.get("started_at"),
+            evaluate_job.get("completed_at"),
+            "system evaluation",
+        )
+        evaluate_completed = timestamp_ms(
+            evaluate_job.get("completed_at"), "system evaluation completion"
+        )
+        build_jobs = select("system-build", system)
+        dispatch[system] = (
+            max(
+                0,
+                max(
+                    timestamp_ms(job.get("started_at"), "build start")
+                    for job in build_jobs
+                )
+                - evaluate_completed,
+            )
+            if build_jobs
+            else 0
+        )
+        timing_by_key = {
+            require_nonempty_string(
+                job.get("telemetry_key"), "build telemetry key"
+            ): job
+            for job in build_jobs
+        }
+        if len(timing_by_key) != len(build_jobs):
+            raise ValueError("duplicate build timing identity")
+        _decisions, observed = jobs_by_id(target.bundles[system])
+        observed_by_key = {
+            require_nonempty_string(job.get("telemetry_key"), "job telemetry key"): job
+            for job in observed.values()
+        }
+        if set(timing_by_key) != set(observed_by_key):
+            raise ValueError(f"build timing does not match telemetry for {system}")
+        wrapper[system] = tuple(
+            max(
+                0,
+                duration_ms(
+                    timing_by_key[key].get("started_at"),
+                    timing_by_key[key].get("completed_at"),
+                    "build workflow job",
+                )
+                - require_nonnegative_integer(
+                    observed_by_key[key].get("total_duration_ms"), "job duration"
+                ),
+            )
+            for key in sorted(timing_by_key)
+        )
+    return Timing(
+        sample_count=1,
+        observed_duration_ms=observed_duration,
+        workflow_queue_ms=max(0, workflow_start - workflow_created),
+        flake_start_ms=max(0, flake_started - workflow_start),
+        flake_eval_ms=max(0, flake_completed - flake_started),
+        evaluate_start_ms=evaluate_start,
+        evaluate_ms=evaluate,
+        dispatch_ms=dispatch,
+        wrapper_overhead_ms=wrapper,
+    )
+
+
+def parse_legacy_timing(
+    raw_jobs: list[object],
+    target: RunTelemetry,
+    *,
+    observed_duration: int,
+    workflow_start: int,
+    workflow_created: int,
+) -> Timing:
+    jobs = {
+        require_nonempty_string(job.get("name"), "workflow job name"): job
         for raw in raw_jobs
         for job in [require_mapping(raw, "workflow job")]
     }
+    if len(jobs) != len(raw_jobs):
+        raise ValueError("duplicate workflow job name")
 
     def job_duration(name: str) -> int:
         job = require_mapping(jobs.get(name), f"workflow job {name}")
@@ -583,17 +720,11 @@ def parse_timing(path: Path, target: RunTelemetry) -> Timing:
         job = require_mapping(jobs.get(name), f"workflow job {name}")
         return timestamp_ms(job.get("completed_at"), f"workflow job {name} completion")
 
-    systems = sorted(target.bundles)
     lane_names: dict[str, str] = {}
-    for system in systems:
-        suffix = f" ({system})"
-        candidates = sorted(
-            name.split(" / build / ", 1)[0]
-            for name in jobs
-            if " / build / " in name and name.endswith(suffix)
-        )
-        if candidates:
-            lane_names[system] = candidates[0]
+    for system in sorted(target.bundles):
+        structured_lane = f"system / {system}"
+        if f"{structured_lane} / evaluate" in jobs:
+            lane_names[system] = structured_lane
             continue
         conventional = (
             "linux"
@@ -606,91 +737,72 @@ def parse_timing(path: Path, target: RunTelemetry) -> Timing:
             raise ValueError(f"could not identify workflow lane for {system}")
         lane_names[system] = conventional
 
+    flake_names = (
+        ["evaluate / flake"]
+        if "evaluate / flake" in jobs
+        else sorted(
+            name
+            for name in jobs
+            if name.startswith("flake / ") and name.endswith(" / evaluate")
+        )
+    )
+    if not flake_names:
+        raise ValueError("workflow timing has no flake evaluation jobs")
+    flake_started = min(job_start(name) for name in flake_names)
+    flake_completed = max(job_completion(name) for name in flake_names)
     evaluate: dict[str, int] = {}
     evaluate_start: dict[str, int] = {}
     dispatch: dict[str, int] = {}
-    result_dispatch: dict[str, int] = {}
-    result: dict[str, int] = {}
     wrapper: dict[str, tuple[int, ...]] = {}
-    workflow_start = timestamp_ms(value.get("started_at"), "workflow start")
     for system, lane_name in lane_names.items():
         evaluate_name = f"{lane_name} / evaluate"
-        result_name = f"{lane_name} / result"
         evaluate_start[system] = max(0, job_start(evaluate_name) - workflow_start)
         evaluate[system] = job_duration(evaluate_name)
-        result[system] = job_duration(result_name)
         evaluate_completed = job_completion(evaluate_name)
-        build_jobs = [
-            job
-            for name, job in jobs.items()
+        build_names = [
+            name
+            for name in jobs
             if name.startswith(f"{lane_name} / build / ")
-            and name.endswith(f" ({system})")
+            and (lane_name.startswith("system / ") or name.endswith(f" ({system})"))
         ]
         dispatch[system] = (
-            max(
-                0,
-                max(
-                    timestamp_ms(job["started_at"], "build start") for job in build_jobs
-                )
-                - evaluate_completed,
-            )
-            if build_jobs
+            max(0, max(job_start(name) for name in build_names) - evaluate_completed)
+            if build_names
             else 0
         )
-        builds_completed = max(
-            (
-                timestamp_ms(job["completed_at"], "build completion")
-                for job in build_jobs
-            ),
-            default=evaluate_completed,
-        )
-        result_dispatch[system] = max(0, job_start(result_name) - builds_completed)
         _decisions, observed = jobs_by_id(target.bundles[system])
-        extras: list[int] = []
+        extras = []
         for job in observed.values():
             name = str(job["name"])
-            workflow_name = f"{lane_name} / build / {name} ({system})"
-            workflow_job = jobs.get(workflow_name)
-            if workflow_job is None:
+            candidates = (
+                [f"{lane_name} / build / {name}"]
+                if lane_name.startswith("system / ")
+                else [f"{lane_name} / build / {name} ({system})"]
+            )
+            workflow_name = next(
+                (candidate for candidate in candidates if candidate in jobs), None
+            )
+            if workflow_name is None:
                 continue
             extras.append(
                 max(
                     0,
-                    duration_ms(
-                        workflow_job["started_at"],
-                        workflow_job["completed_at"],
-                        workflow_name,
-                    )
+                    job_duration(workflow_name)
                     - require_nonnegative_integer(
                         job.get("total_duration_ms"), "job duration"
                     ),
                 )
             )
         wrapper[system] = tuple(extras)
-    observed_duration = duration_ms(
-        source.get("created_at"), source.get("updated_at"), "workflow"
-    )
-    critical_completion = max(
-        job_completion("evaluate / flake"),
-        *(job_completion(f"{lane_name} / result") for lane_name in lane_names.values()),
-    )
     return Timing(
         sample_count=1,
         observed_duration_ms=observed_duration,
-        workflow_queue_ms=max(
-            0,
-            workflow_start
-            - timestamp_ms(source.get("created_at"), "workflow creation"),
-        ),
-        flake_start_ms=max(0, job_start("evaluate / flake") - workflow_start),
-        flake_eval_ms=job_duration("evaluate / flake"),
-        required_dispatch_ms=max(0, job_start("required") - critical_completion),
-        required_ms=job_duration("required"),
+        workflow_queue_ms=max(0, workflow_start - workflow_created),
+        flake_start_ms=max(0, flake_started - workflow_start),
+        flake_eval_ms=max(0, flake_completed - flake_started),
         evaluate_start_ms=evaluate_start,
         evaluate_ms=evaluate,
         dispatch_ms=dispatch,
-        result_dispatch_ms=result_dispatch,
-        result_ms=result,
         wrapper_overhead_ms=wrapper,
     )
 
@@ -724,16 +836,6 @@ def aggregate_timing(
             robust_quantile,
             default=target.flake_eval_ms,
         ),
-        required_dispatch_ms=quantile(
-            (timing.required_dispatch_ms for timing in usable),
-            robust_quantile,
-            default=target.required_dispatch_ms,
-        ),
-        required_ms=quantile(
-            (timing.required_ms for timing in usable),
-            robust_quantile,
-            default=target.required_ms,
-        ),
         evaluate_start_ms={
             system: quantile(
                 (timing.evaluate_start_ms[system] for timing in usable),
@@ -755,22 +857,6 @@ def aggregate_timing(
                 (timing.dispatch_ms[system] for timing in usable),
                 robust_quantile,
                 default=target.dispatch_ms[system],
-            )
-            for system in systems
-        },
-        result_dispatch_ms={
-            system: quantile(
-                (timing.result_dispatch_ms[system] for timing in usable),
-                robust_quantile,
-                default=target.result_dispatch_ms[system],
-            )
-            for system in systems
-        },
-        result_ms={
-            system: quantile(
-                (timing.result_ms[system] for timing in usable),
-                robust_quantile,
-                default=target.result_ms[system],
             )
             for system in systems
         },
@@ -835,8 +921,6 @@ def schedule_metrics(jobs: Sequence[PlannedJob], timing: Timing) -> tuple[int, i
             + timing.evaluate_ms[system]
             + timing.dispatch_ms[system]
             + maximum
-            + timing.result_dispatch_ms[system]
-            + timing.result_ms[system]
         )
     return timing.workflow_queue_ms + max(
         [timing.flake_start_ms + timing.flake_eval_ms, *lane_finishes]
@@ -960,8 +1044,6 @@ def solve_schedule(
             + timing.evaluate_start_ms[system]
             + timing.evaluate_ms[system]
             + timing.dispatch_ms[system]
-            + timing.result_dispatch_ms[system]
-            + timing.result_ms[system]
             + sum(upper for key, upper in load_upper_bounds.items() if key[0] == system)
             for system in timing.evaluate_ms
         ),
@@ -980,14 +1062,12 @@ def solve_schedule(
             + timing.evaluate_start_ms[system]
             + timing.evaluate_ms[system]
             + timing.dispatch_ms[system]
-            + timing.result_dispatch_ms[system]
-            + timing.result_ms[system]
         )
         lane_finish[system] = model.NewIntVar(
             offset, offset + upper, f"lane_finish_{system}"
         )
         model.Add(lane_finish[system] == offset + lane_max[system])
-    makespan = model.NewIntVar(0, max_upper, "workflow_makespan_before_required")
+    makespan = model.NewIntVar(0, max_upper, "workflow_makespan")
     model.AddMaxEquality(
         makespan,
         [
@@ -1124,7 +1204,7 @@ def solve_schedule(
             )
     return SolverResult(
         jobs=tuple(sorted(planned, key=lambda item: (item.system, item.name))),
-        makespan_before_required_ms=final_solver.Value(makespan),
+        makespan_ms=final_solver.Value(makespan),
         total_runner_ms=final_solver.Value(total_runner),
         stage_statuses=tuple(statuses),
         wall_time_ms=round(wall_time * 1000),
@@ -1157,17 +1237,13 @@ def schedule_json(jobs: Sequence[PlannedJob], timing: Timing) -> dict[str, objec
                 + timing.workflow_queue_ms
                 + timing.evaluate_start_ms[system]
                 + timing.dispatch_ms[system]
-                + max((job.predicted_duration_ms for job in system_jobs), default=0)
-                + timing.result_dispatch_ms[system]
-                + timing.result_ms[system],
+                + max((job.predicted_duration_ms for job in system_jobs), default=0),
                 "jobs": [job_json(job) for job in system_jobs],
             }
         )
     return {
-        "predicted_workflow_duration_ms": critical
-        + timing.required_dispatch_ms
-        + timing.required_ms,
-        "critical_path_before_required_ms": critical,
+        "predicted_workflow_duration_ms": critical,
+        "critical_path_ms": critical,
         "total_build_runner_ms": total,
         "job_count": len(jobs),
         "systems": systems,
@@ -1215,7 +1291,7 @@ def create_plan(
         critical, total = schedule_metrics(baseline, timing)
         solution = SolverResult(
             jobs=tuple(baseline),
-            makespan_before_required_ms=critical,
+            makespan_ms=critical,
             total_runner_ms=total,
             stage_statuses=(*error.statuses, "fallback_baseline"),
             wall_time_ms=0,
@@ -1269,7 +1345,7 @@ def create_plan(
     )
     return {
         "$schema": SCHEMA_ID,
-        "schema_version": 1,
+        "schema_version": 2,
         "document_type": "ci_matrix_optimization",
         "producer": PRODUCER,
         "observed_at": observed_at(),
@@ -1324,15 +1400,11 @@ def create_plan(
             "workflow_queue_ms": timing.workflow_queue_ms,
             "flake_start_ms": timing.flake_start_ms,
             "flake_eval_ms": timing.flake_eval_ms,
-            "required_dispatch_ms": timing.required_dispatch_ms,
-            "required_ms": timing.required_ms,
             "systems": {
                 system: {
                     "evaluate_start_ms": timing.evaluate_start_ms[system],
                     "evaluate_ms": timing.evaluate_ms[system],
                     "build_dispatch_ms": timing.dispatch_ms[system],
-                    "result_dispatch_ms": timing.result_dispatch_ms[system],
-                    "result_ms": timing.result_ms[system],
                 }
                 for system in sorted(timing.evaluate_ms)
             },

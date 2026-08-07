@@ -346,6 +346,10 @@ class TelemetryTests(unittest.TestCase):
             "job",
             "x86_64-linux",
             {
+                "workflow_job": {
+                    "role": "system-build",
+                    "runner_name": "GitHub Actions test",
+                },
                 "job_id": job_id,
                 "telemetry_key": key,
                 "name": "check",
@@ -371,12 +375,19 @@ class TelemetryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_document(invalid_job, "job")
         bundle = failed_bundle("x86_64-linux")
+        workflow_job = document(
+            "workflow_job",
+            "x86_64-linux",
+            {"role": "flake-eval", "runner_name": "GitHub Actions flake"},
+        )
         schema = Path(__file__).parents[1] / "_schemas" / "telemetry-v1.schema.json"
         with tempfile.TemporaryDirectory() as directory:
             job_path = Path(directory) / "job.json"
             bundle_path = Path(directory) / "bundle.json"
+            workflow_job_path = Path(directory) / "workflow-job.json"
             atomic_write_json(job_path, job)
             atomic_write_json(bundle_path, bundle)
+            atomic_write_json(workflow_job_path, workflow_job)
             result = subprocess.run(
                 [
                     validator,
@@ -384,6 +395,7 @@ class TelemetryTests(unittest.TestCase):
                     str(schema),
                     str(job_path),
                     str(bundle_path),
+                    str(workflow_job_path),
                 ],
                 check=False,
                 capture_output=True,

@@ -1,0 +1,335 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/cons-tan-tan/dotfiles/main/modules/features/ci/_schemas/ci-optimization-v2.schema.json",
+  "title": "Dotfiles CI matrix optimization",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema_version",
+    "document_type",
+    "producer",
+    "observed_at",
+    "source",
+    "rollout",
+    "model",
+    "workflow_timing",
+    "baseline",
+    "recommendation",
+    "delta"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "https://raw.githubusercontent.com/cons-tan-tan/dotfiles/main/modules/features/ci/_schemas/ci-optimization-v2.schema.json"
+    },
+    "schema_version": { "const": 2 },
+    "document_type": { "const": "ci_matrix_optimization" },
+    "producer": { "$ref": "#/$defs/producer" },
+    "observed_at": { "type": "string", "format": "date-time" },
+    "source": { "$ref": "#/$defs/source" },
+    "rollout": { "$ref": "#/$defs/rollout" },
+    "model": { "$ref": "#/$defs/model" },
+    "workflow_timing": { "$ref": "#/$defs/workflowTiming" },
+    "baseline": { "$ref": "#/$defs/schedule" },
+    "recommendation": { "$ref": "#/$defs/schedule" },
+    "delta": { "$ref": "#/$defs/delta" }
+  },
+  "$defs": {
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "const": "dotfiles-ci-matrix-planner" },
+        "version": { "const": "1.0.0" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "run_id",
+        "run_attempt",
+        "commit_sha",
+        "history_samples",
+        "usable_history_runs"
+      ],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "run_id": { "type": "string", "pattern": "^[1-9][0-9]*$" },
+        "run_attempt": { "type": "integer", "minimum": 1 },
+        "commit_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "history_samples": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/historySample" }
+        },
+        "usable_history_runs": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "rollout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "minimum_history_runs",
+        "data_ready",
+        "automatic_application",
+        "reason_code"
+      ],
+      "properties": {
+        "mode": { "const": "shadow" },
+        "minimum_history_runs": { "type": "integer", "minimum": 1 },
+        "data_ready": { "type": "boolean" },
+        "automatic_application": { "const": false },
+        "reason_code": {
+          "enum": [
+            "insufficient_history",
+            "insufficient_cost_coverage",
+            "no_build_work",
+            "shadow_only",
+            "solver_not_proven_optimal"
+          ]
+        }
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "algorithm_version",
+        "parameters",
+        "costs",
+        "solver"
+      ],
+      "properties": {
+        "algorithm": { "const": "cp-sat-set-union-load-balancing" },
+        "algorithm_version": { "const": "1" },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "max_jobs_per_system",
+            "makespan_slack_ms",
+            "solver_time_limit_seconds",
+            "robust_quantile",
+            "minimum_dependency_samples"
+          ],
+          "properties": {
+            "max_jobs_per_system": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 32
+            },
+            "makespan_slack_ms": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3600000
+            },
+            "solver_time_limit_seconds": {
+              "type": "number",
+              "minimum": 0.1,
+              "maximum": 60
+            },
+            "robust_quantile": {
+              "type": "number",
+              "minimum": 0.5,
+              "maximum": 1
+            },
+            "minimum_dependency_samples": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "costs": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "$ref": "#/$defs/systemCost" }
+        },
+        "solver": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["stage_statuses", "wall_time_ms"],
+          "properties": {
+            "stage_statuses": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 3,
+              "items": {
+                "enum": [
+                  "optimal",
+                  "feasible",
+                  "unknown",
+                  "infeasible",
+                  "model_invalid",
+                  "not_needed",
+                  "fallback_baseline"
+                ]
+              }
+            },
+            "wall_time_ms": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "systemCost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fixed_job_cost_ms",
+        "default_dependency_cost_ms",
+        "dependency_samples",
+        "target_dependency_count",
+        "qualified_dependency_count"
+      ],
+      "properties": {
+        "fixed_job_cost_ms": { "type": "integer", "minimum": 1 },
+        "default_dependency_cost_ms": { "type": "integer", "minimum": 1 },
+        "dependency_samples": { "type": "integer", "minimum": 0 },
+        "target_dependency_count": { "type": "integer", "minimum": 0 },
+        "qualified_dependency_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "workflowTiming": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sample_count",
+        "observed_duration_ms",
+        "workflow_queue_ms",
+        "flake_start_ms",
+        "flake_eval_ms",
+        "systems"
+      ],
+      "properties": {
+        "sample_count": { "type": "integer", "minimum": 1 },
+        "observed_duration_ms": { "type": "integer", "minimum": 0 },
+        "workflow_queue_ms": { "type": "integer", "minimum": 0 },
+        "flake_start_ms": { "type": "integer", "minimum": 0 },
+        "flake_eval_ms": { "type": "integer", "minimum": 0 },
+        "systems": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "$ref": "#/$defs/systemTiming" }
+        }
+      }
+    },
+    "systemTiming": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evaluate_start_ms",
+        "evaluate_ms",
+        "build_dispatch_ms"
+      ],
+      "properties": {
+        "evaluate_start_ms": { "type": "integer", "minimum": 0 },
+        "evaluate_ms": { "type": "integer", "minimum": 0 },
+        "build_dispatch_ms": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "historySample": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["run_id", "run_attempt"],
+      "properties": {
+        "run_id": { "type": "string", "pattern": "^[1-9][0-9]*$" },
+        "run_attempt": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "schedule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "predicted_workflow_duration_ms",
+        "critical_path_ms",
+        "total_build_runner_ms",
+        "job_count",
+        "systems"
+      ],
+      "properties": {
+        "predicted_workflow_duration_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "critical_path_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "total_build_runner_ms": { "type": "integer", "minimum": 0 },
+        "job_count": { "type": "integer", "minimum": 0 },
+        "systems": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/systemSchedule" }
+        }
+      }
+    },
+    "systemSchedule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["system", "predicted_lane_duration_ms", "jobs"],
+      "properties": {
+        "system": { "type": "string", "minLength": 1 },
+        "predicted_lane_duration_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "jobs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/job" }
+        }
+      }
+    },
+    "job": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "system",
+        "runner_labels",
+        "member_check_ids",
+        "root_drv_ids",
+        "planned_drv_ids",
+        "predicted_duration_ms"
+      ],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "system": { "type": "string", "minLength": 1 },
+        "runner_labels": { "$ref": "#/$defs/stringArray" },
+        "member_check_ids": { "$ref": "#/$defs/stringArray" },
+        "root_drv_ids": { "$ref": "#/$defs/drvArray" },
+        "planned_drv_ids": { "$ref": "#/$defs/drvArray" },
+        "predicted_duration_ms": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "stringArray": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "drvArray": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[0-9a-z]{32}$" }
+    },
+    "delta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "predicted_workflow_duration_ms",
+        "total_build_runner_ms",
+        "job_count"
+      ],
+      "properties": {
+        "predicted_workflow_duration_ms": { "type": "integer" },
+        "total_build_runner_ms": { "type": "integer" },
+        "job_count": { "type": "integer" }
+      }
+    }
+  }
+}

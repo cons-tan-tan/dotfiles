@@ -206,7 +206,7 @@ def expected_bundle_run(source: dict[str, object], system: str) -> dict[str, obj
 def valid_artifact_inventory(directory: Path, index: dict[str, object]) -> bool:
     try:
         validate_run_index(index)
-        if set(index) != {
+        required_index_fields = {
             "$schema",
             "schema_version",
             "document_type",
@@ -218,6 +218,10 @@ def valid_artifact_inventory(directory: Path, index: dict[str, object]) -> bool:
             "collection_status",
             "expected_systems",
             "systems",
+        }
+        if set(index) not in {
+            frozenset(required_index_fields),
+            frozenset(required_index_fields | {"workflow_jobs"}),
         }:
             return False
         if (
@@ -304,7 +308,7 @@ def timing_matches_run(
         return False
     return (
         isinstance(timing, dict)
-        and timing.get("schema_version") == 1
+        and timing.get("schema_version") in {1, 2}
         and timing.get("document_type") == "workflow_timing"
         and timing.get("repository") == repository
         and str(timing.get("run_id")) == source_identity[0]
@@ -502,6 +506,7 @@ def collect_history(
                     repository,
                     identity[0],
                     identity[1],
+                    telemetry_root=extracted,
                     timeout=remaining_timeout(deadline, 60),
                 )
                 destination = output / f"run-{identity[0]}-{identity[1]}"

@@ -12,8 +12,6 @@
     "modules/features/ci/_scripts/prefetch_hestia_closure_and_build.sh"
     "modules/features/ci/_scripts/validate_hestia_matrix.py"
     "modules/features/ci/_scripts/verify_binary_substituters.sh"
-    "modules/features/ci/_scripts/verify_hestia_result.sh"
-    "modules/features/ci/_scripts/verify_required_results.sh"
   ];
   initializeGit = false;
   platformPredicate = _platform: true;

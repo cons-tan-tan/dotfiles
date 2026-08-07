@@ -324,7 +324,8 @@ YAML
         )] | length) == 1),
         (([$runs[] | select(
           contains("nix flake check --no-build --option system")
-        )][0]) == "nix flake check --no-build --option system \"$FLAKE_EVAL_SYSTEM\""),
+        )][0] | split("\n") | map(select(length > 0)) | .[-1])
+          == "nix flake check --no-build --option system \"$FLAKE_EVAL_SYSTEM\""),
         (([$runs[] | select(
           contains("nix flake check --no-build --all-systems")
         )] | length) == 0),
@@ -400,13 +401,28 @@ YAML
     and ([.jobs."flake-eval".steps[] | select(.wait == "checkout")]
       | length) == 1
     and ([.jobs."flake-eval".steps[] | select(
-      .name == "Evaluate flake outputs"
+      .name == "Record workflow job identity"
     )] | length) == 1
+    and ([.jobs."flake-eval".steps[] | select(
+      .name == "Record workflow job identity"
+    )][0] | (
+      ."continue-on-error" == true
+      and .env.FLAKE_EVAL_SYSTEM == "${{ matrix.system }}"
+      and (.run | contains("write_workflow_job_identity.py"))
+    ))
     and ([.jobs."flake-eval".steps[] | select(
       .name == "Evaluate flake outputs"
     )][0] | (
-      .env.FLAKE_EVAL_SYSTEM == "${{ matrix.system }}"
-      and .run == "nix flake check --no-build --option system \"$FLAKE_EVAL_SYSTEM\""
+      ."continue-on-error" == null
+      and (.run == "nix flake check --no-build --option system \"$FLAKE_EVAL_SYSTEM\"")
+    ))
+    and ([.jobs."flake-eval".steps[] | select(
+      .name == "Upload workflow job identity"
+    )][0] | (
+      .if == "always()"
+      and ."continue-on-error" == true
+      and (.with.name | contains("ci-workflow-job-"))
+      and .with."if-no-files-found" == "ignore"
     ))
     and .jobs.linux.name == "system / x86_64-linux"
     and .jobs.linux.uses == "$/.github/workflows/hestia-system.yaml"
@@ -462,6 +478,8 @@ YAML
       == "${{ steps.setup-hestia.outputs.hestia-version }}"
     and ([.jobs.evaluate.steps[] | select(.id == "optimized-matrix")][0].env.TELEMETRY_ATTR_PREFIX)
       == "lib.hestiaJobs.ci.${{ inputs.system }}"
+    and ([.jobs.evaluate.steps[] | select(.id == "optimized-matrix")][0].env.TELEMETRY_RUNNER_NAME)
+      == "${{ runner.name }}"
     and ([.jobs.evaluate.steps[] | select(.id == "optimized-matrix")][0].run)
       == "python3 modules/features/ci/_scripts/optimize_hestia_matrix.py"
     and ([.jobs.evaluate.steps[] | select(.id == "matrix")][0].run)
@@ -517,6 +535,10 @@ YAML
     )][0].env.TELEMETRY_JOB_ID)
       == "${{ matrix.jobId }}"
     and ([.jobs.build.steps[] | select(
+      .run == "python3 modules/features/ci/_scripts/run_hestia_build.py"
+    )][0].env.TELEMETRY_RUNNER_NAME)
+      == "${{ runner.name }}"
+    and ([.jobs.build.steps[] | select(
       .run == "bash modules/features/ci/_scripts/verify_binary_substituters.sh"
     )] | length) == 1
     and ([.jobs.build.steps[] | select(
@@ -568,10 +590,7 @@ YAML
         (.uses // "") | test("^actions/upload-artifact@")
       )][0].with."retention-days"
         == 7),
-      ([.jobs.result.steps[] | select(
-        ((.uses // "") | test("^actions/(download|upload)-artifact@"))
-        or ((.run // "") | contains("telemetry"))
-      )] | length) == 0
+      (.jobs | has("result") | not)
     ] | all
   ' "$HESTIA_WORKFLOW"
   [ "$status" -eq 0 ]
@@ -613,6 +632,10 @@ YAML
         ([$steps[] | select(.id == "download")][0].with."github-token"
           == "${{ github.token }}"),
         ([$steps[] | select(.id == "download")][0].with."merge-multiple" == false),
+        ([$steps[] | select(.name == "Download workflow job identities")][0].with.pattern
+          == "ci-workflow-job-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}-*"),
+        ([$steps[] | select(.name == "Download workflow job identities")][0].with."run-id"
+          == "${{ github.event.workflow_run.id }}"),
         ([$steps[] | select(
           (.run // "") | contains("collect_ci_telemetry.py")
         )][0].run | contains("collect_ci_telemetry.py")),
@@ -629,11 +652,23 @@ YAML
           (.run // "") | contains("collect_ci_telemetry.py")
         )][0].run | contains("--system x86_64-linux")),
         ([$steps[] | select(
+          (.run // "") | contains("collect_ci_telemetry.py")
+        )][0].run | contains("--workflow-job-system aarch64-linux")),
+        ([$steps[] | select(
+          (.run // "") | contains("collect_ci_telemetry.py")
+        )][0].run | contains("--workflow-job-system aarch64-darwin")),
+        ([$steps[] | select(
+          (.run // "") | contains("collect_ci_telemetry.py")
+        )][0].run | contains("--workflow-job-system x86_64-linux")),
+        ([$steps[] | select(
           (.run // "") | contains("capture_workflow_timing.py")
         )][0].env.SOURCE_RUN_ATTEMPT == "${{ github.event.workflow_run.run_attempt }}"),
         ([$steps[] | select(
           (.run // "") | contains("capture_workflow_timing.py")
         )][0].run | contains("--run-attempt \"$SOURCE_RUN_ATTEMPT\"")),
+        ([$steps[] | select(
+          (.run // "") | contains("capture_workflow_timing.py")
+        )][0].run | contains("--telemetry-root")),
         (([$steps[] | select(
           (.run // "") | contains("download_ci_telemetry_history.py")
         )] | length) == 1),
@@ -676,14 +711,14 @@ YAML
         ) | .with."retention-days" == 90] | all),
         (([$steps[] | select(
           (.uses // "") | test("^actions/upload-artifact@")
-        ) | .with.name | select(contains("ci-matrix-plan-v1-source-"))]
+        ) | .with.name | select(contains("ci-matrix-plan-v2-source-"))]
           | length) == 1)
       ] | all
   ' "$TELEMETRY_WORKFLOW"
   [ "$status" -eq 0 ]
 }
 
-@test "system lane keeps public substituters and a stable result" {
+@test "system lane keeps public substituters" {
   local numtide_substituter
   local numtide_key
   local nix_community_substituter
@@ -729,41 +764,16 @@ YAML
     ' "$HESTIA_SETUP_ACTION"
   [ "$status" -eq 0 ]
 
-  run yq -e '
-    ([
-      .jobs[].steps[]?
-    ] | map(select(
-      .uses == "$/.github/actions/setup-hestia"
-    )) | length) == 2
-    and (.jobs.result.needs | join(",")) == "evaluate,build"
-    and .jobs.result.if == "always()"
-    and ([.jobs.result.steps[] | select(
-      (.uses // "") | test("^actions/checkout@")
-    )][0].with."persist-credentials") == false
-    and ([.jobs.result.steps[] | select(
-      (.uses // "") | test("^actions/checkout@")
-    )][0].with."sparse-checkout") == "modules/features/ci/_scripts"
-    and ([.jobs.result.steps[] | select(
-      .run == "bash modules/features/ci/_scripts/verify_hestia_result.sh"
-    )] | length) == 1
-  ' "$HESTIA_WORKFLOW"
-  [ "$status" -eq 0 ]
 }
 
-@test "required result depends on every independent lane" {
+@test "workflow conclusion is not wrapped in aggregate jobs" {
   run yq -e '
-    .jobs.required.name == "required"
-    and (.jobs.required.needs | join(",")) == "flake-eval,linux,darwin"
-    and .jobs.required.if == "always()"
-    and ([.jobs.required.steps[] | select(
-      (.uses // "") | test("^actions/checkout@")
-    )][0].with."persist-credentials") == false
-    and ([.jobs.required.steps[] | select(
-      (.uses // "") | test("^actions/checkout@")
-    )][0].with."sparse-checkout") == "modules/features/ci/_scripts"
-    and ([.jobs.required.steps[] | select(
-      .run == "bash modules/features/ci/_scripts/verify_required_results.sh"
-    )] | length) == 1
+    (.jobs | has("required") | not)
   ' "$CI_WORKFLOW"
+  [ "$status" -eq 0 ]
+
+  run yq -e '
+    (.jobs | has("result") | not)
+  ' "$HESTIA_WORKFLOW"
   [ "$status" -eq 0 ]
 }

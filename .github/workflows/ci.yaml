@@ -41,10 +41,32 @@ jobs:
       - wait: checkout
       # Hestiaのsystem laneとは独立して開始する。
       # eval時のIFDを排除してあるため、Darwinを含む各systemをLinuxで並列評価できる。
+      - name: Record workflow job identity
+        continue-on-error: true
+        env:
+          FLAKE_EVAL_SYSTEM: ${{ matrix.system }}
+          TELEMETRY_IDENTITY: ${{ runner.temp }}/ci-telemetry/workflow-job-${{ matrix.system }}.json
+          TELEMETRY_RUNNER_NAME: ${{ runner.name }}
+        run: |
+          python3 modules/features/ci/_scripts/write_workflow_job_identity.py \
+            --role flake-eval \
+            --system "$FLAKE_EVAL_SYSTEM" \
+            --runner-name "$TELEMETRY_RUNNER_NAME" \
+            --output "$TELEMETRY_IDENTITY"
       - name: Evaluate flake outputs
         env:
           FLAKE_EVAL_SYSTEM: ${{ matrix.system }}
         run: nix flake check --no-build --option system "$FLAKE_EVAL_SYSTEM"
+      - name: Upload workflow job identity
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: >-
+            ci-workflow-job-${{ github.run_id }}-${{ github.run_attempt }}-flake-eval-${{ matrix.system }}
+          path: ${{ runner.temp }}/ci-telemetry/workflow-job-${{ matrix.system }}.json
+          if-no-files-found: ignore
+          retention-days: 7
 
   linux:
     name: system / x86_64-linux
@@ -57,27 +79,3 @@ jobs:
     uses: $/.github/workflows/hestia-system.yaml
     with:
       system: aarch64-darwin
-
-  # Hestia build matrixの行数はcache状態で変わるため、固定名のcheckでflake評価とsystem laneの完了を集約する。
-  # branch protectionはこのjobだけを参照できる。
-  required:
-    name: required
-    needs:
-      - flake-eval
-      - linux
-      - darwin
-    if: always()
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Check out CI scripts
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          sparse-checkout: modules/features/ci/_scripts
-      - name: Verify required results
-        env:
-          DARWIN_RESULT: ${{ needs.darwin.result }}
-          FLAKE_EVAL_RESULT: ${{ needs.flake-eval.result }}
-          LINUX_RESULT: ${{ needs.linux.result }}
-        run: bash modules/features/ci/_scripts/verify_required_results.sh

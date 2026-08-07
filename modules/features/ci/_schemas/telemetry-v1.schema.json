@@ -5,7 +5,8 @@
   "oneOf": [
     { "$ref": "#/$defs/laneDocument" },
     { "$ref": "#/$defs/jobDocument" },
-    { "$ref": "#/$defs/bundleDocument" }
+    { "$ref": "#/$defs/bundleDocument" },
+    { "$ref": "#/$defs/workflowJobDocument" }
   ],
   "$defs": {
     "producer": {
@@ -39,7 +40,7 @@
       "properties": {
         "$schema": { "const": "https://raw.githubusercontent.com/cons-tan-tan/dotfiles/main/modules/features/ci/_schemas/telemetry-v1.schema.json" },
         "schema_version": { "const": 1 },
-        "document_type": { "enum": ["lane", "job", "bundle"] },
+        "document_type": { "enum": ["lane", "job", "bundle", "workflow_job"] },
         "producer": { "$ref": "#/$defs/producer" },
         "run": { "$ref": "#/$defs/run" },
         "observed_at": { "type": "string", "format": "date-time" },
@@ -109,6 +110,15 @@
         "min_shared_ratio": { "type": "number", "minimum": 0, "maximum": 1 }
       }
     },
+    "workflowJobIdentity": {
+      "type": "object",
+      "required": ["role", "runner_name"],
+      "additionalProperties": false,
+      "properties": {
+        "role": { "enum": ["flake-eval", "system-evaluate", "system-build"] },
+        "runner_name": { "type": "string", "minLength": 1 }
+      }
+    },
     "decisionJob": {
       "type": "object",
       "required": ["job_id", "telemetry_key", "name", "system", "runner_labels", "member_check_ids", "root_drv_ids", "planned_drv_ids"],
@@ -141,6 +151,12 @@
       "required": ["collection_status", "source", "derivations", "checks", "static_groups", "decision"],
       "additionalProperties": false,
       "properties": {
+        "workflow_job": {
+          "allOf": [
+            { "$ref": "#/$defs/workflowJobIdentity" },
+            { "properties": { "role": { "const": "system-evaluate" } } }
+          ]
+        },
         "collection_status": { "enum": ["complete", "partial", "failed"] },
         "source": { "$ref": "#/$defs/source" },
         "derivations": { "type": "array", "items": { "$ref": "#/$defs/derivation" } },
@@ -199,6 +215,12 @@
       "required": ["job_id", "telemetry_key", "name", "system", "runner_labels", "root_drv_ids", "status", "phases", "derivation_events", "substitution_events", "measurement_quality", "nix_version", "event_parser_version", "event_parse_status", "total_duration_ms"],
       "additionalProperties": false,
       "properties": {
+        "workflow_job": {
+          "allOf": [
+            { "$ref": "#/$defs/workflowJobIdentity" },
+            { "properties": { "role": { "const": "system-build" } } }
+          ]
+        },
         "job_id": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
         "telemetry_key": { "type": "string", "pattern": "^[0-9a-f]{20}$" },
         "name": { "type": "string", "minLength": 1 },
@@ -236,6 +258,23 @@
       "allOf": [
         { "$ref": "#/$defs/envelope" },
         { "properties": { "document_type": { "const": "job" }, "data": { "$ref": "#/$defs/job" } } }
+      ],
+      "unevaluatedProperties": false
+    },
+    "workflowJobDocument": {
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "document_type": { "const": "workflow_job" },
+            "data": {
+              "allOf": [
+                { "$ref": "#/$defs/workflowJobIdentity" },
+                { "properties": { "role": { "const": "flake-eval" } } }
+              ]
+            }
+          }
+        }
       ],
       "unevaluatedProperties": false
     },

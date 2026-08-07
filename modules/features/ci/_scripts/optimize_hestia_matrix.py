@@ -639,6 +639,10 @@ def main() -> None:
         "lane",
         require_env("SYSTEM"),
         {
+            "workflow_job": {
+                "role": "system-evaluate",
+                "runner_name": require_env("TELEMETRY_RUNNER_NAME"),
+            },
             "collection_status": collection_status,
             "source": {
                 "hestia_version": os.environ.get("HESTIA_VERSION", "unknown"),

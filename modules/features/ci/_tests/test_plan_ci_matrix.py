@@ -23,6 +23,7 @@ from plan_ci_matrix import (  # noqa: E402
     aggregate_timing,
     compatible_history,
     create_plan,
+    parse_timing,
     rollout_decision,
     solve_schedule,
 )
@@ -71,13 +72,9 @@ def timing(*, flake: int = 0) -> Timing:
         workflow_queue_ms=0,
         flake_start_ms=0,
         flake_eval_ms=flake,
-        required_dispatch_ms=0,
-        required_ms=0,
         evaluate_start_ms={"x86_64-linux": 0},
         evaluate_ms={"x86_64-linux": 0},
         dispatch_ms={"x86_64-linux": 0},
-        result_dispatch_ms={"x86_64-linux": 0},
-        result_ms={"x86_64-linux": 0},
         wrapper_overhead_ms={"x86_64-linux": ()},
     )
 
@@ -113,6 +110,7 @@ def telemetry() -> RunTelemetry:
                 "jobs": [
                     {
                         "job_id": "job-1",
+                        "telemetry_key": "a" * 20,
                         "name": "quality",
                         "runner_labels": ["ubuntu-latest"],
                         "member_check_ids": [check_id],
@@ -130,6 +128,7 @@ def telemetry() -> RunTelemetry:
                 {
                     "data": {
                         "job_id": "job-1",
+                        "telemetry_key": "a" * 20,
                         "name": "quality",
                         "status": "success",
                         "phases": {
@@ -159,6 +158,7 @@ def telemetry() -> RunTelemetry:
                 "run_attempt": 1,
                 "head_sha": "a" * 40,
                 "created_at": "2026-08-06T00:00:00Z",
+                "updated_at": "2026-08-06T00:00:11Z",
             }
         },
         bundles={system: bundle},
@@ -166,6 +166,97 @@ def telemetry() -> RunTelemetry:
 
 
 class PlannerSolverTests(unittest.TestCase):
+    def test_parses_structured_timing_without_job_display_names(self) -> None:
+        value = {
+            "schema_version": 2,
+            "document_type": "workflow_timing",
+            "repository": "owner/repo",
+            "run_id": "1",
+            "run_attempt": 1,
+            "commit_sha": "a" * 40,
+            "started_at": "2026-08-06T00:00:01Z",
+            "completed_at": "2026-08-06T00:00:11Z",
+            "jobs": [
+                {
+                    "role": "flake-eval",
+                    "system": "x86_64-linux",
+                    "telemetry_key": None,
+                    "runner_name": "runner-flake",
+                    "started_at": "2026-08-06T00:00:01Z",
+                    "completed_at": "2026-08-06T00:00:05Z",
+                    "conclusion": "success",
+                },
+                {
+                    "role": "system-evaluate",
+                    "system": "x86_64-linux",
+                    "telemetry_key": None,
+                    "runner_name": "runner-evaluate",
+                    "started_at": "2026-08-06T00:00:02Z",
+                    "completed_at": "2026-08-06T00:00:04Z",
+                    "conclusion": "success",
+                },
+                {
+                    "role": "system-build",
+                    "system": "x86_64-linux",
+                    "telemetry_key": "a" * 20,
+                    "runner_name": "runner-build",
+                    "started_at": "2026-08-06T00:00:05Z",
+                    "completed_at": "2026-08-06T00:00:10Z",
+                    "conclusion": "success",
+                },
+            ],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "timing.json"
+            path.write_text(json.dumps(value))
+            parsed = parse_timing(path, telemetry())
+
+        self.assertEqual(parsed.workflow_queue_ms, 1_000)
+        self.assertEqual(parsed.flake_eval_ms, 4_000)
+        self.assertEqual(parsed.evaluate_ms["x86_64-linux"], 2_000)
+        self.assertEqual(parsed.dispatch_ms["x86_64-linux"], 1_000)
+        self.assertEqual(parsed.wrapper_overhead_ms["x86_64-linux"], (4_880,))
+
+    def test_keeps_legacy_display_name_timing_for_history(self) -> None:
+        value = {
+            "schema_version": 1,
+            "document_type": "workflow_timing",
+            "repository": "owner/repo",
+            "run_id": "1",
+            "run_attempt": 1,
+            "commit_sha": "a" * 40,
+            "started_at": "2026-08-06T00:00:01Z",
+            "completed_at": "2026-08-06T00:00:11Z",
+            "jobs": [
+                {
+                    "name": "evaluate / flake",
+                    "started_at": "2026-08-06T00:00:01Z",
+                    "completed_at": "2026-08-06T00:00:05Z",
+                    "conclusion": "success",
+                },
+                {
+                    "name": "linux / evaluate",
+                    "started_at": "2026-08-06T00:00:02Z",
+                    "completed_at": "2026-08-06T00:00:04Z",
+                    "conclusion": "success",
+                },
+                {
+                    "name": "linux / build / quality (x86_64-linux)",
+                    "started_at": "2026-08-06T00:00:05Z",
+                    "completed_at": "2026-08-06T00:00:10Z",
+                    "conclusion": "success",
+                },
+            ],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "timing.json"
+            path.write_text(json.dumps(value))
+            parsed = parse_timing(path, telemetry())
+
+        self.assertEqual(parsed.flake_eval_ms, 4_000)
+        self.assertEqual(parsed.evaluate_ms["x86_64-linux"], 2_000)
+        self.assertEqual(parsed.wrapper_overhead_ms["x86_64-linux"], (4_880,))
+
     def test_excludes_history_from_another_runner_class(self) -> None:
         target = telemetry()
         previous_bundles = copy.deepcopy(target.bundles)
@@ -210,7 +301,7 @@ class PlannerSolverTests(unittest.TestCase):
                 {"run_id": "1", "run_attempt": 2},
             ],
         )
-        schema = SCRIPT_DIR.parent / "_schemas" / "ci-optimization-v1.schema.json"
+        schema = SCRIPT_DIR.parent / "_schemas" / "ci-optimization-v2.schema.json"
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "plan.json"
             output.write_text(json.dumps(plan))
@@ -260,13 +351,9 @@ class PlannerSolverTests(unittest.TestCase):
             workflow_queue_ms=0,
             flake_start_ms=0,
             flake_eval_ms=900,
-            required_dispatch_ms=0,
-            required_ms=0,
             evaluate_start_ms={"aarch64-darwin": 0},
             evaluate_ms={"aarch64-darwin": 0},
             dispatch_ms={"aarch64-darwin": 0},
-            result_dispatch_ms={"aarch64-darwin": 0},
-            result_ms={"aarch64-darwin": 0},
             wrapper_overhead_ms={"aarch64-darwin": (99,)},
         )
 
@@ -296,7 +383,7 @@ class PlannerSolverTests(unittest.TestCase):
         self.assertEqual(
             sorted(len(job.member_check_ids) for job in result.jobs), [2, 2]
         )
-        self.assertEqual(result.makespan_before_required_ms, 201)
+        self.assertEqual(result.makespan_ms, 201)
         self.assertTrue(all(status == "optimal" for status in result.stage_statuses))
 
     def test_keeps_the_primary_solution_when_runner_optimization_times_out(
@@ -339,7 +426,7 @@ class PlannerSolverTests(unittest.TestCase):
             time_limit_seconds=3,
         )
 
-        self.assertEqual(result.makespan_before_required_ms, 250)
+        self.assertEqual(result.makespan_ms, 250)
         self.assertEqual(len(result.jobs), 1)
         self.assertEqual(result.total_runner_ms, 210)
 

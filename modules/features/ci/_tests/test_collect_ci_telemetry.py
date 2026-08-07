@@ -4,10 +4,10 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
-import copy
 import shutil
 import subprocess
 import sys
@@ -121,6 +121,7 @@ class CollectorTests(unittest.TestCase):
         self.root = Path(self.temporary.name)
         self.event_path = self.root / "event.json"
         self.fragments = self.root / "fragments"
+        self.workflow_jobs = self.root / "workflow-jobs"
         self.output = self.root / "output"
         self.schema = SCHEMA_DIR / "telemetry-v1.schema.json"
         self.index_schema = SCHEMA_DIR / "telemetry-run-index-v1.schema.json"
@@ -145,6 +146,21 @@ class CollectorTests(unittest.TestCase):
         target = artifact / f"lane-{system}.json"
         atomic_write_json(target, lane(source, system) if value is None else value)
         return target
+
+    def write_workflow_job(
+        self, source: dict[str, object], system: str, runner_name: str
+    ) -> None:
+        artifact = self.workflow_jobs / f"ci-workflow-job-456-2-flake-eval-{system}"
+        artifact.mkdir(parents=True)
+        atomic_write_json(
+            artifact / f"workflow-job-{system}.json",
+            document(
+                "workflow_job",
+                system,
+                {"role": "flake-eval", "runner_name": runner_name},
+                run=expected_run(source, system),
+            ),
+        )
 
     def run_collect(self, event: dict[str, object]) -> dict[str, object]:
         self.write_event(event)
@@ -186,6 +202,33 @@ class CollectorTests(unittest.TestCase):
             self.assertEqual(bundle["run"]["run_id"], "456")
         self.assertTrue((self.output / "schemas" / self.schema.name).is_file())
         self.assertTrue((self.output / "schemas" / self.index_schema.name).is_file())
+
+    def test_collects_structured_flake_job_identities(self) -> None:
+        event = source_event()
+        source = self.write_event(event)
+        for system in SYSTEMS:
+            self.write_lane(source, system)
+        flake_systems = ["aarch64-darwin", "aarch64-linux", "x86_64-linux"]
+        for index, system in enumerate(flake_systems):
+            self.write_workflow_job(source, system, f"GitHub Actions {index}")
+        with patch.dict(os.environ, self.collector_environment, clear=False):
+            result = collect(
+                event=self.event_path,
+                fragment_root=self.fragments,
+                output=self.output,
+                schema=self.schema,
+                index_schema=self.index_schema,
+                systems=SYSTEMS,
+                workflow_job_root=self.workflow_jobs,
+                workflow_job_systems=flake_systems,
+            )
+
+        self.assertEqual(
+            [item["system"] for item in result["workflow_jobs"]], flake_systems
+        )
+        self.assertEqual(
+            {item["role"] for item in result["workflow_jobs"]}, {"flake-eval"}
+        )
 
     def test_source_path_accepts_normalized_and_default_branch_suffixes(self) -> None:
         event = source_event()

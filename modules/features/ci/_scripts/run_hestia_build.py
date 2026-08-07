@@ -174,6 +174,10 @@ def main() -> int:
         "job",
         system,
         {
+            "workflow_job": {
+                "role": "system-build",
+                "runner_name": required("TELEMETRY_RUNNER_NAME"),
+            },
             "job_id": required("TELEMETRY_JOB_ID"),
             "telemetry_key": required("TELEMETRY_KEY"),
             "name": required("TELEMETRY_JOB_NAME"),

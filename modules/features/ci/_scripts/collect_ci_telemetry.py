@@ -28,6 +28,7 @@ INDEX_SCHEMA_ID = "https://raw.githubusercontent.com/cons-tan-tan/dotfiles/main/
 MAX_FRAGMENT_COUNT = 600
 MAX_FRAGMENT_SIZE = 5 * 1024 * 1024
 MAX_FRAGMENT_TOTAL_SIZE = 100 * 1024 * 1024
+MAX_WORKFLOW_JOB_SIZE = 64 * 1024
 WORKFLOW_NAME = "CI"
 WORKFLOW_PATH = ".github/workflows/ci.yaml"
 ALLOWED_SOURCE_EVENTS = frozenset({"push", "workflow_dispatch"})
@@ -250,6 +251,57 @@ def discover_fragments(
     return result
 
 
+def collect_workflow_jobs(
+    root: Path,
+    source: dict[str, object],
+    systems: list[str],
+) -> list[dict[str, str]]:
+    expected = sorted(set(systems))
+    if len(expected) != len(systems):
+        raise ValueError("workflow job systems must be unique")
+    if not expected:
+        return []
+    if root.is_symlink() or not root.is_dir():
+        raise ValueError("workflow job input is not a directory")
+    prefix = f"ci-workflow-job-{source['run_id']}-{source['run_attempt']}-flake-eval-"
+    discovered: dict[str, dict[str, str]] = {}
+    for directory in sorted(root.iterdir()):
+        if directory.is_symlink() or not directory.is_dir():
+            raise ValueError("workflow job input contains an unexpected entry")
+        system = directory.name.removeprefix(prefix)
+        if system not in expected or system in discovered:
+            raise ValueError("workflow job artifact has an unexpected identity")
+        path = directory / f"workflow-job-{system}.json"
+        entries = list(directory.iterdir())
+        if (
+            len(entries) != 1
+            or entries[0] != path
+            or path.is_symlink()
+            or not path.is_file()
+            or path.stat().st_size > MAX_WORKFLOW_JOB_SIZE
+        ):
+            raise ValueError("workflow job artifact has an unexpected inventory")
+        identity = read_document(path, "workflow_job")
+        if identity.get("run") != expected_run(source, system):
+            raise ValueError("workflow job source identity mismatch")
+        data = require_mapping(identity.get("data"), "workflow job data")
+        if data.get("role") != "flake-eval":
+            raise ValueError("unexpected workflow job role")
+        discovered[system] = {
+            "role": "flake-eval",
+            "system": system,
+            "runner_name": require_string(
+                data.get("runner_name"), "workflow job runner name"
+            ),
+        }
+    if sorted(discovered) != expected:
+        raise ValueError("workflow job identities are incomplete")
+    runner_names = [item["runner_name"] for item in discovered.values()]
+    if len(runner_names) != len(set(runner_names)):
+        raise ValueError("workflow job runner names are not unique")
+    return [discovered[system] for system in expected]
+
+
 def unavailable_system(system: str, status: str, reason: str) -> dict[str, object]:
     return {
         "system": system,
@@ -385,6 +437,33 @@ def validate_run_index(index: dict[str, object]) -> None:
         raise ValueError("invalid run index collection status")
     if index.get("artifact_download_status") not in {"success", "failed"}:
         raise ValueError("invalid artifact download status")
+    workflow_jobs = index.get("workflow_jobs")
+    if workflow_jobs is not None:
+        if not isinstance(workflow_jobs, list) or not workflow_jobs:
+            raise ValueError("invalid workflow jobs")
+        normalized = []
+        runner_names = []
+        for item in workflow_jobs:
+            if not isinstance(item, dict) or set(item) != {
+                "role",
+                "system",
+                "runner_name",
+            }:
+                raise ValueError("invalid workflow job")
+            if item.get("role") != "flake-eval":
+                raise ValueError("invalid workflow job role")
+            system = item.get("system")
+            runner_name = item.get("runner_name")
+            if not isinstance(system, str) or not system:
+                raise ValueError("invalid workflow job system")
+            if not isinstance(runner_name, str) or not runner_name:
+                raise ValueError("invalid workflow job runner name")
+            normalized.append((str(item["role"]), system))
+            runner_names.append(runner_name)
+        if normalized != sorted(set(normalized)) or len(runner_names) != len(
+            set(runner_names)
+        ):
+            raise ValueError("workflow jobs must be unique and sorted")
 
 
 def collect(
@@ -395,11 +474,16 @@ def collect(
     schema: Path,
     index_schema: Path,
     systems: list[str],
+    workflow_job_root: Path | None = None,
+    workflow_job_systems: list[str] | None = None,
     download_outcome: str = "success",
 ) -> dict[str, object]:
     expected_systems = sorted(set(systems))
     if not expected_systems or len(expected_systems) != len(systems):
         raise ValueError("expected systems must be non-empty and unique")
+    configured_workflow_job_systems = workflow_job_systems or []
+    if (workflow_job_root is None) != (not configured_workflow_job_systems):
+        raise ValueError("workflow job input and systems must be configured together")
     source = source_from_event(event)
     collector = collector_context()
     output.mkdir(parents=True, exist_ok=True)
@@ -424,6 +508,15 @@ def collect(
                 collect_system(system, fragments[system], source, output)
                 for system in expected_systems
             ]
+    workflow_jobs = (
+        collect_workflow_jobs(
+            workflow_job_root,
+            source,
+            configured_workflow_job_systems,
+        )
+        if workflow_job_root is not None and source.get("conclusion") == "success"
+        else []
+    )
     index = {
         "$schema": INDEX_SCHEMA_ID,
         "schema_version": 1,
@@ -437,6 +530,8 @@ def collect(
         "expected_systems": expected_systems,
         "systems": system_entries,
     }
+    if workflow_jobs:
+        index["workflow_jobs"] = workflow_jobs
     validate_run_index(index)
     atomic_write_json(output / "index.json", index)
     return index
@@ -453,6 +548,8 @@ def main() -> None:
     parser.add_argument("--schema", required=True, type=Path)
     parser.add_argument("--index-schema", required=True, type=Path)
     parser.add_argument("--system", required=True, action="append")
+    parser.add_argument("--workflow-job-input", type=Path)
+    parser.add_argument("--workflow-job-system", action="append")
     arguments = parser.parse_args()
     collect(
         event=arguments.event,
@@ -461,6 +558,8 @@ def main() -> None:
         schema=arguments.schema,
         index_schema=arguments.index_schema,
         systems=arguments.system,
+        workflow_job_root=arguments.workflow_job_input,
+        workflow_job_systems=arguments.workflow_job_system,
         download_outcome=(
             "success" if arguments.download_outcome == "success" else "failed"
         ),

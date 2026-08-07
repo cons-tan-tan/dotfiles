@@ -18,7 +18,7 @@ SCHEMA_ID = "https://raw.githubusercontent.com/cons-tan-tan/dotfiles/main/module
 SCHEMA_VERSION = 1
 PRODUCER_NAME = "dotfiles-ci-telemetry"
 PRODUCER_VERSION = "1.0.0"
-DOCUMENT_TYPES = frozenset({"lane", "job", "bundle"})
+DOCUMENT_TYPES = frozenset({"lane", "job", "bundle", "workflow_job"})
 
 
 def canonical_json(value: object) -> str:
@@ -178,8 +178,10 @@ def validate_document(value: object, expected_type: str | None = None) -> None:
         validate_lane(data, str(run["system"]))
     elif document_type == "job":
         validate_job(data, str(run["system"]))
-    else:
+    elif document_type == "bundle":
         validate_bundle(data, run)
+    else:
+        validate_workflow_job(data)
 
 
 def nonempty(value: object) -> bool:
@@ -207,6 +209,25 @@ def require_keys(value: dict[str, Any], keys: set[str], label: str) -> None:
         raise ValueError(f"invalid {label} fields")
 
 
+def require_optional_keys(
+    value: dict[str, Any], required: set[str], optional: set[str], label: str
+) -> None:
+    if not required.issubset(value) or not set(value).issubset(required | optional):
+        raise ValueError(f"invalid {label} fields")
+
+
+def validate_workflow_job_identity(value: object, expected_role: str) -> None:
+    if not isinstance(value, dict):
+        raise ValueError("invalid workflow job identity")
+    require_keys(value, {"role", "runner_name"}, "workflow job identity")
+    if value.get("role") != expected_role or not nonempty(value.get("runner_name")):
+        raise ValueError("invalid workflow job identity")
+
+
+def validate_workflow_job(data: dict[str, Any]) -> None:
+    validate_workflow_job_identity(data, "flake-eval")
+
+
 def string_list(value: object, label: str) -> list[str]:
     if not isinstance(value, list) or not all(nonempty(item) for item in value):
         raise ValueError(f"invalid {label}")
@@ -225,7 +246,7 @@ def validate_plan(value: object) -> set[str]:
 
 
 def validate_lane(data: dict[str, Any], expected_system: str) -> None:
-    require_keys(
+    require_optional_keys(
         data,
         {
             "collection_status",
@@ -235,8 +256,11 @@ def validate_lane(data: dict[str, Any], expected_system: str) -> None:
             "static_groups",
             "decision",
         },
+        {"workflow_job"},
         "lane telemetry",
     )
+    if "workflow_job" in data:
+        validate_workflow_job_identity(data["workflow_job"], "system-evaluate")
     if data["collection_status"] not in {"complete", "partial", "failed"}:
         raise ValueError("invalid lane collection status")
     source = data["source"]
@@ -436,7 +460,7 @@ def validate_lane(data: dict[str, Any], expected_system: str) -> None:
 
 
 def validate_job(data: dict[str, Any], expected_system: str) -> None:
-    require_keys(
+    require_optional_keys(
         data,
         {
             "job_id",
@@ -455,8 +479,11 @@ def validate_job(data: dict[str, Any], expected_system: str) -> None:
             "event_parse_status",
             "total_duration_ms",
         },
+        {"workflow_job"},
         "job telemetry",
     )
+    if "workflow_job" in data:
+        validate_workflow_job_identity(data["workflow_job"], "system-build")
     if not re.fullmatch(r"[0-9a-f]{64}", str(data["job_id"])) or not re.fullmatch(
         r"[0-9a-f]{20}", str(data["telemetry_key"])
     ):

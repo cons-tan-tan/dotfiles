@@ -11,8 +11,6 @@ setup() {
   HESTIA_MATRIX_VALIDATOR="$CI_SCRIPT_DIR/validate_hestia_matrix.py"
   HESTIA_BUILD_SCRIPT="$CI_SCRIPT_DIR/prefetch_hestia_closure_and_build.sh"
   SUBSTITUTER_CHECK_SCRIPT="$CI_SCRIPT_DIR/verify_binary_substituters.sh"
-  HESTIA_RESULT_SCRIPT="$CI_SCRIPT_DIR/verify_hestia_result.sh"
-  REQUIRED_RESULTS_SCRIPT="$CI_SCRIPT_DIR/verify_required_results.sh"
   TELEMETRY_SCHEMA="$REPO_ROOT/modules/features/ci/_schemas/telemetry-v1.schema.json"
 }
 
@@ -107,6 +105,7 @@ SH
     PATH="$stub_dir:$PATH" \
     SYSTEM=x86_64-linux \
     TELEMETRY_ATTR_PREFIX=lib.hestiaJobs.ci.x86_64-linux \
+    TELEMETRY_RUNNER_NAME='GitHub Actions test' \
     python3 "$HESTIA_MATRIX_OPTIMIZER"
 }
 
@@ -233,6 +232,8 @@ SH
   run jq -e '
     (.data.checks | map({key: .display_name, value: (.plan.dependency_drv_ids | length)}) | from_entries)
       == {configurations: 10, "eval-tests": 3, quality: 1}
+    and .data.workflow_job
+      == {role: "system-evaluate", runner_name: "GitHub Actions test"}
   ' "$LANE_OUTPUT"
   [ "$status" -eq 0 ]
   if command -v check-jsonschema >/dev/null; then
@@ -419,46 +420,4 @@ SH
   [ "$status" -eq 42 ]
   [[ "$output" != *"::warning::"* ]]
   [ "$(cat "$BATS_TEST_TMPDIR/ci-build-calls")" = $'curl\nnix-store <import>\nnix <build> </nix/store/00000000000000000000000000000000-test.drv^*>' ]
-}
-
-@test "system result rejects missing or failed matrix states" {
-  run env EVAL_RESULT=success ANY_JOBS=true BUILD_RESULT=success bash "$HESTIA_RESULT_SCRIPT"
-  [ "$status" -eq 0 ]
-
-  run env EVAL_RESULT=success ANY_JOBS=false BUILD_RESULT=skipped bash "$HESTIA_RESULT_SCRIPT"
-  [ "$status" -eq 0 ]
-
-  run env EVAL_RESULT=failure ANY_JOBS=false BUILD_RESULT=skipped bash "$HESTIA_RESULT_SCRIPT"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"matrix evaluation failed: failure"* ]]
-
-  run env EVAL_RESULT=success ANY_JOBS=true BUILD_RESULT=failure bash "$HESTIA_RESULT_SCRIPT"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"matrix build failed: failure"* ]]
-
-  run env EVAL_RESULT=success ANY_JOBS=false BUILD_RESULT=success bash "$HESTIA_RESULT_SCRIPT"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"unexpected empty matrix result: success"* ]]
-
-  run env EVAL_RESULT=success ANY_JOBS= BUILD_RESULT=skipped bash "$HESTIA_RESULT_SCRIPT"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"invalid any-jobs output:"* ]]
-}
-
-@test "required result accepts only successful independent lanes" {
-  run env FLAKE_EVAL_RESULT=success LINUX_RESULT=success DARWIN_RESULT=success bash "$REQUIRED_RESULTS_SCRIPT"
-  [ "$status" -eq 0 ]
-
-  run env FLAKE_EVAL_RESULT=failure LINUX_RESULT=success DARWIN_RESULT=success bash "$REQUIRED_RESULTS_SCRIPT"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"flake evaluation failed: failure"* ]]
-
-  run env FLAKE_EVAL_RESULT=success LINUX_RESULT=failure DARWIN_RESULT=success bash "$REQUIRED_RESULTS_SCRIPT"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"Linux lane failed: failure"* ]]
-
-  run env FLAKE_EVAL_RESULT=success LINUX_RESULT=success DARWIN_RESULT=cancelled bash "$REQUIRED_RESULTS_SCRIPT"
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"Darwin lane failed: cancelled"* ]]
-
 }
