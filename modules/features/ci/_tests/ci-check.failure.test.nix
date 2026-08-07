@@ -14,6 +14,14 @@ let
     meta.description = "preserved metadata";
     system = linuxSystem;
   };
+  withTargets =
+    targets:
+    fakeCheck
+    // {
+      meta = fakeCheck.meta // {
+        dotfiles.hestia.targets = targets;
+      };
+    };
   force = value: builtins.deepSeq value true;
   cases = {
     executionClassificationIsExclusive = {
@@ -47,6 +55,34 @@ let
           // {
             meta = fakeCheck.meta // {
               hestia.group = "linux-eval-tests";
+            };
+          }
+        )
+      );
+      expectedFragment = "CI check already has CI or canonical Hestia metadata";
+    };
+
+    evaluationCompleteRejectsExistingExecutionMetadata = {
+      expression = force (
+        ciCheck.evaluationComplete (
+          fakeCheck
+          // {
+            meta = fakeCheck.meta // {
+              dotfiles.ci.execution = "evaluation-complete";
+            };
+          }
+        )
+      );
+      expectedFragment = "CI check already has CI or canonical Hestia metadata";
+    };
+
+    annotationRejectsLegacyHestiaMetadata = {
+      expression = force (
+        ciCheck.annotate (ciCheck.targets.linux "eval-tests") (
+          fakeCheck
+          // {
+            meta = fakeCheck.meta // {
+              dotfiles.hestia = { };
             };
           }
         )
@@ -130,6 +166,27 @@ let
       expectedFragment = ''"duplicateNames":["evaluated"]'';
     };
 
+    evaluationCompleteListingRejectsIgnoredUnknownSystem = {
+      expression = force (
+        ciCheck.validateEvaluationCompleteChecks {
+          checksBySystem = {
+            ${linuxSystem} = { };
+            ${darwinSystem} = { };
+          };
+          evaluationCompleteCheckNamesBySystem = {
+            ${linuxSystem} = [ ];
+            ${darwinSystem} = [ ];
+          };
+          ignoredCheckNamesBySystem = {
+            ${linuxSystem} = [ ];
+            ${darwinSystem} = [ ];
+            ${additionalSystem} = [ ];
+          };
+        }
+      );
+      expectedFragment = "evaluation-complete checks must use matching systems";
+    };
+
     evaluationCompleteProducerRejectsDuplicateNames = {
       expression = force (
         (ciCheck.composeEvaluationCompleteProducers [
@@ -144,6 +201,47 @@ let
         ]).checkNames
       );
       expectedFragment = ''evaluation-complete check producer collisions: [{"name":"shared","owners":["alpha","beta"]}]'';
+    };
+
+    evaluationCompleteProducerMustBeAnAttributeSet = {
+      expression = force ((ciCheck.composeEvaluationCompleteProducers [ "invalid" ]).checkNames);
+      expectedFragment = "invalid evaluation-complete check producers: [0]";
+    };
+
+    evaluationCompleteProducerOwnerMustBeAString = {
+      expression = force (
+        (ciCheck.composeEvaluationCompleteProducers [
+          {
+            owner = 1;
+            checks = { };
+          }
+        ]).checkNames
+      );
+      expectedFragment = "invalid evaluation-complete check producers: [0]";
+    };
+
+    evaluationCompleteProducerOwnerMustNotBeEmpty = {
+      expression = force (
+        (ciCheck.composeEvaluationCompleteProducers [
+          {
+            owner = "";
+            checks = { };
+          }
+        ]).checkNames
+      );
+      expectedFragment = "invalid evaluation-complete check producers: [0]";
+    };
+
+    evaluationCompleteProducerChecksMustBeAnAttributeSet = {
+      expression = force (
+        (ciCheck.composeEvaluationCompleteProducers [
+          {
+            owner = "fixture";
+            checks = "invalid";
+          }
+        ]).checkNames
+      );
+      expectedFragment = "invalid evaluation-complete check producers: [0]";
     };
 
     additionalHestiaBuildSystem = {
@@ -164,7 +262,7 @@ let
           checks.unclassified = fakeCheck;
         }
       );
-      expectedFragment = ''"missing":["unclassified"]'';
+      expectedFragment = ''{"conflictingDrvPaths":[],"invalid":[],"missing":["unclassified"],"wrongSystem":[]}'';
     };
 
     incompleteTargets = {
@@ -187,6 +285,46 @@ let
       expectedFragment = "CI check targets must select at least one build system";
     };
 
+    canonicalTargetsRejectAdditionalSystem = {
+      expression = force (
+        ciCheck.mkHestiaChecks {
+          system = linuxSystem;
+          checks.example = withTargets {
+            ${linuxSystem} = "eval-tests";
+            ${darwinSystem} = "eval-tests";
+            ${additionalSystem} = "eval-tests";
+          };
+        }
+      );
+      expectedFragment = ''"invalid":["example"]'';
+    };
+
+    canonicalTargetsRejectAllNullSystems = {
+      expression = force (
+        ciCheck.mkHestiaChecks {
+          system = linuxSystem;
+          checks.example = withTargets {
+            ${linuxSystem} = null;
+            ${darwinSystem} = null;
+          };
+        }
+      );
+      expectedFragment = ''"invalid":["example"]'';
+    };
+
+    canonicalTargetsRejectUnknownGroup = {
+      expression = force (
+        ciCheck.mkHestiaChecks {
+          system = linuxSystem;
+          checks.example = withTargets {
+            ${linuxSystem} = "unknown-group";
+            ${darwinSystem} = null;
+          };
+        }
+      );
+      expectedFragment = ''"invalid":["example"]'';
+    };
+
     wrongDerivationSystem = {
       expression = force (
         ciCheck.mkHestiaChecks {
@@ -205,6 +343,16 @@ let
         }
       );
       expectedFragment = ''"declaredButMissing":["aarch64-darwin.example"]'';
+    };
+
+    hestiaJobWithoutAnnotation = {
+      expression = force (
+        ciCheck.validateHestiaJobs {
+          ${linuxSystem}.example = fakeCheck;
+          ${darwinSystem} = { };
+        }
+      );
+      expectedFragment = ''{"invalid":[],"missing":["x86_64-linux.example"]}'';
     };
 
     crossSystemTargetsMustMatch = {
