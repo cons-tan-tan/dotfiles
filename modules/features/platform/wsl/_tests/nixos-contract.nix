@@ -26,8 +26,8 @@ let
       actual = {
         enabled = config.wsl.enable;
         defaultUser = config.wsl.defaultUser;
-        interopRegistered = config.wsl.interop.register;
-        hasInteropRegistration = config.boot.binfmt.registrations ? WSLInterop;
+        interopRegistrationEnabled = config.wsl.interop.register;
+        binfmtRegistrations = config.boot.binfmt.registrations;
         userLinger = config.users.users.${subjectUsername}.linger;
         gettyEnabled = config.services.getty.enable;
         gettyTargetWants = config.systemd.targets.getty.wants;
@@ -35,8 +35,8 @@ let
       expected = {
         enabled = true;
         defaultUser = username;
-        interopRegistered = true;
-        hasInteropRegistration = true;
+        interopRegistrationEnabled = false;
+        binfmtRegistrations = { };
         userLinger = true;
         gettyEnabled = true;
         gettyTargetWants = [ ];

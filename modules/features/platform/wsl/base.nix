@@ -3,9 +3,9 @@
   features.platform-wsl-base = {
     name = "feature/platform/wsl/base";
     wsl = {
-      # Keep Windows executable interop available when WSL registration is
-      # incomplete on the host.
-      interop.register = true;
+      # Let WSL own WSLInterop. Adding NixOS binfmt registrations activates
+      # systemd-binfmt, whose bulk flush conflicts with WSL's protected status.
+      # https://github.com/microsoft/WSL/pull/40621
 
       # microsoft/WSL#40519 must be present before restoring a hostname here;
       # shared systemd cgroups otherwise collide across distros with the same UID.
