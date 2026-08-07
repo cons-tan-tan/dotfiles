@@ -7,6 +7,9 @@
 let
   ciCheck = import ./_interface/check.nix { inherit lib; };
   validationCheckName = "hestia-job-contract";
+  # Hestia must omit these checks without forcing their values. A dedicated
+  # definition source lets the contract reject later overrides by name alone.
+  evaluationCompleteDefinitionOwner = "feature/ci evaluation-complete check materializer";
   hestiaSystems = [
     "aarch64-darwin"
     "x86_64-linux"
@@ -24,6 +27,9 @@ let
     _: composition: composition.checkNames
   ) evaluationCompleteCompositionBySystem;
   checkNamesBySystem = lib.mapAttrs (_: checks: builtins.attrNames checks) checksBySystem;
+  checkDefinitionsBySystem = lib.genAttrs config.systems (
+    system: withSystem system ({ options, ... }: options.checks.definitionsWithLocations)
+  );
   buildRouteProducersBySystem = lib.genAttrs config.systems (
     system: withSystem system ({ config, ... }: config.dotfiles.ci.buildRouteProducers)
   );
@@ -35,9 +41,17 @@ let
     system: evaluationCompleteCheckNamesBySystem.${system}
   );
   hestiaRoutesBySystem = lib.genAttrs hestiaSystems (system: buildRoutesBySystem.${system});
-  validation = ciCheck.validateCheckManifest {
-    inherit buildRoutesBySystem checkNamesBySystem evaluationCompleteCheckNamesBySystem;
-  };
+  validation =
+    builtins.seq
+      (ciCheck.validateEvaluationCompleteDefinitions {
+        inherit checkDefinitionsBySystem evaluationCompleteCheckNamesBySystem;
+        expectedFile = evaluationCompleteDefinitionOwner;
+      })
+      (
+        ciCheck.validateCheckManifest {
+          inherit buildRoutesBySystem checkNamesBySystem evaluationCompleteCheckNamesBySystem;
+        }
+      );
 in
 {
   imports = [ ./_interface/options.nix ];
@@ -64,9 +78,12 @@ in
           }
         ];
 
-        checks =
-          (ciCheck.composeEvaluationCompleteProducers config.dotfiles.ci.evaluationCompleteCheckProducers)
-          .checks;
+        checks = lib.mkDefinition {
+          file = evaluationCompleteDefinitionOwner;
+          value =
+            (ciCheck.composeEvaluationCompleteProducers config.dotfiles.ci.evaluationCompleteCheckProducers)
+            .checks;
+        };
       };
 
     features.ci-tools = {
@@ -82,10 +99,12 @@ in
         };
     };
 
-    flake.lib.hestiaJobs.ci = ciCheck.mkHestiaJobs {
-      checksBySystem = hestiaChecksBySystem;
-      evaluationCompleteCheckNamesBySystem = hestiaEvaluationCompleteCheckNamesBySystem;
-      routesBySystem = hestiaRoutesBySystem;
-    };
+    flake.lib.hestiaJobs.ci = builtins.seq validation (
+      ciCheck.mkHestiaJobs {
+        checksBySystem = hestiaChecksBySystem;
+        evaluationCompleteCheckNamesBySystem = hestiaEvaluationCompleteCheckNamesBySystem;
+        routesBySystem = hestiaRoutesBySystem;
+      }
+    );
   };
 }

@@ -23,6 +23,19 @@ let
       };
     };
   force = value: builtins.deepSeq value true;
+  checkDefinitions =
+    modules:
+    (lib.evalModules {
+      modules = [
+        {
+          options.checks = lib.mkOption {
+            type = lib.types.lazyAttrsOf lib.types.raw;
+            default = { };
+          };
+        }
+      ]
+      ++ modules;
+    }).options.checks.definitionsWithLocations;
   cases = {
     executionClassificationIsExclusive = {
       expression = force (
@@ -387,27 +400,60 @@ let
       expectedFragment = ''"metadataMismatch":["excluded"]'';
     };
 
-    hestiaJobsRejectMissingEvaluationCompleteMarker = {
+    evaluationCompleteDefinitionsRejectForcedLeaf = {
       expression = force (
-        (ciCheck.mkHestiaJobs {
-          checksBySystem = {
-            ${linuxSystem} = {
-              build = ciCheck.annotate (ciCheck.targets.linux "eval-tests") fakeCheck;
-              evaluated = fakeCheck;
-            };
-            ${darwinSystem} = { };
-          };
-          evaluationCompleteCheckNamesBySystem = {
-            ${linuxSystem} = [ "evaluated" ];
+        ciCheck.validateEvaluationCompleteDefinitions {
+          checkDefinitionsBySystem.${linuxSystem} = checkDefinitions [
+            {
+              _file = "owner";
+              checks.evaluated = throw "owned check must stay lazy";
+            }
+            {
+              _file = "override";
+              checks.evaluated = lib.mkForce fakeCheck;
+            }
+          ];
+          evaluationCompleteCheckNamesBySystem.${linuxSystem} = [ "evaluated" ];
+          expectedFile = "owner";
+        }
+      );
+      expectedFragment = ''"multiplyDefined":["evaluated"]'';
+    };
+
+    evaluationCompleteDefinitionsRejectForcedSet = {
+      expression = force (
+        ciCheck.validateEvaluationCompleteDefinitions {
+          checkDefinitionsBySystem.${linuxSystem} = checkDefinitions [
+            {
+              _file = "owner";
+              checks.evaluated = throw "owned check must stay lazy";
+            }
+            {
+              _file = "override";
+              checks = lib.mkForce { evaluated = fakeCheck; };
+            }
+          ];
+          evaluationCompleteCheckNamesBySystem.${linuxSystem} = [ "evaluated" ];
+          expectedFile = "owner";
+        }
+      );
+      expectedFragment = ''"unexpectedOwners":[{"file":"override","name":"evaluated"}]'';
+    };
+
+    evaluationCompleteDefinitionsRejectMismatchedSystems = {
+      expression = force (
+        ciCheck.validateEvaluationCompleteDefinitions {
+          checkDefinitionsBySystem = {
+            ${linuxSystem} = [ ];
             ${darwinSystem} = [ ];
           };
-          routesBySystem = {
-            ${linuxSystem}.build = ciCheck.targets.linux "eval-tests";
-            ${darwinSystem} = { };
+          evaluationCompleteCheckNamesBySystem = {
+            ${linuxSystem} = [ ];
           };
-        }).${linuxSystem}
+          expectedFile = "owner";
+        }
       );
-      expectedFragment = ''"invalidEvaluationComplete":["evaluated"]'';
+      expectedFragment = "evaluation-complete check definitions must use matching systems";
     };
 
     hestiaJobsRejectUnknownEvaluationCompleteName = {

@@ -1,9 +1,13 @@
-{ lib }:
+{
+  inputs,
+  lib,
+}:
 let
   ciCheck = import ../_interface/check.nix { inherit lib; };
   linuxSystem = "x86_64-linux";
   darwinSystem = "aarch64-darwin";
   additionalSystem = "aarch64-linux";
+  validationCheckName = "hestia-job-contract";
   fakeCheck = {
     drvPath = "/nix/store/00000000000000000000000000000000-ci-check.drv";
     meta.description = "preserved metadata";
@@ -17,6 +21,75 @@ let
       meta.description = "${name} metadata";
       inherit system;
     };
+  mkModuleFixture =
+    overrideModule:
+    inputs.flake-parts.lib.mkFlake { inherit inputs; } {
+      imports = [
+        inputs.treefmt-nix.flakeModule
+        ../../nixpkgs
+        ../default.nix
+        overrideModule
+      ];
+      options.features = lib.mkOption {
+        type = lib.types.lazyAttrsOf lib.types.raw;
+        default = { };
+      };
+      config = {
+        systems = [
+          darwinSystem
+          linuxSystem
+        ];
+        perSystem =
+          { pkgs, system, ... }:
+          let
+            targets = ciCheck.targets.both "eval-tests";
+          in
+          {
+            treefmt.flakeCheck = false;
+            checks.build = ciCheck.annotate targets (
+              pkgs.runCommand "fixture-build-${system}" { } ''touch "$out"''
+            );
+            dotfiles.ci.buildRouteProducers = [
+              {
+                owner = "fixture";
+                routes.build = targets;
+              }
+            ];
+          };
+      };
+    };
+  validModuleFixture = mkModuleFixture { };
+  leafOverrideFixture = mkModuleFixture {
+    perSystem =
+      {
+        lib,
+        pkgs,
+        system,
+        ...
+      }:
+      lib.optionalAttrs (system == linuxSystem) {
+        checks.${validationCheckName} = lib.mkForce (
+          pkgs.runCommand "forced-${validationCheckName}" { } ''touch "$out"''
+        );
+      };
+  };
+  setOverrideFixture = mkModuleFixture {
+    perSystem =
+      {
+        lib,
+        pkgs,
+        system,
+        ...
+      }:
+      lib.optionalAttrs (system == linuxSystem) {
+        checks = lib.mkForce {
+          build = ciCheck.annotate (ciCheck.targets.both "eval-tests") (
+            pkgs.runCommand "forced-build" { } ''touch "$out"''
+          );
+          ${validationCheckName} = pkgs.runCommand "forced-${validationCheckName}" { } ''touch "$out"'';
+        };
+      };
+  };
 in
 {
   testAnnotationPreservesMetadata = {
@@ -157,6 +230,49 @@ in
       };
     };
     expected = true;
+  };
+
+  testValidEvaluationCompleteDefinitionsDoNotForceChecks = {
+    expr = ciCheck.validateEvaluationCompleteDefinitions {
+      checkDefinitionsBySystem = {
+        ${linuxSystem} = [
+          {
+            file = "owner";
+            value.evaluated = throw "evaluation-complete check definition was forced";
+          }
+        ];
+        ${darwinSystem} = [ ];
+      };
+      evaluationCompleteCheckNamesBySystem = {
+        ${linuxSystem} = [ "evaluated" ];
+        ${darwinSystem} = [ ];
+      };
+      expectedFile = "owner";
+    };
+    expected = true;
+  };
+
+  testProductionHestiaWiringAcceptsOwnedDefinition = {
+    expr = builtins.attrNames validModuleFixture.lib.hestiaJobs.ci.${linuxSystem};
+    expected = [ "build" ];
+  };
+
+  testProductionFixtureContainsExpectedEvaluationContract = {
+    expr = builtins.hasAttr validationCheckName validModuleFixture.checks.${linuxSystem};
+    expected = true;
+  };
+
+  testProductionHestiaWiringRejectsForcedLeaf = {
+    expr =
+      (builtins.tryEval (builtins.attrNames leafOverrideFixture.lib.hestiaJobs.ci.${linuxSystem}))
+      .success;
+    expected = false;
+  };
+
+  testProductionHestiaWiringRejectsForcedSet = {
+    expr =
+      (builtins.tryEval (builtins.attrNames setOverrideFixture.lib.hestiaJobs.ci.${linuxSystem})).success;
+    expected = false;
   };
 
   testSystemSpecificGroups =
@@ -331,37 +447,29 @@ in
     expected = [ "build" ];
   };
 
-  testHestiaJobsDistributeEvaluationCompleteChecks = {
+  testHestiaJobsDoNotForceEvaluationCompleteChecks = {
     expr =
       let
         jobs = ciCheck.mkHestiaJobs {
           checksBySystem = {
             ${linuxSystem} = {
-              first = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (fakeFor "first" linuxSystem);
-              second = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (fakeFor "second" linuxSystem);
-              evaluatedFirst = ciCheck.evaluationComplete fakeCheck;
-              evaluatedSecond = throw "second marker was forced by the first job";
+              build = ciCheck.annotate (ciCheck.targets.linux "eval-tests") fakeCheck;
+              evaluated = throw "evaluation-complete check was forced by a build job";
             };
             ${darwinSystem} = { };
           };
           evaluationCompleteCheckNamesBySystem = {
-            ${linuxSystem} = [
-              "evaluatedFirst"
-              "evaluatedSecond"
-            ];
+            ${linuxSystem} = [ "evaluated" ];
             ${darwinSystem} = [ ];
           };
           routesBySystem = {
-            ${linuxSystem} = {
-              first = ciCheck.targets.linux "eval-tests";
-              second = ciCheck.targets.linux "eval-tests";
-            };
+            ${linuxSystem}.build = ciCheck.targets.linux "eval-tests";
             ${darwinSystem} = { };
           };
         };
       in
-      jobs.${linuxSystem}.first.meta.description;
-    expected = "first metadata";
+      jobs.${linuxSystem}.build.meta.description;
+    expected = "preserved metadata";
   };
 
 }

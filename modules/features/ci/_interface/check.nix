@@ -467,38 +467,63 @@ let
             inherit system;
           };
           jobNames = builtins.attrNames jobs;
-          assignments = lib.imap0 (index: name: {
-            inherit name;
-            jobName =
-              let
-                jobCount = builtins.length jobNames;
-              in
-              builtins.elemAt jobNames (index - (builtins.div index jobCount) * jobCount);
-          }) evaluationCompleteCheckNames;
         in
         if unknown != [ ] then
           throw "invalid evaluation-complete CI checks for ${system}: ${builtins.toJSON { inherit unknown; }}"
         else if evaluationCompleteCheckNames != [ ] && jobNames == [ ] then
           throw "evaluation-complete CI checks for ${system} require at least one Hestia build job"
         else
-          lib.mapAttrs (
-            jobName: job:
-            let
-              assignedNames = map (assignment: assignment.name) (
-                builtins.filter (assignment: assignment.jobName == jobName) assignments
-              );
-              invalidEvaluationComplete = builtins.filter (
-                name: !(isEvaluationComplete checks.${name})
-              ) assignedNames;
-            in
-            if invalidEvaluationComplete != [ ] then
-              throw "invalid evaluation-complete CI checks for ${system}: ${
-                builtins.toJSON { inherit invalidEvaluationComplete; }
-              }"
-            else
-              job
-          ) jobs
+          jobs
       );
+
+  validateEvaluationCompleteDefinitions =
+    {
+      checkDefinitionsBySystem,
+      evaluationCompleteCheckNamesBySystem,
+      expectedFile,
+    }:
+    let
+      definitionSystems = builtins.attrNames checkDefinitionsBySystem;
+      declaredSystems = builtins.attrNames evaluationCompleteCheckNamesBySystem;
+      validateSystem =
+        system:
+        let
+          declaredNames = evaluationCompleteCheckNamesBySystem.${system};
+          references = lib.concatMap (
+            definition:
+            map (name: {
+              inherit name;
+              file = definition.file or null;
+            }) (builtins.attrNames (definition.value or { }))
+          ) checkDefinitionsBySystem.${system};
+          referencesFor = name: builtins.filter (reference: reference.name == name) references;
+          missing = builtins.filter (name: referencesFor name == [ ]) declaredNames;
+          multiplyDefined = builtins.filter (name: builtins.length (referencesFor name) != 1) declaredNames;
+          unexpectedOwners = lib.concatMap (
+            name:
+            map (reference: {
+              inherit name;
+              inherit (reference) file;
+            }) (builtins.filter (reference: reference.file != expectedFile) (referencesFor name))
+          ) declaredNames;
+        in
+        if missing != [ ] || multiplyDefined != [ ] || unexpectedOwners != [ ] then
+          throw "invalid evaluation-complete check definitions for ${system}: ${
+            builtins.toJSON {
+              inherit missing multiplyDefined unexpectedOwners;
+            }
+          }"
+        else
+          true;
+    in
+    if definitionSystems != declaredSystems then
+      throw "evaluation-complete check definitions must use matching systems: ${
+        builtins.toJSON { inherit declaredSystems definitionSystems; }
+      }"
+    else if !(builtins.all validateSystem declaredSystems) then
+      throw "evaluation-complete check definition validation returned false"
+    else
+      true;
 
   selectBuildChecks =
     {
@@ -624,5 +649,6 @@ in
     selectBuildChecks
     targets
     validateCheckManifest
+    validateEvaluationCompleteDefinitions
     ;
 }
