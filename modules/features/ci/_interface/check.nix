@@ -461,23 +461,43 @@ let
           checks = checksBySystem.${system};
           evaluationCompleteCheckNames = evaluationCompleteCheckNamesBySystem.${system};
           unknown = builtins.filter (name: !(builtins.hasAttr name checks)) evaluationCompleteCheckNames;
-          knownEvaluationCompleteNames = builtins.filter (
-            name: builtins.hasAttr name checks
-          ) evaluationCompleteCheckNames;
-          invalidEvaluationComplete = builtins.filter (
-            name: !(isEvaluationComplete checks.${name})
-          ) knownEvaluationCompleteNames;
-        in
-        if unknown != [ ] || invalidEvaluationComplete != [ ] then
-          throw "invalid evaluation-complete CI checks for ${system}: ${
-            builtins.toJSON { inherit invalidEvaluationComplete unknown; }
-          }"
-        else
-          mkHestiaChecks {
+          jobs = mkHestiaChecks {
             checks = removeAttrs checks evaluationCompleteCheckNames;
             routes = routesBySystem.${system};
             inherit system;
-          }
+          };
+          jobNames = builtins.attrNames jobs;
+          assignments = lib.imap0 (index: name: {
+            inherit name;
+            jobName =
+              let
+                jobCount = builtins.length jobNames;
+              in
+              builtins.elemAt jobNames (index - (builtins.div index jobCount) * jobCount);
+          }) evaluationCompleteCheckNames;
+        in
+        if unknown != [ ] then
+          throw "invalid evaluation-complete CI checks for ${system}: ${builtins.toJSON { inherit unknown; }}"
+        else if evaluationCompleteCheckNames != [ ] && jobNames == [ ] then
+          throw "evaluation-complete CI checks for ${system} require at least one Hestia build job"
+        else
+          lib.mapAttrs (
+            jobName: job:
+            let
+              assignedNames = map (assignment: assignment.name) (
+                builtins.filter (assignment: assignment.jobName == jobName) assignments
+              );
+              invalidEvaluationComplete = builtins.filter (
+                name: !(isEvaluationComplete checks.${name})
+              ) assignedNames;
+            in
+            if invalidEvaluationComplete != [ ] then
+              throw "invalid evaluation-complete CI checks for ${system}: ${
+                builtins.toJSON { inherit invalidEvaluationComplete; }
+              }"
+            else
+              job
+          ) jobs
       );
 
   selectBuildChecks =

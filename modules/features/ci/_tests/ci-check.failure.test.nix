@@ -374,7 +374,10 @@ let
       expression = force (
         (ciCheck.mkHestiaJobs {
           checksBySystem = {
-            ${linuxSystem}.evaluated = fakeCheck;
+            ${linuxSystem} = {
+              build = ciCheck.annotate (ciCheck.targets.linux "eval-tests") fakeCheck;
+              evaluated = fakeCheck;
+            };
             ${darwinSystem} = { };
           };
           evaluationCompleteCheckNamesBySystem = {
@@ -382,7 +385,7 @@ let
             ${darwinSystem} = [ ];
           };
           routesBySystem = {
-            ${linuxSystem} = { };
+            ${linuxSystem}.build = ciCheck.targets.linux "eval-tests";
             ${darwinSystem} = { };
           };
         }).${linuxSystem}
@@ -408,6 +411,26 @@ let
         }).${linuxSystem}
       );
       expectedFragment = ''"unknown":["unknown"]'';
+    };
+
+    hestiaJobsRejectEvaluationCompleteChecksWithoutBuildJobs = {
+      expression = force (
+        (ciCheck.mkHestiaJobs {
+          checksBySystem = {
+            ${linuxSystem}.evaluated = ciCheck.evaluationComplete fakeCheck;
+            ${darwinSystem} = { };
+          };
+          evaluationCompleteCheckNamesBySystem = {
+            ${linuxSystem} = [ "evaluated" ];
+            ${darwinSystem} = [ ];
+          };
+          routesBySystem = {
+            ${linuxSystem} = { };
+            ${darwinSystem} = { };
+          };
+        }).${linuxSystem}
+      );
+      expectedFragment = "require at least one Hestia build job";
     };
 
     missingAnnotation = {

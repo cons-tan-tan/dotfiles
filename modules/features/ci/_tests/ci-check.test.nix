@@ -288,4 +288,60 @@ in
     expected = [ "example" ];
   };
 
+  testHestiaJobIndexDoesNotForceEvaluationCompleteChecks = {
+    expr = builtins.attrNames (
+      (ciCheck.mkHestiaJobs {
+        checksBySystem = {
+          ${linuxSystem} = {
+            build = ciCheck.annotate (ciCheck.targets.linux "eval-tests") fakeCheck;
+            evaluated = throw "evaluation-complete check was forced while indexing jobs";
+          };
+          ${darwinSystem} = { };
+        };
+        evaluationCompleteCheckNamesBySystem = {
+          ${linuxSystem} = [ "evaluated" ];
+          ${darwinSystem} = [ ];
+        };
+        routesBySystem = {
+          ${linuxSystem}.build = ciCheck.targets.linux "eval-tests";
+          ${darwinSystem} = { };
+        };
+      }).${linuxSystem}
+    );
+    expected = [ "build" ];
+  };
+
+  testHestiaJobsDistributeEvaluationCompleteChecks = {
+    expr =
+      let
+        jobs = ciCheck.mkHestiaJobs {
+          checksBySystem = {
+            ${linuxSystem} = {
+              first = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (fakeFor "first" linuxSystem);
+              second = ciCheck.annotate (ciCheck.targets.linux "eval-tests") (fakeFor "second" linuxSystem);
+              evaluatedFirst = ciCheck.evaluationComplete fakeCheck;
+              evaluatedSecond = throw "second marker was forced by the first job";
+            };
+            ${darwinSystem} = { };
+          };
+          evaluationCompleteCheckNamesBySystem = {
+            ${linuxSystem} = [
+              "evaluatedFirst"
+              "evaluatedSecond"
+            ];
+            ${darwinSystem} = [ ];
+          };
+          routesBySystem = {
+            ${linuxSystem} = {
+              first = ciCheck.targets.linux "eval-tests";
+              second = ciCheck.targets.linux "eval-tests";
+            };
+            ${darwinSystem} = { };
+          };
+        };
+      in
+      jobs.${linuxSystem}.first.meta.description;
+    expected = "first metadata";
+  };
+
 }
