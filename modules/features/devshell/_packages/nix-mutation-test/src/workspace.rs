@@ -4,7 +4,7 @@ use std::io::Read;
 use std::os::fd::AsRawFd;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitStatus, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
@@ -120,7 +120,7 @@ impl Workspace {
         if let Err(error) =
             set_nonblocking(stdout.as_raw_fd()).and_then(|()| set_nonblocking(stderr.as_raw_fd()))
         {
-            let _ = terminate_process_group(process_group);
+            let _ = terminate_process_group(&mut child, process_group);
             let _ = child.wait();
             return Err(error);
         }
@@ -129,7 +129,7 @@ impl Workspace {
         let stderr_reader = bounded_reader(stderr, Arc::clone(&stop_readers));
         let wait_result = wait_with_deadline(&mut child, process_group, deadline);
         if wait_result.is_err() {
-            let _ = terminate_process_group(process_group);
+            let _ = terminate_process_group(&mut child, process_group);
             let _ = child.wait();
         }
         finish_readers(&stdout_reader, &stderr_reader, &stop_readers);
@@ -156,7 +156,7 @@ fn wait_with_deadline(
             .try_wait()
             .map_err(|error| format!("could not inspect test command: {error}"))?
         {
-            terminate_process_group(process_group)?;
+            terminate_process_group(child, process_group)?;
             return Ok((status, false));
         }
         if Instant::now() >= deadline {
@@ -165,29 +165,44 @@ fn wait_with_deadline(
         thread::sleep(POLL_INTERVAL);
     }
 
-    terminate_process_group(process_group)?;
+    terminate_process_group(child, process_group)?;
     let status = child
         .wait()
         .map_err(|error| format!("could not reap timed out test command: {error}"))?;
     Ok((status, true))
 }
 
-fn terminate_process_group(process_group: i32) -> Result<(), String> {
+fn terminate_process_group(child: &mut Child, process_group: i32) -> Result<(), String> {
+    // Darwin can keep an exited, unreaped group leader visible to kill(0)
+    // while rejecting a later group signal with EPERM.
+    reap_finished_child(child)?;
     if !process_group_exists(process_group)? {
         return Ok(());
     }
-    send_group_signal(process_group, libc::SIGTERM)?;
+    send_group_signal(child, process_group, libc::SIGTERM)?;
     let kill_deadline = Instant::now() + TERMINATION_GRACE;
     while Instant::now() < kill_deadline {
+        reap_finished_child(child)?;
         if !process_group_exists(process_group)? {
             return Ok(());
         }
         thread::sleep(POLL_INTERVAL);
     }
-    send_group_signal(process_group, libc::SIGKILL)
+    reap_finished_child(child)?;
+    if !process_group_exists(process_group)? {
+        return Ok(());
+    }
+    send_group_signal(child, process_group, libc::SIGKILL)
 }
 
-fn send_group_signal(process_group: i32, signal: i32) -> Result<(), String> {
+fn reap_finished_child(child: &mut Child) -> Result<(), String> {
+    child
+        .try_wait()
+        .map(|_| ())
+        .map_err(|error| format!("could not inspect test command: {error}"))
+}
+
+fn send_group_signal(child: &mut Child, process_group: i32, signal: i32) -> Result<(), String> {
     // SAFETY: kill is called with a valid signal and the negative ID targets
     // only the process group created for this test command.
     if unsafe { libc::kill(-process_group, signal) } == 0 {
@@ -195,10 +210,25 @@ fn send_group_signal(process_group: i32, signal: i32) -> Result<(), String> {
     }
     let error = std::io::Error::last_os_error();
     if error.raw_os_error() == Some(libc::ESRCH) {
-        Ok(())
-    } else {
-        Err(format!("could not signal timed out test command: {error}"))
+        return Ok(());
     }
+    if error.raw_os_error() == Some(libc::EPERM) {
+        reap_finished_child(child)?;
+        // SAFETY: this retries the same process-group signal after reaping a
+        // possibly exited group leader. A genuine permission failure remains
+        // an error below.
+        if unsafe { libc::kill(-process_group, signal) } == 0 {
+            return Ok(());
+        }
+        let retry_error = std::io::Error::last_os_error();
+        if retry_error.raw_os_error() == Some(libc::ESRCH) {
+            return Ok(());
+        }
+        return Err(format!(
+            "could not signal test process group: {retry_error}"
+        ));
+    }
+    Err(format!("could not signal test process group: {error}"))
 }
 
 fn process_group_exists(process_group: i32) -> Result<bool, String> {
