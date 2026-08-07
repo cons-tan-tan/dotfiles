@@ -17,9 +17,16 @@ permissions:
 
 jobs:
   flake-eval:
-    name: evaluate / flake
+    name: flake / ${{ matrix.system }} / evaluate
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        system:
+          - aarch64-darwin
+          - aarch64-linux
+          - x86_64-linux
     steps:
       - name: Check out repository
         id: checkout
@@ -33,18 +40,20 @@ jobs:
           enable_kvm: false
       - wait: checkout
       # Hestiaのsystem laneとは独立して開始する。eval時のIFDを排除して
-      # あるため、Darwinを含む全systemをLinuxで評価できる。
+      # あるため、Darwinを含む各systemをLinuxで並列評価できる。
       - name: Evaluate flake outputs
-        run: nix flake check --no-build --all-systems
+        env:
+          FLAKE_EVAL_SYSTEM: ${{ matrix.system }}
+        run: nix flake check --no-build --option system "$FLAKE_EVAL_SYSTEM"
 
   linux:
-    name: linux
+    name: system / x86_64-linux
     uses: $/.github/workflows/hestia-system.yaml
     with:
       system: x86_64-linux
 
   darwin:
-    name: darwin
+    name: system / aarch64-darwin
     uses: $/.github/workflows/hestia-system.yaml
     with:
       system: aarch64-darwin

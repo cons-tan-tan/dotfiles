@@ -13,7 +13,10 @@ in
   fixture = "workflowPolicy";
   ciTargets = ciCheck.targets.linux "rust-and-bats";
   testFiles = [ "modules/features/ci/_tests/workflow-policy.bats" ];
-  sourceFiles = workflowFiles ++ [ ".github/actions/setup-hestia/action.yaml" ];
+  sourceFiles = workflowFiles ++ [
+    ".github/actions/setup-hestia/action.yaml"
+    "modules/flake/_data/systems/default.nix"
+  ];
   initializeGit = false;
   platformPredicate = _platform: true;
 }

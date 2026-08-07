@@ -11,6 +11,7 @@ setup() {
   CACHE_GC_WORKFLOW="$WORKFLOW_DIR/cache-gc.yaml"
   HESTIA_SETUP_ACTION="$REPO_ROOT/.github/actions/setup-hestia/action.yaml"
   CACHE_SETTINGS="$REPO_ROOT/modules/features/platform/nix-settings/_data/cache.nix"
+  SUPPORTED_SYSTEMS="$REPO_ROOT/modules/flake/_data/systems/default.nix"
 }
 
 workflow_files() {
@@ -319,11 +320,14 @@ YAML
         (.jobs.fmt == null),
         (.jobs.reuse == null),
         (([$runs[] | select(
-          contains("nix flake check --no-build --all-systems")
+          contains("nix flake check --no-build --option system")
         )] | length) == 1),
         (([$runs[] | select(
+          contains("nix flake check --no-build --option system")
+        )][0]) == "nix flake check --no-build --option system \"$FLAKE_EVAL_SYSTEM\""),
+        (([$runs[] | select(
           contains("nix flake check --no-build --all-systems")
-        )][0]) == "nix flake check --no-build --all-systems"),
+        )] | length) == 0),
         (([$runs[] | select(contains("nix run .#fmt"))] | length) == 0),
         (([$runs[] | select(contains("reuse lint"))] | length) == 0),
         (([$uses[] | select(test("^fsfe/reuse-action@"))] | length) == 0)
@@ -386,18 +390,29 @@ YAML
 
 @test "flake evaluation and system lanes start independently" {
   run yq -e '
-    .jobs."flake-eval".name == "evaluate / flake"
+    .jobs."flake-eval".name == "flake / ${{ matrix.system }} / evaluate"
     and .jobs."flake-eval".runs-on == "ubuntu-latest"
     and .jobs."flake-eval".needs == null
+    and .jobs."flake-eval".strategy."fail-fast" == false
+    and (.jobs."flake-eval".strategy.matrix.system | length) > 0
     and ([.jobs."flake-eval".steps[] | select(.id == "checkout")][0].background
       == true)
     and ([.jobs."flake-eval".steps[] | select(.wait == "checkout")]
       | length) == 1
-    and .jobs.linux.name == "linux"
+    and ([.jobs."flake-eval".steps[] | select(
+      .name == "Evaluate flake outputs"
+    )] | length) == 1
+    and ([.jobs."flake-eval".steps[] | select(
+      .name == "Evaluate flake outputs"
+    )][0] | (
+      .env.FLAKE_EVAL_SYSTEM == "${{ matrix.system }}"
+      and .run == "nix flake check --no-build --option system \"$FLAKE_EVAL_SYSTEM\""
+    ))
+    and .jobs.linux.name == "system / x86_64-linux"
     and .jobs.linux.uses == "$/.github/workflows/hestia-system.yaml"
     and .jobs.linux.with.system == "x86_64-linux"
     and .jobs.linux.needs == null
-    and .jobs.darwin.name == "darwin"
+    and .jobs.darwin.name == "system / aarch64-darwin"
     and .jobs.darwin.uses == "$/.github/workflows/hestia-system.yaml"
     and .jobs.darwin.with.system == "aarch64-darwin"
     and .jobs.darwin.needs == null
@@ -459,9 +474,21 @@ YAML
   [ "$status" -eq 0 ]
 }
 
+@test "flake evaluation matrix follows the canonical supported systems" {
+  local matrix_systems
+  local supported_systems
+
+  matrix_systems=$(yq -r '.jobs."flake-eval".strategy.matrix.system[]' "$CI_WORKFLOW" | sort)
+  supported_systems=$(sed -n 's/^[[:space:]]*"\([^"]*\)"[[:space:]]*$/\1/p' "$SUPPORTED_SYSTEMS" | sort)
+
+  [ -n "$supported_systems" ]
+  [ "$matrix_systems" = "$supported_systems" ]
+}
+
 @test "system lane waits for and builds its evaluated derivations" {
   run yq -e '
     .jobs.build.needs == "evaluate"
+    and .jobs.build.name == "build / ${{ matrix.name }}"
     and .jobs.build."timeout-minutes" == 90
     and .jobs.build.if
       == "needs.evaluate.result == '\''success'\'' && needs.evaluate.outputs.any-jobs == '\''true'\''"

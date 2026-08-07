@@ -81,7 +81,7 @@ jobs:
   # 評価済みのdrv closureを引き継ぎ、評価とbuildが別のderivationを選ぶ余地を
   # 作らない。
   build:
-    name: build / ${{ matrix.name }} (${{ matrix.system }})
+    name: build / ${{ matrix.name }}
     needs: evaluate
     if: >-
       needs.evaluate.result == 'success'
