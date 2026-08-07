@@ -374,6 +374,10 @@ YAML
       == "${{ inputs.upstream-cache-filter }}"
     and ([.runs.steps[] | select(
       (.uses // "") | test("^Mic92/hestia@")
+    )][0].with."upstream-cache-key-names" | sub("[[:space:]]+"; " "))
+      == "${{ inputs.upstream-cache-filter == '\''true'\'' && '\''cache.nixos.org-1 niks3.numtide.com-1 nix-community.cachix.org-1'\'' || '\'''\'' }}"
+    and ([.runs.steps[] | select(
+      (.uses // "") | test("^Mic92/hestia@")
     )][0].with."wait-manifest-version")
       == "${{ inputs.wait-manifest-version }}"
   ' "$HESTIA_SETUP_ACTION"
@@ -689,8 +693,9 @@ YAML
         )] | length) == 1),
         (([.runs.steps[] | select(
           (.uses // "") | test("^Mic92/hestia@")
-        )][0].with."upstream-cache-key-names")
-          == strenv(EXPECTED_HESTIA_KEY_NAMES))
+        )][0].with."upstream-cache-key-names" | sub("[[:space:]]+"; " "))
+          == "${{ inputs.upstream-cache-filter == '\''true'\'' && '\''"
+            + strenv(EXPECTED_HESTIA_KEY_NAMES) + "'\'' || '\'''\'' }}")
       ] | all
     ' "$HESTIA_SETUP_ACTION"
   [ "$status" -eq 0 ]

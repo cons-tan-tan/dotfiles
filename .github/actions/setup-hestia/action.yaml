@@ -39,7 +39,7 @@ runs:
         version: v3.0.0
         upstream-cache-filter: ${{ inputs.upstream-cache-filter }}
         upstream-cache-key-names: >-
-          cache.nixos.org-1
-          niks3.numtide.com-1
-          nix-community.cachix.org-1
+          ${{ inputs.upstream-cache-filter == 'true'
+              && 'cache.nixos.org-1 niks3.numtide.com-1 nix-community.cachix.org-1'
+              || '' }}
         wait-manifest-version: ${{ inputs.wait-manifest-version }}
