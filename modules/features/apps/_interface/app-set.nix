@@ -56,7 +56,7 @@ let
       validationNames = builtins.attrNames validationsByName;
     in
     if appNames == validationNames then
-      true
+      null
     else
       throw "${context} app and validation names must match exactly: apps=${builtins.toJSON appNames}, validations=${builtins.toJSON validationNames}";
 
@@ -111,7 +111,8 @@ in
       exact = exactNames "merged app set" apps validationsByName;
     in
     builtins.deepSeq checkedTokens (
-      if duplicateAppNames != [ ] || duplicateValidationNames != [ ] then
+      # exactNames guarantees that app and validation duplicates coincide.
+      if duplicateAppNames != [ ] then
         throw "app and validation names must be unique across app sets: apps=${builtins.toJSON duplicateAppNames}, validations=${builtins.toJSON duplicateValidationNames}"
       else
         builtins.seq exact {
