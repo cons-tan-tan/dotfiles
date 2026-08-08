@@ -346,6 +346,32 @@
         "type": "github"
       }
     },
+    "direnv-instant": {
+      "inputs": {
+        "flake-parts": [
+          "flake-parts"
+        ],
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "treefmt-nix": [
+          "treefmt-nix"
+        ]
+      },
+      "locked": {
+        "lastModified": 1786000099,
+        "narHash": "sha256-T3tirJdmYgW5MKwbqfO7qlDInSq4Ilrjw/DwJemFIME=",
+        "owner": "Mic92",
+        "repo": "direnv-instant",
+        "rev": "5656a76b19fef6d1cd14b392ff508f15fa7fb086",
+        "type": "github"
+      },
+      "original": {
+        "owner": "Mic92",
+        "repo": "direnv-instant",
+        "type": "github"
+      }
+    },
     "drawio-skill": {
       "flake": false,
       "locked": {
@@ -778,6 +804,7 @@
         "den-gen-schema": "den-gen-schema",
         "den-nix-effects": "den-nix-effects",
         "difit-src": "difit-src",
+        "direnv-instant": "direnv-instant",
         "drawio-skill": "drawio-skill",
         "flake-file": "flake-file",
         "flake-parts": "flake-parts_2",

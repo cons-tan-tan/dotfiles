@@ -87,6 +87,14 @@
       url = "github:yoshiko-pg/difit/v5.0.8";
       flake = false;
     };
+    direnv-instant = {
+      url = "github:Mic92/direnv-instant";
+      inputs = {
+        flake-parts.follows = "flake-parts";
+        nixpkgs.follows = "nixpkgs";
+        treefmt-nix.follows = "treefmt-nix";
+      };
+    };
     drawio-skill = {
       url = "github:jgraph/drawio-mcp";
       flake = false;

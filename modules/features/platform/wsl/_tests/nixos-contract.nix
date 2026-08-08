@@ -59,7 +59,8 @@ let
         userShell = lib.getExe config.users.users.${subjectUsername}.shell;
         homeZshEnabled = home.programs.zsh.enable;
         zoxideEnabled = home.programs.zoxide.enable;
-        direnvIntegrated = home.programs.direnv.enableZshIntegration;
+        direnvInstantEnabled = home.programs.direnv-instant.enable;
+        standardDirenvHookEnabled = home.programs.direnv.enableZshIntegration;
         starshipIntegrated = home.programs.starship.enableZshIntegration;
         zoxideIntegrated = home.programs.zoxide.enableZshIntegration;
         gpgAgentIntegrated = home.services.gpg-agent.enableZshIntegration;
@@ -73,7 +74,8 @@ let
         userShell = lib.getExe pkgs.zsh;
         homeZshEnabled = true;
         zoxideEnabled = true;
-        direnvIntegrated = true;
+        direnvInstantEnabled = true;
+        standardDirenvHookEnabled = false;
         starshipIntegrated = true;
         zoxideIntegrated = true;
         gpgAgentIntegrated = true;

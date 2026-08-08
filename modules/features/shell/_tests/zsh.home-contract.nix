@@ -7,6 +7,8 @@
     in
     {
       direnv = config.programs.direnv.enable;
+      direnvInstant = config.programs.direnv-instant.enable;
+      direnvInstantCache = config.programs.direnv-instant.settings.use_cache;
       direnvNix = config.programs.direnv.nix-direnv.enable;
       direnvZsh = config.programs.direnv.enableZshIntegration;
       starship = config.programs.starship.enable;
@@ -18,8 +20,10 @@
     };
   expected = _: {
     direnv = true;
+    direnvInstant = true;
+    direnvInstantCache = true;
     direnvNix = true;
-    direnvZsh = true;
+    direnvZsh = false;
     starship = true;
     starshipPreset = true;
     starshipZsh = true;
