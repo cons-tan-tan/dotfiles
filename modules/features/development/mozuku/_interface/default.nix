@@ -1,3 +1,0 @@
-{
-  overlay = import ../_overlays;
-}

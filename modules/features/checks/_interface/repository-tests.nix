@@ -51,7 +51,7 @@ let
       testDiscovery
       ;
   };
-  rust = import ./rust {
+  rust = import ./rust.nix {
     inherit
       advisoryDb
       advisoryDbLastModified
@@ -74,7 +74,7 @@ let
       ;
     subjects = rust.subjects;
   };
-  manual = import ./manual {
+  manual = import ./manual.nix {
     inherit
       ciCheck
       currentTargets

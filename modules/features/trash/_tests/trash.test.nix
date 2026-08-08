@@ -10,7 +10,7 @@ let
     config.name = "feature/trash";
   };
   safeDeletionFeatures =
-    (import ../../safe-deletion/default.nix {
+    (import ../../safe-deletion.nix {
       features.trash = { };
       inherit lib;
     }).features;

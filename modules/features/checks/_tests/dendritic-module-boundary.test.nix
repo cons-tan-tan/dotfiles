@@ -13,6 +13,13 @@ let
   );
   expectedModuleFiles = builtins.filter (path: !lib.hasInfix "/_" (toString path)) allNixFiles;
   actualModuleFiles = (inputs.import-tree.withLib lib).leafs modulesRoot;
+  singletonDefaultNixViolations = builtins.filter (
+    path:
+    baseNameOf path == "default.nix"
+    && builtins.attrNames (builtins.readDir (dirOf path)) == [ "default.nix" ]
+    && baseNameOf (dirOf (dirOf path)) != "_packages"
+    && path != repoRoot + "/modules/flake/_data/systems/default.nix"
+  ) allNixFiles;
   isSupportPath =
     path: lib.hasInfix "/_tests/" (toString path) || lib.hasInfix "/_lib/" (toString path);
   isTestPath = path: lib.hasInfix "/_tests/" (toString path);
@@ -298,6 +305,11 @@ in
   testImportTreeUsesOfficialUnderscoreBoundary = {
     expr = actualModuleFiles;
     expected = expectedModuleFiles;
+  };
+
+  testSingletonDefaultNixIsReservedForDirectoryContracts = {
+    expr = map relativePath singletonDefaultNixViolations;
+    expected = [ ];
   };
 
   testModuleAndSupportTreesDoNotIntersect = {

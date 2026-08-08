@@ -4,7 +4,7 @@
   ...
 }:
 let
-  commandPolicy = import ../agents/base/_interface/command-policy.nix;
+  commandPolicy = import ./agents/base/_interface/command-policy.nix;
   mkProfile = commandPolicy.mkAbbreviatedLongOptionProfile lib;
   trashGuidance = "Use `trash` instead of `rm`.";
   rmProfile = mkProfile {

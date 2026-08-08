@@ -9,7 +9,7 @@
   username,
 }:
 let
-  featuresRoot = ../../..;
+  featuresRoot = ../..;
   descriptorContext = {
     inherit
       ciCheck
@@ -106,7 +106,7 @@ in
 {
   producers = builtins.seq descriptorValidation (
     [
-      (import ../../_tests/repository-quality.nix {
+      (import ../_tests/repository-quality.nix {
         inherit
           ciCheck
           lib

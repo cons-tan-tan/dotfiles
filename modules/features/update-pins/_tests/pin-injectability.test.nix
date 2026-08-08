@@ -5,7 +5,7 @@
 let
   hasInjectablePin = fn: argName: (builtins.functionArgs (import fn)).${argName} or false;
   agentPackageSources = import ../../agents/_interface/package-sources.nix;
-  watchexec = import ../../development/watchexec/_interface;
+  watchexec = import ../../development/watchexec/_interface.nix;
 
   codexPin = {
     version = "99.88.77";

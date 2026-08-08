@@ -8,7 +8,7 @@
   repoRoot,
 }:
 let
-  rustCatalog = import ../rust-projects.nix {
+  rustCatalog = import ./rust-projects.nix {
     inherit ciCheck lib pkgs;
   };
   rustProjects = rustCatalog.projects;

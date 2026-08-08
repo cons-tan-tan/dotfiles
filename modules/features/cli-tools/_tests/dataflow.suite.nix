@@ -92,7 +92,7 @@ let
           (repoRoot + "/modules/features/cli-tools/eza.nix")
           (repoRoot + "/modules/features/cli-tools/jq.nix")
           (repoRoot + "/modules/features/cli-tools/fzf.nix")
-          (repoRoot + "/modules/features/ast-grep/default.nix")
+          (repoRoot + "/modules/features/ast-grep.nix")
           (repoRoot + "/modules/features/agents/skills/default.nix")
           (repoRoot + "/modules/features/agents/base/default.nix")
         ];

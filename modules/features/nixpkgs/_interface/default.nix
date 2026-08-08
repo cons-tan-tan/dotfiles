@@ -1,8 +1,8 @@
 let
   agentOverlays = import ../../agents/_interface/overlays.nix;
-  localPackageRegistry = import ../_registry;
-  mozuku = import ../../development/mozuku/_interface;
-  watchexec = import ../../development/watchexec/_interface;
+  localPackageRegistry = import ../_registry.nix;
+  mozuku = import ../../development/mozuku/_interface.nix;
+  watchexec = import ../../development/watchexec/_interface.nix;
   watchexecOverlay = watchexec.mkOverlay {
     mkPinnedAsset = import ../_lib/mk-pinned-asset.nix;
   };

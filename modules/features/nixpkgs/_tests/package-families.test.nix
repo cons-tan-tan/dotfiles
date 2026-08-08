@@ -1,5 +1,5 @@
 # family の attrset 契約 (attrNames の完全一致) を固定する。
-# どの形を選ぶべきかの規約は modules/features/nixpkgs/_registry/default.nix のヘッダーを参照。
+# どの形を選ぶべきかの規約は modules/features/nixpkgs/_registry.nix のヘッダーを参照。
 { pkgs }:
 let
   inherit (pkgs.dotfilesPackages)

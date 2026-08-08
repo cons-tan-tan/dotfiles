@@ -7,15 +7,15 @@
   pkgs,
 }:
 let
-  mkPinnedAsset = import ../_lib/mk-pinned-asset.nix;
-  agentPackageSources = import ../../agents/_interface/package-sources.nix;
-  ciPackageSources = import ../../ci/_interface/package-sources.nix;
-  cloudPackageSources = import ../../cloud/_interface/package-sources.nix;
-  drawioPackageSources = import ../../drawio/_interface/package-sources.nix;
-  networkPackageSources = import ../../network/_interface/package-sources.nix;
-  platformPackageSources = import ../../platform/_interface/package-sources.nix;
-  securityPackageSources = import ../../security/_interface/package-sources.nix;
-  sourceControlPackageSources = import ../../source-control/_interface/package-sources.nix;
+  mkPinnedAsset = import ./_lib/mk-pinned-asset.nix;
+  agentPackageSources = import ../agents/_interface/package-sources.nix;
+  ciPackageSources = import ../ci/_interface/package-sources.nix;
+  cloudPackageSources = import ../cloud/_interface/package-sources.nix;
+  drawioPackageSources = import ../drawio/_interface/package-sources.nix;
+  networkPackageSources = import ../network/_interface/package-sources.nix;
+  platformPackageSources = import ../platform/_interface/package-sources.nix;
+  securityPackageSources = import ../security/_interface/package-sources.nix;
+  sourceControlPackageSources = import ../source-control/_interface/package-sources.nix;
   agentConfigHelper = pkgs.callPackage agentPackageSources.configHelper { };
   safeFetch = pkgs.callPackage networkPackageSources.safeFetch { };
   ghApiGet = pkgs.callPackage sourceControlPackageSources.ghApiGet {

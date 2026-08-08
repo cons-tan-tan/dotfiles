@@ -1,5 +1,5 @@
 let
-  overlay = (import ../_interface).overlay {
+  overlay = (import ../_interface.nix).overlay {
     inputs.mozuku.packages = {
       "test-system".default = "selected-mozuku";
       "other-system".default = "other-mozuku";

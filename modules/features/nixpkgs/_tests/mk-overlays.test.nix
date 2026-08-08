@@ -13,7 +13,7 @@ let
   ];
   darwinNames = [ "brew-nix" ];
   expectedNames = commonNames ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin darwinNames;
-  watchexecPin = (import ../../development/watchexec/_interface).pin;
+  watchexecPin = (import ../../development/watchexec/_interface.nix).pin;
 in
 {
   testOverlayOrder = {
