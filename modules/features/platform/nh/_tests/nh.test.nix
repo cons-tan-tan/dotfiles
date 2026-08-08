@@ -9,6 +9,7 @@ let
   nhModule =
     (import ../default.nix {
       features.platform-nh = "platform-nh";
+      inherit inputs;
     }).features.platform-nh.homeManager;
   evaluate =
     {

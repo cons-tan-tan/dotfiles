@@ -1,6 +1,7 @@
 {
   config,
   entityContext,
+  fastNixGc,
   lib,
   pkgs,
 }:
@@ -11,16 +12,22 @@ let
   growthChecker = pkgs.callPackage ../_packages/store-growth-checker {
     nix = config.nix.package;
   };
-  cleanupRunner = pkgs.callPackage ../_packages/clean-user {
+  profileCleanupRunner = pkgs.callPackage ../_packages/clean-user {
     nh = config.programs.nh.package;
     nix = config.nix.package;
     scope = "all";
+  };
+  storeCleanupRunner = pkgs.callPackage ../_packages/store-cleanup {
+    inherit fastNixGc;
+    fastNixGcArguments = cleanupPolicy.storeGc.arguments;
+    nix = config.nix.package;
+    profileCleanup = profileCleanupRunner;
   };
   resultRootPruner = pkgs.callPackage ../_packages/result-root-pruner { };
   growthStatePath = "/var/lib/${cleanupPolicy.growth.stateDirectory}";
   growthRunner = pkgs.callPackage ../_packages/clean-growth-runner {
     checker = growthChecker;
-    cleanupCommand = lib.getExe cleanupRunner;
+    cleanupCommand = lib.getExe storeCleanupRunner;
     inherit (cleanupPolicy.growth)
       maximumAgeSeconds
       queryTimeout

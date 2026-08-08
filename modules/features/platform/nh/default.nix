@@ -1,8 +1,21 @@
-{ features, ... }:
+{
+  features,
+  inputs,
+  ...
+}:
 let
   cleanupPolicy = import ./_data/cleanup-policy.nix;
 in
 {
+  flake-file.inputs.fast-nix-gc = {
+    url = "github:Mic92/fast-nix-gc/0243fbc569251eea46894e681e2c86eed7185c46";
+    inputs = {
+      nix-darwin.follows = "darwin";
+      nixpkgs.follows = "nixpkgs";
+      treefmt-nix.follows = "treefmt-nix";
+    };
+  };
+
   features.platform-nh = {
     name = "feature/platform/nh";
 
@@ -88,10 +101,16 @@ in
         growthChecker = pkgs.callPackage ./_packages/store-growth-checker {
           nix = config.nix.package;
         };
-        cleanupRunner = pkgs.callPackage ./_packages/clean-user {
+        profileCleanupRunner = pkgs.callPackage ./_packages/clean-user {
           nh = config.programs.nh.package;
           nix = config.nix.package;
           scope = "all";
+        };
+        storeCleanupRunner = pkgs.callPackage ./_packages/store-cleanup {
+          fastNixGc = inputs.fast-nix-gc.packages.${pkgs.stdenv.hostPlatform.system}.default;
+          fastNixGcArguments = cleanupPolicy.storeGc.arguments;
+          nix = config.nix.package;
+          profileCleanup = profileCleanupRunner;
         };
         resultRootPruner = pkgs.callPackage ./_packages/result-root-pruner { };
         username = config.wsl.defaultUser;
@@ -104,7 +123,7 @@ in
         statePath = "/var/lib/${growth.stateDirectory}";
         growthRunner = pkgs.callPackage ./_packages/clean-growth-runner {
           checker = growthChecker;
-          cleanupCommand = lib.getExe cleanupRunner;
+          cleanupCommand = lib.getExe storeCleanupRunner;
           inherit (growth)
             maximumAgeSeconds
             queryTimeout

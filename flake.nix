@@ -99,6 +99,14 @@
       url = "github:jgraph/drawio-mcp";
       flake = false;
     };
+    fast-nix-gc = {
+      url = "github:Mic92/fast-nix-gc/0243fbc569251eea46894e681e2c86eed7185c46";
+      inputs = {
+        nix-darwin.follows = "darwin";
+        nixpkgs.follows = "nixpkgs";
+        treefmt-nix.follows = "treefmt-nix";
+      };
+    };
     flake-file.url = "github:denful/flake-file/v0.6.0";
     flake-parts = {
       url = "github:hercules-ci/flake-parts";

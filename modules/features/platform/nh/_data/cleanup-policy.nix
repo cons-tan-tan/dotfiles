@@ -9,6 +9,12 @@
     "--no-direnv"
   ];
 
+  storeGc.arguments = [
+    # Busy builders can pin SQLite read snapshots. Let future registrations
+    # reuse free pages instead of creating a database-sized WAL during VACUUM.
+    "--no-vacuum"
+  ];
+
   growth = {
     checkInterval = "5m";
     cleanupTimeout = "2h";

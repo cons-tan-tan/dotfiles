@@ -1,6 +1,7 @@
 {
   config,
   den,
+  inputs,
   lib,
   ...
 }:
@@ -95,6 +96,7 @@ let
           nhNixosCleanupContract = import ../platform/nh/_tests/nixos-cleanup-contract.nix {
             inherit lib pkgs;
             entityContext = targets;
+            fastNixGc = inputs.fast-nix-gc.packages.${pkgs.stdenv.hostPlatform.system}.default;
             config = nixosWslConfiguration.config;
           };
           nhHomeCleanupContract = import ../platform/nh/_tests/home-cleanup-contract.nix {
