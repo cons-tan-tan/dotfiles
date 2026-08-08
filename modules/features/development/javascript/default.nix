@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.development-javascript = {
     name = "feature/development/javascript";

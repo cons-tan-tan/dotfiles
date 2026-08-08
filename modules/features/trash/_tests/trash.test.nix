@@ -35,7 +35,7 @@ let
     (homeManager.lib.homeManagerConfiguration {
       inherit pkgs;
       modules = [
-        (import ../home.nix { }).features.trash.homeManager
+        (import ../home.nix).features.trash.homeManager
         platformModule
         {
           home = {
@@ -57,13 +57,13 @@ let
         expected = true;
       };
   linux = mkEvaluated {
-    platformModule = (import ../systemd.nix { }).features.trash-systemd.homeManager;
+    platformModule = (import ../systemd.nix).features.trash-systemd.homeManager;
   };
   wsl = mkEvaluated {
-    platformModule = (import ../systemd.nix { }).features.trash-systemd.homeManager;
+    platformModule = (import ../systemd.nix).features.trash-systemd.homeManager;
   };
   darwin = mkEvaluated {
-    platformModule = (import ../darwin.nix { }).features.trash-darwin.homeManager;
+    platformModule = (import ../darwin.nix).features.trash-darwin.homeManager;
     homeDirectory = "/Users/test";
   };
   systemdContract =

@@ -1,4 +1,3 @@
-{ ... }:
 let
   settings = {
     home-manager = {

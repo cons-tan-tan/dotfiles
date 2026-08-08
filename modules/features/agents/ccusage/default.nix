@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.agent-ccusage = {
     name = "feature/agents/ccusage";

@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.agent-guidance.homeManager =
     { lib, ... }:

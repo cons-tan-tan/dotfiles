@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.development-python = {
     name = "feature/development/python";

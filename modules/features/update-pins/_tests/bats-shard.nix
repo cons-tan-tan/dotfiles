@@ -1,4 +1,3 @@
-{ ... }:
 {
   name = "update-pins-runner";
   fixture = "updatePins";

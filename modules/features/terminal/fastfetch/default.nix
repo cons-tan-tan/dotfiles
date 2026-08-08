@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.terminal-fastfetch = {
     name = "feature/terminal/fastfetch";

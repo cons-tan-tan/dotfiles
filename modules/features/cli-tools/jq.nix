@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.cli-tool-jq =
     { config, ... }:

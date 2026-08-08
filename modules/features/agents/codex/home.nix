@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.agent-codex.homeManager =
     {

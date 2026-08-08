@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.input-methods-azookey = {
     name = "feature/input-methods/azookey";

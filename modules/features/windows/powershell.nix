@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.windows-powershell = {
     name = "feature/windows/powershell";

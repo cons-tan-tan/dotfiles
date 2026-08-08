@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.development-go = {
     name = "feature/development/go";

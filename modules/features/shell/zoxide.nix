@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.shell-zoxide = {
     name = "feature/shell/zoxide";

@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.media-ffmpeg = {
     name = "feature/media/ffmpeg";

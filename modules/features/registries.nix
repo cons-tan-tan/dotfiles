@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.registries-host = {
     name = "feature/registries/host";

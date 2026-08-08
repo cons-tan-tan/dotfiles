@@ -1,4 +1,3 @@
-{ ... }:
 {
   # MoZuKu builds its cabocha / crfpp C++ dependency chain from source and is
   # absent from the configured binary caches. Keep its upstream lock separate

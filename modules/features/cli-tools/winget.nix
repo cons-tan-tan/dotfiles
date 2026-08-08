@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.cli-tools-winget = {
     name = "feature/cli-tools/winget";

@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.cloud-gcloud = {
     name = "feature/cloud/gcloud";

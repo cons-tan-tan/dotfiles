@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.platform-wsl-open = {
     name = "feature/platform/wsl-open";

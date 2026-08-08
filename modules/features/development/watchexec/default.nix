@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.development-watchexec = {
     name = "feature/development/watchexec";

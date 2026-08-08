@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.media-aqua-voice = {
     name = "feature/media/aqua-voice";

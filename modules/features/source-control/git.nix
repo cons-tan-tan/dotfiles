@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.source-control-git =
     { config, ... }:

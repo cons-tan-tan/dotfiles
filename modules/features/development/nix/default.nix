@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.development-nix = {
     name = "feature/development/nix";

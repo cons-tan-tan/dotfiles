@@ -1,4 +1,3 @@
-{ ... }:
 let
   inherit (import ./_data/policy.nix) retentionDays scheduleHour;
 in

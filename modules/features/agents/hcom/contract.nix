@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.agent-hcom-contract = {
     name = "feature/agents/hcom/contract";

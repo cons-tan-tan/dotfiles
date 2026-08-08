@@ -4,7 +4,7 @@
   pkgs,
 }:
 let
-  guidanceHome = (import ../home.nix { }).features.agent-guidance.homeManager;
+  guidanceHome = (import ../home.nix).features.agent-guidance.homeManager;
   evaluated =
     (homeManager.lib.homeManagerConfiguration {
       inherit pkgs;

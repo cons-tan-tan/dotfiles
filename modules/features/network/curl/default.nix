@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.network-curl = {
     name = "feature/network/curl";

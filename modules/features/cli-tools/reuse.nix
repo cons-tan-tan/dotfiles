@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.cli-tool-reuse = {
     name = "feature/cli-tools/reuse";

@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.cli-tool-fzf = {
     name = "feature/cli-tools/fzf";

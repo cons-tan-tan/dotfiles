@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.security-ssh = {
     name = "feature/security/ssh";

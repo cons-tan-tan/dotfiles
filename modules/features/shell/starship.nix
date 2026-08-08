@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.shell-starship = {
     name = "feature/shell/starship";

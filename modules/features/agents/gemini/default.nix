@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.agent-gemini = {
     name = "feature/agents/gemini";

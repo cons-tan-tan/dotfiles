@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.editors-neovim = {
     name = "feature/editors/neovim";

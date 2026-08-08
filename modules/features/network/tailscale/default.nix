@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.network-tailscale = {
     name = "feature/network/tailscale";

@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.development-rust = {
     name = "feature/development/rust";

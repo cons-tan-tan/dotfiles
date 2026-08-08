@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.editors-zed = {
     name = "feature/editors/zed";

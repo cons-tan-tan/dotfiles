@@ -15,7 +15,7 @@ let
     dotfilesPackages.aws.mkLoginPackage = _: "/nix/store/aws-login";
     writeText = name: _: "/nix/store/${name}";
   };
-  module = (import ../home.nix { }).features.cloud-aws.homeManager {
+  module = (import ../home.nix).features.cloud-aws.homeManager {
     lib = fixtureLib;
     pkgs = fixturePkgs;
   };

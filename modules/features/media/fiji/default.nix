@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.media-fiji = {
     name = "feature/media/fiji";

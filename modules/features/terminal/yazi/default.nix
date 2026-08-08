@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.terminal-yazi = {
     name = "feature/terminal/yazi";

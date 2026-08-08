@@ -1,4 +1,3 @@
-{ ... }:
 {
   features.cloud-aws.homeManager =
     { lib, pkgs, ... }:
