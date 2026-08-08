@@ -13,6 +13,14 @@ let
   subjectUsername = username;
   subjectUid = config.users.users.${subjectUsername}.uid;
   gpgAgentSshSocket = "/run/user/${toString subjectUid}/gnupg/S.gpg-agent.ssh";
+  systemSshConfig = config.environment.etc."ssh/ssh_config".text;
+  expectedNixbuildSshBlock = ''
+    Host eu.nixbuild.net
+        PubkeyAcceptedAlgorithms ssh-ed25519
+        ServerAliveInterval 60
+        IPQoS none
+  '';
+  systemSshConfigFile = pkgs.writeText "nixbuild-system-ssh-config" systemSshConfig;
   home = config.home-manager.users.${subjectUsername};
   expectedInitScopeDropIn = ''
     [Scope]
@@ -74,6 +82,11 @@ let
         nixDaemonSshAuthSock = gpgAgentSshSocket;
         gitWtIntegrated = true;
       };
+    };
+
+    "nixbuild-ssh-reliability" = {
+      actual = lib.hasInfix expectedNixbuildSshBlock systemSshConfig;
+      expected = true;
     };
 
     docker = {
@@ -257,4 +270,21 @@ assert lib.assertMsg (failures == { }) ''
   NixOS-WSL configuration contract mismatches:
   ${builtins.toJSON failures}
 '';
-pkgs.runCommand "nixos-wsl-contract" { } ''touch "$out"''
+pkgs.runCommand "nixos-wsl-contract"
+  {
+    nativeBuildInputs = [
+      pkgs.openssh
+      pkgs.ripgrep
+    ];
+  }
+  ''
+    # Included store files appear as owned by nobody inside the build sandbox,
+    # which OpenSSH rejects. Preserve the final config order while omitting
+    # unrelated Include directives from this effective-value check.
+    rg --invert-match '^[[:space:]]*Include[[:space:]]' ${systemSshConfigFile} > ssh-config-under-test
+    ssh -G -F ssh-config-under-test eu.nixbuild.net 2>/dev/null > effective-ssh-config
+    rg --quiet --line-regexp 'pubkeyacceptedalgorithms ssh-ed25519' effective-ssh-config
+    rg --quiet --line-regexp 'serveraliveinterval 60' effective-ssh-config
+    rg --quiet --line-regexp 'ipqos none none' effective-ssh-config
+    touch "$out"
+  ''

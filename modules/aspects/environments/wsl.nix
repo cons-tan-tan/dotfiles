@@ -13,7 +13,7 @@
       features.platform-integrated-home-manager
       features.registries-host
       features.agent-hunk-wsl
-      features.shell-direnv-nixbuild-wsl
+      features.platform-wsl-nixbuild
       features.source-control-ghq-sync-systemd
       features.trash-systemd
       features.platform-wsl
