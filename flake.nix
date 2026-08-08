@@ -118,7 +118,6 @@
     };
     llm-agents.url = "github:numtide/llm-agents.nix";
     mozuku.url = "github:t3tra-dev/MoZuKu";
-    nix-eval-jobs.url = "github:NixOS/nix-eval-jobs";
     nix-index-database = {
       url = "github:nix-community/nix-index-database";
       inputs.nixpkgs.follows = "nixpkgs";

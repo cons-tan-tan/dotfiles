@@ -16,7 +16,7 @@ def command(arguments: list[str]) -> list[str]:
     return [
         "nix",
         "run",
-        "nix-eval-jobs#nix-eval-jobs",
+        "nixpkgs#nix-eval-jobs",
         "--inputs-from",
         ".",
         "--",
@@ -28,7 +28,7 @@ def command(arguments: list[str]) -> list[str]:
         "stalled-download-timeout",
         "30",
         "--option",
-        "filetransfer-retry-attempts",
+        "download-attempts",
         "2",
         *arguments,
     ]

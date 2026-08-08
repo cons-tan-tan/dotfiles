@@ -6,6 +6,5 @@
       inputs.systems.follows = "supported-systems";
       inputs.treefmt-nix.follows = "treefmt-nix";
     };
-    nix-eval-jobs.url = "github:NixOS/nix-eval-jobs";
   };
 }

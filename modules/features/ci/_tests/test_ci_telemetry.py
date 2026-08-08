@@ -71,7 +71,7 @@ class TelemetryTests(unittest.TestCase):
             [
                 "nix",
                 "run",
-                "nix-eval-jobs#nix-eval-jobs",
+                "nixpkgs#nix-eval-jobs",
                 "--inputs-from",
                 ".",
                 "--",
@@ -83,7 +83,7 @@ class TelemetryTests(unittest.TestCase):
                 "stalled-download-timeout",
                 "30",
                 "--option",
-                "filetransfer-retry-attempts",
+                "download-attempts",
                 "2",
             ],
         )
