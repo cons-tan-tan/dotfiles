@@ -11,6 +11,8 @@ let
   windowsHomedir = entityContext.windows.homedir;
   sourcePath = entityContext.contexts.nixosWsl.source;
   subjectUsername = username;
+  subjectUid = config.users.users.${subjectUsername}.uid;
+  gpgAgentSshSocket = "/run/user/${toString subjectUid}/gnupg/S.gpg-agent.ssh";
   home = config.home-manager.users.${subjectUsername};
   expectedInitScopeDropIn = ''
     [Scope]
@@ -54,6 +56,8 @@ let
         zoxideIntegrated = home.programs.zoxide.enableZshIntegration;
         gpgAgentIntegrated = home.services.gpg-agent.enableZshIntegration;
         gpgSshSupport = home.services.gpg-agent.enableSshSupport;
+        gpgAgentSshSocketUidValid = builtins.isInt subjectUid && subjectUid > 0;
+        nixDaemonSshAuthSock = config.systemd.services.nix-daemon.environment.SSH_AUTH_SOCK;
         gitWtIntegrated = lib.hasInfix "git-wt --init zsh" home.programs.zsh.initContent;
       };
       expected = {
@@ -66,6 +70,8 @@ let
         zoxideIntegrated = true;
         gpgAgentIntegrated = true;
         gpgSshSupport = true;
+        gpgAgentSshSocketUidValid = true;
+        nixDaemonSshAuthSock = gpgAgentSshSocket;
         gitWtIntegrated = true;
       };
     };
