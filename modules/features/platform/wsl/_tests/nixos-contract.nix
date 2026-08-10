@@ -38,6 +38,7 @@ let
         defaultUser = config.wsl.defaultUser;
         interopRegistrationEnabled = config.wsl.interop.register;
         binfmtRegistrations = config.boot.binfmt.registrations;
+        zedExtensionCopyEntries = builtins.filter (entry: entry.name == "cp") config.wsl.extraBin;
         userLinger = config.users.users.${subjectUsername}.linger;
         gettyEnabled = config.services.getty.enable;
         gettyTargetWants = config.systemd.targets.getty.wants;
@@ -47,6 +48,13 @@ let
         defaultUser = username;
         interopRegistrationEnabled = false;
         binfmtRegistrations = { };
+        zedExtensionCopyEntries = [
+          {
+            copy = false;
+            name = "cp";
+            src = lib.getExe' pkgs.coreutils "cp";
+          }
+        ];
         userLinger = true;
         gettyEnabled = true;
         gettyTargetWants = [ ];

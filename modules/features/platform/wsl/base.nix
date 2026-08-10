@@ -17,8 +17,12 @@
       # canonical clone exists.
       tarball.configPath = inputs.self.outPath;
     };
-    nixos = { lib, ... }: {
+    nixos = { lib, pkgs, ... }: {
       nix.channel.enable = false;
+
+      # Zed transfers remote extensions through `wsl.exe --exec cp`, which does
+      # not load the login shell environment. Expose cp through WSL's /bin set.
+      wsl.extraBin = [ { src = lib.getExe' pkgs.coreutils "cp"; } ];
 
       # WSL never uses Linux VT1. autovt@tty1 otherwise restart-loops and can
       # make a successful switch appear failed.
