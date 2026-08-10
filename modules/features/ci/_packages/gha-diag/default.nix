@@ -37,7 +37,6 @@ rustPlatform.buildRustPackage {
       ./about.hbs
       ./about.toml
       ./deny.toml
-      ./LICENSE-RUST-THIRD-PARTY
       ./src
       ./tests
       ./language-server.json
@@ -46,15 +45,27 @@ rustPlatform.buildRustPackage {
   };
 
   cargoLock.lockFile = ./Cargo.lock;
-  nativeBuildInputs = [ makeWrapper ];
-  nativeCheckInputs = [
+  nativeBuildInputs = [
     cargo-about
+    makeWrapper
+  ];
+  nativeCheckInputs = [
     cargo-deny
     jq
     nodejs_24
   ];
   GHA_DIAG_TEST_NODE = lib.getExe nodejs_24;
   cargoTestFlags = [ "--all-targets" ];
+
+  postBuild = ''
+    cargo-about generate \
+      --config ./about.toml \
+      --manifest-path ./Cargo.toml \
+      --frozen \
+      --fail \
+      --output-file generated-LICENSE-RUST-THIRD-PARTY \
+      ./about.hbs
+  '';
 
   postCheck = ''
     cargo-deny \
@@ -63,14 +74,6 @@ rustPlatform.buildRustPackage {
       --offline \
       --locked \
       check licenses
-    cargo-about generate \
-      --config ./about.toml \
-      --manifest-path ./Cargo.toml \
-      --frozen \
-      --fail \
-      --output-file generated-LICENSE-RUST-THIRD-PARTY \
-      ./about.hbs
-    cmp generated-LICENSE-RUST-THIRD-PARTY LICENSE-RUST-THIRD-PARTY
   '';
 
   postInstall = ''
@@ -85,7 +88,7 @@ rustPlatform.buildRustPackage {
       "$out/share/licenses/gha-diag/actions-languageserver-LICENSE-THIRD-PARTY"
     install -Dm644 ${./vendor/third-party-licenses.json} \
       "$out/share/licenses/gha-diag/actions-languageserver-third-party-licenses.json"
-    install -Dm644 ${./LICENSE-RUST-THIRD-PARTY} \
+    install -Dm644 generated-LICENSE-RUST-THIRD-PARTY \
       "$out/share/licenses/gha-diag/LICENSE-RUST-THIRD-PARTY"
     install -Dm644 ${../../../../../LICENSE} \
       "$out/share/licenses/gha-diag/gha-diag-LICENSE-CC0-1.0"
@@ -128,7 +131,7 @@ rustPlatform.buildRustPackage {
       "$out/share/licenses/gha-diag/actions-languageserver-LICENSE-THIRD-PARTY"
     cmp ${./vendor/third-party-licenses.json} \
       "$out/share/licenses/gha-diag/actions-languageserver-third-party-licenses.json"
-    cmp ${./LICENSE-RUST-THIRD-PARTY} \
+    cmp generated-LICENSE-RUST-THIRD-PARTY \
       "$out/share/licenses/gha-diag/LICENSE-RUST-THIRD-PARTY"
     cmp ${../../../../../LICENSE} \
       "$out/share/licenses/gha-diag/gha-diag-LICENSE-CC0-1.0"
