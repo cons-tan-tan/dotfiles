@@ -65,10 +65,6 @@ in
         ...
       }:
       {
-        treefmt.settings.formatter.nixf-diagnose.excludes = [
-          "modules/features/ci/_packages/gha-lint/bun.nix"
-        ];
-
         dotfiles.ci.evaluationCompleteCheckProducers = lib.optionals (system == "x86_64-linux") [
           {
             owner = "CI validation";
@@ -93,7 +89,7 @@ in
         {
           home.packages = [
             pkgs.pinact
-            pkgs.dotfilesPackages.gha-lint
+            pkgs.dotfilesPackages.gha-diag
             pkgs.dotfilesPackages.zizmor
           ];
         };

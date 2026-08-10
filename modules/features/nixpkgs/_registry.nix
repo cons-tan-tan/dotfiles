@@ -61,9 +61,7 @@ in
   };
   curl-fetch = safeFetch.curlFetch;
   gh-api-get = ghApiGet;
-  gha-lint = pkgs.callPackage ciPackageSources.ghaLint {
-    bun2nix = inputs.bun2nix.packages.${hostPlatform.system}.default;
-  };
+  gha-diag = pkgs.callPackage ciPackageSources.ghaDiag { };
   ghq-fetch-all = pkgs.callPackage sourceControlPackageSources.ghqFetchAll { };
   hunk = import agentPackageSources.hunk {
     inherit (pkgs) callPackage stdenv;

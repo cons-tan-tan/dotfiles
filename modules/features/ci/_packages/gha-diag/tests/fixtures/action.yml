@@ -1,0 +1,7 @@
+name: gha-diag fixture
+description: Valid action metadata used by package smoke tests
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: echo ok

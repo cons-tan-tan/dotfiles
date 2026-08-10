@@ -1,0 +1,35 @@
+{
+  "package": "@actions/languageserver",
+  "version": "0.3.61",
+  "engines": {
+    "node": ">= 20"
+  },
+  "integrity": "sha512-L5Vf3zc3yD11xUSM8zMxrNwYLZpiUNG6U8kFK2BsxVyRKhU8gQEt02ydR+FZgidkrHSQO/2P7eU9vHPcOwwsOQ==",
+  "tarball": "https://registry.npmjs.org/@actions/languageserver/-/languageserver-0.3.61.tgz",
+  "repository": "https://github.com/actions/languageservices.git",
+  "gitHead": "b71ac284fc6a7382c22ecbf3e0009a6ae216823b",
+  "publishedAt": "2026-08-04T19:25:30.652Z",
+  "attestation": "https://registry.npmjs.org/-/npm/v1/attestations/@actions%2flanguageserver@0.3.61",
+  "provenancePredicateType": "https://slsa.dev/provenance/v1",
+  "registrySignatureKeyId": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U",
+  "upstreamPackageLockSha256": "6ecdfc48babc82a7646255fe4786345f6064b195bf4b5feab92f9182081ff837",
+  "registryVerification": {
+    "sourceDependencies": true,
+    "reproductionDependencies": true
+  },
+  "bundleReproduction": {
+    "byteForByte": true,
+    "esbuildVersion": "0.27.1"
+  },
+  "experimentalFeatures": [
+    "allowBackgroundSteps",
+    "allowCaseFunction",
+    "allowCopilotRequestsPermission",
+    "allowDrivesPermissionAutocomplete",
+    "blockScalarChompingWarning",
+    "missingInputsQuickfix"
+  ],
+  "bundleSha256": "4eaad6f2b7826d1ef27e6e61f9ffd8256f341f7c6c10f75f176904e2c2ced0b5",
+  "nodeLicensesSha256": "768b7ebe74e34e2a341bd27ce8f7821dba0be347fb87b8f60d32fdfb28a437ed",
+  "nodeLicensesInventorySha256": "fee7037aa19613f395f1a27e013808150f7935e2b87eb6c74862d2fca373ceb2"
+}

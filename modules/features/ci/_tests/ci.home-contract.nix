@@ -7,12 +7,12 @@
       hasPackage = package: builtins.elem package config.home.packages;
     in
     {
-      ghaLint = hasPackage pkgs.dotfilesPackages.gha-lint;
+      ghaDiag = hasPackage pkgs.dotfilesPackages.gha-diag;
       pinact = hasPackage pkgs.pinact;
       zizmor = hasPackage pkgs.dotfilesPackages.zizmor;
     };
   expected = _: {
-    ghaLint = true;
+    ghaDiag = true;
     pinact = true;
     zizmor = true;
   };

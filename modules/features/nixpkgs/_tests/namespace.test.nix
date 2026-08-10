@@ -8,7 +8,7 @@ let
     "curl-fetch"
     "difit"
     "gh-api-get"
-    "gha-lint"
+    "gha-diag"
     "ghq-fetch-all"
     "shellfirm"
     "zizmor"

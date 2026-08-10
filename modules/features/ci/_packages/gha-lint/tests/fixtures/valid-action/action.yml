@@ -1,7 +1,0 @@
-name: Valid fixture
-description: A minimal composite action
-runs:
-  using: composite
-  steps:
-    - run: echo ok
-      shell: bash

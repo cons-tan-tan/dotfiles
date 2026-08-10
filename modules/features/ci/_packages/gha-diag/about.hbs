@@ -1,0 +1,14 @@
+Third-party license notices for gha-diag Rust dependencies.
+
+This file is generated from Cargo.lock by cargo-about. Do not edit it manually.
+{{#each licenses}}
+
+================================================================================
+License: {{name}} ({{id}})
+Used by:
+{{#each used_by}}
+- {{crate.name}}@{{crate.version}}
+{{/each}}
+
+{{{text}}}
+{{/each}}

@@ -56,13 +56,6 @@ wsl --install --from-file .\nixos.wsl --name NixOS
 
 `flake-file.inputs`を定義するmoduleを直接変更した場合は、`nix run .#write-flake`で`flake.nix`を再生成する。inputを所有する`updateScript`は、`flake.nix`と`flake.lock`も更新する。
 
-`switch`で導入される`gha-lint`は、任意のrepositoryでGitHub Actionsのworkflowとaction metadataを検査できる。
-
-```bash
-gha-lint
-gha-lint --help
-```
-
 ## ライセンス
 
 既定はCC0-1.0([LICENSE](LICENSE))。由来が異なるファイルはsidecar(`.license`)で明示(REUSE準拠)。

@@ -1,0 +1,375 @@
+{
+  "schemaVersion": "gha-diag-node-licenses-v2",
+  "upstreamRevision": "b71ac284fc6a7382c22ecbf3e0009a6ae216823b",
+  "packageLockSha256": "6ecdfc48babc82a7646255fe4786345f6064b195bf4b5feab92f9182081ff837",
+  "bundleSha256": "4eaad6f2b7826d1ef27e6e61f9ffd8256f341f7c6c10f75f176904e2c2ced0b5",
+  "reproduction": {
+    "byteForByte": true,
+    "esbuildVersion": "0.27.1",
+    "metafileSha256": "111e5271ff3badd750dd3ab996589a7af15a133bb02f0bfdd4f9e22308a12a00"
+  },
+  "internalPackages": [
+    "@actions/expressions",
+    "@actions/languageserver",
+    "@actions/languageservice",
+    "@actions/workflow-parser"
+  ],
+  "packages": [
+    {
+      "name": "@octokit/auth-token",
+      "version": "5.1.2",
+      "license": "MIT",
+      "lockPath": "languageserver/node_modules/@octokit/auth-token",
+      "resolved": "https://registry.npmjs.org/@octokit/auth-token/-/auth-token-5.1.2.tgz",
+      "integrity": "sha512-JcQDsBdg49Yky2w2ld20IHAlwr8d/d8N6NiOXbtuoPCqzbsiJgF633mVUw3x4mo0H5ypataQIX7SFu3yy44Mpw==",
+      "bytesInOutput": 1346,
+      "inputCount": 1,
+      "files": [
+        {
+          "name": "LICENSE",
+          "sha256": "304e4a73f6212adaf242c78fcbe1dfcebd78d8bab53b007fe69b39fc968292b7"
+        }
+      ]
+    },
+    {
+      "name": "@octokit/core",
+      "version": "6.1.5",
+      "license": "MIT",
+      "lockPath": "languageserver/node_modules/@octokit/core",
+      "resolved": "https://registry.npmjs.org/@octokit/core/-/core-6.1.5.tgz",
+      "integrity": "sha512-vvmsN0r7rguA+FySiCsbaTTobSftpIDIpPW81trAmsv9TGxg3YCujAxRYp/Uy8xmDgYCzzgulG62H7KYUFmeIg==",
+      "bytesInOutput": 3878,
+      "inputCount": 2,
+      "files": [
+        {
+          "name": "LICENSE",
+          "sha256": "304e4a73f6212adaf242c78fcbe1dfcebd78d8bab53b007fe69b39fc968292b7"
+        }
+      ]
+    },
+    {
+      "name": "@octokit/endpoint",
+      "version": "10.1.4",
+      "license": "MIT",
+      "lockPath": "languageserver/node_modules/@octokit/endpoint",
+      "resolved": "https://registry.npmjs.org/@octokit/endpoint/-/endpoint-10.1.4.tgz",
+      "integrity": "sha512-OlYOlZIsfEVZm5HCSR8aSg02T2lbUWOsCQoPKfTXJwDzcHQBrVBGdGXb89dv2Kw2ToZaRtudp8O3ZIYoaOjKlA==",
+      "bytesInOutput": 10301,
+      "inputCount": 1,
+      "files": [
+        {
+          "name": "LICENSE",
+          "sha256": "511ea01f49c4e15572d1a0dbef3c10f3e26425be79df7ef599c3b65f9bf55281"
+        }
+      ]
+    },
+    {
+      "name": "@octokit/graphql",
+      "version": "8.2.2",
+      "license": "MIT",
+      "lockPath": "languageserver/node_modules/@octokit/graphql",
+      "resolved": "https://registry.npmjs.org/@octokit/graphql/-/graphql-8.2.2.tgz",
+      "integrity": "sha512-Yi8hcoqsrXGdt0yObxbebHXFOiUA+2v3n53epuOg1QUgOB6c4XzvisBNVXJSl8RYA5KrDuSL2yq9Qmqe5N0ryA==",
+      "bytesInOutput": 3028,
+      "inputCount": 1,
+      "files": [
+        {
+          "name": "LICENSE",
+          "sha256": "511ea01f49c4e15572d1a0dbef3c10f3e26425be79df7ef599c3b65f9bf55281"
+        }
+      ]
+    },
+    {
+      "name": "@octokit/plugin-paginate-rest",
+      "version": "11.6.0",
+      "license": "MIT",
+      "lockPath": "languageserver/node_modules/@octokit/plugin-paginate-rest",
+      "resolved": "https://registry.npmjs.org/@octokit/plugin-paginate-rest/-/plugin-paginate-rest-11.6.0.tgz",
+      "integrity": "sha512-n5KPteiF7pWKgBIBJSk8qzoZWcUkza2O6A0za97pMGVrGfPdltxrfmfF5GucHYvHGZD8BdaZmmHGz5cX/3gdpw==",
+      "bytesInOutput": 3074,
+      "inputCount": 1,
+      "files": [
+        {
+          "name": "LICENSE",
+          "sha256": "8cd41c03a45ebf957a00d335d9dfab638b7ddba797a7d2f23bc1c4157a50db72"
+        }
+      ]
+    },
+    {
+      "name": "@octokit/plugin-request-log",
+      "version": "5.3.1",
+      "license": "MIT",
+      "lockPath": "languageserver/node_modules/@octokit/plugin-request-log",
+      "resolved": "https://registry.npmjs.org/@octokit/plugin-request-log/-/plugin-request-log-5.3.1.tgz",
+      "integrity": "sha512-n/lNeCtq+9ofhC15xzmJCNKP2BWTv8Ih2TTy+jatNCCq/gQP/V7rK3fjIfuz0pDWDALO/o/4QY4hyOF6TQQFUw==",
+      "bytesInOutput": 925,
+      "inputCount": 2,
+      "files": [
+        {
+          "name": "LICENSE",
+          "sha256": "91fd2d025ca697f02becd68acaabc6373fa853a04c4f7543b306e830d3ed6b36"
+        }
+      ]
+    },
+    {
+      "name": "@octokit/plugin-rest-endpoint-methods",
+      "version": "13.5.0",
+      "license": "MIT",
+      "lockPath": "languageserver/node_modules/@octokit/plugin-rest-endpoint-methods",
+      "resolved": "https://registry.npmjs.org/@octokit/plugin-rest-endpoint-methods/-/plugin-rest-endpoint-methods-13.5.0.tgz",
+      "integrity": "sha512-9Pas60Iv9ejO3WlAX3maE1+38c5nqbJXV5GrncEfkndIpZrJ/WPMRd2xYDcPPEt5yzpxcjw9fWNoPhsSGzqKqw==",
+      "bytesInOutput": 100536,
+      "inputCount": 4,
+      "files": [
+        {
+          "name": "LICENSE",
+          "sha256": "8cd41c03a45ebf957a00d335d9dfab638b7ddba797a7d2f23bc1c4157a50db72"
+        }
+      ]
+    },
+    {
+      "name": "@octokit/request",
+      "version": "9.2.3",
+      "license": "MIT",
+      "lockPath": "languageserver/node_modules/@octokit/request",
+      "resolved": "https://registry.npmjs.org/@octokit/request/-/request-9.2.3.tgz",
+      "integrity": "sha512-Ma+pZU8PXLOEYzsWf0cn/gY+ME57Wq8f49WTXA8FMHp2Ps9djKw//xYJ1je8Hm0pR2lU9FUGeJRWOtxq6olt4w==",
+      "bytesInOutput": 6387,
+      "inputCount": 1,
+      "files": [
+        {
+          "name": "LICENSE",
+          "sha256": "511ea01f49c4e15572d1a0dbef3c10f3e26425be79df7ef599c3b65f9bf55281"
+        }
+      ]
+    },
+    {
+      "name": "@octokit/request-error",
+      "version": "6.1.8",
+      "license": "MIT",
+      "lockPath": "languageserver/node_modules/@octokit/request-error",
+      "resolved": "https://registry.npmjs.org/@octokit/request-error/-/request-error-6.1.8.tgz",
+      "integrity": "sha512-WEi/R0Jmq+IJKydWlKDmryPcmdYSVjL3ekaiEL1L9eo1sUnqMJ+grqmC9cjk7CA7+b2/T397tO5d8YLOH3qYpQ==",
+      "bytesInOutput": 1042,
+      "inputCount": 1,
+      "files": [
+        {
+          "name": "LICENSE",
+          "sha256": "304e4a73f6212adaf242c78fcbe1dfcebd78d8bab53b007fe69b39fc968292b7"
+        }
+      ]
+    },
+    {
+      "name": "@octokit/rest",
+      "version": "21.1.1",
+      "license": "MIT",
+      "lockPath": "languageserver/node_modules/@octokit/rest",
+      "resolved": "https://registry.npmjs.org/@octokit/rest/-/rest-21.1.1.tgz",
+      "integrity": "sha512-sTQV7va0IUVZcntzy1q3QqPm/r8rWtDCqpRAmb8eXXnKkjoQEtFe3Nt5GTVsHft+R6jJoHeSiVLcgcvhtue/rg==",
+      "bytesInOutput": 174,
+      "inputCount": 2,
+      "files": [
+        {
+          "name": "LICENSE",
+          "sha256": "89e57da97f98de04c70b8c6db3abbaee34ac406f4e68a3a1dfb4f5fa97abc4f0"
+        }
+      ]
+    },
+    {
+      "name": "before-after-hook",
+      "version": "3.0.2",
+      "license": "Apache-2.0",
+      "lockPath": "languageserver/node_modules/before-after-hook",
+      "resolved": "https://registry.npmjs.org/before-after-hook/-/before-after-hook-3.0.2.tgz",
+      "integrity": "sha512-Nik3Sc0ncrMK4UUdXQmAnRtzmNQTAAXmXIopizwZ1W1t8QmfJj+zL4OA2I7XPTPW5z5TDqv4hRo/JzouDJnX3A==",
+      "bytesInOutput": 2774,
+      "inputCount": 4,
+      "files": [
+        {
+          "name": "LICENSE",
+          "sha256": "ea5a8caa168f387ef2ccac8d7eea12d3be7e2e70a8b7125b68dbc8d1e7fa1998"
+        }
+      ]
+    },
+    {
+      "name": "cronstrue",
+      "version": "2.21.0",
+      "license": "MIT",
+      "lockPath": "node_modules/cronstrue",
+      "resolved": null,
+      "integrity": null,
+      "bytesInOutput": 52931,
+      "inputCount": 1,
+      "files": [
+        {
+          "name": "LICENSE",
+          "sha256": "80b0695c69ed300a023a560fe3d342e82d7015d0dde6a05c709bfdc072edfab2"
+        }
+      ]
+    },
+    {
+      "name": "fast-content-type-parse",
+      "version": "2.0.1",
+      "license": "MIT",
+      "lockPath": "node_modules/fast-content-type-parse",
+      "resolved": "https://registry.npmjs.org/fast-content-type-parse/-/fast-content-type-parse-2.0.1.tgz",
+      "integrity": "sha512-nGqtvLrj5w0naR6tDPfB4cUmYCqouzyQiz6C5y/LtcDllJdrcc6WaWW6iXyIIOErTa/XRybj28aasdn4LkVk6Q==",
+      "bytesInOutput": 3271,
+      "inputCount": 1,
+      "files": [
+        {
+          "name": "LICENSE",
+          "sha256": "d49ce1d45d3503ffb27bcec6f8b15499065cb306553b3f1db39611f200e6f471"
+        }
+      ]
+    },
+    {
+      "name": "universal-user-agent",
+      "version": "7.0.2",
+      "license": "ISC",
+      "lockPath": "languageserver/node_modules/universal-user-agent",
+      "resolved": "https://registry.npmjs.org/universal-user-agent/-/universal-user-agent-7.0.2.tgz",
+      "integrity": "sha512-0JCqzSKnStlRRQfCdowvqy3cy0Dvtlb8xecj/H8JFZuCze4rwjPZQOgvFvn0Ws/usCHQFGpyr+pB9adaGwXn4Q==",
+      "bytesInOutput": 331,
+      "inputCount": 1,
+      "files": [
+        {
+          "name": "LICENSE.md",
+          "sha256": "b9b3eeac9f4ae8ae50773f318ac29f2052bbf08ee33fb6bb024d90d86c7492d2"
+        }
+      ]
+    },
+    {
+      "name": "vscode-jsonrpc",
+      "version": "8.0.2",
+      "license": "MIT",
+      "lockPath": "node_modules/vscode-jsonrpc",
+      "resolved": null,
+      "integrity": null,
+      "bytesInOutput": 123347,
+      "inputCount": 19,
+      "files": [
+        {
+          "name": "License.txt",
+          "sha256": "ec9ee83580841e8eb687aca9867f221503809ba6426c7f876ede17d91b9fcfd0"
+        },
+        {
+          "name": "thirdpartynotices.txt",
+          "sha256": "a89123562fe364dc8e969e85614eb6c1f8452afe131d6e42bd1314bb2d092b04"
+        }
+      ]
+    },
+    {
+      "name": "vscode-languageserver",
+      "version": "8.0.2",
+      "license": "MIT",
+      "lockPath": "node_modules/vscode-languageserver",
+      "resolved": null,
+      "integrity": null,
+      "bytesInOutput": 100893,
+      "inputCount": 24,
+      "files": [
+        {
+          "name": "License.txt",
+          "sha256": "ec9ee83580841e8eb687aca9867f221503809ba6426c7f876ede17d91b9fcfd0"
+        },
+        {
+          "name": "thirdpartynotices.txt",
+          "sha256": "b8be93a14e6d5df97ea340c69529615563aaf2dd7698ae38b3a2758264df9b87"
+        }
+      ]
+    },
+    {
+      "name": "vscode-languageserver-protocol",
+      "version": "3.17.2",
+      "license": "MIT",
+      "lockPath": "node_modules/vscode-languageserver-protocol",
+      "resolved": null,
+      "integrity": null,
+      "bytesInOutput": 91198,
+      "inputCount": 29,
+      "files": [
+        {
+          "name": "License.txt",
+          "sha256": "ec9ee83580841e8eb687aca9867f221503809ba6426c7f876ede17d91b9fcfd0"
+        },
+        {
+          "name": "thirdpartynotices.txt",
+          "sha256": "9265d27cf75775aa5ae19c5ba01846fb70ecd5121f8c39c81bef7e03f007072c"
+        }
+      ]
+    },
+    {
+      "name": "vscode-languageserver-textdocument",
+      "version": "1.0.7",
+      "license": "MIT",
+      "lockPath": "node_modules/vscode-languageserver-textdocument",
+      "resolved": null,
+      "integrity": null,
+      "bytesInOutput": 8964,
+      "inputCount": 1,
+      "files": [
+        {
+          "name": "License.txt",
+          "sha256": "ec9ee83580841e8eb687aca9867f221503809ba6426c7f876ede17d91b9fcfd0"
+        },
+        {
+          "name": "thirdpartynotices.txt",
+          "sha256": "a89123562fe364dc8e969e85614eb6c1f8452afe131d6e42bd1314bb2d092b04"
+        }
+      ]
+    },
+    {
+      "name": "vscode-languageserver-types",
+      "version": "3.17.2",
+      "license": "MIT",
+      "lockPath": "node_modules/vscode-languageserver-types",
+      "resolved": null,
+      "integrity": null,
+      "bytesInOutput": 67309,
+      "inputCount": 1,
+      "files": [
+        {
+          "name": "License.txt",
+          "sha256": "ec9ee83580841e8eb687aca9867f221503809ba6426c7f876ede17d91b9fcfd0"
+        },
+        {
+          "name": "thirdpartynotices.txt",
+          "sha256": "a89123562fe364dc8e969e85614eb6c1f8452afe131d6e42bd1314bb2d092b04"
+        }
+      ]
+    },
+    {
+      "name": "vscode-uri",
+      "version": "3.0.8",
+      "license": "MIT",
+      "lockPath": "node_modules/vscode-uri",
+      "resolved": "https://registry.npmjs.org/vscode-uri/-/vscode-uri-3.0.8.tgz",
+      "integrity": "sha512-AyFQ0EVmsOZOlAnxoFOGOq1SQDWAB7C6aqMGS23svWAllfOaxbuFvcT8D1i8z3Gyn8fraVeZNNmN6e9bxxXkKw==",
+      "bytesInOutput": 16669,
+      "inputCount": 1,
+      "files": [
+        {
+          "name": "LICENSE.md",
+          "sha256": "c669138cb1eb01fbb745e8e460b291e4f2869c14a40061390b6095d845ed4c82"
+        }
+      ]
+    },
+    {
+      "name": "yaml",
+      "version": "2.7.0",
+      "license": "ISC",
+      "lockPath": "node_modules/yaml",
+      "resolved": "https://registry.npmjs.org/yaml/-/yaml-2.7.0.tgz",
+      "integrity": "sha512-+hSoy/QHluxmC9kCIJyL/uyFmLmc+e5CFR5Wa+bpIhIj85LVb9ZH2nVnqrHoSvKogwODv0ClqZkmiSSaIH5LTA==",
+      "bytesInOutput": 257137,
+      "inputCount": 72,
+      "files": [
+        {
+          "name": "LICENSE",
+          "sha256": "5bba27375d93e9119f76c1015f7672cf9ad5f70952296e0842fb2243d6376869"
+        }
+      ]
+    }
+  ]
+}
