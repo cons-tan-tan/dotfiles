@@ -13,12 +13,48 @@ use crate::error::{GuardError, Result};
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Policy {
     pub schema_version: u32,
+    #[serde(default)]
+    pub command_grammars: BTreeMap<String, CommandGrammar>,
     pub exact: Vec<ExactRule>,
     pub semantic: Vec<SemanticRule>,
     #[serde(default)]
     pub shell: ShellPolicy,
     pub shellfirm: ShellfirmPolicy,
     pub unknown: UnknownPolicy,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CommandGrammar {
+    #[serde(default)]
+    pub executable_aliases: BTreeMap<String, String>,
+    pub options: BTreeMap<String, usize>,
+    pub terminal_options: Vec<String>,
+    pub stages: Vec<CommandGrammarStage>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CommandGrammarStage {
+    pub at: Vec<String>,
+    pub selector: SelectorKind,
+    pub aliases: BTreeMap<String, String>,
+    pub unknown_option: UnknownBehavior,
+    pub unknown_selector: UnknownBehavior,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SelectorKind {
+    Option,
+    Positional,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum UnknownBehavior {
+    Deny,
+    Ignore,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -108,12 +144,14 @@ impl Policy {
     }
 
     pub fn validate_structure(&self) -> Result<()> {
-        if self.schema_version != 2 {
+        if self.schema_version != 3 {
             return Err(GuardError::Policy(format!(
                 "unsupported schemaVersion {}",
                 self.schema_version
             )));
         }
+
+        validate_command_grammars(&self.command_grammars)?;
         if self.unknown.parse_error != "deny"
             || self.unknown.dynamic_executable != "deny"
             || self.unknown.dynamic_relevant_option != "deny"
@@ -178,6 +216,127 @@ impl Policy {
         }
         Ok(())
     }
+}
+
+fn validate_command_grammars(grammars: &BTreeMap<String, CommandGrammar>) -> Result<()> {
+    for (executable, grammar) in grammars {
+        if executable.is_empty()
+            || !executable
+                .chars()
+                .all(|value| value.is_ascii_alphanumeric() || "_+@%.-".contains(value))
+            || !executable
+                .chars()
+                .next()
+                .is_some_and(|value| value.is_ascii_alphanumeric() || value == '_')
+        {
+            return Err(GuardError::Policy(format!(
+                "invalid command grammar executable {executable:?}"
+            )));
+        }
+        if !grammar.stages.is_empty() && !grammar.stages.iter().any(|stage| stage.at.is_empty()) {
+            return Err(GuardError::Policy(format!(
+                "command grammar {executable:?} must define a root selector stage"
+            )));
+        }
+
+        let mut option_names = BTreeSet::new();
+        for (alias, resolved) in &grammar.executable_aliases {
+            if alias.is_empty()
+                || alias.chars().any(char::is_whitespace)
+                || resolved.is_empty()
+                || !resolved
+                    .chars()
+                    .all(|value| value.is_ascii_alphanumeric() || "_+@%.-".contains(value))
+                || !resolved
+                    .chars()
+                    .next()
+                    .is_some_and(|value| value.is_ascii_alphanumeric() || value == '_')
+            {
+                return Err(GuardError::Policy(format!(
+                    "command grammar {executable:?} has an invalid executable alias {alias:?}"
+                )));
+            }
+        }
+        for (option, arity) in &grammar.options {
+            validate_option(option)?;
+            if *arity > 8 || !option_names.insert(option.as_str()) {
+                return Err(GuardError::Policy(format!(
+                    "command grammar {executable:?} has an invalid option arity or duplicate: {option}"
+                )));
+            }
+        }
+        for terminal in &grammar.terminal_options {
+            validate_option(terminal)?;
+            if !option_names.insert(terminal) {
+                return Err(GuardError::Policy(format!(
+                    "command grammar {executable:?} repeats option {terminal}"
+                )));
+            }
+        }
+        let reserved_options = option_names;
+
+        let mut paths = BTreeSet::new();
+        for stage in &grammar.stages {
+            if !paths.insert(stage.at.clone()) || stage.aliases.is_empty() {
+                return Err(GuardError::Policy(format!(
+                    "command grammar {executable:?} has a duplicate stage or empty aliases at {:?}",
+                    stage.at
+                )));
+            }
+            for token in &stage.at {
+                validate_command_token("command grammar stage token", token)?;
+            }
+            for (alias, canonical) in &stage.aliases {
+                match stage.selector {
+                    SelectorKind::Option => validate_option(alias)?,
+                    SelectorKind::Positional => {
+                        validate_command_token("positional selector alias", alias)?;
+                        if alias.starts_with('-') {
+                            return Err(GuardError::Policy(format!(
+                                "positional selector alias must not be an option: {alias}"
+                            )));
+                        }
+                    }
+                }
+                validate_command_token("canonical selector token", canonical)?;
+                if canonical.starts_with('-')
+                    || (stage.selector == SelectorKind::Option
+                        && reserved_options.contains(alias.as_str()))
+                {
+                    return Err(GuardError::Policy(format!(
+                        "command grammar {executable:?} repeats selector or option {alias}"
+                    )));
+                }
+            }
+        }
+        for stage in grammar.stages.iter().filter(|stage| !stage.at.is_empty()) {
+            let (canonical, parent_path) = stage
+                .at
+                .split_last()
+                .expect("non-root stage paths have a final token");
+            let reachable = grammar.stages.iter().any(|parent| {
+                parent.at == parent_path && parent.aliases.values().any(|value| value == canonical)
+            });
+            if !reachable {
+                return Err(GuardError::Policy(format!(
+                    "command grammar {executable:?} has unreachable stage {:?}",
+                    stage.at
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_command_token(label: &str, token: &str) -> Result<()> {
+    if token.is_empty()
+        || !token
+            .chars()
+            .all(|value| value.is_ascii_alphanumeric() || "_./:+@%=-".contains(value))
+    {
+        return Err(GuardError::Policy(format!("invalid {label}: {token:?}")));
+    }
+    Ok(())
 }
 
 fn validate_prefix(label: &str, prefix: &[String]) -> Result<()> {
@@ -289,7 +448,8 @@ mod tests {
 
     fn policy_json() -> Value {
         json!({
-            "schemaVersion": 2,
+            "schemaVersion": 3,
+            "commandGrammars": {},
             "exact": [],
             "semantic": [{
                 "commandPrefix": ["fd"],
@@ -340,7 +500,7 @@ mod tests {
 
     #[test]
     fn rejects_unsupported_schema_versions_and_blank_guidance() {
-        for version in [1, 3] {
+        for version in [1, 2, 4] {
             let mut value = policy_json();
             value["schemaVersion"] = json!(version);
             assert!(deserialize(value).validate_structure().is_err());
@@ -356,5 +516,74 @@ mod tests {
         let mut value = policy_json();
         value["shell"]["redirection"]["future"] = json!(false);
         assert!(serde_json::from_value::<Policy>(value).is_err());
+    }
+
+    #[test]
+    fn permits_context_local_selector_aliases_but_rejects_option_collisions() {
+        let mut value = policy_json();
+        value["commandGrammars"] = json!({
+            "demo": {
+                "options": {"--mode": 1},
+                "terminalOptions": ["--help"],
+                "stages": [
+                    {
+                        "at": [], "selector": "positional",
+                        "aliases": {"left": "left", "right": "right"},
+                        "unknownOption": "deny", "unknownSelector": "ignore"
+                    },
+                    {
+                        "at": ["left"], "selector": "option",
+                        "aliases": {"--select": "select"},
+                        "unknownOption": "ignore", "unknownSelector": "deny"
+                    },
+                    {
+                        "at": ["right"], "selector": "option",
+                        "aliases": {"--select": "select"},
+                        "unknownOption": "ignore", "unknownSelector": "deny"
+                    }
+                ]
+            }
+        });
+        assert!(deserialize(value.clone()).validate_structure().is_ok());
+
+        value["commandGrammars"]["demo"]["stages"][1]["aliases"] = json!({"--mode": "select"});
+        assert!(deserialize(value).validate_structure().is_err());
+    }
+
+    #[test]
+    fn permits_options_only_command_grammars() {
+        let mut value = policy_json();
+        value["commandGrammars"] = json!({
+            "demo": {
+                "options": {"--argstr": 2, "--repair": 0},
+                "terminalOptions": ["--help"],
+                "stages": []
+            }
+        });
+        assert!(deserialize(value).validate_structure().is_ok());
+    }
+
+    #[test]
+    fn rejects_unreachable_command_grammar_stages() {
+        let mut value = policy_json();
+        value["commandGrammars"] = json!({
+            "demo": {
+                "options": {},
+                "terminalOptions": ["--help"],
+                "stages": [
+                    {
+                        "at": [], "selector": "positional",
+                        "aliases": {"profile": "profile"},
+                        "unknownOption": "deny", "unknownSelector": "ignore"
+                    },
+                    {
+                        "at": ["profil"], "selector": "positional",
+                        "aliases": {"mutate": "mutate"},
+                        "unknownOption": "deny", "unknownSelector": "deny"
+                    }
+                ]
+            }
+        });
+        assert!(deserialize(value).validate_structure().is_err());
     }
 }

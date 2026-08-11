@@ -1,6 +1,7 @@
 # agent非依存の再帰command policyをnative allowと共通guardへ投影する。
 {
   lib,
+  commandGrammars ? { },
   commands,
   shell ? { },
   shellfirm ? {
@@ -54,12 +55,17 @@ let
         lib.concatMap (
           token:
           let
-            nextPrefix = prefix ++ [ token ];
+            # `_self` adds a semantic rule to an existing command branch
+            # without widening the native executable-prefix allowlist.
+            isSelf = prefix != [ ] && token == "_self";
+            nextPrefix = if isSelf then prefix else prefix ++ [ token ];
             value = tree.${token};
             tokenPattern = if prefix == [ ] then executableTokenPattern else argvTokenPattern;
           in
           if builtins.match tokenPattern token == null then
             throw "agent command policy has an invalid command token: ${builtins.toJSON token}"
+          else if isSelf && builtins.isBool value then
+            throw "agent command policy _self must be a semantic terminal: ${builtins.toJSON nextPrefix}"
           else if builtins.isBool value then
             [
               {
@@ -88,7 +94,7 @@ let
             else
               [
                 {
-                  prefixRule = mkPrefixRule nextPrefix value.decision;
+                  prefixRule = if isSelf then null else mkPrefixRule nextPrefix value.decision;
                   semanticRule = {
                     commandPrefix = nextPrefix;
                     optionSyntax = normalizeOptionSyntax nextPrefix value.optionSyntax;
@@ -106,7 +112,7 @@ let
         ) tokens;
 
   commandEntries = if commands == { } then [ ] else flattenCommandTree [ ] commands;
-  prefixRules = map (entry: entry.prefixRule) commandEntries;
+  prefixRules = lib.filter (rule: rule != null) (map (entry: entry.prefixRule) commandEntries);
   nativePrefixRules = builtins.filter (rule: rule.allowed) prefixRules;
   deniedPrefixRules = builtins.filter (rule: !rule.allowed) prefixRules;
 
@@ -201,6 +207,8 @@ let
 
   semanticRules = lib.filter (rule: rule != null) (map (entry: entry.semanticRule) commandEntries);
 
+  checkedCommandGrammars = (import ./grammar-schema.nix { inherit lib; }).validate commandGrammars;
+
   shellPolicy = (import ./shell-policy-schema.nix { inherit lib; }).validate shell;
 
   checkSelectorMap =
@@ -288,10 +296,10 @@ let
       || lib.any (decision: decision) (builtins.attrValues shellfirmPolicy.rules)
     );
 
-  # Semantic rules come from command terminals and therefore always contribute
-  # a prefix rule as well; counting them separately cannot change this decision.
-  hasDecision = prefixRules != [ ] || shellPolicy != { } || shellfirmHasPositiveSelector;
+  hasDecision =
+    prefixRules != [ ] || semanticRules != [ ] || shellPolicy != { } || shellfirmHasPositiveSelector;
   checkedPolicy = builtins.deepSeq [
+    checkedCommandGrammars
     prefixRules
     semanticRules
     shellPolicy
@@ -345,7 +353,8 @@ let
   '';
 
   guardPolicy = {
-    schemaVersion = 2;
+    schemaVersion = 3;
+    commandGrammars = checkedCommandGrammars;
     exact = map (rule: {
       argvPrefix = rule.argvPrefix;
       decision = "deny";

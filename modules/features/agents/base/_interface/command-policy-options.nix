@@ -120,9 +120,18 @@ let
 
   validateShellTree =
     tree: (import ../_lib/command-policy/shell-policy-schema.nix { inherit lib; }).validate tree;
+  validateCommandGrammars =
+    grammars: (import ../_lib/command-policy/grammar-schema.nix { inherit lib; }).validate grammars;
 in
 {
   options.agentCommandPolicy = {
+    commandGrammars = mkOption {
+      default = { };
+      type = types.attrsOf types.anything;
+      apply = validateCommandGrammars;
+      description = "Executable-specific selector grammars used to canonicalize guarded command paths.";
+    };
+
     commands = mkOption {
       default = { };
       type = types.attrsOf types.anything;

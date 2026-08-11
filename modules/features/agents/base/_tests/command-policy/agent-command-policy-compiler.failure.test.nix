@@ -22,6 +22,7 @@ let
     import (policyRoot + "/compiler.nix") {
       inherit lib;
       inherit (policy)
+        commandGrammars
         commands
         shell
         shellfirm
@@ -64,6 +65,70 @@ let
   commandTreeDiagnostic = "agentCommandPolicy.commands must be a recursive command tree with boolean leaves or valid decision terminals";
 
   cases = {
+    checkedCommandGrammarWithoutRootStage = {
+      expression = force (evalPolicy {
+        commandGrammars.demo = {
+          options = { };
+          terminalOptions = [ "--help" ];
+          stages = [
+            {
+              at = [ "nested" ];
+              selector = "positional";
+              aliases.action = "action";
+              unknownOption = "deny";
+              unknownSelector = "deny";
+            }
+          ];
+        };
+      });
+      expectedFragment = "agentCommandPolicy.commandGrammars contains an invalid command grammar";
+    };
+
+    checkedCommandGrammarOptionSelectorCollision = {
+      expression = force (evalPolicy {
+        commandGrammars.demo = {
+          options."--mode" = 1;
+          terminalOptions = [ "--help" ];
+          stages = [
+            {
+              at = [ ];
+              selector = "option";
+              aliases."--mode" = "mutate";
+              unknownOption = "ignore";
+              unknownSelector = "deny";
+            }
+          ];
+        };
+      });
+      expectedFragment = "agentCommandPolicy.commandGrammars contains an invalid command grammar";
+    };
+
+    checkedCommandGrammarUnreachableStage = {
+      expression = force (evalPolicy {
+        commandGrammars.demo = {
+          options = { };
+          terminalOptions = [ "--help" ];
+          stages = [
+            {
+              at = [ ];
+              selector = "positional";
+              aliases.profile = "profile";
+              unknownOption = "deny";
+              unknownSelector = "ignore";
+            }
+            {
+              at = [ "profil" ];
+              selector = "positional";
+              aliases.mutate = "mutate";
+              unknownOption = "deny";
+              unknownSelector = "deny";
+            }
+          ];
+        };
+      });
+      expectedFragment = "agentCommandPolicy.commandGrammars contains an invalid command grammar";
+    };
+
     unknownRuleDslCondition = {
       expression =
         let

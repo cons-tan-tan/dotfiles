@@ -122,12 +122,12 @@ let
           tux = {
             alpha = true;
             beta = false;
-            compiledSchema = 2;
+            compiledSchema = 3;
             pingu = null;
           };
           pingu = {
             alpha = null;
-            compiledSchema = 2;
+            compiledSchema = 3;
             pingu = true;
           };
         };
@@ -220,7 +220,7 @@ let
         };
         expected = {
           standalone = true;
-          compiledSchema = 2;
+          compiledSchema = 3;
         };
       }
     );

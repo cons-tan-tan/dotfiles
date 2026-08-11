@@ -15,6 +15,7 @@ let
     import ../../_lib/command-policy/compiler.nix {
       inherit lib;
       inherit (policy)
+        commandGrammars
         commands
         shell
         shellfirm
@@ -111,6 +112,9 @@ let
       optionSyntax.child = semanticCommand [ "-y" ];
     };
   };
+  branchSelfPolicy = evalPolicy {
+    commands.demo._self = semanticCommand [ "--repair" ];
+  };
   guardedDsl = (import ../../_lib/command-policy/rule-dsl.nix { inherit lib; }).guarded;
   fixtureProfile = {
     optionSyntax.valueTaking = [ "-C" ];
@@ -197,6 +201,17 @@ in
     ];
   };
 
+  testBranchSelfAddsSemanticRuleWithoutWideningNativePrefix = {
+    expr = {
+      nativePrefixes = map (rule: rule.argvPrefix) branchSelfPolicy.prefixRules;
+      semanticPrefixes = map (rule: rule.commandPrefix) branchSelfPolicy.guardPolicy.semantic;
+    };
+    expected = {
+      nativePrefixes = [ ];
+      semanticPrefixes = [ [ "demo" ] ];
+    };
+  };
+
   testRuleDslExpandsNamedConditionsToCompilerInput = {
     expr = guarded;
     expected = {
@@ -259,7 +274,7 @@ in
       shell = fixturePolicy.guardPolicy.shell;
     };
     expected = {
-      schemaVersion = 2;
+      schemaVersion = 3;
       shell.redirection.emptyFile = false;
       unknown = {
         parseError = "deny";

@@ -10,7 +10,44 @@ use tempfile::TempDir;
 
 fn policy_json() -> Value {
     json!({
-        "schemaVersion": 2,
+        "schemaVersion": 3,
+        "commandGrammars": {
+            "nix": {
+                "executableAliases": {
+                    "fixture#fd": "fd",
+                    "fixture#rm": "rm"
+                },
+                "options": {
+                    "--flag": 0,
+                    "--one": 1,
+                    "--two": 2,
+                    "-o": 1
+                },
+                "terminalOptions": ["--help", "--version"],
+                "stages": [{
+                    "at": [],
+                    "selector": "positional",
+                    "aliases": {
+                        "develop": "develop",
+                        "run": "run",
+                        "shell": "shell"
+                    },
+                    "unknownOption": "deny",
+                    "unknownSelector": "ignore"
+                }]
+            },
+            "nix-shell": {
+                "options": {
+                    "--command": 1,
+                    "--danger": 0,
+                    "--flag": 0,
+                    "--run": 1,
+                    "--two": 2
+                },
+                "terminalOptions": ["--help", "--version"],
+                "stages": []
+            }
+        },
         "exact": [
             {
                 "argvPrefix": ["danger"],
@@ -26,6 +63,11 @@ fn policy_json() -> Value {
                 "argvPrefix": ["trash-rm"],
                 "decision": "deny",
                 "reason": "trash-rm is denied."
+            },
+            {
+                "argvPrefix": ["nix-shell", "--danger"],
+                "decision": "deny",
+                "reason": "external nix-shell is denied."
             }
         ],
         "semantic": [
@@ -117,9 +159,13 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
+        Self::with_policy(policy_json())
+    }
+
+    fn with_policy(policy_json: Value) -> Self {
         let directory = tempfile::tempdir().unwrap();
         let policy = directory.path().join("policy.json");
-        fs::write(&policy, serde_json::to_vec_pretty(&policy_json()).unwrap()).unwrap();
+        fs::write(&policy, serde_json::to_vec_pretty(&policy_json).unwrap()).unwrap();
         Self {
             _directory: directory,
             policy,
@@ -212,13 +258,16 @@ fn semantic_rm_rule_handles_option_spellings_and_wrappers() {
         "nohup rm -rf target",
         "xargs -0 rm -rf target",
         "find . -exec rm -rf '{}' +",
-        "nix run nixpkgs#rm -- -rf target",
-        "nix shell nixpkgs#rm -c rm -rf target",
-        "nix shell nixpkgs#coreutils --command rm -rf target",
-        "nix develop nixpkgs#coreutils --command rm -rf target",
-        "nix --extra-experimental-features nix-command shell nixpkgs#coreutils --command rm -rf target",
-        "nix --option warn-dirty false run nixpkgs#rm -- -rf target",
-        "nix --accept-flake-config develop nixpkgs#coreutils --command rm -rf target",
+        "nix run fixture#rm -- -rf target",
+        "nix shell fixture#environment -c rm -rf target",
+        "nix shell fixture#environment --command rm -rf target",
+        "nix develop fixture#environment --command rm -rf target",
+        "nix --one value shell fixture#environment --command rm -rf target",
+        "nix --two key value run fixture#rm -- -rf target",
+        "nix --flag develop fixture#environment --command rm -rf target",
+        "nix run --two=key value fixture#rm -- -rf target",
+        "nix run -ovalue fixture#rm -- -rf target",
+        "nix run --one \"$VALUE\" fixture#rm -- -rf target",
         "eval 'rm -rf target'",
         "eval -- 'rm -rf target'",
         "builtin eval 'rm -rf target'",
@@ -272,9 +321,27 @@ fn semantic_rm_rule_handles_option_spellings_and_wrappers() {
         "shopt -u -o allexport",
         "bash +a -c 'printf safe'",
         "bash +o allexport -c 'printf safe'",
+        "nix() { printf safe; }; nix run fixture#rm -- -rf target | cat",
     ] {
         assert_safe(&fixture.run(command));
     }
+
+    assert_denied(
+        &fixture.run("nix --one $ARGS run fixture#rm -- -rf target"),
+        "may expand to multiple arguments",
+    );
+    assert_denied(
+        &fixture.run("nix --one \"${@:2}\" run fixture#rm -- -rf target"),
+        "may expand to multiple arguments",
+    );
+    assert_denied(
+        &fixture.run("zsh -c 'nix --one \"$=ARGS\" run fixture#rm -- -rf target'"),
+        "may expand to multiple arguments",
+    );
+    assert_denied(
+        &fixture.run("nix() { printf safe; }; /usr/bin/nix run fixture#rm -- -rf target | cat"),
+        "Recursive forced deletion",
+    );
 }
 
 #[test]
@@ -290,7 +357,7 @@ fn fd_rule_respects_option_values_clusters_and_double_dash() {
         "fd -Xecho",
         "fd -HIx echo",
         "fd -HIX echo",
-        "nix run nixpkgs#fd -- --exec echo",
+        "nix run fixture#fd -- --exec echo",
     ] {
         assert_denied(&fixture.run(command), "fd execution options");
     }
@@ -300,10 +367,16 @@ fn fd_rule_respects_option_values_clusters_and_double_dash() {
         "fd --exclude=-x",
         "fd -HEx",
         "fd -C/tmp --version",
+        "fd -C \"$DIRECTORY\" pattern",
+        "xargs -I{} fd -C '{}'",
+        "find . -exec fd -C '{}' ';'",
         "fd -- --exec",
     ] {
         assert_safe(&fixture.run(command));
     }
+    assert_denied(&fixture.run("fd -C $ARGS pattern"), "dynamic");
+    assert_denied(&fixture.run("xargs fd -C"), "dynamic");
+    assert_denied(&fixture.run("find . -exec fd -C '{}' +"), "dynamic");
 }
 
 #[test]
@@ -354,10 +427,11 @@ fn trash_commands_allow_recoverable_operations_and_deny_permanent_ones() {
         "/usr/bin/trash-empty 7",
         "env trash-empty 7",
         "sh -c 'trash-empty 7'",
-        "nix-shell -p trash-cli --run 'trash-empty 7'",
-        "nix-shell --argstr name --run --run 'trash-empty 7'",
-        "nix-shell --arg name --command --command 'trash-rm target'",
+        "nix-shell --flag fixture --run 'trash-empty 7'",
+        "nix-shell --two name --run --run 'trash-empty 7'",
+        "nix-shell --two name --command --command 'trash-rm target'",
         "nix-shell --command='trash-rm target'",
+        "nix-shell --danger",
         "xargs trash-empty 7",
         "find . -exec trash-empty 7 ';'",
         "command trash-rm target",
@@ -382,6 +456,10 @@ fn trash_commands_allow_recoverable_operations_and_deny_permanent_ones() {
         "trash-restore --t \"$TRASH_DIR\"",
         "trash-restore -- --overwrite",
         "gh pr create --title 'trash-empty 7'",
+        "nix-shell() { printf safe; }; nix-shell --danger",
+        "nix-shell --help --run 'trash-empty 7'",
+        "nix develop fixture#environment --command printf --help",
+        "nix shell fixture#environment --command printf --version",
     ] {
         assert_safe(&fixture.run(command));
     }
@@ -502,9 +580,10 @@ fn unknown_or_malformed_execution_fails_closed() {
         assert_denied(&fixture.run(command), "standard input");
     }
     assert_denied(
-        &fixture.run("nix shell nixpkgs#coreutils $ARGS"),
+        &fixture.run("nix shell fixture#environment $ARGS"),
         "nix shell argument",
     );
+    assert_denied(&fixture.run("nix run --two key"), "missing 1 value");
     assert_denied(&fixture.run("xargs -I{} rm {} target"), "dynamic");
     assert_denied(
         &fixture.run("xargs -0I{} rm {} target"),
@@ -622,4 +701,37 @@ fn validation_mode_rejects_unknown_selectors() {
         .unwrap();
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("not-a-category"));
+}
+
+#[test]
+fn canonical_semantic_rule_scans_before_deeper_selectors() {
+    let mut policy = policy_json();
+    policy["commandGrammars"]["demo"] = json!({
+        "options": {"--danger": 0, "--global": 0},
+        "terminalOptions": ["--help"],
+        "stages": [
+            {
+                "at": [], "selector": "positional", "aliases": {"group": "group"},
+                "unknownOption": "deny", "unknownSelector": "deny"
+            },
+            {
+                "at": ["group"], "selector": "positional", "aliases": {"action": "action"},
+                "unknownOption": "deny", "unknownSelector": "deny"
+            }
+        ]
+    });
+    policy["semantic"].as_array_mut().unwrap().push(json!({
+        "commandPrefix": ["demo", "group"],
+        "optionSyntax": {"valueTaking": [], "optionalEquals": []},
+        "deny": [{
+            "optionGroups": [["--danger"]],
+            "reason": "group danger denied",
+            "alternatives": ["omit --danger"]
+        }]
+    }));
+    let fixture = Fixture::with_policy(policy);
+    assert_denied(
+        &fixture.run("demo --global group --danger action"),
+        "group danger denied",
+    );
 }

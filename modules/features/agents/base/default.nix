@@ -85,6 +85,7 @@ in
         config.dotfiles.agentCommandPolicyCompiled = import (policyRoot + "/compiler.nix") {
           inherit lib;
           inherit (policy)
+            commandGrammars
             commands
             shell
             shellfirm

@@ -1,3 +1,4 @@
+pub mod command_grammar;
 pub mod decision;
 pub mod error;
 pub mod option_scan;

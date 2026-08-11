@@ -8,6 +8,7 @@ let
     "policy"
   ];
   allowedPolicyAttrs = [
+    "commandGrammars"
     "commands"
     "shell"
     "shellfirm"
@@ -40,9 +41,10 @@ let
   owners = map (entry: entry.owner) checked;
   isSemanticCommand =
     path: value: path != [ ] && builtins.head path == "commands" && value ? decision;
+  isExecutableGrammar = path: builtins.length path == 2 && builtins.head path == "commandGrammars";
   ownedLeaves =
     owner: path: value:
-    if builtins.isAttrs value && !isSemanticCommand path value then
+    if builtins.isAttrs value && !isSemanticCommand path value && !isExecutableGrammar path then
       lib.concatMap (name: ownedLeaves owner (path ++ [ name ]) value.${name}) (builtins.attrNames value)
     else
       [

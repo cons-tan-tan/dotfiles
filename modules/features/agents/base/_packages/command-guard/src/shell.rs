@@ -10,9 +10,16 @@ pub enum WordValue {
     Dynamic,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExpansionCardinality {
+    ExactlyOne,
+    MaySplit,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Word {
     pub value: WordValue,
+    pub expansion_cardinality: ExpansionCardinality,
     pub source: Range<usize>,
 }
 
@@ -20,6 +27,7 @@ impl Word {
     pub fn synthetic(value: impl Into<String>) -> Self {
         Self {
             value: WordValue::Static(value.into()),
+            expansion_cardinality: ExpansionCardinality::ExactlyOne,
             source: 0..0,
         }
     }
@@ -34,8 +42,21 @@ impl Word {
     pub fn dynamic() -> Self {
         Self {
             value: WordValue::Dynamic,
+            expansion_cardinality: ExpansionCardinality::MaySplit,
             source: 0..0,
         }
+    }
+
+    pub fn dynamic_exactly_one() -> Self {
+        Self {
+            value: WordValue::Dynamic,
+            expansion_cardinality: ExpansionCardinality::ExactlyOne,
+            source: 0..0,
+        }
+    }
+
+    pub fn may_split(&self) -> bool {
+        self.expansion_cardinality == ExpansionCardinality::MaySplit
     }
 }
 
@@ -532,15 +553,95 @@ fn extract_word(node: Node<'_>, source: &[u8]) -> Result<Word> {
     let bytes = &source[node.byte_range()];
     let raw = std::str::from_utf8(bytes)
         .map_err(|_| GuardError::Parser("shell command is not valid UTF-8".to_owned()))?;
-    let value = if contains_dynamic(node) || contains_unquoted_shell_expansion(raw) {
+    let may_split = dynamic_word_may_split(raw);
+    let dynamic = contains_dynamic(node) || contains_unquoted_shell_expansion(raw) || may_split;
+    let value = if dynamic {
         WordValue::Dynamic
     } else {
         WordValue::Static(decode_shell_literal(raw)?)
     };
     Ok(Word {
         value,
+        expansion_cardinality: if may_split {
+            ExpansionCardinality::MaySplit
+        } else {
+            ExpansionCardinality::ExactlyOne
+        },
         source: node.byte_range(),
     })
+}
+
+fn dynamic_word_may_split(raw: &str) -> bool {
+    if contains_unquoted_shell_expansion(raw) {
+        return true;
+    }
+
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum State {
+        Unquoted,
+        Single,
+        Double,
+        Ansi,
+    }
+
+    let chars = raw.chars().collect::<Vec<_>>();
+    let mut state = State::Unquoted;
+    let mut index = 0;
+    while index < chars.len() {
+        let current = chars[index];
+        match state {
+            State::Unquoted => match current {
+                '\'' => state = State::Single,
+                '"' => state = State::Double,
+                '$' if chars.get(index + 1) == Some(&'\'') => {
+                    state = State::Ansi;
+                    index += 1;
+                }
+                '$' | '`' => return true,
+                '<' | '>' if chars.get(index + 1) == Some(&'(') => return true,
+                '\\' => index += 1,
+                _ => {}
+            },
+            State::Single => {
+                if current == '\'' {
+                    state = State::Unquoted;
+                }
+            }
+            State::Double => match current {
+                '"' => state = State::Unquoted,
+                '\\' => index += 1,
+                '$' if chars.get(index + 1) == Some(&'@') => return true,
+                '$' if chars
+                    .get(index + 1)
+                    .is_some_and(|value| matches!(*value, '=' | '^')) =>
+                {
+                    return true;
+                }
+                '$' if chars.get(index + 1) == Some(&'{') => {
+                    if let Some(end) = chars[index + 2..].iter().position(|value| *value == '}') {
+                        let body = chars[index + 2..index + 2 + end].iter().collect::<String>();
+                        if body.starts_with('@')
+                            || body.contains("[@]")
+                            || (body.starts_with('!') && body.ends_with('@'))
+                            || body.starts_with('(')
+                            || body.starts_with('=')
+                            || body.starts_with('^')
+                        {
+                            return true;
+                        }
+                    }
+                }
+                _ => {}
+            },
+            State::Ansi => match current {
+                '\'' => state = State::Unquoted,
+                '\\' => index += 1,
+                _ => {}
+            },
+        }
+        index += 1;
+    }
+    false
 }
 
 fn contains_dynamic(node: Node<'_>) -> bool {

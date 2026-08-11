@@ -62,6 +62,19 @@ let
       ];
       expectedFragment = "agent-command-policy ownership conflicts: commands.tool";
     };
+    executableGrammarOwnershipConflict = {
+      expression = force [
+        {
+          owner = "feature/grammar-options";
+          policy.commandGrammars.demo.options."--mode" = 1;
+        }
+        {
+          owner = "feature/grammar-stages";
+          policy.commandGrammars.demo.stages = [ ];
+        }
+      ];
+      expectedFragment = "agent-command-policy ownership conflicts: commandGrammars.demo";
+    };
     unknownPolicyField = {
       expression = force [
         {

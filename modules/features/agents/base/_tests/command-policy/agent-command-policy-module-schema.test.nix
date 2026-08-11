@@ -25,6 +25,36 @@ let
   evaluated = eval [
     {
       agentCommandPolicy = {
+        commandGrammars.demo = {
+          options."--mode" = 1;
+          terminalOptions = [ "--help" ];
+          stages = [
+            {
+              at = [ ];
+              selector = "positional";
+              aliases.action = "action";
+              unknownOption = "deny";
+              unknownSelector = "ignore";
+            }
+            {
+              at = [ "action" ];
+              selector = "option";
+              aliases."--select" = "select";
+              unknownOption = "ignore";
+              unknownSelector = "deny";
+            }
+            {
+              at = [
+                "action"
+                "select"
+              ];
+              selector = "option";
+              aliases."--select" = "nested-select";
+              unknownOption = "ignore";
+              unknownSelector = "deny";
+            }
+          ];
+        };
         commands.gh.issue.list = true;
         commands.fd = semanticCommand "-x";
         shell.redirection.emptyFile = false;
@@ -49,6 +79,7 @@ in
       inherit (evaluated.config.agentCommandPolicy.commands.gh) issue pr;
       fdDecision = evaluated.config.agentCommandPolicy.commands.fd.decision;
       categories = builtins.attrNames evaluated.config.agentCommandPolicy.shellfirm.categories;
+      grammar = evaluated.config.agentCommandPolicy.commandGrammars.demo;
     };
     expected = {
       issue.list = true;
@@ -58,6 +89,36 @@ in
         "fs"
         "git"
       ];
+      grammar = {
+        options."--mode" = 1;
+        terminalOptions = [ "--help" ];
+        stages = [
+          {
+            at = [ ];
+            selector = "positional";
+            aliases.action = "action";
+            unknownOption = "deny";
+            unknownSelector = "ignore";
+          }
+          {
+            at = [ "action" ];
+            selector = "option";
+            aliases."--select" = "select";
+            unknownOption = "ignore";
+            unknownSelector = "deny";
+          }
+          {
+            at = [
+              "action"
+              "select"
+            ];
+            selector = "option";
+            aliases."--select" = "nested-select";
+            unknownOption = "ignore";
+            unknownSelector = "deny";
+          }
+        ];
+      };
     };
   };
 

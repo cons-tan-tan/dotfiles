@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     ffi::{OsStr, OsString},
 };
 
@@ -22,14 +22,30 @@ pub fn scan(
     syntax: &OptionSyntax,
     attached_value_options: &BTreeSet<String>,
 ) -> Result<ScanResult> {
-    let boundary = words
+    scan_with_arities(words, syntax, attached_value_options, &BTreeMap::new())
+}
+
+pub fn scan_with_arities(
+    words: &[Word],
+    syntax: &OptionSyntax,
+    attached_value_options: &BTreeSet<String>,
+    known_arities: &BTreeMap<String, usize>,
+) -> Result<ScanResult> {
+    let mut boundaries = words
         .iter()
-        .position(|word| word.static_value() == Some("--"));
+        .enumerate()
+        .filter_map(|(index, word)| (word.static_value() == Some("--")).then_some(index))
+        .collect::<VecDeque<_>>();
     let static_values = words
         .iter()
         .filter_map(Word::static_value)
         .collect::<BTreeSet<_>>();
     let mut dynamic_sentinels = BTreeMap::new();
+    let may_split_dynamic = words
+        .iter()
+        .enumerate()
+        .filter_map(|(index, word)| word.may_split().then_some(index))
+        .collect::<BTreeSet<_>>();
     let mut used_sentinels = BTreeSet::new();
     let args = words
         .iter()
@@ -47,6 +63,7 @@ pub fn scan(
     let value_taking = syntax.value_taking.iter().collect::<BTreeSet<_>>();
     let optional_equals = syntax.optional_equals.iter().collect::<BTreeSet<_>>();
     let mut consumed_dynamic = BTreeSet::new();
+    let mut boundary_is_trustworthy = true;
     let mut result = ScanResult::default();
     let mut parser = lexopt::Parser::from_args(args);
 
@@ -61,15 +78,33 @@ pub fn scan(
             Arg::Long(name) => {
                 let option = format!("--{name}");
                 result.present.insert(option.clone());
-                if value_taking.contains(&option) {
-                    let value = parser
-                        .value()
-                        .map_err(|error| GuardError::Options(error.to_string()))?;
-                    record_consumed_dynamic(&value, &dynamic_sentinels, &mut consumed_dynamic);
+                boundary_is_trustworthy &= known_arities.contains_key(&option)
+                    || value_taking.contains(&option)
+                    || optional_equals.contains(&option)
+                    || attached_value_options.contains(&option);
+                let arity = known_arities
+                    .get(&option)
+                    .copied()
+                    .unwrap_or_default()
+                    .max(usize::from(value_taking.contains(&option)));
+                if arity > 0 {
+                    consume_values(
+                        &mut parser,
+                        arity,
+                        &dynamic_sentinels,
+                        &may_split_dynamic,
+                        &mut consumed_dynamic,
+                        &mut boundaries,
+                    )?;
                 } else if optional_equals.contains(&option)
                     && let Some(value) = parser.optional_value()
                 {
-                    record_consumed_dynamic(&value, &dynamic_sentinels, &mut consumed_dynamic);
+                    record_consumed_dynamic(
+                        &value,
+                        &dynamic_sentinels,
+                        &may_split_dynamic,
+                        &mut consumed_dynamic,
+                    );
                 } else if attached_value_options.contains(&option) {
                     let _ = parser.optional_value();
                 }
@@ -77,31 +112,69 @@ pub fn scan(
             Arg::Short(name) => {
                 let option = format!("-{name}");
                 result.present.insert(option.clone());
-                if value_taking.contains(&option) {
-                    let value = parser
-                        .value()
-                        .map_err(|error| GuardError::Options(error.to_string()))?;
-                    record_consumed_dynamic(&value, &dynamic_sentinels, &mut consumed_dynamic);
+                boundary_is_trustworthy &= known_arities.contains_key(&option)
+                    || value_taking.contains(&option)
+                    || optional_equals.contains(&option)
+                    || attached_value_options.contains(&option);
+                let arity = known_arities
+                    .get(&option)
+                    .copied()
+                    .unwrap_or_default()
+                    .max(usize::from(value_taking.contains(&option)));
+                if arity > 0 {
+                    consume_values(
+                        &mut parser,
+                        arity,
+                        &dynamic_sentinels,
+                        &may_split_dynamic,
+                        &mut consumed_dynamic,
+                        &mut boundaries,
+                    )?;
                 } else if optional_equals.contains(&option)
                     && let Some(value) = parser.optional_value()
                 {
-                    record_consumed_dynamic(&value, &dynamic_sentinels, &mut consumed_dynamic);
+                    record_consumed_dynamic(
+                        &value,
+                        &dynamic_sentinels,
+                        &may_split_dynamic,
+                        &mut consumed_dynamic,
+                    );
                 }
             }
-            Arg::Value(value) => {
-                if let Some(index) = dynamic_sentinels.get(&value).copied() {
-                    let after_boundary = boundary.is_some_and(|boundary| index > boundary);
-                    if !after_boundary && !consumed_dynamic.contains(&index) {
-                        result.dynamic_relevant = true;
-                    }
-                }
-            }
+            Arg::Value(_) => {}
         }
     }
+    let boundary = boundary_is_trustworthy
+        .then(|| boundaries.front().copied())
+        .flatten();
     result.dynamic_relevant |= dynamic_sentinels.values().any(|index| {
         !consumed_dynamic.contains(index) && boundary.is_none_or(|value| *index < value)
     });
     Ok(result)
+}
+
+fn consume_values(
+    parser: &mut lexopt::Parser,
+    arity: usize,
+    sentinels: &BTreeMap<OsString, usize>,
+    may_split: &BTreeSet<usize>,
+    consumed: &mut BTreeSet<usize>,
+    boundaries: &mut VecDeque<usize>,
+) -> Result<()> {
+    let attached = parser.optional_value();
+    if let Some(value) = attached.as_ref() {
+        record_consumed_dynamic(value, sentinels, may_split, consumed);
+    }
+    for _ in usize::from(attached.is_some())..arity {
+        let value = parser
+            .value()
+            .map_err(|error| GuardError::Options(error.to_string()))?;
+        record_consumed_dynamic(&value, sentinels, may_split, consumed);
+        if value == "--" {
+            let _ = boundaries.pop_front();
+        }
+    }
+    Ok(())
 }
 
 fn unique_dynamic_sentinel(
@@ -124,9 +197,12 @@ fn unique_dynamic_sentinel(
 fn record_consumed_dynamic(
     value: &OsStr,
     sentinels: &BTreeMap<OsString, usize>,
+    may_split: &BTreeSet<usize>,
     consumed: &mut BTreeSet<usize>,
 ) {
-    if let Some(index) = sentinels.get(value) {
+    if let Some(index) = sentinels.get(value)
+        && !may_split.contains(index)
+    {
         consumed.insert(*index);
     }
 }
@@ -134,17 +210,14 @@ fn record_consumed_dynamic(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::shell::{Word, WordValue};
+    use crate::shell::Word;
 
     fn word(value: &str) -> Word {
         Word::synthetic(value)
     }
 
     fn dynamic() -> Word {
-        Word {
-            value: WordValue::Dynamic,
-            source: 0..0,
-        }
+        Word::dynamic_exactly_one()
     }
 
     fn fd_syntax() -> OptionSyntax {
@@ -177,6 +250,61 @@ mod tests {
     fn consumed_dynamic_value_is_not_an_option() {
         let result = scan(&[word("-C"), dynamic()], &fd_syntax(), &BTreeSet::new()).unwrap();
         assert!(!result.dynamic_relevant);
+    }
+
+    #[test]
+    fn grammar_arity_hides_option_shaped_values() {
+        let syntax = OptionSyntax {
+            value_taking: vec![],
+            optional_equals: vec![],
+        };
+        let deny = BTreeSet::from(["--danger".to_owned()]);
+        let arities = BTreeMap::from([("--argstr".to_owned(), 2)]);
+        let result = scan_with_arities(
+            &[word("--argstr"), word("name"), word("--danger")],
+            &syntax,
+            &deny,
+            &arities,
+        )
+        .unwrap();
+        assert!(!result.present.contains("--danger"));
+    }
+
+    #[test]
+    fn grammar_values_do_not_create_false_double_dash_boundaries() {
+        let syntax = OptionSyntax {
+            value_taking: vec![],
+            optional_equals: vec![],
+        };
+        let arities = BTreeMap::from([("--argstr".to_owned(), 2)]);
+        let consumed = scan_with_arities(
+            &[word("--argstr"), word("name"), word("--"), dynamic()],
+            &syntax,
+            &BTreeSet::new(),
+            &arities,
+        )
+        .unwrap();
+        assert!(consumed.dynamic_relevant);
+
+        let later_boundary = scan_with_arities(
+            &[word("--argstr=name"), word("--"), word("--"), dynamic()],
+            &syntax,
+            &BTreeSet::new(),
+            &arities,
+        )
+        .unwrap();
+        assert!(!later_boundary.dynamic_relevant);
+    }
+
+    #[test]
+    fn unknown_options_make_double_dash_boundaries_untrustworthy() {
+        let result = scan(
+            &[word("--future"), word("value"), word("--"), dynamic()],
+            &fd_syntax(),
+            &BTreeSet::new(),
+        )
+        .unwrap();
+        assert!(result.dynamic_relevant);
     }
 
     #[test]

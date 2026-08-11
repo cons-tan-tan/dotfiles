@@ -1,9 +1,13 @@
-use std::{collections::BTreeSet, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::Path,
+};
 
 use crate::{
+    command_grammar::{self, Classification},
     error::{GuardError, Result},
     option_scan,
-    policy::SemanticDenyRule,
+    policy::{CommandGrammar, SemanticDenyRule},
     protocol::{HookInput, bounded_reason},
     redirection,
     shell::{self, FunctionDefinition, ParsedShell, Pipeline, SimpleCommand, Word},
@@ -149,9 +153,12 @@ fn assess_parsed(
             validated.shellfirm_matches(&pipeline.projection(), cwd),
             &mut findings,
         );
-        if let Some(pipeline) =
-            normalize_pipeline(pipeline, validated.policy.unknown.max_decode_depth)?
-        {
+        if let Some(pipeline) = normalize_pipeline(
+            pipeline,
+            validated.policy.unknown.max_decode_depth,
+            &validated.policy.command_grammars,
+            scopes.immediate,
+        )? {
             add_shellfirm_findings(
                 validated.shellfirm_matches(&pipeline.projection(), cwd),
                 &mut findings,
@@ -235,14 +242,7 @@ fn assess_simple(
         .cloned()
         .collect::<Vec<_>>();
     if context == ExecutionContext::Shell
-        && let Some(function) = scoped_functions
-            .iter()
-            .enumerate()
-            .filter(|(_, definition)| definition.name == basename)
-            .max_by_key(|(index, definition)| {
-                (!definition.inherited, definition.source_start, *index)
-            })
-            .map(|(_, definition)| definition)
+        && let Some(function) = resolve_shell_function(command, executable, &scoped_functions)
     {
         findings.extend(assess_source_with_functions(
             &function.body,
@@ -267,6 +267,24 @@ fn assess_simple(
         immediate: &nested_functions,
         deferred: scopes.deferred,
     };
+    let classification =
+        command_grammar::classify(basename, &command.words, &validated.policy.command_grammars)?;
+
+    // nix-shell is also a launcher, so its outer policy must be assessed before
+    // returning to inspect a --run/--command payload. Function resolution must
+    // happen first because a same-named shell function does not invoke nix-shell.
+    if basename == "nix-shell" && !matches!(&classification, Classification::Terminal) {
+        let normalized = normalized_words(command)?;
+        add_exact_findings(&normalized, validated, findings);
+        add_semantic_findings(
+            command,
+            &normalized,
+            None,
+            validated.policy.command_grammars.get(basename),
+            validated,
+            findings,
+        )?;
+    }
 
     match basename {
         "command" if context.has_shell_builtins() => {
@@ -352,7 +370,19 @@ fn assess_simple(
             return Ok(());
         }
         "nix-shell" => {
-            if let Some(source) = nix_shell_source(&command.words[1..])? {
+            if matches!(&classification, Classification::Terminal) {
+                return Ok(());
+            }
+            let grammar = validated
+                .policy
+                .command_grammars
+                .get(basename)
+                .ok_or_else(|| {
+                    GuardError::Policy(
+                        "nix-shell launcher decoding requires its command grammar".to_owned(),
+                    )
+                })?;
+            if let Some(source) = nix_shell_source(&command.words[1..], grammar)? {
                 findings.extend(assess_source(&source, cwd, validated, depth + 1)?);
             }
             return Ok(());
@@ -414,7 +444,11 @@ fn assess_simple(
             ));
         }
         "nix" => {
-            if let Some(resolved) = unwrap_nix(&command.words[1..])? {
+            if let Some(resolved) = unwrap_nix(
+                &command.words,
+                &classification,
+                validated.policy.command_grammars.get("nix"),
+            )? {
                 assess_simple(
                     &resolved,
                     cwd,
@@ -499,8 +533,73 @@ fn assess_simple(
     }
 
     let normalized = normalized_words(command)?;
-    add_exact_findings(&normalized, validated, findings);
-    add_semantic_findings(command, &normalized, validated, findings)?;
+    let grammar = validated.policy.command_grammars.get(basename);
+    match &classification {
+        Classification::Terminal => {}
+        Classification::Canonical {
+            words: canonical,
+            selector_indices,
+        } => {
+            let selector_indices = selector_indices.iter().copied().collect::<BTreeSet<_>>();
+            let semantic_end = if basename == "nix"
+                && canonical
+                    .get(1)
+                    .and_then(|word| word.as_deref())
+                    .is_some_and(|subcommand| matches!(subcommand, "develop" | "shell"))
+            {
+                let grammar = grammar.ok_or_else(|| {
+                    GuardError::Policy(
+                        "nix command boundary decoding requires its command grammar".to_owned(),
+                    )
+                })?;
+                let argument_start = selector_indices
+                    .iter()
+                    .next()
+                    .copied()
+                    .map_or(command.words.len(), |index| index + 1);
+                command_grammar::find_option_boundary(
+                    &command.words[argument_start..],
+                    grammar,
+                    &["-c", "--command"],
+                    "nix shell argument before --command",
+                )?
+                .map_or(command.words.len(), |index| argument_start + index)
+            } else {
+                command.words.len()
+            };
+            let semantic_arguments = command
+                .words
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| {
+                    *index > 0 && *index < semantic_end && !selector_indices.contains(index)
+                })
+                .map(|(_, word)| word.clone())
+                .collect::<Vec<_>>();
+            add_exact_findings(&normalized, validated, findings);
+            add_exact_findings(canonical, validated, findings);
+            add_semantic_findings(
+                command,
+                &normalized,
+                Some(&semantic_arguments),
+                grammar,
+                validated,
+                findings,
+            )?;
+            add_semantic_findings(
+                command,
+                canonical,
+                Some(&semantic_arguments),
+                grammar,
+                validated,
+                findings,
+            )?;
+        }
+        Classification::NotApplicable => {
+            add_exact_findings(&normalized, validated, findings);
+            add_semantic_findings(command, &normalized, None, grammar, validated, findings)?;
+        }
+    }
     add_shellfirm_findings(
         validated.shellfirm_matches(&command.projection(), cwd),
         findings,
@@ -508,11 +607,25 @@ fn assess_simple(
     Ok(())
 }
 
-fn normalize_pipeline(pipeline: &Pipeline, max_depth: usize) -> Result<Option<Pipeline>> {
+fn normalize_pipeline(
+    pipeline: &Pipeline,
+    max_depth: usize,
+    grammars: &BTreeMap<String, CommandGrammar>,
+    functions: &[FunctionDefinition],
+) -> Result<Option<Pipeline>> {
     let commands = pipeline
         .commands
         .iter()
-        .map(|command| normalize_pipeline_command(command, 0, max_depth, ExecutionContext::Shell))
+        .map(|command| {
+            normalize_pipeline_command(
+                command,
+                0,
+                max_depth,
+                ExecutionContext::Shell,
+                grammars,
+                functions,
+            )
+        })
         .collect::<Result<Option<Vec<_>>>>()?;
     Ok(commands.map(|commands| Pipeline {
         commands,
@@ -525,6 +638,8 @@ fn normalize_pipeline_command(
     depth: usize,
     max_depth: usize,
     context: ExecutionContext,
+    grammars: &BTreeMap<String, CommandGrammar>,
+    functions: &[FunctionDefinition],
 ) -> Result<Option<SimpleCommand>> {
     if depth > max_depth {
         return Err(GuardError::Policy(
@@ -535,7 +650,13 @@ fn normalize_pipeline_command(
         return Ok(None);
     };
     let executable = static_word(first, "pipeline executable")?;
-    match executable_basename(executable) {
+    let basename = executable_basename(executable);
+    if context == ExecutionContext::Shell
+        && resolve_shell_function(command, executable, functions).is_some()
+    {
+        return Ok(Some(command.clone()));
+    }
+    match basename {
         "command" if context.has_shell_builtins() => unwrap_command_builtin(&command.words[1..])?
             .map(|inner| {
                 normalize_pipeline_command(
@@ -543,13 +664,22 @@ fn normalize_pipeline_command(
                     depth + 1,
                     max_depth,
                     ExecutionContext::ShellNoFunctions,
+                    grammars,
+                    functions,
                 )
             })
             .transpose()
             .map(Option::flatten),
         "exec" if context.has_shell_builtins() => unwrap_exec(&command.words[1..])?
             .map(|inner| {
-                normalize_pipeline_command(&inner, depth + 1, max_depth, ExecutionContext::External)
+                normalize_pipeline_command(
+                    &inner,
+                    depth + 1,
+                    max_depth,
+                    ExecutionContext::External,
+                    grammars,
+                    functions,
+                )
             })
             .transpose()
             .map(Option::flatten),
@@ -560,31 +690,75 @@ fn normalize_pipeline_command(
                     depth + 1,
                     max_depth,
                     ExecutionContext::ShellNoFunctions,
+                    grammars,
+                    functions,
                 )
             })
             .transpose()
             .map(Option::flatten),
         "env" => unwrap_env(&command.words[1..])?
             .map(|inner| {
-                normalize_pipeline_command(&inner, depth + 1, max_depth, ExecutionContext::External)
+                normalize_pipeline_command(
+                    &inner,
+                    depth + 1,
+                    max_depth,
+                    ExecutionContext::External,
+                    grammars,
+                    functions,
+                )
             })
             .transpose()
             .map(Option::flatten),
         "sudo" => match unwrap_sudo(&command.words[1..])? {
             SudoInvocation::None => Ok(None),
-            SudoInvocation::Command(inner) => {
-                normalize_pipeline_command(&inner, depth + 1, max_depth, ExecutionContext::External)
-            }
+            SudoInvocation::Command(inner) => normalize_pipeline_command(
+                &inner,
+                depth + 1,
+                max_depth,
+                ExecutionContext::External,
+                grammars,
+                functions,
+            ),
             SudoInvocation::ShellSource(_) => Ok(Some(command.clone())),
         },
-        "nix" => unwrap_nix(&command.words[1..])?
-            .map(|inner| {
-                normalize_pipeline_command(&inner, depth + 1, max_depth, ExecutionContext::External)
-            })
-            .transpose()
-            .map(Option::flatten),
+        "nix" => unwrap_nix(
+            &command.words,
+            &command_grammar::classify("nix", &command.words, grammars)?,
+            grammars.get("nix"),
+        )?
+        .map(|inner| {
+            normalize_pipeline_command(
+                &inner,
+                depth + 1,
+                max_depth,
+                ExecutionContext::External,
+                grammars,
+                functions,
+            )
+        })
+        .transpose()
+        .map(Option::flatten),
         _ => Ok(Some(command.clone())),
     }
+}
+
+fn resolve_shell_function<'a>(
+    command: &SimpleCommand,
+    executable: &str,
+    functions: &'a [FunctionDefinition],
+) -> Option<&'a FunctionDefinition> {
+    if executable.contains('/') {
+        return None;
+    }
+    functions
+        .iter()
+        .enumerate()
+        .filter(|(_, definition)| {
+            definition.inherited || definition.source_start < command.source.start
+        })
+        .filter(|(_, definition)| definition.name == executable)
+        .max_by_key(|(index, definition)| (!definition.inherited, definition.source_start, *index))
+        .map(|(_, definition)| definition)
 }
 
 fn eval_source(words: &[Word]) -> Result<String> {
@@ -643,6 +817,8 @@ fn add_exact_findings(
 fn add_semantic_findings(
     command: &SimpleCommand,
     words: &[Option<String>],
+    scan_words: Option<&[Word]>,
+    grammar: Option<&CommandGrammar>,
     validated: &ValidatedPolicy,
     findings: &mut Vec<Finding>,
 ) -> Result<()> {
@@ -651,28 +827,41 @@ fn add_semantic_findings(
         .semantic
         .iter()
         .filter(|rule| prefix_matches(words, &rule.command_prefix))
-        .max_by_key(|rule| rule.command_prefix.len());
-    let Some(rule) = matched else {
+        .collect::<Vec<_>>();
+    if matched.is_empty() {
         return Ok(());
-    };
-    let deny_options = rule
-        .deny
-        .iter()
-        .flat_map(|deny| deny.option_groups.iter().flatten())
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    let scan = option_scan::scan(
-        &command.words[rule.command_prefix.len()..],
-        &rule.option_syntax,
-        &deny_options,
-    )?;
-    let mut denied = false;
-    for (index, deny) in rule.deny.iter().enumerate() {
-        if deny
-            .option_groups
+    }
+    for rule in matched {
+        let deny_options = rule
+            .deny
             .iter()
-            .all(|group| group.iter().any(|option| scan.present.contains(option)))
-        {
+            .flat_map(|deny| deny.option_groups.iter().flatten())
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        let default_scan_words = &command.words[rule.command_prefix.len()..];
+        let empty_arities = BTreeMap::new();
+        let known_arities = grammar.map_or(&empty_arities, |grammar| &grammar.options);
+        let scan = option_scan::scan_with_arities(
+            scan_words.unwrap_or(default_scan_words),
+            &rule.option_syntax,
+            &deny_options,
+            known_arities,
+        )
+        .map_err(|error| {
+            GuardError::Policy(format!(
+                "semantic option scan for {} failed: {error}",
+                rule.command_prefix.join(" ")
+            ))
+        })?;
+        let mut denied = false;
+        for (index, deny) in rule.deny.iter().enumerate() {
+            if !deny
+                .option_groups
+                .iter()
+                .all(|group| group.iter().any(|option| scan.present.contains(option)))
+            {
+                continue;
+            }
             denied = true;
             findings.push(Finding {
                 kind: FindingKind::Deny,
@@ -680,19 +869,19 @@ fn add_semantic_findings(
                 reason: semantic_reason(deny),
             });
         }
-    }
-    if !denied && scan.dynamic_relevant {
-        return Err(GuardError::Policy(format!(
-            "an option for {} is dynamic; insert -- before dynamic positional arguments",
-            rule.command_prefix.join(" ")
-        )));
-    }
-    if !denied && let Some(guidance) = &rule.guidance {
-        findings.push(Finding {
-            kind: FindingKind::Context,
-            key: format!("context:{}", rule.command_prefix.join("\u{0}")),
-            reason: guidance.clone(),
-        });
+        if !denied && scan.dynamic_relevant {
+            return Err(GuardError::Policy(format!(
+                "an option for {} is dynamic; insert -- before dynamic positional arguments",
+                rule.command_prefix.join(" ")
+            )));
+        }
+        if !denied && let Some(guidance) = &rule.guidance {
+            findings.push(Finding {
+                kind: FindingKind::Context,
+                key: format!("context:{}", rule.command_prefix.join("\u{0}")),
+                reason: guidance.clone(),
+            });
+        }
     }
     Ok(())
 }
@@ -1258,26 +1447,7 @@ fn shell_source(words: &[Word]) -> Result<Option<String>> {
     ))
 }
 
-fn nix_shell_source(words: &[Word]) -> Result<Option<String>> {
-    let two_value_options = BTreeSet::from(["--arg", "--arg-from-file", "--argstr", "--option"]);
-    let one_value_options = BTreeSet::from([
-        "-A",
-        "-I",
-        "-j",
-        "--arg-from-stdin",
-        "--attr",
-        "--builders",
-        "--cores",
-        "--eval-store",
-        "--exclude",
-        "--include",
-        "--keep",
-        "--log-format",
-        "--max-jobs",
-        "--store",
-        "--system",
-        "--timeout",
-    ]);
+fn nix_shell_source(words: &[Word], grammar: &CommandGrammar) -> Result<Option<String>> {
     let mut index = 0;
     while let Some(word) = words.get(index) {
         let value = static_word(word, "nix-shell argument")?;
@@ -1292,16 +1462,17 @@ fn nix_shell_source(words: &[Word]) -> Result<Option<String>> {
         {
             return Ok(Some(source.to_owned()));
         }
-        if two_value_options.contains(value) {
-            require_static_value(words, index + 1, "nix-shell option name")?;
-            require_static_value(words, index + 2, "nix-shell option value")?;
-            index += 3;
+        if value == "--" {
+            return Ok(None);
+        }
+        if let Some(next) = command_grammar::skip_known_option(words, index, grammar)? {
+            index = next;
             continue;
         }
-        if one_value_options.contains(value) {
-            require_static_value(words, index + 1, "nix-shell option value")?;
-            index += 2;
-            continue;
+        if value.starts_with('-') {
+            return Err(GuardError::Policy(format!(
+                "unknown nix-shell option {value} before --run/--command"
+            )));
         }
         index += 1;
     }
@@ -1514,7 +1685,7 @@ fn unwrap_xargs(words: &[Word]) -> Result<Option<SimpleCommand>> {
             .words
             .into_iter()
             .map(|word| match word.static_value() {
-                Some(value) if value.contains(&replacement) => Word::dynamic(),
+                Some(value) if value.contains(&replacement) => Word::dynamic_exactly_one(),
                 _ => word,
             })
             .collect();
@@ -1576,9 +1747,13 @@ fn find_exec_commands(words: &[Word]) -> Result<Vec<SimpleCommand>> {
                 "find {marker} action has no command"
             )));
         }
+        let expansion_is_single = words[index].static_value() == Some(";");
         let command_words = words[start..index]
             .iter()
             .map(|word| match word.static_value() {
+                Some(value) if value.contains("{}") && expansion_is_single => {
+                    Word::dynamic_exactly_one()
+                }
                 Some(value) if value.contains("{}") => Word::dynamic(),
                 _ => word.clone(),
             })
@@ -1589,113 +1764,87 @@ fn find_exec_commands(words: &[Word]) -> Result<Vec<SimpleCommand>> {
     Ok(commands)
 }
 
-fn unwrap_nix(words: &[Word]) -> Result<Option<SimpleCommand>> {
-    let Some(subcommand_index) = nix_subcommand_index(words)? else {
+fn unwrap_nix(
+    words: &[Word],
+    classification: &Classification,
+    grammar: Option<&CommandGrammar>,
+) -> Result<Option<SimpleCommand>> {
+    let Classification::Canonical {
+        words: canonical,
+        selector_indices,
+    } = classification
+    else {
         return Ok(None);
     };
-    let subcommand = static_word(&words[subcommand_index], "nix subcommand")?;
+    let Some(subcommand) = canonical.get(1).and_then(|word| word.as_deref()) else {
+        return Ok(None);
+    };
+    let Some(subcommand_index) = selector_indices.first().copied() else {
+        return Ok(None);
+    };
+    let grammar = grammar.ok_or_else(|| {
+        GuardError::Policy("nix launcher decoding requires its command grammar".to_owned())
+    })?;
     let arguments = &words[subcommand_index + 1..];
     match subcommand {
-        "shell" | "develop" => {
-            let mut command_index = None;
-            for (index, word) in arguments.iter().enumerate() {
-                let value = static_word(word, "nix shell argument before --command")?;
-                if matches!(value, "-c" | "--command") {
-                    command_index = Some(index);
-                    break;
-                }
-            }
-            Ok(command_index.and_then(|index| synthetic_from(&arguments[index + 1..])))
-        }
-        "run" => unwrap_nix_run(arguments),
+        "shell" | "develop" => unwrap_nix_command(arguments, grammar),
+        "run" => unwrap_nix_run(arguments, grammar),
         _ => Ok(None),
     }
 }
 
-fn nix_subcommand_index(words: &[Word]) -> Result<Option<usize>> {
-    let value_options = BTreeSet::from([
-        "--extra-experimental-features",
-        "--experimental-features",
-        "--log-format",
-    ]);
-    let flag_options = BTreeSet::from([
-        "--accept-flake-config",
-        "--debug",
-        "--offline",
-        "--print-build-logs",
-        "--quiet",
-        "--refresh",
-        "--verbose",
-        "-L",
-        "-v",
-    ]);
-    let terminal_options = BTreeSet::from(["--help", "--version"]);
-    let mut index = 0;
-    while let Some(word) = words.get(index) {
-        let value = static_word(word, "nix global option or subcommand")?;
-        if terminal_options.contains(value) {
-            return Ok(None);
-        }
-        if flag_options.contains(value) {
-            index += 1;
-            continue;
-        }
-        if value_options.contains(value) {
-            require_static_value(words, index + 1, "nix global option value")?;
-            index += 2;
-            continue;
-        }
-        if value == "--option" {
-            require_static_value(words, index + 1, "nix configuration option name")?;
-            require_static_value(words, index + 2, "nix configuration option value")?;
-            index += 3;
-            continue;
-        }
-        if let Some((name, _)) = value.split_once('=')
-            && value_options.contains(name)
-        {
-            index += 1;
-            continue;
-        }
-        if value.starts_with('-') {
-            return Err(GuardError::Policy(format!(
-                "unsupported nix global option {value} before the subcommand"
-            )));
-        }
-        return Ok(Some(index));
-    }
-    Ok(None)
+fn unwrap_nix_command(words: &[Word], grammar: &CommandGrammar) -> Result<Option<SimpleCommand>> {
+    Ok(command_grammar::find_option_boundary(
+        words,
+        grammar,
+        &["-c", "--command"],
+        "nix shell argument before --command",
+    )?
+    .and_then(|index| synthetic_from(&words[index + 1..])))
 }
 
-fn unwrap_nix_run(words: &[Word]) -> Result<Option<SimpleCommand>> {
+fn unwrap_nix_run(words: &[Word], grammar: &CommandGrammar) -> Result<Option<SimpleCommand>> {
     let mut installable = None;
     let mut argument_index = None;
-    for (index, word) in words.iter().enumerate() {
+    let mut index = 0;
+    while let Some(word) = words.get(index) {
         let value = static_word(word, "nix run argument")?;
         if value == "--" {
             argument_index = Some(index + 1);
             break;
         }
+        if let Some(next) = command_grammar::skip_known_option(words, index, grammar)? {
+            index = next;
+            continue;
+        }
+        if value.starts_with('-') {
+            return Err(GuardError::Policy(format!(
+                "unknown nix run option {value} before --"
+            )));
+        }
         if installable.is_none() && !value.starts_with('-') {
             installable = Some(value);
         }
+        index += 1;
     }
-    let Some(installable) = installable else {
+    let Some(argument_index) = argument_index else {
         return Ok(None);
     };
-    let executable = installable
-        .rsplit_once('#')
-        .map(|(_, fragment)| fragment.rsplit('.').next().unwrap_or(fragment))
-        .filter(|value| !value.is_empty());
-    let Some(executable) = executable else {
+    if argument_index == words.len() {
+        return Ok(None);
+    }
+    let Some(installable) = installable else {
         return Err(GuardError::Policy(
-            "nix run installable has no static package fragment".to_owned(),
+            "nix run with arguments has no static installable".to_owned(),
         ));
     };
+    let executable = grammar.executable_aliases.get(installable).ok_or_else(|| {
+        GuardError::Policy(format!(
+            "nix run target {installable:?} has no configured executable alias"
+        ))
+    })?;
     let mut resolved = vec![Word::synthetic(executable)];
-    if let Some(index) = argument_index {
-        resolved.extend_from_slice(&words[index..]);
-    }
+    resolved.extend_from_slice(&words[argument_index..]);
     Ok(synthetic_from(&resolved))
 }
 
