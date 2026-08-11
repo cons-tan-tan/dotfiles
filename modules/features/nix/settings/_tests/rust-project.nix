@@ -4,13 +4,13 @@ let
 in
 {
   name = "apply-nix-settings";
-  manifest = "modules/features/platform/nix-settings/_packages/apply-nix-settings/Cargo.toml";
+  manifest = "modules/features/nix/settings/_packages/apply-nix-settings/Cargo.toml";
   ciTargets = ciCheck.targets.both "rust-and-bats";
   platformPredicate = _platform: true;
   advisoryOnly = false;
   lock = {
     owner = "apply-nix-settings";
-    path = "modules/features/platform/nix-settings/_packages/apply-nix-settings/Cargo.lock";
+    path = "modules/features/nix/settings/_packages/apply-nix-settings/Cargo.lock";
     ignoredAdvisories = [ ];
   };
   packages.default = package;

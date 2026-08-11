@@ -10,7 +10,7 @@ setup() {
   HESTIA_WORKFLOW="$WORKFLOW_DIR/hestia-system.yaml"
   CACHE_GC_WORKFLOW="$WORKFLOW_DIR/cache-gc.yaml"
   HESTIA_SETUP_ACTION="$REPO_ROOT/.github/actions/setup-hestia/action.yaml"
-  CACHE_SETTINGS="$REPO_ROOT/modules/features/platform/nix-settings/_data/cache.nix"
+  CACHE_SETTINGS="$REPO_ROOT/modules/features/nix/settings/_data/cache.nix"
   SUPPORTED_SYSTEMS="$REPO_ROOT/modules/flake/_data/systems/default.nix"
 }
 

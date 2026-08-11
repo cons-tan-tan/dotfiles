@@ -3,7 +3,7 @@
 DOTFILES_TEST_REPO_ROOT=${DOTFILES_TEST_REPO_ROOT:-$(git -C "$BATS_TEST_DIRNAME" rev-parse --show-toplevel)}
 
 setup() {
-  export CHECKER_SOURCE="$DOTFILES_TEST_REPO_ROOT/modules/features/platform/nh/_packages/store-growth-checker/nix-store-growth-checker.sh"
+  export CHECKER_SOURCE="$DOTFILES_TEST_REPO_ROOT/modules/features/nix/lifecycle/_packages/store-growth-checker/nix-store-growth-checker.sh"
   export STATE_DIRECTORY="$BATS_TEST_TMPDIR/state"
   export STORE_PATH="$BATS_TEST_TMPDIR/store"
   export FAKE_NIX_OUTPUT="$BATS_TEST_TMPDIR/nix-output.json"

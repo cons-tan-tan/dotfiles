@@ -1,6 +1,6 @@
 {
-  features.registries-host = {
-    name = "feature/registries/host";
+  features.nix-registry-host = {
+    name = "feature/nix/registry/host";
     homeManager =
       { host, ... }:
       {
@@ -17,8 +17,8 @@
       };
   };
 
-  features.registries-home = {
-    name = "feature/registries/home";
+  features.nix-registry-home = {
+    name = "feature/nix/registry/home";
     homeManager =
       { home, ... }:
       {

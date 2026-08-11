@@ -12,7 +12,6 @@
       go = countPackage pkgs.go;
       mozukuLsp = countPackage pkgs.mozuku-lsp;
       ni = countPackage pkgs.ni;
-      nixd = countPackage pkgs.nixd;
       pnpm = countPackage pkgs.pnpm;
       ruff = countPackage pkgs.ruff;
       rustup = countPackage pkgs.rustup;
@@ -25,7 +24,6 @@
     go = 1;
     mozukuLsp = 1;
     ni = 1;
-    nixd = 1;
     pnpm = 1;
     ruff = 1;
     rustup = 1;

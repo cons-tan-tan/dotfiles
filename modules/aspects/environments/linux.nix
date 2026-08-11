@@ -10,7 +10,7 @@
       den.aspects.environments.base
       features.nixpkgs-home-overlays
       features.platform-context-linux-home
-      features.registries-home
+      features.nix-registry-home
       features.security-gpg-linux
       features.source-control-ghq-sync-systemd
       features.trash-systemd

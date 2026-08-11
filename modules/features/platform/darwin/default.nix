@@ -16,7 +16,7 @@
       features.productivity-raycast
       features.platform-ghostty
       features.platform-sleepctl
-      features.platform-nh
+      features.nix-lifecycle
     ];
   };
 }

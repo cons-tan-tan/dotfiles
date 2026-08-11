@@ -11,7 +11,7 @@
       features.nixpkgs-host-overlays
       features.platform-context-wsl-host
       features.platform-integrated-home-manager
-      features.registries-host
+      features.nix-registry-host
       features.agent-hunk-wsl
       features.platform-wsl-nixbuild
       features.source-control-ghq-sync-systemd
@@ -26,7 +26,7 @@
       den.aspects.environments.base
       features.nixpkgs-home-overlays
       features.platform-context-wsl-home
-      features.registries-home
+      features.nix-registry-home
       features.agent-hunk-wsl
       features.security-gpg-wsl
       features.source-control-ghq-sync-systemd

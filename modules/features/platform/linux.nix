@@ -5,7 +5,7 @@
     includes = [
       features.platform-context
       features.drawio-linux-headless
-      features.platform-nh
+      features.nix-lifecycle
     ];
   };
 }

@@ -1,15 +1,8 @@
-{ features, inputs, ... }:
+{ features, ... }:
 {
-  flake-file.inputs.nix-index-database = {
-    url = "github:nix-community/nix-index-database";
-    inputs.nixpkgs.follows = "nixpkgs";
-  };
-
   features.home-base = {
     name = "feature/home-base";
     homeManager = {
-      imports = [ inputs.nix-index-database.homeModules.default ];
-
       home = {
         stateVersion = "24.11";
 
@@ -19,7 +12,6 @@
       };
 
       programs.home-manager.enable = true;
-      programs.nix-index-database.comma.enable = true;
     };
   };
 
@@ -27,6 +19,7 @@
     name = "feature/common-home";
     includes = [
       features.home-base
+      features.nix-default
       features.ci-tools
       features.cli-tools
       features.development-default

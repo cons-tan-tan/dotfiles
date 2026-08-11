@@ -5,12 +5,13 @@
 }:
 let
   pkgs = inputs.nixpkgs.legacyPackages.x86_64-linux;
-  contextModule = (import ../../context.nix { inherit lib; }).features.platform-context.homeManager;
+  contextModule =
+    (import ../../../platform/context.nix { inherit lib; }).features.platform-context.homeManager;
   nhModule =
     (import ../default.nix {
-      features.platform-nh = "platform-nh";
+      features.nix-lifecycle = "nix-lifecycle";
       inherit inputs;
-    }).features.platform-nh.homeManager;
+    }).features.nix-lifecycle.homeManager;
   evaluate =
     {
       environment,

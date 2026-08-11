@@ -80,7 +80,7 @@ let
       };
     }
     // lib.optionalAttrs (system == darwinSystem) {
-      darwin-nh-cleanup-contract = import ../platform/nh/_tests/darwin-cleanup-contract.nix {
+      darwin-nh-cleanup-contract = import ../nix/lifecycle/_tests/darwin-cleanup-contract.nix {
         inherit lib pkgs username;
         config = darwinConfigurations.${targets.darwin}.config;
       };
@@ -93,13 +93,13 @@ let
             entityContext = targets;
             config = nixosWslConfiguration.config;
           };
-          nhNixosCleanupContract = import ../platform/nh/_tests/nixos-cleanup-contract.nix {
+          nhNixosCleanupContract = import ../nix/lifecycle/_tests/nixos-cleanup-contract.nix {
             inherit lib pkgs;
             entityContext = targets;
             fastNixGc = inputs.fast-nix-gc.packages.${pkgs.stdenv.hostPlatform.system}.default;
             config = nixosWslConfiguration.config;
           };
-          nhHomeCleanupContract = import ../platform/nh/_tests/home-cleanup-contract.nix {
+          nhHomeCleanupContract = import ../nix/lifecycle/_tests/home-cleanup-contract.nix {
             inherit lib pkgs;
             linux = homeConfiguration "linux";
             wsl = homeConfiguration "wsl";

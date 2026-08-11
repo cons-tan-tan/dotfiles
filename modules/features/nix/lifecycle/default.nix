@@ -16,8 +16,8 @@ in
     };
   };
 
-  features.platform-nh = {
-    name = "feature/platform/nh";
+  features.nix-lifecycle = {
+    name = "feature/nix/lifecycle";
 
     homeManager =
       {
@@ -86,9 +86,9 @@ in
       };
   };
 
-  features.platform-nh-wsl = {
-    name = "feature/platform/nh-wsl";
-    includes = [ features.platform-nh ];
+  features.nix-lifecycle-wsl = {
+    name = "feature/nix/lifecycle/wsl";
+    includes = [ features.nix-lifecycle ];
 
     nixos =
       {

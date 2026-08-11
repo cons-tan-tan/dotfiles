@@ -9,7 +9,7 @@ let
   configurationTargets = import ../../../flake/_interface/configuration-targets.nix {
     inherit lib;
   };
-  nhPackageSources = import ../../platform/nh/_interface/package-sources.nix;
+  nhPackageSources = import ../../nix/lifecycle/_interface/package-sources.nix;
   appsFor =
     { pkgs, ... }:
     let

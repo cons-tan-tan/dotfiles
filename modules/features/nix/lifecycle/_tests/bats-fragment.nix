@@ -84,16 +84,16 @@ in
   };
   shard = {
     testFiles = [
-      "modules/features/platform/nh/_tests/nh-clean-growth-runner.bats"
-      "modules/features/platform/nh/_tests/nh-cleanup-systemd.bats"
-      "modules/features/platform/nh/_tests/nh-result-root-pruner.bats"
-      "modules/features/platform/nh/_tests/nix-store-growth-checker.bats"
+      "modules/features/nix/lifecycle/_tests/nh-clean-growth-runner.bats"
+      "modules/features/nix/lifecycle/_tests/nh-cleanup-systemd.bats"
+      "modules/features/nix/lifecycle/_tests/nh-result-root-pruner.bats"
+      "modules/features/nix/lifecycle/_tests/nix-store-growth-checker.bats"
     ];
     sourceFiles = [
-      "modules/features/platform/nh/_packages/cleanup-systemd/install-nh-cleanup-systemd.sh"
-      "modules/features/platform/nh/_packages/clean-growth-runner/nh-clean-growth-runner.sh"
-      "modules/features/platform/nh/_packages/result-root-pruner/nh-prune-result-roots.sh"
-      "modules/features/platform/nh/_packages/store-growth-checker/nix-store-growth-checker.sh"
+      "modules/features/nix/lifecycle/_packages/cleanup-systemd/install-nh-cleanup-systemd.sh"
+      "modules/features/nix/lifecycle/_packages/clean-growth-runner/nh-clean-growth-runner.sh"
+      "modules/features/nix/lifecycle/_packages/result-root-pruner/nh-prune-result-roots.sh"
+      "modules/features/nix/lifecycle/_packages/store-growth-checker/nix-store-growth-checker.sh"
     ];
   };
 }

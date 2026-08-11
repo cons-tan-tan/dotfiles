@@ -12,7 +12,7 @@ setup() {
   INSTALLER="$NH_CLEANUP_SYSTEMD_PACKAGE/bin/install-nh-cleanup-systemd"
   RESULT_ROOT_SERVICE="$NH_CLEANUP_SYSTEMD_PACKAGE/lib/systemd/system/nh-clean-result-roots.service"
   RESULT_ROOT_TIMER="$NH_CLEANUP_SYSTEMD_PACKAGE/lib/systemd/system/nh-clean-result-roots.timer"
-  INSTALLER_SOURCE="$DOTFILES_TEST_REPO_ROOT/modules/features/platform/nh/_packages/cleanup-systemd/install-nh-cleanup-systemd.sh"
+  INSTALLER_SOURCE="$DOTFILES_TEST_REPO_ROOT/modules/features/nix/lifecycle/_packages/cleanup-systemd/install-nh-cleanup-systemd.sh"
   INSTALL_TARGET="$BATS_TEST_TMPDIR/etc/systemd/system"
   INSTALL_GCROOT="$BATS_TEST_TMPDIR/gcroots/nh-cleanup-systemd"
   INSTALL_LOCK_DIRECTORY="$BATS_TEST_TMPDIR/run/nh-cleanup-systemd"
