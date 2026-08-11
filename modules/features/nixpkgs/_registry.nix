@@ -15,10 +15,10 @@ let
   networkPackageSources = import ../network/_interface/package-sources.nix;
   platformPackageSources = import ../platform/_interface/package-sources.nix;
   securityPackageSources = import ../security/_interface/package-sources.nix;
-  sourceControlPackageSources = import ../source-control/_interface/package-sources.nix;
+  gitPackageSources = import ../git/_interface/package-sources.nix;
   agentConfigHelper = pkgs.callPackage agentPackageSources.configHelper { };
   safeFetch = pkgs.callPackage networkPackageSources.safeFetch { };
-  ghApiGet = pkgs.callPackage sourceControlPackageSources.ghApiGet {
+  ghApiGet = pkgs.callPackage gitPackageSources.ghApiGet {
     safeFetchCore = safeFetch.core;
   };
   aws = import cloudPackageSources.aws {
@@ -62,7 +62,7 @@ in
   curl-fetch = safeFetch.curlFetch;
   gh-api-get = ghApiGet;
   gha-diag = pkgs.callPackage ciPackageSources.ghaDiag { };
-  ghq-fetch-all = pkgs.callPackage sourceControlPackageSources.ghqFetchAll { };
+  ghq-fetch-all = pkgs.callPackage gitPackageSources.ghqFetchAll { };
   hunk = import agentPackageSources.hunk {
     inherit (pkgs) callPackage stdenv;
     hunkInput = inputs.hunk;

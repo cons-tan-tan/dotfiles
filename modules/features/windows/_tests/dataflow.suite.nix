@@ -144,7 +144,7 @@ let
           claudeSettingsValidator.validate "claude-windows-settings.json" expectedClaudeSettingsRaw
         );
         gitPkgs = config.flake.homeConfigurations.git.pkgs;
-        gitLib = import (repoRoot + "/modules/features/source-control/_interface/git.nix") {
+        gitLib = import (repoRoot + "/modules/features/git/_interface/git.nix") {
           inherit lib;
           pkgs = gitPkgs;
         };
@@ -209,7 +209,7 @@ let
           (repoRoot + "/modules/features/agents/herdr/home.nix")
           (repoRoot + "/modules/features/agents/claude/default.nix")
           (repoRoot + "/modules/features/agents/claude/home.nix")
-          (repoRoot + "/modules/features/source-control/git.nix")
+          (repoRoot + "/modules/features/git/default.nix")
           (repoRoot + "/modules/features/security/gpg/default.nix")
         ];
         den.default.homeManager.nixpkgs.overlays = overlayPlan.overlays;
@@ -225,7 +225,7 @@ let
           windowsUser = "claude-win";
         };
         den.aspects.git = mkCanonicalCompanionAspect {
-          canonicalFeature = features.source-control-git;
+          canonicalFeature = features.git;
           inherit features;
           linuxUser = "git";
           windowsUser = "git-win";

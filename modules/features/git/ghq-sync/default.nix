@@ -4,8 +4,8 @@ let
   batchTimeoutSec = 600;
 in
 {
-  features.source-control-ghq-sync = {
-    name = "feature/source-control/ghq-sync";
+  features.ghq-sync = {
+    name = "feature/ghq-sync";
     cli-tools = [
       {
         id = "ghq";
@@ -22,9 +22,9 @@ in
     ];
   };
 
-  features.source-control-ghq-sync-systemd = {
-    name = "feature/source-control/ghq-sync/systemd";
-    includes = [ features.source-control-ghq-sync ];
+  features.ghq-sync-systemd = {
+    name = "feature/ghq-sync/systemd";
+    includes = [ features.ghq-sync ];
     homeManager =
       { pkgs, ... }:
       let
@@ -58,9 +58,9 @@ in
       };
   };
 
-  features.source-control-ghq-sync-launchd = {
-    name = "feature/source-control/ghq-sync/launchd";
-    includes = [ features.source-control-ghq-sync ];
+  features.ghq-sync-launchd = {
+    name = "feature/ghq-sync/launchd";
+    includes = [ features.ghq-sync ];
     homeManager =
       { config, pkgs, ... }:
       let

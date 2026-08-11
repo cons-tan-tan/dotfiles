@@ -22,7 +22,7 @@ in
     ];
   };
   shard = {
-    testFiles = [ "modules/features/source-control/gh/_tests/gh-api-get.bats" ];
+    testFiles = [ "modules/features/git/gh/_tests/gh-api-get.bats" ];
     sourceFiles = [ ];
   };
 }

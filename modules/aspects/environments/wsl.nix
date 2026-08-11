@@ -14,7 +14,7 @@
       features.nix-registry-host
       features.agent-hunk-wsl
       features.platform-wsl-nixbuild
-      features.source-control-ghq-sync-systemd
+      features.ghq-sync-systemd
       features.trash-systemd
       features.platform-wsl
     ];
@@ -29,7 +29,7 @@
       features.nix-registry-home
       features.agent-hunk-wsl
       features.security-gpg-wsl
-      features.source-control-ghq-sync-systemd
+      features.ghq-sync-systemd
       features.trash-systemd
       features.platform-wsl
     ];

@@ -13,7 +13,7 @@
       features.platform-integrated-home-manager
       features.nix-registry-host
       features.security-gpg-darwin
-      features.source-control-ghq-sync-launchd
+      features.ghq-sync-launchd
       features.trash-darwin
       features.platform-darwin
     ];

@@ -1,8 +1,8 @@
 { features, ... }:
 {
-  features.source-control-git-wt = {
-    name = "feature/source-control/git-wt";
-    includes = [ features.source-control-git ];
+  features.git-wt = {
+    name = "feature/git-wt";
+    includes = [ features.git ];
     homeManager =
       {
         config,

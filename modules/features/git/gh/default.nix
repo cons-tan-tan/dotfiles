@@ -1,10 +1,10 @@
 { features, ... }:
 {
-  features.source-control-gh =
+  features.gh =
     { config, ... }:
     {
-      name = "feature/source-control/gh";
-      includes = [ features.source-control-git ];
+      name = "feature/gh";
+      includes = [ features.git ];
       cli-tools = [
         {
           id = "gh";

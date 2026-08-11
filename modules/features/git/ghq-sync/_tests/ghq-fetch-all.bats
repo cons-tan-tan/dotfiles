@@ -5,7 +5,7 @@ source "$DOTFILES_TEST_REPO_ROOT/modules/features/checks/_interface/bats/test-he
 
 setup() {
   REPO_ROOT="$DOTFILES_TEST_REPO_ROOT"
-  SCRIPT="$REPO_ROOT/modules/features/source-control/ghq-sync/_packages/fetch-all/ghq-fetch-all.sh"
+  SCRIPT="$REPO_ROOT/modules/features/git/ghq-sync/_packages/fetch-all/ghq-fetch-all.sh"
   TEST_TMPDIR="$(mktemp -d)"
   export TEST_TMPDIR
   export PATH="$TEST_TMPDIR/bin:$PATH"

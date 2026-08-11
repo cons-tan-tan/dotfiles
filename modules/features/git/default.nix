@@ -1,8 +1,8 @@
 {
-  features.source-control-git =
+  features.git =
     { config, ... }:
     {
-      name = "feature/source-control/git";
+      name = "feature/git";
       cli-tools = [
         {
           id = "git";

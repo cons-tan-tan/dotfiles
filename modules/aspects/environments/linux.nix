@@ -12,7 +12,7 @@
       features.platform-context-linux-home
       features.nix-registry-home
       features.security-gpg-linux
-      features.source-control-ghq-sync-systemd
+      features.ghq-sync-systemd
       features.trash-systemd
       features.platform-linux
     ];

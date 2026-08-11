@@ -26,10 +26,10 @@
       features.editors-default
       features.media-ffmpeg
       features.shell-zsh
-      features.source-control-git
-      features.source-control-git-wt
-      features.source-control-gh
-      features.source-control-ghq-sync
+      features.git
+      features.git-wt
+      features.gh
+      features.ghq-sync
       features.terminal-default
       features.cloud-aws
       features.cloud-gcloud
