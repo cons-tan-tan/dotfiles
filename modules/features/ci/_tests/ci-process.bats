@@ -9,7 +9,6 @@ setup() {
   CI_SCRIPT_DIR="$REPO_ROOT/modules/features/ci/_scripts"
   HESTIA_MATRIX_OPTIMIZER="$CI_SCRIPT_DIR/optimize_hestia_matrix.py"
   HESTIA_MATRIX_VALIDATOR="$CI_SCRIPT_DIR/validate_hestia_matrix.py"
-  HESTIA_BUILD_SCRIPT="$CI_SCRIPT_DIR/prefetch_hestia_closure_and_build.sh"
   SUBSTITUTER_CHECK_SCRIPT="$CI_SCRIPT_DIR/verify_binary_substituters.sh"
   TELEMETRY_SCHEMA="$REPO_ROOT/modules/features/ci/_schemas/telemetry-v1.schema.json"
 }
@@ -107,77 +106,6 @@ SH
     TELEMETRY_ATTR_PREFIX=lib.hestiaJobs.ci.x86_64-linux \
     TELEMETRY_RUNNER_NAME='GitHub Actions test' \
     python3 "$HESTIA_MATRIX_OPTIMIZER"
-}
-
-run_ci_build_step() {
-  local curl_status=$1
-  local import_outcomes=$2
-  local realise_status=$3
-  local build_status=$4
-  local missing_paths=${5:-/nix/store/11111111111111111111111111111111-upstream-reference}
-  local stub_dir="$BATS_TEST_TMPDIR/ci-build-stubs"
-  local calls="$BATS_TEST_TMPDIR/ci-build-calls"
-  local import_count="$BATS_TEST_TMPDIR/ci-build-import-count"
-  local installable=/nix/store/00000000000000000000000000000000-test.drv^\*
-
-  mkdir -p "$stub_dir"
-  write_bash_stub "$stub_dir/curl" <<'SH'
-printf 'curl\n' >>"$CI_BUILD_CALLS"
-printf 'closure'
-exit "$CI_CURL_STATUS"
-SH
-  write_bash_stub "$stub_dir/nix-store" <<'SH'
-case "${1:-}" in
-  --import)
-    cat >/dev/null
-    count=0
-    if [[ -f "$CI_BUILD_IMPORT_COUNT" ]]; then
-      read -r count <"$CI_BUILD_IMPORT_COUNT"
-    fi
-    IFS=, read -r -a outcomes <<<"$CI_IMPORT_OUTCOMES"
-    IFS=, read -r -a missing_paths <<<"$CI_MISSING_PATHS"
-    outcome=${outcomes[$count]:-error}
-    missing_path=${missing_paths[$count]:-${missing_paths[0]}}
-    printf '%s\n' "$((count + 1))" >"$CI_BUILD_IMPORT_COUNT"
-    printf 'nix-store <import>\n' >>"$CI_BUILD_CALLS"
-    case "$outcome" in
-      success) exit 0 ;;
-      missing)
-        printf "error: path '%s' is not valid\n" "$missing_path" >&2
-        exit 1
-        ;;
-      *)
-        printf 'error: invalid closure archive\n' >&2
-        exit 1
-        ;;
-    esac
-    ;;
-  --realise)
-    printf 'nix-store <realise> <%s>\n' "$2" >>"$CI_BUILD_CALLS"
-    exit "$CI_REALISE_STATUS"
-    ;;
-  *) exit 2 ;;
-esac
-SH
-  write_bash_stub "$stub_dir/nix" <<'SH'
-printf 'nix' >>"$CI_BUILD_CALLS"
-printf ' <%s>' "$@" >>"$CI_BUILD_CALLS"
-printf '\n' >>"$CI_BUILD_CALLS"
-exit "$CI_BUILD_STATUS"
-SH
-
-  run env \
-    PATH="$stub_dir:$PATH" \
-    CI_BUILD_CALLS="$calls" \
-    CI_BUILD_IMPORT_COUNT="$import_count" \
-    CI_BUILD_STATUS="$build_status" \
-    CI_CURL_STATUS="$curl_status" \
-    CI_IMPORT_OUTCOMES="$import_outcomes" \
-    CI_MISSING_PATHS="$missing_paths" \
-    CI_REALISE_STATUS="$realise_status" \
-    HESTIA_LISTEN=127.0.0.1:37515 \
-    INSTALLABLES="$installable" \
-    bash "$HESTIA_BUILD_SCRIPT"
 }
 
 run_substituter_check() {
@@ -334,90 +262,4 @@ SH
     "https://cache.nixos.org https://cache.numtide.com https://nix-community.cachix.org"
   [ "$status" -ne 0 ]
   [[ "$output" == *"missing substituter: http://127.0.0.1:"* ]]
-}
-
-@test "matrix build resolves a filtered reference and retries closure import" {
-  run_ci_build_step 0 missing,success 0 0
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Substituting filtered Hestia closure reference"* ]]
-  [[ "$output" != *"::warning::"* ]]
-  [ "$(cat "$BATS_TEST_TMPDIR/ci-build-calls")" = $'curl\nnix-store <import>\nnix-store <realise> </nix/store/11111111111111111111111111111111-upstream-reference>\ncurl\nnix-store <import>\nnix <build> </nix/store/00000000000000000000000000000000-test.drv^*>' ]
-}
-
-@test "matrix build falls back after an unrecognized closure import failure" {
-  run_ci_build_step 0 error 0 0
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"::warning::Hestia closure prefetch failed"* ]]
-  [ "$(cat "$BATS_TEST_TMPDIR/ci-build-calls")" = $'curl\nnix-store <import>\nnix <build> </nix/store/00000000000000000000000000000000-test.drv^*>' ]
-}
-
-@test "matrix build falls back after closure download failure" {
-  run_ci_build_step 22 success 0 0
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"::warning::Hestia closure prefetch failed"* ]]
-  [ "$(cat "$BATS_TEST_TMPDIR/ci-build-calls")" = $'curl\nnix-store <import>\nnix <build> </nix/store/00000000000000000000000000000000-test.drv^*>' ]
-}
-
-@test "matrix build does not realise an invalid reported store path" {
-  run_ci_build_step 0 missing 0 0 /nix/store/not-a-valid-store-path
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"::warning::Hestia closure prefetch failed"* ]]
-  [ "$(cat "$BATS_TEST_TMPDIR/ci-build-calls")" = $'curl\nnix-store <import>\nnix <build> </nix/store/00000000000000000000000000000000-test.drv^*>' ]
-}
-
-@test "matrix build does not realise a derivation reported as missing" {
-  run_ci_build_step 0 missing 0 0 /nix/store/22222222222222222222222222222222-input.drv
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"::warning::Hestia closure prefetch failed"* ]]
-  [ "$(cat "$BATS_TEST_TMPDIR/ci-build-calls")" = $'curl\nnix-store <import>\nnix <build> </nix/store/00000000000000000000000000000000-test.drv^*>' ]
-}
-
-@test "matrix build falls back when filtered reference substitution fails" {
-  run_ci_build_step 0 missing 1 0
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"::warning::Hestia closure prefetch failed"* ]]
-  [ "$(cat "$BATS_TEST_TMPDIR/ci-build-calls")" = $'curl\nnix-store <import>\nnix-store <realise> </nix/store/11111111111111111111111111111111-upstream-reference>\nnix <build> </nix/store/00000000000000000000000000000000-test.drv^*>' ]
-}
-
-@test "matrix build stops retrying a repeated missing reference" {
-  run_ci_build_step 0 missing,missing 0 0
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"::warning::Hestia closure prefetch failed"* ]]
-  [ "$(cat "$BATS_TEST_TMPDIR/ci-build-calls")" = $'curl\nnix-store <import>\nnix-store <realise> </nix/store/11111111111111111111111111111111-upstream-reference>\ncurl\nnix-store <import>\nnix <build> </nix/store/00000000000000000000000000000000-test.drv^*>' ]
-}
-
-@test "matrix build resolves at most four distinct missing references" {
-  local calls="$BATS_TEST_TMPDIR/ci-build-calls"
-  local missing_paths
-  missing_paths=/nix/store/11111111111111111111111111111111-ref-one
-  missing_paths+=,/nix/store/22222222222222222222222222222222-ref-two
-  missing_paths+=,/nix/store/33333333333333333333333333333333-ref-three
-  missing_paths+=,/nix/store/44444444444444444444444444444444-ref-four
-  missing_paths+=,/nix/store/55555555555555555555555555555555-ref-five
-
-  run_ci_build_step 0 missing,missing,missing,missing,missing 0 0 "$missing_paths"
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"::warning::Hestia closure prefetch failed"* ]]
-  [ "$(grep -c '^curl$' "$calls")" -eq 5 ]
-  [ "$(grep -c '^nix-store <import>$' "$calls")" -eq 5 ]
-  [ "$(grep -c '^nix-store <realise>' "$calls")" -eq 4 ]
-  run grep -Fq '/nix/store/55555555555555555555555555555555-ref-five' "$calls"
-  [ "$status" -ne 0 ]
-  [ "$(tail -n 1 "$calls")" = 'nix <build> </nix/store/00000000000000000000000000000000-test.drv^*>' ]
-}
-
-@test "matrix build failure remains fatal after successful prefetch" {
-  run_ci_build_step 0 success 0 42
-
-  [ "$status" -eq 42 ]
-  [[ "$output" != *"::warning::"* ]]
-  [ "$(cat "$BATS_TEST_TMPDIR/ci-build-calls")" = $'curl\nnix-store <import>\nnix <build> </nix/store/00000000000000000000000000000000-test.drv^*>' ]
 }

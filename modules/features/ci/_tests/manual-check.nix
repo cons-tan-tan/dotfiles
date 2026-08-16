@@ -73,7 +73,6 @@ let
       ''
         shellcheck \
           ${repoRoot}/modules/features/ci/_scripts/update-gha-diag.sh \
-          ${repoRoot}/modules/features/ci/_scripts/prefetch_hestia_closure_and_build.sh \
           ${repoRoot}/modules/features/ci/_scripts/verify_binary_substituters.sh
         check-jsonschema --check-metaschema \
           ${repoRoot}/modules/features/ci/_schemas/telemetry-v1.schema.json
