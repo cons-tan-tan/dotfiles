@@ -9,7 +9,6 @@
     "modules/features/ci/_schemas/telemetry-v1.schema.json"
     "modules/features/ci/_scripts/ci_telemetry.py"
     "modules/features/ci/_scripts/optimize_hestia_matrix.py"
-    "modules/features/ci/_scripts/prefetch_hestia_closure_and_build.sh"
     "modules/features/ci/_scripts/validate_hestia_matrix.py"
     "modules/features/ci/_scripts/verify_binary_substituters.sh"
   ];

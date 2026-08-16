@@ -30,10 +30,12 @@ jobs:
       - name: Set up Nix and Hestia
         id: setup-hestia
         uses: $/.github/actions/setup-hestia
+        with:
+          filter-drv-closures: "true"
       - wait: checkout
       - name: Evaluate Hestia matrix
         id: hestia-matrix
-        uses: Mic92/hestia/matrix@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320 # v3.0.0
+        uses: cons-tan-tan/hestia/matrix@42102da2c331dcd3267b54d17b2d518a80482d54 # feat/filtered-drv-closure-prefetch
         env:
           HESTIA_EVAL_CAPTURE: ${{ runner.temp }}/ci-telemetry/hestia-eval.jsonl
         with:
@@ -108,7 +110,7 @@ jobs:
         with:
           wait-manifest-version: ${{ needs.evaluate.outputs.manifest-version }}
       - wait: checkout
-      - name: Verify binary substituters
+      - name: Verify Hestia and upstream substituters
         env:
           NIX_EXTRA_SUBSTITUTERS: ${{ steps.setup-hestia.outputs.nix-extra-substituters }}
         run: bash modules/features/ci/_scripts/verify_binary_substituters.sh
@@ -116,7 +118,6 @@ jobs:
         env:
           CI_JOB_STARTED_AT: ${{ runner.temp }}/ci-job-started-at
           CI_TELEMETRY_JOB: ${{ runner.temp }}/ci-telemetry/job-${{ matrix.telemetryKey }}.json
-          HESTIA_PREFETCH_SCRIPT: modules/features/ci/_scripts/prefetch_hestia_closure_and_build.sh
           INSTALLABLES: ${{ matrix.installables }}
           SYSTEM: ${{ matrix.system }}
           TELEMETRY_JOB_ID: ${{ matrix.jobId }}
