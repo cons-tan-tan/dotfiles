@@ -6,6 +6,10 @@ inputs:
     description: Skip store paths signed by the configured public caches
     required: false
     default: "true"
+  filter-drv-closures:
+    description: Apply the upstream cache filter to registered derivation closures
+    required: false
+    default: "false"
   wait-manifest-version:
     description: Minimum Hestia manifest version to observe before continuing
     required: false
@@ -19,7 +23,7 @@ outputs:
       https://nix-community.cachix.org
   hestia-version:
     description: Hestia version started by this action
-    value: v3.0.0
+    value: ${{ steps.build-hestia.outputs.version }}
 
 runs:
   using: composite
@@ -33,13 +37,27 @@ runs:
         nix_conf: |
           extra-substituters = https://cache.numtide.com https://nix-community.cachix.org
           extra-trusted-public-keys = niks3.numtide.com-1:DTx8wZduET09hRmMtKdQDxNNthLQETkc/yaX7M4qK0g= nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
+    - name: Build Hestia
+      id: build-hestia
+      shell: bash
+      env:
+        HESTIA_SOURCE: github:cons-tan-tan/hestia/42102da2c331dcd3267b54d17b2d518a80482d54
+      run: |
+        set -euo pipefail
+        result="$(nix build --no-link --print-out-paths "$HESTIA_SOURCE")"
+        binary="$result/bin/hestia"
+        test -x "$binary"
+        version="$("$binary" --version)"
+        printf 'binary=%s\n' "$binary" >> "$GITHUB_OUTPUT"
+        printf 'version=v%s\n' "${version#hestia }" >> "$GITHUB_OUTPUT"
     - name: Start Hestia
-      uses: Mic92/hestia@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320 # v3.0.0
+      uses: cons-tan-tan/hestia@42102da2c331dcd3267b54d17b2d518a80482d54 # feat/filtered-drv-closure-prefetch
       with:
-        version: v3.0.0
+        binary: ${{ steps.build-hestia.outputs.binary }}
         upstream-cache-filter: ${{ inputs.upstream-cache-filter }}
         upstream-cache-key-names: >-
           ${{ inputs.upstream-cache-filter == 'true'
               && 'cache.nixos.org-1 niks3.numtide.com-1 nix-community.cachix.org-1'
               || '' }}
+        filter-drv-closures: ${{ inputs.filter-drv-closures }}
         wait-manifest-version: ${{ inputs.wait-manifest-version }}
