@@ -13,6 +13,8 @@ let
   standaloneWsl = flake.homeConfigurations.${entityContexts.linuxX86.home.wsl}.config;
   integratedWslSystem = flake.nixosConfigurations.${entityContexts.linuxX86.nixosWsl}.config;
   integratedWsl = integratedWslSystem.home-manager.users.${subjectUsername};
+  integratedWslAarch64System =
+    flake.nixosConfigurations.${entityContexts.linuxAarch64.nixosWsl}.config;
   darwinResult = flake.darwinConfigurations.${entityContexts.darwin.darwin};
   darwinSystem = darwinResult.config;
   darwin = darwinSystem.home-manager.users.${entityContexts.darwin.username};
@@ -45,6 +47,7 @@ let
       darwinResult
       darwinSystem
       integratedWsl
+      integratedWslAarch64System
       integratedWslSystem
       lib
       standaloneLinux

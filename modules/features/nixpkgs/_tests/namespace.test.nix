@@ -27,6 +27,8 @@ let
       [
         "ci-matrix-planner"
         "drawio-headless"
+        "oo7-dpapi-bridge"
+        "wsl-dpapi"
         "wsl-open"
         "wsl-set-ssh-auth-sock"
       ]
@@ -69,8 +71,12 @@ in
       if pkgs.stdenv.hostPlatform.isLinux then
         local ? drawio-headless
         && local ? ci-matrix-planner
+        && local ? oo7-dpapi-bridge
+        && local ? wsl-dpapi
         && local ? wsl-open
         && local ? wsl-set-ssh-auth-sock
+        && pkgs.lib.isDerivation local.oo7-dpapi-bridge
+        && pkgs.lib.isDerivation local.wsl-dpapi
         && pkgs.lib.isDerivation local.wsl-open
         && !(local ? codex-app)
         && !(local ? sleepctl)
@@ -80,6 +86,8 @@ in
         && pkgs.lib.isDerivation local.sleepctl
         && !(local ? drawio-headless)
         && !(local ? ci-matrix-planner)
+        && !(local ? oo7-dpapi-bridge)
+        && !(local ? wsl-dpapi)
         && !(local ? wsl-open)
         && !(local ? wsl-set-ssh-auth-sock);
     expected = true;

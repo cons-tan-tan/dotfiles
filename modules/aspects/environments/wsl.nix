@@ -12,6 +12,7 @@
       features.platform-context-wsl-host
       features.platform-integrated-home-manager
       features.nix-registry-host
+      features.security-oo7-dpapi
       features.agent-hunk-wsl
       features.platform-wsl-nixbuild
       features.ghq-sync-systemd
