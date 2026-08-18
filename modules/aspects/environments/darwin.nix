@@ -12,6 +12,7 @@
       features.platform-context-darwin-host
       features.platform-integrated-home-manager
       features.nix-registry-host
+      features.git-signing-openpgp
       features.security-gpg-darwin
       features.ghq-sync-launchd
       features.trash-darwin

@@ -11,6 +11,7 @@
       features.nixpkgs-home-overlays
       features.platform-context-linux-home
       features.nix-registry-home
+      features.git-signing-openpgp
       features.security-gpg-linux
       features.ghq-sync-systemd
       features.trash-systemd

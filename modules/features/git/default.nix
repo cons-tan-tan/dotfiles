@@ -33,11 +33,6 @@
 
           programs.git = {
             enable = true;
-            signing = {
-              format = "openpgp";
-              key = gitLib.signingKey;
-              signByDefault = true;
-            };
             settings = gitLib.mkSettings { };
             inherit (gitLib) ignores;
           };
@@ -97,4 +92,17 @@
           };
         };
     };
+
+  features.git-signing-openpgp = {
+    name = "feature/git/signing/openpgp";
+    homeManager =
+      { lib, pkgs, ... }:
+      {
+        programs.git.signing = {
+          format = "openpgp";
+          key = (import ./_interface/git.nix { inherit lib pkgs; }).signingKey;
+          signByDefault = true;
+        };
+      };
+  };
 }
