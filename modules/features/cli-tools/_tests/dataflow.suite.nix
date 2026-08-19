@@ -120,9 +120,21 @@ let
             ast-grep = home.dotfiles.agentCommandPolicy.commands.ast-grep;
             bat = home.dotfiles.agentCommandPolicy.commands.bat;
             eza = home.dotfiles.agentCommandPolicy.commands.eza;
-            fd = home.dotfiles.agentCommandPolicy.commands.fd.decision;
+            fd = home.dotfiles.agentCommandPolicy.commands.fd;
             jq = home.dotfiles.agentCommandPolicy.commands.jq;
             rg = home.dotfiles.agentCommandPolicy.commands.rg;
+          };
+          fdGrammar = {
+            options = lib.getAttrs [
+              "-C"
+              "-E"
+              "-H"
+              "--base-directory"
+              "--exclude"
+              "--literal"
+              "--no-hidden"
+            ] home.dotfiles.agentCommandPolicy.commandGrammars.fd.options;
+            terminalOptions = home.dotfiles.agentCommandPolicy.commandGrammars.fd.terminalOptions;
           };
         };
         expected = {
@@ -135,6 +147,24 @@ let
             fd = true;
             jq = true;
             rg = true;
+          };
+          fdGrammar = {
+            options = {
+              "-C" = 1;
+              "-E" = 1;
+              "-H" = 0;
+              "--base-directory" = 1;
+              "--exclude" = 1;
+              "--literal" = 0;
+              "--no-hidden" = 0;
+            };
+            terminalOptions = [
+              "-h"
+              "--help"
+              "-V"
+              "--version"
+              "--gen-completions"
+            ];
           };
         };
       }

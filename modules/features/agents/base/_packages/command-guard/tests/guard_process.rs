@@ -12,6 +12,21 @@ fn policy_json() -> Value {
     json!({
         "schemaVersion": 3,
         "commandGrammars": {
+            "fd": {
+                "options": {
+                    "--base-directory": 1,
+                    "--exclude": 1,
+                    "--literal": 0,
+                    "--maxdepth": 1,
+                    "--no-hidden": 0,
+                    "-C": 1,
+                    "-E": 1,
+                    "-H": 0,
+                    "-I": 0
+                },
+                "terminalOptions": ["--help", "--version", "-V", "-h"],
+                "stages": []
+            },
             "nix": {
                 "executableAliases": {
                     "fixture#fd": "fd",
@@ -82,18 +97,6 @@ fn policy_json() -> Value {
                     ],
                     "reason": "Recursive forced deletion is disabled.",
                     "alternatives": ["Move the target to trash."]
-                }]
-            },
-            {
-                "commandPrefix": ["fd"],
-                "optionSyntax": {
-                    "valueTaking": ["-E", "--exclude", "-C", "--base-directory"],
-                    "optionalEquals": ["--hyperlink"]
-                },
-                "deny": [{
-                    "optionGroups": [["-x", "-X", "--exec", "--exec-batch"]],
-                    "reason": "fd execution options are disabled.",
-                    "alternatives": ["List paths before running a command."]
                 }]
             },
             {
@@ -345,7 +348,7 @@ fn semantic_rm_rule_handles_option_spellings_and_wrappers() {
 }
 
 #[test]
-fn fd_rule_respects_option_values_clusters_and_double_dash() {
+fn fd_execution_decodes_commands_options_and_placeholders() {
     let fixture = Fixture::new();
     for command in [
         "fd -x echo",
@@ -357,10 +360,51 @@ fn fd_rule_respects_option_values_clusters_and_double_dash() {
         "fd -Xecho",
         "fd -HIx echo",
         "fd -HIX echo",
+        "fd -x echo {} {.}.txt",
+        "fd -X echo '{//}'",
+        "fd -x echo '{{}}'",
+        "fd -x '{{}}'",
+        "fd -x '{.}}'",
+        "fd -x fd -C {}",
+        "fd -x echo ';' -x printf",
+        "fd -X echo ';' -X printf",
+        "fd -x echo ';' -E -x",
+        "fd --no-hidden --literal --maxdepth 1 -x echo",
+        "fd -C \"$DIRECTORY\" -x echo",
+        "fd --help -x rm -rf target",
+        "fd -x rm -rf {} ';' --help",
+        "/run/current-system/sw/bin/fd --exec echo",
         "nix run fixture#fd -- --exec echo",
     ] {
-        assert_denied(&fixture.run(command), "fd execution options");
+        assert_safe(&fixture.run(command));
     }
+    for command in [
+        "fd -x rm -rf {}",
+        "fd -X rm --recursive --force {}",
+        "fd --exec=rm -rf {}",
+        "fd -xrm -rf {}",
+        "fd -HIxrm -rf {}",
+        "fd -x sh -c 'rm -rf target'",
+        "fd -x echo ';' -x rm -rf {}",
+        "fd -X echo ';' -X rm -rf {}",
+        "nix run fixture#fd -- -X rm -rf {}",
+    ] {
+        assert_denied(&fixture.run(command), "Recursive forced deletion");
+    }
+    assert_denied(&fixture.run("fd -x trash-empty"), "trash-empty is denied");
+    assert_denied(&fixture.run("fd -x '{}'"), "executable name is dynamic");
+    assert_denied(
+        &fixture.run("fd -x fd -x '{{}}' '{}'"),
+        "executable name is dynamic",
+    );
+    assert_denied(
+        &fixture.run("fd -x echo \"$VALUE\" ';' -x printf"),
+        "can change the ; command boundary",
+    );
+    assert_denied(
+        &fixture.run("fd -X fd -C {}"),
+        "may expand to multiple arguments",
+    );
     for command in [
         "fd pattern",
         "fd -E -x",
@@ -374,7 +418,19 @@ fn fd_rule_respects_option_values_clusters_and_double_dash() {
     ] {
         assert_safe(&fixture.run(command));
     }
+    assert_denied(
+        &fixture.run("fd \"$ARGS\" -x echo"),
+        "fd option, pattern, or path",
+    );
+    assert_denied(
+        &fixture.run("fd -x \"$COMMAND\""),
+        "executable name is dynamic",
+    );
     assert_denied(&fixture.run("fd -C $ARGS pattern"), "dynamic");
+    assert_denied(
+        &fixture.run("fd --future-option value"),
+        "unsupported fd option",
+    );
     assert_denied(&fixture.run("xargs fd -C"), "dynamic");
     assert_denied(&fixture.run("find . -exec fd -C '{}' +"), "dynamic");
 }

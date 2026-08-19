@@ -119,8 +119,8 @@ let
       reason = "Recursive forced deletion";
     }
     {
-      command = "nix run nixpkgs#fd -- --exec echo";
-      reason = "fd command execution options";
+      command = "nix run nixpkgs#fd -- --exec rm -rf '{}'";
+      reason = "Recursive forced deletion";
     }
   ];
 
@@ -141,6 +141,7 @@ let
     "nix --store local profile list"
     "nix -vv profile list"
     "nix build nixpkgs#hello"
+    "nix run nixpkgs#fd -- --exec echo"
     "nix build --argstr marker --profile nixpkgs#hello"
     "nix build --output-lock-file --profile nixpkgs#hello"
     "nix build --option key --profile nixpkgs#hello"

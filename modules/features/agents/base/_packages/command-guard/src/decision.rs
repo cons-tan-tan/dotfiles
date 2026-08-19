@@ -502,6 +502,28 @@ fn assess_simple(
             }
             return Ok(());
         }
+        "fd" => {
+            let grammar = validated
+                .policy
+                .command_grammars
+                .get(basename)
+                .ok_or_else(|| {
+                    GuardError::Policy(
+                        "fd execution decoding requires its command grammar".to_owned(),
+                    )
+                })?;
+            for inner in unwrap_fd(&command.words[1..], grammar)? {
+                assess_simple(
+                    &inner,
+                    cwd,
+                    validated,
+                    depth + 1,
+                    ExecutionContext::External,
+                    nested_scopes,
+                    findings,
+                )?;
+            }
+        }
         "xargs" => {
             if let Some(inner) = unwrap_xargs(&command.words[1..])? {
                 assess_simple(
@@ -1580,6 +1602,204 @@ fn unwrap_timeout(words: &[Word]) -> Result<Option<SimpleCommand>> {
     Ok(synthetic_from(&words[index + 1..]))
 }
 
+fn unwrap_fd(words: &[Word], grammar: &CommandGrammar) -> Result<Vec<SimpleCommand>> {
+    let mut commands = Vec::new();
+    let mut index = 0;
+    while let Some(word) = words.get(index) {
+        let value = static_word(word, "fd option, pattern, or path")?;
+        if value == "--" {
+            break;
+        }
+        if let Some(long) = value.strip_prefix("--") {
+            let (name, attached) = long
+                .split_once('=')
+                .map_or((long, None), |(name, value)| (name, Some(value)));
+            let option = format!("--{name}");
+            if let Some(mode) = fd_execution_option(&option) {
+                let (command, next_index) = fd_command(words, index + 1, attached, mode)?;
+                commands.push(command);
+                index = next_index;
+                continue;
+            }
+            if grammar.terminal_options.contains(&option) {
+                return Ok(Vec::new());
+            }
+            let arity = grammar
+                .options
+                .get(&option)
+                .copied()
+                .ok_or_else(|| GuardError::Policy(format!("unsupported fd option {option}")))?;
+            let remaining = arity.saturating_sub(usize::from(attached.is_some()));
+            require_fd_option_values(words, index, remaining, &option)?;
+            index += 1 + remaining;
+            continue;
+        }
+        if value.starts_with('-') && value.len() > 1 {
+            let mut options = value[1..].char_indices().peekable();
+            let mut consumed_words = 1;
+            while let Some((offset, name)) = options.next() {
+                let option = format!("-{name}");
+                if let Some(mode) = fd_execution_option(&option) {
+                    let attached_start = 1 + offset + name.len_utf8();
+                    let attached = (attached_start < value.len()).then(|| &value[attached_start..]);
+                    let (command, next_index) = fd_command(words, index + 1, attached, mode)?;
+                    commands.push(command);
+                    index = next_index;
+                    consumed_words = 0;
+                    break;
+                }
+                if grammar.terminal_options.contains(&option) {
+                    return Ok(Vec::new());
+                }
+                let arity =
+                    grammar.options.get(&option).copied().ok_or_else(|| {
+                        GuardError::Policy(format!("unsupported fd option {option}"))
+                    })?;
+                if arity == 0 {
+                    continue;
+                }
+                let attached = options.peek().is_some();
+                let remaining = arity.saturating_sub(usize::from(attached));
+                require_fd_option_values(words, index, remaining, &option)?;
+                consumed_words += remaining;
+                break;
+            }
+            index += consumed_words;
+            continue;
+        }
+        index += 1;
+    }
+    Ok(commands)
+}
+
+#[derive(Clone, Copy)]
+enum FdExecutionMode {
+    Each,
+    Batch,
+}
+
+fn fd_execution_option(option: &str) -> Option<FdExecutionMode> {
+    match option {
+        "-x" | "--exec" => Some(FdExecutionMode::Each),
+        "-X" | "--exec-batch" => Some(FdExecutionMode::Batch),
+        _ => None,
+    }
+}
+
+fn require_fd_option_values(
+    words: &[Word],
+    option_index: usize,
+    remaining: usize,
+    option: &str,
+) -> Result<()> {
+    if words.len().saturating_sub(option_index + 1) < remaining {
+        return Err(GuardError::Policy(format!(
+            "fd option {option} has no value"
+        )));
+    }
+    if words[option_index + 1..option_index + 1 + remaining]
+        .iter()
+        .any(Word::may_split)
+    {
+        return Err(GuardError::Policy(format!(
+            "fd option {option} value may expand to multiple arguments"
+        )));
+    }
+    Ok(())
+}
+
+fn fd_command(
+    words: &[Word],
+    argument_start: usize,
+    attached: Option<&str>,
+    mode: FdExecutionMode,
+) -> Result<(SimpleCommand, usize)> {
+    let mut command_words = attached
+        .map(Word::synthetic)
+        .into_iter()
+        .collect::<Vec<_>>();
+    let mut index = argument_start;
+    while let Some(word) = words.get(index) {
+        if word.static_value() == Some(";") {
+            index += 1;
+            break;
+        }
+        if word.static_value().is_none() && (word.may_split() || words.get(index + 1).is_some()) {
+            return Err(GuardError::Policy(
+                "a dynamic fd execution argument can change the ; command boundary".to_owned(),
+            ));
+        }
+        command_words.push(word.clone());
+        index += 1;
+    }
+    if command_words.is_empty() {
+        return Err(GuardError::Policy(
+            "fd execution option has no command".to_owned(),
+        ));
+    }
+    let mut has_placeholder = false;
+    command_words = command_words
+        .into_iter()
+        .map(|word| match word.static_value() {
+            Some(value) => match decode_static_fd_template(value) {
+                Some(value) => Word::synthetic(&value),
+                None => {
+                    has_placeholder = true;
+                    match mode {
+                        FdExecutionMode::Each => Word::dynamic_exactly_one(),
+                        FdExecutionMode::Batch => Word::dynamic(),
+                    }
+                }
+            },
+            _ => word,
+        })
+        .collect();
+    if !has_placeholder {
+        command_words.push(match mode {
+            FdExecutionMode::Each => Word::dynamic_exactly_one(),
+            FdExecutionMode::Batch => Word::dynamic(),
+        });
+    }
+    Ok((
+        synthetic_from(&command_words).expect("fd command is non-empty"),
+        index,
+    ))
+}
+
+fn decode_static_fd_template(mut value: &str) -> Option<String> {
+    const PLACEHOLDERS: [&str; 5] = ["{}", "{/}", "{//}", "{.}", "{/.}"];
+    let mut decoded = String::new();
+    while !value.is_empty() {
+        if value.starts_with("{{") {
+            decoded.push('{');
+            value = &value[2..];
+            continue;
+        }
+        if value.starts_with("}}") {
+            decoded.push('}');
+            value = &value[2..];
+            continue;
+        }
+        if let Some(placeholder) = PLACEHOLDERS
+            .iter()
+            .find(|placeholder| value.starts_with(**placeholder))
+        {
+            let remaining = &value[placeholder.len()..];
+            if let Some(remaining) = remaining.strip_prefix('}') {
+                decoded.push_str(placeholder);
+                value = remaining;
+                continue;
+            }
+            return None;
+        }
+        let character = value.chars().next().expect("value is non-empty");
+        let character_length = character.len_utf8();
+        decoded.push(character);
+        value = &value[character_length..];
+    }
+    Some(decoded)
+}
+
 fn unwrap_xargs(words: &[Word]) -> Result<Option<SimpleCommand>> {
     let long_value_options = BTreeSet::from([
         "--arg-file",
@@ -1912,5 +2132,31 @@ mod tests {
             eval_source(&[Word::synthetic("--"), Word::synthetic("echo safe")]).unwrap(),
             "echo safe"
         );
+    }
+
+    #[test]
+    fn fd_static_template_decoding_matches_brace_escapes() {
+        for placeholder in ["{}", "{/}", "{//}", "{.}", "{/.}"] {
+            assert_eq!(
+                decode_static_fd_template(placeholder),
+                None,
+                "{placeholder}"
+            );
+        }
+        for (template, expected) in [
+            ("{{}}", "{}"),
+            ("{{", "{"),
+            ("}}", "}"),
+            ("{.}}", "{.}"),
+            ("{}}", "{}"),
+            ("prefix {{ and }} suffix", "prefix { and } suffix"),
+        ] {
+            assert_eq!(
+                decode_static_fd_template(template).as_deref(),
+                Some(expected),
+                "{template}"
+            );
+        }
+        assert_eq!(decode_static_fd_template("{{{},end}"), None);
     }
 }

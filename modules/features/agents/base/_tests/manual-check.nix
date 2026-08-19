@@ -173,6 +173,7 @@ in
               "nohup rm -rf target"
               "xargs -0 rm -rf target"
               "find . -exec rm -rf '{}' +"
+              "fd -x rm -rf '{}'"
               "nix shell nixpkgs#coreutils --command rm -rf target"
               "nix --option warn-dirty false run nixpkgs#rm -- -rf target"
               "f() { rm -rf target; }; f"
@@ -199,27 +200,8 @@ in
             "f() { rm -rf target; }; export -f f; bash -c f"
           ]}
 
-          ${lib.concatMapStringsSep "\n"
-            (
-              command:
-              "check_deny ${lib.escapeShellArg command} ${lib.escapeShellArg "fd command execution options"}"
-            )
-            [
-              "fd --exec=echo"
-              "fd --exec-batch echo"
-              "fd -xecho"
-              "fd -Xecho"
-              "fd -HIx echo"
-              "fd -HIX echo"
-              "/run/current-system/sw/bin/fd --exec echo"
-              "nix run nixpkgs#fd -- --exec echo"
-            ]
-          }
-
           ${lib.concatMapStringsSep "\n" (command: "check_safe ${lib.escapeShellArg command}") [
-            "fd -HEx"
-            "fd -C/tmp --version"
-            "fd -- --exec"
+            "fd -x echo"
             "gh pr create --body \"rm -rf target\""
             "sudo -l rm -rf target"
             "bash --version"

@@ -3,83 +3,150 @@
   ...
 }:
 let
-  commandPolicy = import ../agents/base/_interface/command-policy.nix;
   flattenAliases = lib.concatLists;
-  profile = {
-    optionSyntax = {
-      valueTaking = flattenAliases [
-        [ "--and" ]
-        [
-          "-d"
-          "--max-depth"
-        ]
-        [ "--min-depth" ]
-        [ "--exact-depth" ]
-        [
-          "-E"
-          "--exclude"
-        ]
-        [
-          "-t"
-          "--type"
-        ]
-        [
-          "-e"
-          "--extension"
-        ]
-        [
-          "-S"
-          "--size"
-        ]
-        [ "--changed-within" ]
-        [
-          "--change-newer-than"
-          "--newer"
-        ]
-        [ "--changed-after" ]
-        [ "--changed-before" ]
-        [
-          "--change-older-than"
-          "--older"
-        ]
-        [
-          "-o"
-          "--owner"
-        ]
-        [ "--format" ]
-        [ "--batch-size" ]
-        [ "--ignore-file" ]
-        [
-          "-c"
-          "--color"
-        ]
-        [ "--ignore-contain" ]
-        [
-          "-j"
-          "--threads"
-        ]
-        [ "--max-results" ]
-        [
-          "-C"
-          "--base-directory"
-        ]
-        [ "--path-separator" ]
-        [ "--search-path" ]
-      ];
-      optionalEquals = [
-        "--hyperlink"
-        "--strip-cwd-prefix"
-      ];
-    };
-    conditions.execution = [
-      [
-        "-x"
-        "-X"
-        "--exec"
-        "--exec-batch"
-      ]
-    ];
-  };
+  # The decoder needs exact arities to find every `;`-delimited exec boundary.
+  # Keep this allowlist aligned with the packaged fd; unknown options fail closed.
+  flagOptions = flattenAliases [
+    [
+      "-H"
+      "--hidden"
+    ]
+    [ "--no-hidden" ]
+    [
+      "-I"
+      "--no-ignore"
+    ]
+    [ "--ignore" ]
+    [ "--no-ignore-vcs" ]
+    [ "--ignore-vcs" ]
+    [ "--no-require-git" ]
+    [ "--require-git" ]
+    [ "--no-ignore-parent" ]
+    [ "--no-global-ignore-file" ]
+    [
+      "-u"
+      "--unrestricted"
+    ]
+    [
+      "-s"
+      "--case-sensitive"
+    ]
+    [
+      "-i"
+      "--ignore-case"
+    ]
+    [
+      "-g"
+      "--glob"
+    ]
+    [ "--regex" ]
+    [
+      "-F"
+      "--fixed-strings"
+    ]
+    [ "--literal" ]
+    [
+      "-a"
+      "--absolute-path"
+    ]
+    [ "--relative-path" ]
+    [
+      "-l"
+      "--list-details"
+    ]
+    [
+      "-L"
+      "--follow"
+    ]
+    [ "--dereference" ]
+    [ "--no-follow" ]
+    [
+      "-p"
+      "--full-path"
+    ]
+    [
+      "-0"
+      "--print0"
+    ]
+    [ "--prune" ]
+    [ "--hyperlink" ]
+    [ "--hyper" ]
+    [ "--strip-cwd-prefix" ]
+    [ "--show-errors" ]
+    [ "--one-file-system" ]
+    [ "--mount" ]
+    [ "--xdev" ]
+    [ "-1" ]
+    [
+      "-q"
+      "--quiet"
+    ]
+    [ "--has-results" ]
+  ];
+  valueTakingOptions = flattenAliases [
+    [ "--and" ]
+    [
+      "-d"
+      "--max-depth"
+      "--maxdepth"
+    ]
+    [
+      "--min-depth"
+      "--mindepth"
+    ]
+    [ "--exact-depth" ]
+    [
+      "-E"
+      "--exclude"
+    ]
+    [
+      "-t"
+      "--type"
+    ]
+    [
+      "-e"
+      "--extension"
+    ]
+    [
+      "-S"
+      "--size"
+    ]
+    [ "--changed-within" ]
+    [
+      "--change-newer-than"
+      "--newer"
+    ]
+    [ "--changed-after" ]
+    [ "--changed-before" ]
+    [
+      "--change-older-than"
+      "--older"
+    ]
+    [
+      "-o"
+      "--owner"
+    ]
+    [ "--format" ]
+    [ "--batch-size" ]
+    [ "--ignore-file" ]
+    [
+      "-c"
+      "--color"
+    ]
+    [ "--ignore-contain" ]
+    [
+      "-j"
+      "--threads"
+    ]
+    [ "--max-results" ]
+    [
+      "-C"
+      "--base-directory"
+    ]
+    [ "--path-separator" ]
+    [ "--search-path" ]
+    [ "--max-buffer-time" ]
+  ];
 in
 {
   features.cli-tool-fd =
@@ -102,13 +169,19 @@ in
       agent-command-policy = [
         {
           owner = config.name;
-          policy.commands.fd = (commandPolicy.guarded lib) profile {
-            deny.execution = {
-              reason = "fd command execution options are disabled for coding agents.";
-              alternatives = [
-                "List matching paths first, then run a separately reviewed command."
+          policy = {
+            commandGrammars.fd = {
+              options = lib.genAttrs flagOptions (_: 0) // lib.genAttrs valueTakingOptions (_: 1);
+              terminalOptions = [
+                "-h"
+                "--help"
+                "-V"
+                "--version"
+                "--gen-completions"
               ];
+              stages = [ ];
             };
+            commands.fd = true;
           };
         }
       ];
