@@ -12,6 +12,8 @@
       platform = config.dotfiles.platform;
       claudeActivation = config.home.activation.claudeHooksDirectoryMigration;
       codexActivation = config.home.activation.codexHooksConfig;
+      dotfilesSource = builtins.unsafeDiscardStringContext (toString config.dotfiles.platform.source);
+      oldGenExpansion = "$" + "{oldGenPath-}";
       skillNamesFor =
         prefix:
         map (lib.removePrefix prefix) (
@@ -59,10 +61,12 @@
       };
       activation = {
         claudeBeforeCheckLinkTargets = claudeActivation.before == [ "checkLinkTargets" ];
-        claudeHandlesDanglingLegacyTarget =
-          lib.hasInfix "realpath -m" claudeActivation.data
-          && lib.hasInfix "$oldGenPath/home-files/.claude/hooks" claudeActivation.data
-          && !lib.hasInfix "readlink -f" claudeActivation.data;
+        claudeMigrationProcess = {
+          executable = lib.hasInfix "/bin/migrate-claude-hooks-directory" claudeActivation.data;
+          claudeHome = lib.hasInfix "CLAUDE_HOME=${lib.escapeShellArg "${config.home.homeDirectory}/.claude"}" claudeActivation.data;
+          dotfilesDir = lib.hasInfix "DOTFILES_DIR=${lib.escapeShellArg dotfilesSource}" claudeActivation.data;
+          oldGeneration = lib.hasInfix "OLD_GEN_PATH=\"${oldGenExpansion}\"" claudeActivation.data;
+        };
         codexAfterLinkGeneration = codexActivation.after == [ "linkGeneration" ];
       };
       hunkUsesPlatformRuntime =
@@ -112,7 +116,12 @@
     };
     activation = {
       claudeBeforeCheckLinkTargets = true;
-      claudeHandlesDanglingLegacyTarget = true;
+      claudeMigrationProcess = {
+        executable = true;
+        claudeHome = true;
+        dotfilesDir = true;
+        oldGeneration = true;
+      };
       codexAfterLinkGeneration = true;
     };
     hunkUsesPlatformRuntime = true;

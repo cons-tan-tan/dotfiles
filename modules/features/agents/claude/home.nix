@@ -87,6 +87,11 @@
           '';
 
       mergedSettingsFile = settingsValidator.validate "claude-settings.json" mergedSettingsRaw;
+      migrateHooksDirectory = pkgs.writeShellApplication {
+        name = "migrate-claude-hooks-directory";
+        runtimeInputs = [ pkgs.coreutils ];
+        text = builtins.readFile ./_scripts/migrate-hooks-directory.sh;
+      };
     in
     {
       programs.claude-code = {
@@ -111,25 +116,11 @@
         "${herdrClaudeIntegration}/hooks/herdr-agent-state.sh";
 
       home.activation.claudeHooksDirectoryMigration = lib.hm.dag.entryBefore [ "checkLinkTargets" ] ''
-        legacy_hooks="${claudeHome}/hooks"
-        legacy_target="${dotfilesDir}/claude/hooks"
-        if [ -L "$legacy_hooks" ]; then
-          link_target="$(${pkgs.coreutils}/bin/readlink "$legacy_hooks")"
-          case "$link_target" in
-            /*) ;;
-            *) link_target="$(${pkgs.coreutils}/bin/dirname "$legacy_hooks")/$link_target" ;;
-          esac
-          normalized_target="$(${pkgs.coreutils}/bin/realpath -m "$link_target")"
-          normalized_legacy_target="$(${pkgs.coreutils}/bin/realpath -m "$legacy_target")"
-          old_generation_hooks=
-          if [[ -v oldGenPath ]] && [[ -e "$oldGenPath/home-files/.claude/hooks" || -L "$oldGenPath/home-files/.claude/hooks" ]]; then
-            old_generation_hooks="$(${pkgs.coreutils}/bin/realpath -m "$oldGenPath/home-files/.claude/hooks")"
-          fi
-          if [ "$normalized_target" = "$normalized_legacy_target" ] \
-            || { [ -n "$old_generation_hooks" ] && [ "$normalized_target" = "$old_generation_hooks" ]; }; then
-            run ${pkgs.coreutils}/bin/rm "$legacy_hooks"
-          fi
-        fi
+        run ${pkgs.coreutils}/bin/env \
+          CLAUDE_HOME=${lib.escapeShellArg claudeHome} \
+          DOTFILES_DIR=${lib.escapeShellArg dotfilesDir} \
+          OLD_GEN_PATH="''${oldGenPath-}" \
+          ${lib.getExe migrateHooksDirectory}
       '';
     };
 }

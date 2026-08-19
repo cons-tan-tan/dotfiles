@@ -37,10 +37,12 @@ in
   };
   shard = {
     testFiles = [
+      "modules/features/agents/claude/_tests/claude-hooks-migration.bats"
       "modules/features/agents/claude/_tests/claude-wrapper.bats"
       "modules/features/agents/claude/_tests/update-settings-schema.bats"
     ];
     sourceFiles = [
+      "modules/features/agents/claude/_scripts/migrate-hooks-directory.sh"
       "modules/features/agents/claude/_packages/claude-code/claude-wrapper.sh"
       "modules/features/agents/claude/_scripts/update-settings-schema.sh"
     ];
