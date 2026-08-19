@@ -75,8 +75,11 @@ let
     builtins.elem pkgs.trash-cli evaluated.home.packages
     && service.ExecStart == [ "${trashEmpty} 7" ]
     && service.Type == "oneshot"
+    && service.IOSchedulingClass == "idle"
+    && service.Nice == 10
     && timer.Timer.OnCalendar == "*-*-* 03:00:00"
     && timer.Timer.Persistent
+    && timer.Timer.RandomizedDelaySec == "30min"
     && timer.Install.WantedBy == [ "timers.target" ]
     && !(evaluated.launchd.agents ? trash-gc);
 in
@@ -131,6 +134,8 @@ in
       builtins.elem pkgs.trash-cli darwin.home.packages
       && agent.enable
       && agent.domain == "user"
+      && agent.config.Nice == 10
+      && agent.config.ProcessType == "Background"
       &&
         agent.config.ProgramArguments == [
           trashEmpty
