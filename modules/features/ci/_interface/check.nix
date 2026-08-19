@@ -165,25 +165,6 @@ let
       checks = evaluationCompleteSet values;
     };
 
-  getExecution =
-    check:
-    let
-      oldMeta = check.meta or { };
-      oldDotfilesMeta = oldMeta.dotfiles or { };
-      oldCiMeta = oldDotfilesMeta.ci or { };
-    in
-    oldCiMeta.execution or null;
-
-  isEvaluationComplete =
-    check:
-    let
-      oldMeta = check.meta or { };
-      oldDotfilesMeta = oldMeta.dotfiles or { };
-    in
-    getExecution check == "evaluation-complete"
-    && !(oldDotfilesMeta ? hestia)
-    && !(oldMeta ? hestia && oldMeta.hestia ? group);
-
   annotate =
     checkTargets: check:
     let
@@ -207,8 +188,6 @@ let
           };
         }
       );
-
-  annotateSet = checkTargets: lib.mapAttrs (_: annotate checkTargets);
 
   buildEntry = checkTargets: value: {
     targets = builtins.seq (validateTargets checkTargets) checkTargets;
@@ -326,15 +305,6 @@ let
       };
     in
     (composeBuildProducers { producers = map asBuildProducer producers; }).routes;
-
-  isClassified =
-    check:
-    let
-      execution = getExecution check;
-      checkTargets = getTargets check;
-    in
-    (execution == "evaluation-complete" && checkTargets == null)
-    || (execution == null && checkTargets != null);
 
   getTargets =
     check:
@@ -525,20 +495,6 @@ let
     else
       true;
 
-  selectBuildChecks =
-    {
-      checks,
-      evaluationCompleteCheckNames,
-      system,
-    }:
-    let
-      unknown = builtins.filter (name: !(builtins.hasAttr name checks)) evaluationCompleteCheckNames;
-    in
-    if unknown != [ ] then
-      throw "evaluation-complete CI checks are missing for ${system}: ${builtins.toJSON unknown}"
-    else
-      removeAttrs checks evaluationCompleteCheckNames;
-
   validateCheckManifest =
     {
       buildRoutesBySystem,
@@ -633,7 +589,6 @@ in
 {
   inherit
     annotate
-    annotateSet
     buildEntry
     buildEntrySet
     composeBuildProducers
@@ -641,12 +596,9 @@ in
     composeRouteProducers
     evaluationComplete
     evaluationCompleteSet
-    isClassified
-    isEvaluationComplete
     mkHestiaChecks
     mkHestiaJobs
     mkBuildProducer
-    selectBuildChecks
     targets
     validateCheckManifest
     validateEvaluationCompleteDefinitions

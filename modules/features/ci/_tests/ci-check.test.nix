@@ -99,29 +99,13 @@ in
 
   testEvaluationCompletePreservesMetadata = {
     expr = {
-      classified = ciCheck.isClassified (ciCheck.evaluationComplete fakeCheck);
-      evaluationComplete = ciCheck.isEvaluationComplete (ciCheck.evaluationComplete fakeCheck);
+      execution = (ciCheck.evaluationComplete fakeCheck).meta.dotfiles.ci.execution;
       description = (ciCheck.evaluationComplete fakeCheck).meta.description;
     };
     expected = {
-      classified = true;
-      evaluationComplete = true;
+      execution = "evaluation-complete";
       description = "preserved metadata";
     };
-  };
-
-  testBuildSelectionDoesNotForceEvaluationCompleteChecks = {
-    expr = builtins.attrNames (
-      ciCheck.selectBuildChecks {
-        checks = {
-          build = fakeCheck;
-          evaluated = throw "evaluation-complete check was forced";
-        };
-        evaluationCompleteCheckNames = [ "evaluated" ];
-        system = linuxSystem;
-      }
-    );
-    expected = [ "build" ];
   };
 
   testEvaluationCompleteProducerIndexDoesNotForceChecks = {
@@ -147,12 +131,12 @@ in
       in
       {
         names = composition.checkNames;
-        classified = ciCheck.isEvaluationComplete composition.checks.evaluated;
+        execution = composition.checks.evaluated.meta.dotfiles.ci.execution;
         description = composition.checks.evaluated.meta.description;
       };
     expected = {
       names = [ "evaluated" ];
-      classified = true;
+      execution = "evaluation-complete";
       description = "preserved metadata";
     };
   };
@@ -168,11 +152,13 @@ in
         ];
       in
       {
-        classified = ciCheck.isClassified composition.values.evaluated;
+        hasExecution = ((composition.values.evaluated.meta.dotfiles or { }).ci or { }) ? execution;
+        hasTargets = ((composition.values.evaluated.meta.dotfiles or { }).hestia or { }) ? targets;
         description = composition.values.evaluated.meta.description;
       };
     expected = {
-      classified = false;
+      hasExecution = false;
+      hasTargets = false;
       description = "preserved metadata";
     };
   };

@@ -69,6 +69,10 @@ let
             evaluationCompleteChecks = { };
           };
       repositoryEvaluationCompleteChecks = lib.optionalAttrs (system == "x86_64-linux") {
+        ci-required-gates-contract = import ../ci/_tests/required-gates-contract.nix {
+          checks = config.flake.checks;
+          inherit lib pkgs;
+        };
         den-entity-topology-tests = import ../../entities/_tests/topology-check.nix {
           inherit
             den
@@ -76,7 +80,6 @@ let
             lib
             pkgs
             ;
-          flake = config.flake;
         };
         home-feature-contract = import ./_interface/home-contract.nix {
           inherit
@@ -102,7 +105,6 @@ let
           systems = config.systems;
           inherit (config.flake)
             apps
-            checks
             darwinConfigurations
             devShells
             formatter

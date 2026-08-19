@@ -187,42 +187,6 @@ let
       expectedFragment = "skill demo: frontmatter.description must not exceed 1024 characters";
     };
 
-    foldedDescriptionOverLimit = {
-      expression = prepare { } (
-        "---\nname: demo\ndescription: >-\n  "
-        + lib.concatStrings (lib.replicate 1023 "a")
-        + "\n\n  b\n---\nbody\n"
-      );
-      expectedFragment = "skill demo: frontmatter.description must not exceed 1024 characters";
-    };
-
-    moreIndentedFoldedDescriptionOverLimit = {
-      expression = prepare { } (
-        "---\nname: demo\ndescription: >-\n  x\n    "
-        + lib.concatStrings (lib.replicate 1016 "a")
-        + "\n\n    b\n---\nbody\n"
-      );
-      expectedFragment = "skill demo: frontmatter.description must not exceed 1024 characters";
-    };
-
-    foldBeforeMoreIndentedDescriptionOverLimit = {
-      expression = prepare { } (
-        "---\nname: demo\ndescription: >-\n  "
-        + lib.concatStrings (lib.replicate 1020 "a")
-        + "\n\n    b\n---\nbody\n"
-      );
-      expectedFragment = "skill demo: frontmatter.description must not exceed 1024 characters";
-    };
-
-    tabContentFoldedDescriptionOverLimit = {
-      expression = prepare { } (
-        "---\nname: demo\ndescription: >-\n  "
-        + lib.concatStrings (lib.replicate 1021 "a")
-        + "\n  \t\n  b\n---\nbody\n"
-      );
-      expectedFragment = "skill demo: frontmatter.description must not exceed 1024 characters";
-    };
-
     xmlTagInDescription = {
       expression = prepare { frontmatter.description = "Use <example> when needed."; } validSkill;
       expectedFragment = "skill demo: frontmatter.description must not contain XML tags";

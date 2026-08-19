@@ -51,6 +51,16 @@ let
       throw "Windows class contract: dev.winget deployment is missing"
     else
       file.source;
+  deploymentSource =
+    config: deploymentName: destination:
+    let
+      files = config.dotfiles.windows.deployments.${deploymentName}.files;
+      file = lib.findFirst (candidate: candidate.destination == destination) null files;
+    in
+    if file == null then
+      throw "Windows class contract: ${deploymentName} deployment is missing ${destination}"
+    else
+      file.source;
   expectedFor = context: {
     metadata = {
       inherit (context) environment source;
@@ -130,6 +140,15 @@ let
     (integratedConfig entityContexts.linuxX86)
     (standaloneConfig entityContexts.linuxX86)
   ];
+  referenceConfig = integratedConfig entityContexts.linuxX86;
+  claudeSettingsSource = deploymentSource referenceConfig "claude" ".claude/settings.json";
+  gitConfigSource = deploymentSource referenceConfig "git" ".gitconfig";
+  gitCommitTemplateSource = deploymentSource referenceConfig "git" ".gitconfig.d/commit-template";
+  gitIgnoreSource = deploymentSource referenceConfig "git" ".config/git/ignore";
+  gpgAgentSource = deploymentSource referenceConfig "gpg" "AppData/Roaming/gnupg/gpg-agent.conf";
+  gpgConfigSource = deploymentSource referenceConfig "gpg" "AppData/Roaming/gnupg/gpg.conf";
+  gpgSshcontrolSource = deploymentSource referenceConfig "gpg" "AppData/Roaming/gnupg/sshcontrol";
+  windowsUsername = entityContexts.linuxX86.contexts.nixosWsl.windows.username;
   expected = {
     delivery = {
       integratedX86 = expectedFor entityContexts.linuxX86.contexts.nixosWsl;
@@ -150,7 +169,19 @@ assert lib.assertMsg (actual == expected) ''
 '';
 pkgs.runCommand "windows-class-contract"
   {
-    nativeBuildInputs = [ pkgs.ripgrep ];
+    nativeBuildInputs = [
+      pkgs.jq
+      pkgs.ripgrep
+    ];
+    inherit
+      claudeSettingsSource
+      gitCommitTemplateSource
+      gitConfigSource
+      gitIgnoreSource
+      gpgAgentSource
+      gpgConfigSource
+      gpgSshcontrolSource
+      ;
     sources = lib.concatStringsSep " " (map toString wingetSources);
   }
   ''
@@ -168,5 +199,24 @@ pkgs.runCommand "windows-class-contract"
         test "$count" -eq 1
       done
     done
+
+    jq --exit-status '
+      ((.permissions.allow // []) | all(startswith("Bash(") | not))
+      and ((.permissions | has("deny")) | not)
+    ' "$claudeSettingsSource" >/dev/null
+
+    rg --fixed-strings 'signingkey = "6250E02A31E09AFE"' "$gitConfigSource"
+    rg --fixed-strings 'gpgsign = true' "$gitConfigSource"
+    rg --fixed-strings 'format = "openpgp"' "$gitConfigSource"
+    rg --fixed-strings ${lib.escapeShellArg "template = \"C:/Users/${windowsUsername}/.gitconfig.d/commit-template\""} "$gitConfigSource"
+    rg --fixed-strings '# feat: 新しい機能' "$gitCommitTemplateSource"
+    rg --fixed-strings 'CLAUDE.local.md' "$gitIgnoreSource"
+
+    rg --fixed-strings 'default-cache-ttl 43200' "$gpgAgentSource"
+    rg --fixed-strings 'enable-ssh-support' "$gpgAgentSource"
+    rg --fixed-strings 'pinentry-program C:/Program Files/Gpg4win/bin/pinentry.exe' "$gpgAgentSource"
+    rg --fixed-strings 'use-agent' "$gpgConfigSource"
+    rg --fixed-strings '60DE257CE1919B3D6DCF4E6E239CD1FFE63B45FD' "$gpgSshcontrolSource"
+
     touch "$out"
   ''

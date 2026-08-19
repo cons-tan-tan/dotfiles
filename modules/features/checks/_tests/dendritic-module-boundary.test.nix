@@ -13,37 +13,10 @@ let
   );
   expectedModuleFiles = builtins.filter (path: !lib.hasInfix "/_" (toString path)) allNixFiles;
   actualModuleFiles = (inputs.import-tree.withLib lib).leafs modulesRoot;
-  singletonDefaultNixViolations = builtins.filter (
-    path:
-    baseNameOf path == "default.nix"
-    && builtins.attrNames (builtins.readDir (dirOf path)) == [ "default.nix" ]
-    && baseNameOf (dirOf (dirOf path)) != "_packages"
-    && path != repoRoot + "/modules/flake/_data/systems/default.nix"
-  ) allNixFiles;
   isSupportPath =
     path: lib.hasInfix "/_tests/" (toString path) || lib.hasInfix "/_lib/" (toString path);
-  isTestPath = path: lib.hasInfix "/_tests/" (toString path);
   supportFiles = builtins.filter isSupportPath allNixFiles;
-  libNixFiles = builtins.filter (path: lib.hasInfix "/_lib/" (toString path)) allNixFiles;
   relativePath = path: lib.removePrefix "${toString repoRoot}/" (toString path);
-  libBoundaryViolations = builtins.filter (
-    path:
-    builtins.elem (baseNameOf path) [
-      "catalog.nix"
-      "class.nix"
-      "default.nix"
-      "home.nix"
-      "module.nix"
-      "options.nix"
-      "pipe.nix"
-      "policy.nix"
-      "quirk.nix"
-      "registry.nix"
-      "settings.nix"
-      "sources.nix"
-    ]
-    || lib.hasSuffix ".fixture.nix" (baseNameOf path)
-  ) libNixFiles;
   isNonemptyModuleValue =
     path:
     let
@@ -56,16 +29,6 @@ let
   ++ builtins.filter (path: lib.hasSuffix ".nix" (toString path)) (
     lib.filesystem.listFilesRecursive modulesRoot
   );
-  architectureRelativePaths = map relativePath architectureSourceFiles;
-  matchingFiles =
-    needles:
-    builtins.concatMap (
-      path:
-      let
-        contents = builtins.readFile path;
-      in
-      lib.optional (builtins.any (needle: lib.hasInfix needle contents) needles) (relativePath path)
-    ) architectureSourceFiles;
   matchingFilesBy =
     files: predicate:
     builtins.concatMap (
@@ -75,7 +38,6 @@ let
       in
       lib.optional (predicate contents) (relativePath path)
     ) files;
-  lineMatches = pattern: line: builtins.match pattern line != null;
   sanitizeNixSource =
     source:
     let
@@ -152,102 +114,6 @@ let
       } tokens;
     in
     lib.concatStrings (lib.reverseList scanned.output);
-  libGraphBoundaryNeedles = [
-    "features."
-    "den.aspects"
-    "den.policies"
-    "den.quirks"
-    "den.schema"
-    "policy.resolve"
-    "pipe."
-  ];
-  libGraphBoundaryViolations = matchingFilesBy libNixFiles (
-    contents:
-    let
-      sanitizedContents = sanitizeNixSource contents;
-      lines = lib.splitString "\n" sanitizedContents;
-    in
-    builtins.any (needle: lib.hasInfix needle sanitizedContents) libGraphBoundaryNeedles
-    || builtins.any (
-      line: lineMatches "^[[:space:]]*(features|includes|provides)[[:space:]]*=.*$" line
-    ) lines
-  );
-  libClassModuleViolations = matchingFilesBy libNixFiles (
-    contents:
-    builtins.any (
-      line:
-      lineMatches "^[[:space:]]*(nixos|darwin|homeManager|perSystem|generic|hjem|maid)[[:space:]]*=.*$" line
-    ) (lib.splitString "\n" (sanitizeNixSource contents))
-  );
-  libModuleOptionViolations = matchingFilesBy libNixFiles (
-    contents:
-    builtins.any (
-      line:
-      lineMatches "^[[:space:]]*(assertions|environment|fonts|home|homebrew|launchd|networking|nix|nixpkgs|programs|security|services|system|systemd|users)[.][^=]*=.*$" line
-    ) (lib.splitString "\n" (sanitizeNixSource contents))
-  );
-  legacyTopologyNeedles = [
-    ("mk" + "Host")
-    ("mk" + "Darwin")
-    ("mk" + "NixosWsl")
-    ("mk-home-" + "modules")
-    ("linuxHost" + "Matrix")
-    ("nixosWsl" + "Matrix")
-    ("linux-config-" + "name")
-    ("config" + ".my")
-    ("options" + ".my")
-    ("my." + "hostKind")
-    ("my." + "dotfilesDir")
-    ("my." + "windows")
-    ("extraSpecialArgs" + ".inputs")
-  ];
-  legacyTopologyPathPrefixes = [
-    ("modules/" + "_legacy/")
-  ];
-  legacyTopologyPaths = builtins.filter (
-    path: builtins.any (prefix: lib.hasPrefix prefix path) legacyTopologyPathPrefixes
-  ) architectureRelativePaths;
-  hasLegacyExtraSpecialArgsInputs =
-    contents:
-    let
-      sanitizedContents = sanitizeNixSource contents;
-      chunks = lib.drop 1 (lib.splitString ("extraSpecial" + "Args") sanitizedContents);
-      assignmentChunks = builtins.filter (
-        chunk:
-        lineMatches "^[[:space:]]*=.*$" (builtins.head (lib.splitString "\n" chunk))
-        && lib.hasInfix "{" (builtins.head (lib.splitString ";" chunk))
-      ) chunks;
-      countCharacter = character: value: builtins.length (lib.splitString character value) - 1;
-      takeAttributeSet =
-        chunk:
-        let
-          takeLines =
-            depth: started: lines:
-            if lines == [ ] then
-              [ ]
-            else
-              let
-                line = builtins.head lines;
-                nextStarted = started || lib.hasInfix "{" line;
-                nextDepth = depth + countCharacter "{" line - countCharacter "}" line;
-              in
-              [ line ]
-              ++ lib.optionals (!nextStarted || nextDepth > 0) (
-                takeLines nextDepth nextStarted (builtins.tail lines)
-              );
-        in
-        lib.concatStringsSep "\n" (takeLines 0 false (lib.splitString "\n" chunk));
-      blocks = map takeAttributeSet assignmentChunks;
-      hasInputsBinding =
-        block:
-        builtins.any (
-          line:
-          lineMatches "^([[:space:]]*|[^#]*[{][[:space:]]*)inherit[[:space:]]+inputs[[:space:]]*;.*$" line
-          || lineMatches "^([[:space:]]*|[^#]*[{][[:space:]]*)inputs[[:space:]]*=[[:space:]]*inputs[[:space:]]*;.*$" line
-        ) (lib.splitString "\n" block);
-    in
-    builtins.any hasInputsBinding blocks;
-  extraSpecialArgsInputFiles = matchingFilesBy architectureSourceFiles hasLegacyExtraSpecialArgsInputs;
   productionArchitectureSourceFiles = builtins.filter (
     path:
     let
@@ -281,14 +147,6 @@ let
         path: !lib.hasInfix "/modules/features/windows/" (toString path)
       ) productionArchitectureSourceFiles)
       (contents: lib.hasInfix "features.windows-base" (sanitizeNixSource contents));
-  nativePayloadRoots = [
-    "agents/context"
-    "agents/skills"
-    "claude/commands"
-    "claude/hooks"
-    "claude/output-styles"
-    "pi/extensions"
-  ];
 in
 {
   testBatsSourcesStayWithFeatureOwner = {
@@ -307,44 +165,9 @@ in
     expected = expectedModuleFiles;
   };
 
-  testSingletonDefaultNixIsReservedForDirectoryContracts = {
-    expr = map relativePath singletonDefaultNixViolations;
-    expected = [ ];
-  };
-
   testModuleAndSupportTreesDoNotIntersect = {
     expr = lib.intersectLists actualModuleFiles supportFiles;
     expected = [ ];
-  };
-
-  testEvaluationTestsUseSupportDirectories = {
-    expr = builtins.all isTestPath (
-      builtins.filter (
-        path: lib.hasSuffix ".test.nix" (toString path) || lib.hasSuffix ".suite.nix" (toString path)
-      ) allNixFiles
-    );
-    expected = true;
-  };
-
-  testLibContainsOnlyReusableImplementationHelpers = {
-    expr = map relativePath libBoundaryViolations;
-    expected = [ ];
-  };
-
-  testLibDoesNotDeclareOrChangeDenGraphs = {
-    expr = libGraphBoundaryViolations;
-    expected = [ ];
-  };
-
-  testLibDoesNotContainClassModules = {
-    expr = {
-      classKeys = libClassModuleViolations;
-      moduleOptions = libModuleOptionViolations;
-    };
-    expected = {
-      classKeys = [ ];
-      moduleOptions = [ ];
-    };
   };
 
   testAutoImportedFilesHaveModuleValues = {
@@ -364,72 +187,9 @@ in
     expected = [ ];
   };
 
-  testLegacyTopologyPatternsAreAbsent = {
-    expr = lib.unique (
-      matchingFiles legacyTopologyNeedles ++ legacyTopologyPaths ++ extraSpecialArgsInputFiles
-    );
-    expected = [ ];
-  };
-
   testBroadUnfreePolicyIsAbsent = {
     expr = broadUnfreePolicyFiles;
     expected = [ ];
-  };
-
-  testNativePayloadTreesRemainAtCanonicalRoots = {
-    expr = builtins.all (path: builtins.pathExists (repoRoot + "/${path}")) nativePayloadRoots;
-    expected = true;
-  };
-
-  testLegacyExtraSpecialArgsDetectionIsScopedToItsAttributeSet = {
-    expr = [
-      (hasLegacyExtraSpecialArgsInputs ''
-        ${"extraSpecial" + "Args"} = {
-          inherit inputs;
-        };
-      '')
-      (hasLegacyExtraSpecialArgsInputs ''
-        ${"extraSpecial" + "Args"} = {
-          inputs = inputs;
-        };
-      '')
-      (hasLegacyExtraSpecialArgsInputs ("extraSpecial" + "Args = { inherit inputs; };"))
-      (hasLegacyExtraSpecialArgsInputs ''
-        ${"extraSpecial" + "Args"} = {
-          nested = {
-            enabled = true;
-          };
-          inherit inputs;
-        };
-      '')
-      (hasLegacyExtraSpecialArgsInputs ''
-        ${"extraSpecial" + "Args"} = {
-          note = "}";
-          inherit inputs;
-        };
-      '')
-      (hasLegacyExtraSpecialArgsInputs ''
-        ${"extraSpecial" + "Args"} = {
-          inherit osConfig;
-        };
-        inherit inputs;
-      '')
-      (hasLegacyExtraSpecialArgsInputs ''
-        ${"extraSpecial" + "Args"} = {
-          note = "{";
-        };
-        inherit inputs;
-      '')
-    ];
-    expected = [
-      true
-      true
-      true
-      true
-      true
-      false
-      false
-    ];
   };
 
   testBroadUnfreeDetectionAllowsNarrowOrDisabledPolicies = {

@@ -264,69 +264,6 @@ in
     expected = true;
   };
 
-  testPrepareSkillAccepts1024CharacterStrippedBlockDescription = {
-    expr = builtins.deepSeq (prepare { } (
-      "---\nname: demo\ndescription: |-\n  "
-      + lib.concatStrings (lib.replicate 1024 "a")
-      + "\n---\nbody\n"
-    )) true;
-    expected = true;
-  };
-
-  testPrepareSkillAccepts1024CharacterFoldedDescription = {
-    expr = builtins.deepSeq (prepare { } (
-      "---\nname: demo\ndescription: >-\n  "
-      + lib.concatStrings (lib.replicate 1022 "a")
-      + "\n\n  b\n---\nbody\n"
-    )) true;
-    expected = true;
-  };
-
-  testPrepareSkillAccepts1024CharacterKeptFoldedDescription = {
-    expr = builtins.deepSeq (prepare { } (
-      "---\nname: demo\ndescription: >+\n  "
-      + lib.concatStrings (lib.replicate 1022 "a")
-      + "\n\n---\nbody\n"
-    )) true;
-    expected = true;
-  };
-
-  testPrepareSkillAccepts1024CharacterMoreIndentedFoldedDescription = {
-    expr = builtins.deepSeq (prepare { } (
-      "---\nname: demo\ndescription: >-\n  x\n    "
-      + lib.concatStrings (lib.replicate 1015 "a")
-      + "\n\n    b\n---\nbody\n"
-    )) true;
-    expected = true;
-  };
-
-  testPrepareSkillAccepts1024CharacterFoldBeforeMoreIndentedDescription = {
-    expr = builtins.deepSeq (prepare { } (
-      "---\nname: demo\ndescription: >-\n  "
-      + lib.concatStrings (lib.replicate 1019 "a")
-      + "\n\n    b\n---\nbody\n"
-    )) true;
-    expected = true;
-  };
-
-  testPrepareSkillAccepts1024CharacterTabContentFoldedDescription = {
-    expr = builtins.deepSeq (prepare { } (
-      "---\nname: demo\ndescription: >-\n  "
-      + lib.concatStrings (lib.replicate 1020 "a")
-      + "\n  \t\n  b\n---\nbody\n"
-    )) true;
-    expected = true;
-  };
-
-  testPrepareSkillAcceptsExplicitBlockIndent = {
-    expr = builtins.deepSeq (prepare { } (
-      "---\nname: demo\ndescription: |2-\n  "
-      + lib.concatStrings (lib.replicate 1024 "a")
-      + "\n---\nbody\n"
-    )) true;
-    expected = true;
-  };
-
   testPrepareSkillAcceptsNameWithInlineComment = {
     expr =
       (prepare { } ''

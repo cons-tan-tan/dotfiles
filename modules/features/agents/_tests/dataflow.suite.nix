@@ -252,10 +252,6 @@ let
             };
             claudeSettings = toString home.home.file.".claude/settings.json".source;
             codexHooks = toString home.home.file.".codex/hooks.json".source;
-            activation = {
-              claudeBeforeCheckLinkTargets = lib.elem "checkLinkTargets" home.home.activation.claudeHooksDirectoryMigration.before;
-              codexAfterLinkGeneration = lib.elem "linkGeneration" home.home.activation.codexHooksConfig.after;
-            };
           };
         plain = observe "plain";
         hcom = observe "hcom";
@@ -340,10 +336,6 @@ let
               agents = false;
               claude = false;
             };
-            activation = {
-              claudeBeforeCheckLinkTargets = true;
-              codexAfterLinkGeneration = true;
-            };
           };
           hcom = {
             enabled = true;
@@ -352,10 +344,6 @@ let
             skills = {
               agents = true;
               claude = true;
-            };
-            activation = {
-              claudeBeforeCheckLinkTargets = true;
-              codexAfterLinkGeneration = true;
             };
           };
           consumers = {

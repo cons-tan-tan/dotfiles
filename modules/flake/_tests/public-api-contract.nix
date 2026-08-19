@@ -1,6 +1,5 @@
 {
   apps,
-  checks,
   darwinConfigurations,
   devShells,
   formatter,
@@ -45,49 +44,6 @@ let
     "write-inputs"
     "write-lock"
   ];
-  expectedFlakeFileCheckTargets = {
-    aarch64-darwin = "repo-quality";
-    x86_64-linux = "repo-quality";
-  };
-  commonRequiredChecks = [
-    "app-scripts"
-    "bats-tests"
-    "check-flake-file"
-    "ci-check-tests"
-    "configuration-targets-tests"
-    "dendritic-module-boundary-tests"
-    "package-smoke-tests"
-    "rust-projects-tests"
-    "rust-tests"
-    "test-discovery-tests"
-    "treefmt"
-    "workflow-policy-tests"
-  ];
-  linuxRequiredChecks = [
-    "home-linux"
-    "home-wsl"
-    "nixos-wsl-contract"
-    "nixos-wsl-system"
-    "reuse-lint"
-  ];
-  expectedRequiredChecks = {
-    aarch64-darwin = commonRequiredChecks ++ [
-      "darwin-nh-cleanup-contract"
-      "darwin-system"
-    ];
-    aarch64-linux = commonRequiredChecks ++ linuxRequiredChecks;
-    x86_64-linux =
-      commonRequiredChecks
-      ++ linuxRequiredChecks
-      ++ [
-        "configuration-ownership-contract"
-        "flake-public-api-contract"
-        "hestia-job-contract"
-        "home-feature-contract"
-        "windows-class-contract"
-      ];
-  };
-
   appNames = lib.mapAttrs (_: value: builtins.attrNames value) apps;
   devShellNames = lib.mapAttrs (_: value: builtins.attrNames value) devShells;
   invalidApps = lib.concatMap (
@@ -117,14 +73,6 @@ let
   invalidFormatters = lib.concatLists (
     lib.mapAttrsToList (system: value: lib.optional (!lib.isDerivation value) system) formatter
   );
-  invalidFlakeFileChecks = builtins.filter (
-    system:
-    let
-      check = checks.${system}.check-flake-file or null;
-    in
-    !lib.isDerivation check
-    || (check.meta.dotfiles.hestia.targets or null) != expectedFlakeFileCheckTargets
-  ) expectedSystems;
   invalidFlakeFilePackages = lib.concatMap (
     system:
     lib.concatLists (
@@ -133,10 +81,6 @@ let
       ) packages.${system}
     )
   ) (builtins.attrNames packages);
-  missingRequiredChecks = lib.mapAttrs (
-    system: required: builtins.filter (name: !(builtins.hasAttr name checks.${system})) required
-  ) expectedRequiredChecks;
-
   actual = {
     systems = sort systems;
     appSystems = builtins.attrNames apps;
@@ -147,12 +91,10 @@ let
     formatterSystems = builtins.attrNames formatter;
     homeConfigurations = builtins.attrNames homeConfigurations;
     inherit
-      invalidFlakeFileChecks
       invalidFlakeFilePackages
       invalidApps
       invalidDevShells
       invalidFormatters
-      missingRequiredChecks
       rootHestiaCiPresent
       rootHydraCiPresent
       rootPackagesPresent
@@ -175,12 +117,10 @@ let
       "constantan@wsl-aarch64"
       "constantan@wsl-x86_64"
     ];
-    invalidFlakeFileChecks = [ ];
     invalidFlakeFilePackages = [ ];
     invalidApps = [ ];
     invalidDevShells = [ ];
     invalidFormatters = [ ];
-    missingRequiredChecks = lib.genAttrs expectedSystems (_: [ ]);
     packageNames = lib.genAttrs expectedSystems (_: expectedFlakeFilePackages);
     packageSystems = expectedSystems;
     rootPackagesPresent = true;

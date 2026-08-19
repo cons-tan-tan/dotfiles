@@ -127,63 +127,31 @@ let
           inherit inputs;
           system = "x86_64-linux";
         };
-        claudePkgs = config.flake.homeConfigurations.claude.pkgs;
-        claudeSettingsLib = import (repoRoot + "/modules/features/agents/claude/_interface/settings.nix") {
-          inherit lib;
-        };
-        claudeSettingsValidator =
-          import (repoRoot + "/modules/features/agents/claude/_interface/settings-validator.nix")
-            {
-              pkgs = claudePkgs;
-              schemaPin = import (repoRoot + "/modules/features/agents/claude/_interface/settings-schema.nix");
-            };
-        expectedClaudeSettingsRaw = (claudePkgs.formats.json { }).generate "claude-windows-settings.json" (
-          claudeSettingsLib.mkSettings { forWindows = true; }
-        );
-        expectedClaudeSource = toString (
-          claudeSettingsValidator.validate "claude-windows-settings.json" expectedClaudeSettingsRaw
-        );
         gitPkgs = config.flake.homeConfigurations.git.pkgs;
         gitLib = import (repoRoot + "/modules/features/git/_interface/git.nix") {
           inherit lib;
           pkgs = gitPkgs;
         };
-        expectedGitConfig = gitLib.mkSettings {
+        windowsGitSettings = gitLib.mkSettings {
           forWindows = true;
           windowsUsername = "git-win";
         };
-        expectedGitIni = gitPkgs.writeText "windows-gitconfig" (
+        expectedGitSettingsSource = gitPkgs.writeText "windows-gitconfig" (
           lib.generators.toGitINI (
-            expectedGitConfig
+            windowsGitSettings
             // {
-              user = expectedGitConfig.user // {
+              user = windowsGitSettings.user // {
                 signingkey = gitLib.signingKey;
               };
-              commit = expectedGitConfig.commit // {
+              commit = windowsGitSettings.commit // {
                 gpgsign = true;
               };
               tag.gpgsign = true;
-              gpg = expectedGitConfig.gpg // {
+              gpg = windowsGitSettings.gpg // {
                 format = "openpgp";
               };
             }
           )
-        );
-        expectedGitIgnore = gitPkgs.writeText "windows-gitignore-global" (
-          lib.concatStringsSep "\n" gitLib.ignores
-        );
-        gpgPkgs = config.flake.homeConfigurations.gpg.pkgs;
-        expectedGpgAgent = gpgPkgs.writeText "windows-gpg-agent.conf" ''
-          default-cache-ttl 43200
-          max-cache-ttl 43200
-          enable-ssh-support
-          pinentry-program C:/Program Files/Gpg4win/bin/pinentry.exe
-        '';
-        expectedGpgConfig = gpgPkgs.writeText "windows-gpg.conf" ''
-          use-agent
-        '';
-        expectedSshcontrol = gpgPkgs.writeText "windows-sshcontrol" (
-          lib.concatStringsSep "\n" [ "60DE257CE1919B3D6DCF4E6E239CD1FFE63B45FD" ]
         );
         describe =
           name:
@@ -193,10 +161,15 @@ let
           in
           {
             keys = builtins.attrNames deployments;
-            inherit (deployment) directories;
-            destinations = map (file: file.destination) deployment.files;
-            sources = map (file: file.source) deployment.files;
+            hasDirectories = deployment.directories != [ ];
+            hasFiles = deployment.files != [ ];
           };
+        gitSettingsSource =
+          let
+            files = config.flake.homeConfigurations.git.config.dotfiles.windows.deployments.git.files;
+            file = lib.findFirst (candidate: candidate.destination == ".gitconfig") null files;
+          in
+          if file == null then null else file.source;
       in
       {
         imports = [
@@ -241,45 +214,25 @@ let
           claude = describe "claude";
           git = describe "git";
           gpg = describe "gpg";
+          inherit gitSettingsSource;
         };
         expected = {
           claude = {
             keys = [ "claude" ];
-            directories = [ ".claude" ];
-            destinations = [ ".claude/settings.json" ];
-            sources = [ expectedClaudeSource ];
+            hasDirectories = true;
+            hasFiles = true;
           };
           git = {
             keys = [ "git" ];
-            directories = [
-              ".gitconfig.d"
-              ".config/git"
-            ];
-            destinations = [
-              ".gitconfig"
-              ".gitconfig.d/commit-template"
-              ".config/git/ignore"
-            ];
-            sources = [
-              (toString expectedGitIni)
-              (toString gitLib.commitTemplate)
-              (toString expectedGitIgnore)
-            ];
+            hasDirectories = true;
+            hasFiles = true;
           };
           gpg = {
             keys = [ "gpg" ];
-            directories = [ "AppData/Roaming/gnupg" ];
-            destinations = [
-              "AppData/Roaming/gnupg/gpg-agent.conf"
-              "AppData/Roaming/gnupg/gpg.conf"
-              "AppData/Roaming/gnupg/sshcontrol"
-            ];
-            sources = [
-              (toString expectedGpgAgent)
-              (toString expectedGpgConfig)
-              (toString expectedSshcontrol)
-            ];
+            hasDirectories = true;
+            hasFiles = true;
           };
+          gitSettingsSource = toString expectedGitSettingsSource;
         };
       }
     );

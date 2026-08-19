@@ -75,7 +75,6 @@ let
       { config, features, ... }:
       let
         home = config.flake.homeConfigurations.tux.config;
-        packageNames = map lib.getName home.home.packages;
         overlayPlan = (import ../../nixpkgs/_interface).mkOverlayPlan {
           inherit inputs;
           system = "x86_64-linux";
@@ -105,16 +104,6 @@ let
         ];
 
         expr = {
-          toolPackagesPresent = lib.all (name: lib.elem name packageNames) [
-            "reuse"
-            "ripgrep"
-            "fd"
-            "bat"
-            "eza"
-            "jq"
-            "ast-grep"
-            "fzf"
-          ];
           hasAstGrepSkill = home.dotfiles.agentSkills.externalSkills ? ast-grep;
           commandDecisions = {
             ast-grep = home.dotfiles.agentCommandPolicy.commands.ast-grep;
@@ -138,7 +127,6 @@ let
           };
         };
         expected = {
-          toolPackagesPresent = true;
           hasAstGrepSkill = true;
           commandDecisions = {
             ast-grep = true;

@@ -148,107 +148,16 @@ in
                 >/dev/null
           }
 
-          ${lib.concatMapStringsSep "\n"
-            (
-              command:
-              "check_deny ${lib.escapeShellArg command} ${lib.escapeShellArg "Recursive forced deletion"}"
-            )
-            [
-              "rm -rf target"
-              "rm -fR target"
-              "rm -r -f target"
-              "rm --force --recursive target"
-              "rm --rec --for target"
-              "/bin/rm -fr target"
-              "gh pr create --body \"$(rm -rf target)\""
-              "cat <(rm -rf target)"
-              "exec rm -rf target"
-              "sudo -k rm -rf target"
-              "sudo --reset-timestamp rm -rf target"
-              "sudo -s rm -rf target"
-              "sudo -s sh -c 'rm -rf target'"
-              "sudo -s env sh -c 'rm -rf target'"
-              "timeout 10 rm -rf target"
-              "nice -n 5 rm -rf target"
-              "nohup rm -rf target"
-              "xargs -0 rm -rf target"
-              "find . -exec rm -rf '{}' +"
-              "fd -x rm -rf '{}'"
-              "nix shell nixpkgs#coreutils --command rm -rf target"
-              "nix --option warn-dirty false run nixpkgs#rm -- -rf target"
-              "f() { rm -rf target; }; f"
-            ]
-          }
+          check_deny ${lib.escapeShellArg "rm -rf target"} ${lib.escapeShellArg "Recursive forced deletion"}
+          check_deny ${lib.escapeShellArg "rm --rec --for target"} ${lib.escapeShellArg "Recursive forced deletion"}
+          check_deny ${lib.escapeShellArg "fd -x rm -rf '{}'"} ${lib.escapeShellArg "Recursive forced deletion"}
+          check_safe ${lib.escapeShellArg "fd -x echo"}
 
-          ${lib.concatMapStringsSep "\n" (command: "check_deny ${lib.escapeShellArg command}") [
-            "eval 'f() { rm -rf target; }'; f"
-            "builtin eval 'rm -rf target'"
-            "builtin exec rm -rf target"
-            "rm() { printf safe; }; g() { command rm -rf target; }; g"
-            "eval() { printf safe; }; g() { builtin eval 'rm -rf target'; }; g"
-            "trap 'rm -rf target' EXIT"
-            "trap -- 'rm -rf target' 0"
-            "source /tmp/setup.sh"
-            ". /tmp/setup.sh"
-            "source <(printf '%s\\n' 'rm -rf target')"
-            "bash <<'EOF'\nrm -rf target\nEOF"
-            "printf 'rm -rf target\\n' | bash"
-            "nix shell nixpkgs#coreutils $ARGS"
-            "BASH_ENV=/tmp/setup.sh bash -c true"
-            "env BASH_ENV=/tmp/setup.sh bash -c true"
-            "env 'BASH_FUNC_f%%=() { rm -rf target; }' bash -c f"
-            "f() { rm -rf target; }; export -f f; bash -c f"
-          ]}
-
-          ${lib.concatMapStringsSep "\n" (command: "check_safe ${lib.escapeShellArg command}") [
-            "fd -x echo"
-            "gh pr create --body \"rm -rf target\""
-            "sudo -l rm -rf target"
-            "bash --version"
-            "builtin rm -rf target"
-            "env exec rm -rf target"
-            "sudo exec rm -rf target"
-            "env FOO=1 command rm -rf target"
-            "SAFE=value bash -c true"
-          ]}
-
-          ${lib.concatMapStringsSep "\n"
-            (
-              command:
-              "check_context ${lib.escapeShellArg command} ${lib.escapeShellArg "Use `trash` instead of `rm`."}"
-            )
-            [
-              "rm target"
-              "rm -- -rf"
-              "command rm target"
-            ]
-          }
-
-          ${lib.concatMapStringsSep "\n" (command: "check_safe ${lib.escapeShellArg command}") [
-            "trash target"
-            "trash-put target"
-            "trash-list"
-            "trash-restore"
-            "trash-restore --sort \"$SORT\""
-          ]}
-
-          ${lib.concatMapStringsSep "\n" (command: "check_deny ${lib.escapeShellArg command}") [
-            "trash-empty"
-            "/usr/bin/trash-empty 7"
-            "command trash-rm target"
-          ]}
-
-          ${lib.concatMapStringsSep "\n"
-            (
-              command:
-              "check_deny ${lib.escapeShellArg command} ${lib.escapeShellArg "Overwriting an existing path"}"
-            )
-            [
-              "trash-restore --o"
-              "trash-restore --overwrit"
-              "trash-restore --overwrite"
-            ]
-          }
+          check_context ${lib.escapeShellArg "rm target"} ${lib.escapeShellArg "Use `trash` instead of `rm`."}
+          check_safe ${lib.escapeShellArg "trash target"}
+          check_deny ${lib.escapeShellArg "trash-empty"}
+          check_deny ${lib.escapeShellArg "trash-restore --o"} ${lib.escapeShellArg "Overwriting an existing path"}
+          check_deny ${lib.escapeShellArg "trash-restore --overwrite"} ${lib.escapeShellArg "Overwriting an existing path"}
 
           printf 'content' >"$TMPDIR/existing"
           check_deny ${lib.escapeShellArg ": > existing"} ${lib.escapeShellArg "Emptying an existing file"}

@@ -84,6 +84,21 @@ in
     expected = "first\n\t\nlast";
   };
 
+  testFoldedScalarDispatchAndStripChomp = {
+    expr = fm.frontmatterStringValue (
+      builtins.head (
+        fm.findFrontmatterFields "description" ''
+          ---
+          description: >-
+            First line.
+            Second line.
+          ---
+        ''
+      )
+    );
+    expected = "First line. Second line.";
+  };
+
   testNormalizeDescriptionFoldsMultilineText = {
     expr = fm.normalizeDescription ''
       Slack automation CLI for AI agents.

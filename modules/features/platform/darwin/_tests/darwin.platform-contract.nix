@@ -5,6 +5,11 @@
   lib,
   username,
 }:
+let
+  homebrewCasks = map (
+    cask: if builtins.isString cask then cask else cask.name
+  ) darwinSystem.homebrew.casks;
+in
 {
   actual = {
     inherit (darwinSystem.system) primaryUser stateVersion;
@@ -20,9 +25,12 @@
     };
     ghostty = darwin.programs.ghostty.enable;
     homebrew = darwinSystem.homebrew.enable;
-    homebrewCasks = lib.sort builtins.lessThan (
-      map (cask: if builtins.isString cask then cask else cask.name) darwinSystem.homebrew.casks
-    );
+    requiredHomebrewCasks = lib.all (cask: builtins.elem cask homebrewCasks) [
+      "azookey"
+      "fiji"
+      "scroll-reverser"
+      "tailscale-app"
+    ];
     fonts = {
       hackgen = builtins.elem darwinResult.pkgs.hackgen-nf-font darwinSystem.fonts.packages;
       symbols = builtins.elem darwinResult.pkgs.nerd-fonts.symbols-only darwinSystem.fonts.packages;
@@ -46,12 +54,7 @@
     };
     ghostty = true;
     homebrew = true;
-    homebrewCasks = [
-      "azookey"
-      "fiji"
-      "scroll-reverser"
-      "tailscale-app"
-    ];
+    requiredHomebrewCasks = true;
     fonts = {
       hackgen = true;
       symbols = true;

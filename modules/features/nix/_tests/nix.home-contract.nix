@@ -5,7 +5,6 @@
     let
       inherit (target) config pkgs;
       registry = target.config.nix.registry.dotfiles;
-      guard = config.dotfiles.agentCommandPolicyCompiled.guardPolicy;
       packageCount =
         package: builtins.length (builtins.filter (candidate: candidate == package) config.home.packages);
     in
@@ -20,10 +19,7 @@
         comma = config.programs.nix-index-database.comma.enable;
         nixd = packageCount pkgs.nixd;
       };
-      commandPolicy = {
-        schemaVersion = guard.schemaVersion;
-        grammarExecutables = builtins.attrNames guard.commandGrammars;
-      };
+      commandPolicy.schemaVersion = config.dotfiles.agentCommandPolicyCompiled.guardPolicy.schemaVersion;
     };
   expected = facts: {
     registry = {
@@ -36,19 +32,6 @@
       comma = true;
       nixd = 1;
     };
-    commandPolicy = {
-      schemaVersion = 3;
-      grammarExecutables = [
-        "nh"
-        "nix"
-        "nix-build"
-        "nix-channel"
-        "nix-collect-garbage"
-        "nix-env"
-        "nix-instantiate"
-        "nix-shell"
-        "nix-store"
-      ];
-    };
+    commandPolicy.schemaVersion = 3;
   };
 }

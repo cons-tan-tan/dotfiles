@@ -117,17 +117,6 @@ let
       expectedFragment = ''"invalidRoutes":["example"]'';
     };
 
-    buildSelectionRejectsStaleNames = {
-      expression = force (
-        ciCheck.selectBuildChecks {
-          checks.build = fakeCheck;
-          evaluationCompleteCheckNames = [ "renamed" ];
-          system = linuxSystem;
-        }
-      );
-      expectedFragment = ''evaluation-complete CI checks are missing for x86_64-linux: ["renamed"]'';
-    };
-
     evaluationCompleteProducerRejectsDuplicateNames = {
       expression = force (
         (ciCheck.composeEvaluationCompleteProducers [

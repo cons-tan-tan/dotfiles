@@ -1,5 +1,4 @@
 let
-  familyArgs = builtins.functionArgs (import ../_packages/herdr/default.nix);
   packageArgs = builtins.functionArgs (import ../_packages/herdr/package.nix);
   fixturePin = {
     version = "1.2.3";
@@ -22,16 +21,6 @@ let
   };
 in
 {
-  testHerdrFamilyPinIsInjectable = {
-    expr = familyArgs ? herdrPin;
-    expected = true;
-  };
-
-  testHerdrPinIsInjectable = {
-    expr = packageArgs ? herdrPin;
-    expected = true;
-  };
-
   testHerdrFamilyForwardsPin = {
     expr = fixtureFamily.package;
     expected = fixturePin.version;
