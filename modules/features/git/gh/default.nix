@@ -1,5 +1,14 @@
-{ features, ... }:
 {
+  features,
+  inputs,
+  ...
+}:
+{
+  flake-file.inputs.gh-stack-src = {
+    url = "github:github/gh-stack/v0.1.0";
+    flake = false;
+  };
+
   features.gh =
     { config, ... }:
     {
@@ -43,8 +52,16 @@
               view = true;
             };
             search = true;
+            stack.view = true;
             api-get = true;
           };
+        }
+      ];
+      agent-skills = [
+        {
+          name = "gh-stack";
+          provenance = "external";
+          definition.root = inputs.gh-stack-src.outPath + "/skills/gh-stack";
         }
       ];
       homeManager = { pkgs, ... }: {
@@ -55,6 +72,7 @@
             pkgs.dotfilesPackages.gh-api-get
             pkgs.gh-do
             pkgs.gh-poi
+            pkgs.gh-stack
           ];
         };
       };

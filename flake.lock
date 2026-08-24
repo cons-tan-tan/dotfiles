@@ -548,6 +548,23 @@
         "type": "github"
       }
     },
+    "gh-stack-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1785346327,
+        "narHash": "sha256-48JkOeqbvHlCZ2u3LnwJymw55xMQWLTPJLDbV44clGI=",
+        "owner": "github",
+        "repo": "gh-stack",
+        "rev": "a1b4a3d4d0bcde9ec3a78ab99b2d63af121857a9",
+        "type": "github"
+      },
+      "original": {
+        "owner": "github",
+        "ref": "v0.1.0",
+        "repo": "gh-stack",
+        "type": "github"
+      }
+    },
     "hcom-src": {
       "flake": false,
       "locked": {
@@ -908,6 +925,7 @@
         "fast-nix-gc": "fast-nix-gc",
         "flake-file": "flake-file",
         "flake-parts": "flake-parts_2",
+        "gh-stack-src": "gh-stack-src",
         "hcom-src": "hcom-src",
         "home-manager": "home-manager",
         "hunk": "hunk",
