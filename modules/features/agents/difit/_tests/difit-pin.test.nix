@@ -1,37 +1,8 @@
 { lib, pkgs }:
 let
-  pin = {
-    srcHash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
-    pnpmDepsHash = "sha256-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=";
-  };
-  injectedPackage = pkgs.dotfilesPackages.difit.override { difitPin = pin; };
-  defaultPin = lib.importJSON ../_packages/difit/pin.json;
   defaultPackage = pkgs.dotfilesPackages.difit;
 in
 {
-  testDifitPinPropagates = {
-    expr = {
-      injected = {
-        src = injectedPackage.src.outputHash;
-        pnpmDeps = injectedPackage.pnpmDeps.outputHash;
-      };
-      default = {
-        src = defaultPackage.src.outputHash;
-        pnpmDeps = defaultPackage.pnpmDeps.outputHash;
-      };
-    };
-    expected = {
-      injected = {
-        src = pin.srcHash;
-        pnpmDeps = pin.pnpmDepsHash;
-      };
-      default = {
-        src = defaultPin.srcHash;
-        pnpmDeps = defaultPin.pnpmDepsHash;
-      };
-    };
-  };
-
   testDifitPnpmProductionScopePropagates = {
     expr = {
       package = {

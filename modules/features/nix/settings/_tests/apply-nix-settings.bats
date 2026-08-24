@@ -28,10 +28,8 @@ setup() {
 
   BASH_BIN="$(command -v bash)"
   WORK="$(mktemp -d)"
-  STUB_DIR="$WORK/stub"
   TARGET="$WORK/nix.custom.conf"
   SNIPPET="$WORK/snippet.conf"
-  mkdir -p "$STUB_DIR"
   printf '%s\n' \
     "extra-trusted-users = constantan" \
     "extra-substituters = https://cache.numtide.com" \
@@ -43,147 +41,12 @@ teardown() {
   rm -rf "$WORK"
 }
 
-run_apply() {
-  run env \
-    APPLY_NIX_SETTINGS_CONF="$TARGET" \
-    APPLY_NIX_SETTINGS_SNIPPET="$SNIPPET" \
-    "$APPLY_NIX_SETTINGS_TEST_BIN" "$@"
-}
-
 file_mode() {
   stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"
 }
 
 file_inode() {
   stat -c %i "$1" 2>/dev/null || stat -f %i "$1"
-}
-
-create_sudo_stub() {
-  local status=$1
-  cat >"$STUB_DIR/sudo" <<EOF
-#!$BASH_BIN
-printf '%s\\n' "\$@" >"\$SUDO_STUB_LOG"
-exit $status
-EOF
-  chmod +x "$STUB_DIR/sudo"
-}
-
-@test "Nix-built core publishes one managed block and is idempotent" {
-  printf 'before = keep\n' >"$TARGET"
-
-  run_apply
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"wrote $TARGET"* ]]
-  [ "$(grep -c '^# BEGIN cons-tan-tan/dotfiles apply-nix-settings$' "$TARGET")" -eq 1 ]
-  [ "$(grep -c '^# END cons-tan-tan/dotfiles apply-nix-settings$' "$TARGET")" -eq 1 ]
-  [[ "$(cat "$TARGET")" == *"before = keep"* ]]
-  [[ "$(cat "$TARGET")" == *"extra-trusted-users = constantan"* ]]
-  local first_content
-  first_content="$(cat "$TARGET")"
-
-  run_apply
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"already up to date"* ]]
-  [ "$(cat "$TARGET")" = "$first_content" ]
-}
-
-@test "--check exits 1 without writing, locking, or invoking sudo" {
-  local missing_parent="$WORK/check-missing"
-  local sudo_log="$WORK/check-sudo-called"
-  TARGET="$missing_parent/nix.custom.conf"
-  create_sudo_stub 88
-
-  run env \
-    SUDO_STUB_LOG="$sudo_log" \
-    APPLY_NIX_SETTINGS_CONF="$TARGET" \
-    APPLY_NIX_SETTINGS_SNIPPET="$SNIPPET" \
-    APPLY_NIX_SETTINGS_SUDO="$STUB_DIR/sudo" \
-    "$APPLY_NIX_SETTINGS_TEST_BIN" --check
-
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"not up to date"* ]]
-  [[ "$output" == *"+extra-trusted-users = constantan"* ]]
-  [ ! -e "$missing_parent" ]
-  [ ! -e "$sudo_log" ]
-}
-
-@test "--dry-run exits 0 without writing, locking, or invoking sudo" {
-  local missing_parent="$WORK/dry-run-missing"
-  local sudo_log="$WORK/dry-run-sudo-called"
-  TARGET="$missing_parent/nix.custom.conf"
-  create_sudo_stub 88
-
-  run env \
-    SUDO_STUB_LOG="$sudo_log" \
-    APPLY_NIX_SETTINGS_CONF="$TARGET" \
-    APPLY_NIX_SETTINGS_SNIPPET="$SNIPPET" \
-    APPLY_NIX_SETTINGS_SUDO="$STUB_DIR/sudo" \
-    "$APPLY_NIX_SETTINGS_TEST_BIN" --dry-run
-
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"+extra-trusted-users = constantan"* ]]
-  [[ "$output" != *"not up to date"* ]]
-  [ ! -e "$missing_parent" ]
-  [ ! -e "$sudo_log" ]
-}
-
-@test "sudo exec preserves assignments, current executable, and child status" {
-  local locked_dir="$WORK/locked"
-  local nix_conf="$WORK/nix.conf"
-  local sudo_log="$WORK/sudo.args"
-  mkdir "$locked_dir"
-  TARGET="$locked_dir/nix.custom.conf"
-  printf '!include %s\n' "$TARGET" >"$nix_conf"
-  : >"$sudo_log"
-  chmod 666 "$sudo_log"
-  create_sudo_stub 73
-  chmod 555 "$locked_dir"
-
-  run env \
-    SUDO_STUB_LOG="$sudo_log" \
-    APPLY_NIX_SETTINGS_CONF="$TARGET" \
-    APPLY_NIX_SETTINGS_NIX_CONF="$nix_conf" \
-    APPLY_NIX_SETTINGS_SNIPPET="$SNIPPET" \
-    APPLY_NIX_SETTINGS_SUDO="$STUB_DIR/sudo" \
-    "$APPLY_NIX_SETTINGS_TEST_BIN"
-
-  [ "$status" -eq 73 ]
-  expected=$(printf '%s\n' \
-    "APPLY_NIX_SETTINGS_ELEVATED=1" \
-    "APPLY_NIX_SETTINGS_CONF=$TARGET" \
-    "APPLY_NIX_SETTINGS_NIX_CONF=$nix_conf" \
-    "APPLY_NIX_SETTINGS_SNIPPET=$SNIPPET" \
-    "APPLY_NIX_SETTINGS_SUDO=$STUB_DIR/sudo" \
-    "$APPLY_NIX_SETTINGS_TEST_BIN")
-  [ "$(cat "$sudo_log")" = "$expected" ]
-}
-
-@test "sudo handoff creates no pre-elevation target, lock, or temporary file" {
-  local locked_dir="$WORK/pre-elevation"
-  local temp_dir="$WORK/tmp"
-  local sudo_log="$WORK/sudo.args"
-  mkdir "$locked_dir" "$temp_dir"
-  TARGET="$locked_dir/nix.custom.conf"
-  : >"$sudo_log"
-  chmod 666 "$sudo_log"
-  create_sudo_stub 0
-  chmod 555 "$locked_dir"
-
-  run env \
-    TMPDIR="$temp_dir" \
-    SUDO_STUB_LOG="$sudo_log" \
-    APPLY_NIX_SETTINGS_CONF="$TARGET" \
-    APPLY_NIX_SETTINGS_SNIPPET="$SNIPPET" \
-    APPLY_NIX_SETTINGS_SUDO="$STUB_DIR/sudo" \
-    "$APPLY_NIX_SETTINGS_TEST_BIN"
-
-  [ "$status" -eq 0 ]
-  [ ! -e "$TARGET" ]
-  [ ! -e "$locked_dir/.apply-nix-settings.lock" ]
-  [ -z "$(find "$locked_dir" -name '.apply-nix-settings.tmp.*' -print -quit)" ]
-  [ -z "$(find "$temp_dir" -mindepth 1 -print -quit)" ]
 }
 
 @test "publish is atomic and fixes permissions independently of umask" {

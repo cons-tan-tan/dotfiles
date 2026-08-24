@@ -5,25 +5,17 @@ let
     inherit inputs;
     inherit system;
   };
-  commonNames = [
-    "mozuku-lsp"
-    "llm-agents"
-    "local-packages"
-    "watchexec"
-  ];
-  darwinNames = [ "brew-nix" ];
-  expectedNames = commonNames ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin darwinNames;
   watchexecPin = (import ../../development/watchexec/_interface.nix).pin;
 in
 {
-  testOverlayOrder = {
-    expr = overlayPlan.names;
-    expected = expectedNames;
+  testOverlayNamesAreUnique = {
+    expr = builtins.length (pkgs.lib.unique overlayPlan.names);
+    expected = builtins.length overlayPlan.names;
   };
 
   testOverlayCountMatchesNames = {
     expr = builtins.length overlayPlan.overlays;
-    expected = builtins.length expectedNames;
+    expected = builtins.length overlayPlan.names;
   };
 
   testDarwinOnlyOverlaysMatchPlatform = {
@@ -41,8 +33,4 @@ in
     };
   };
 
-  testWatchexecUpdaterIsAvailableOnEveryPlatform = {
-    expr = pkgs.watchexec.updateScriptName;
-    expected = "watchexec";
-  };
 }

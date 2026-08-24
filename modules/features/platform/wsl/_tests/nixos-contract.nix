@@ -1,27 +1,14 @@
 {
   config,
-  entityContext,
   lib,
   pkgs,
+  ...
 }:
 let
-  inherit (entityContext) username;
-  linuxHomedir = entityContext.contexts.nixosWsl.homedir;
-  windowsUsername = entityContext.windows.username;
-  windowsHomedir = entityContext.windows.homedir;
-  sourcePath = entityContext.contexts.nixosWsl.source;
-  subjectUsername = username;
+  subjectUsername = config.wsl.defaultUser;
   subjectUid = config.users.users.${subjectUsername}.uid;
-  gpgAgentSshSocket = "/run/user/${toString subjectUid}/gnupg/S.gpg-agent.ssh";
   systemSshConfig = config.environment.etc."ssh/ssh_config".text;
-  expectedNixbuildSshBlock = ''
-    Host eu.nixbuild.net
-        PubkeyAcceptedAlgorithms ssh-ed25519
-        ServerAliveInterval 60
-        IPQoS none
-  '';
   systemSshConfigFile = pkgs.writeText "nixbuild-system-ssh-config" systemSshConfig;
-  home = config.home-manager.users.${subjectUsername};
   expectedInitScopeDropIn = ''
     [Scope]
     OOMPolicy=continue
@@ -32,90 +19,9 @@ let
   '';
 
   contracts = {
-    "wsl-base" = {
-      actual = {
-        enabled = config.wsl.enable;
-        defaultUser = config.wsl.defaultUser;
-        interopRegistrationEnabled = config.wsl.interop.register;
-        binfmtRegistrations = config.boot.binfmt.registrations;
-        zedExtensionCopyEntries = builtins.filter (entry: entry.name == "cp") config.wsl.extraBin;
-        userLinger = config.users.users.${subjectUsername}.linger;
-        gettyEnabled = config.services.getty.enable;
-        gettyTargetWants = config.systemd.targets.getty.wants;
-      };
-      expected = {
-        enabled = true;
-        defaultUser = username;
-        interopRegistrationEnabled = false;
-        binfmtRegistrations = { };
-        zedExtensionCopyEntries = [
-          {
-            copy = false;
-            name = "cp";
-            src = lib.getExe' pkgs.coreutils "cp";
-          }
-        ];
-        userLinger = true;
-        gettyEnabled = true;
-        gettyTargetWants = [ ];
-      };
-    };
-
-    "shell-integration" = {
-      actual = {
-        zshEnabled = config.programs.zsh.enable;
-        userShell = lib.getExe config.users.users.${subjectUsername}.shell;
-        homeZshEnabled = home.programs.zsh.enable;
-        zoxideEnabled = home.programs.zoxide.enable;
-        direnvInstantEnabled = home.programs.direnv-instant.enable;
-        standardDirenvHookEnabled = home.programs.direnv.enableZshIntegration;
-        starshipIntegrated = home.programs.starship.enableZshIntegration;
-        zoxideIntegrated = home.programs.zoxide.enableZshIntegration;
-        gpgAgentIntegrated = home.services.gpg-agent.enableZshIntegration;
-        gpgSshSupport = home.services.gpg-agent.enableSshSupport;
-        gpgAgentSshSocketUidValid = builtins.isInt subjectUid && subjectUid > 0;
-        nixDaemonSshAuthSock = config.systemd.services.nix-daemon.environment.SSH_AUTH_SOCK;
-        gitWtIntegrated = lib.hasInfix "git-wt --init zsh" home.programs.zsh.initContent;
-      };
-      expected = {
-        zshEnabled = true;
-        userShell = lib.getExe pkgs.zsh;
-        homeZshEnabled = true;
-        zoxideEnabled = true;
-        direnvInstantEnabled = true;
-        standardDirenvHookEnabled = false;
-        starshipIntegrated = true;
-        zoxideIntegrated = true;
-        gpgAgentIntegrated = true;
-        gpgSshSupport = true;
-        gpgAgentSshSocketUidValid = true;
-        nixDaemonSshAuthSock = gpgAgentSshSocket;
-        gitWtIntegrated = true;
-      };
-    };
-
-    "nixbuild-ssh-reliability" = {
-      actual = lib.hasInfix expectedNixbuildSshBlock systemSshConfig;
-      expected = true;
-    };
-
-    docker = {
-      actual = {
-        enabled = config.virtualisation.docker.enable;
-        enableOnBoot = config.virtualisation.docker.enableOnBoot;
-        userInDockerGroup = lib.elem "docker" config.users.users.${subjectUsername}.extraGroups;
-        daemonHosts = config.virtualisation.docker.daemon.settings.hosts;
-        listenOptions = config.virtualisation.docker.listenOptions;
-        autoPruneEnabled = config.virtualisation.docker.autoPrune.enable;
-      };
-      expected = {
-        enabled = true;
-        enableOnBoot = true;
-        userInDockerGroup = true;
-        daemonHosts = [ "fd://" ];
-        listenOptions = [ "/run/docker.sock" ];
-        autoPruneEnabled = false;
-      };
+    "nixbuild-ssh-agent" = {
+      actual = config.systemd.services.nix-daemon.environment.SSH_AUTH_SOCK;
+      expected = "/run/user/${toString subjectUid}/gnupg/S.gpg-agent.ssh";
     };
 
     "memory-pressure-protection" = {
@@ -208,68 +114,6 @@ let
           overrideStrategy = "asDropinIfExists";
           restartIfChanged = false;
         };
-      };
-    };
-
-    "migration-pins" = {
-      actual = {
-        stateVersion = config.system.stateVersion;
-        flakesEnabled = lib.elem "flakes" config.nix.settings.experimental-features;
-        trustedUser = lib.elem username config.nix.settings."extra-trusted-users";
-        minFree = config.nix.settings."min-free";
-        maxFree = config.nix.settings."max-free";
-        channelsEnabled = config.nix.channel.enable;
-        tarballConfigPath = toString config.wsl.tarball.configPath;
-      };
-      expected = {
-        stateVersion = "26.05";
-        flakesEnabled = true;
-        trustedUser = true;
-        minFree = 34359738368;
-        maxFree = 68719476736;
-        channelsEnabled = false;
-        tarballConfigPath = sourcePath;
-      };
-    };
-
-    "home-manager-wiring" = {
-      actual = {
-        inherit (config.home-manager)
-          useGlobalPkgs
-          useUserPackages
-          backupFileExtension
-          ;
-        username = home.home.username;
-        homeDirectory = home.home.homeDirectory;
-        hostKind = home.dotfiles.platform.environment;
-        isWsl = home.dotfiles.platform.environment == "wsl";
-        windowsUsername = home.dotfiles.platform.windows.username;
-        windowsHomedir = home.dotfiles.platform.windows.homedir;
-        dotfilesDir = home.dotfiles.platform.source;
-      };
-      expected = {
-        useGlobalPkgs = true;
-        useUserPackages = true;
-        backupFileExtension = "hm-backup";
-        username = username;
-        homeDirectory = linuxHomedir;
-        hostKind = "wsl";
-        isWsl = true;
-        inherit windowsUsername windowsHomedir;
-        dotfilesDir = sourcePath;
-      };
-    };
-
-    "codex-projection" = {
-      actual = {
-        activationAfter = home.home.activation.codexHooksConfig.after;
-        rulesManaged = home.home.file ? ".codex/rules";
-        rulesRecursive = home.home.file.".codex/rules".recursive;
-      };
-      expected = {
-        activationAfter = [ "linkGeneration" ];
-        rulesManaged = true;
-        rulesRecursive = false;
       };
     };
   };

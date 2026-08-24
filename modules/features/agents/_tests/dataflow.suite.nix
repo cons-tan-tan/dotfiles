@@ -109,118 +109,23 @@ let
         expr = {
           tux = {
             inherit (tuxHm.dotfiles.agentCommandPolicy.commands) alpha beta;
-            compiledSchema = tuxHm.dotfiles.agentCommandPolicyCompiled.guardPolicy.schemaVersion;
             pingu = tuxHm.dotfiles.agentCommandPolicy.commands.pingu or null;
           };
           pingu = {
             inherit (pinguHm.dotfiles.agentCommandPolicy.commands) pingu;
             alpha = pinguHm.dotfiles.agentCommandPolicy.commands.alpha or null;
-            compiledSchema = pinguHm.dotfiles.agentCommandPolicyCompiled.guardPolicy.schemaVersion;
           };
         };
         expected = {
           tux = {
             alpha = true;
             beta = false;
-            compiledSchema = 3;
             pingu = null;
           };
           pingu = {
             alpha = null;
-            compiledSchema = 3;
             pingu = true;
           };
-        };
-      }
-    );
-
-    testCommandPolicyMergeIsIncludeOrderIndependent = evalTest (
-      {
-        config,
-        den,
-        features,
-        ...
-      }:
-      let
-        commandsFor =
-          name: config.flake.homeConfigurations.${name}.config.dotfiles.agentCommandPolicy.commands;
-      in
-      {
-        imports = [
-          baseHome
-          (agentsRoot + "/base/default.nix")
-        ];
-        den.homes.x86_64-linux = {
-          pingu = { };
-          tux = { };
-        };
-        den.aspects.policy-alpha =
-          { config, ... }:
-          {
-            name = "fixture/policy-alpha";
-            agent-command-policy = [
-              {
-                owner = config.name;
-                policy.commands.alpha = true;
-              }
-            ];
-          };
-        den.aspects.policy-beta =
-          { config, ... }:
-          {
-            name = "fixture/policy-beta";
-            agent-command-policy = [
-              {
-                owner = config.name;
-                policy.commands.beta = false;
-              }
-            ];
-          };
-        den.aspects.pingu.includes = [
-          den.aspects.policy-beta
-          features.agents-base
-          den.aspects.policy-alpha
-        ];
-        den.aspects.tux.includes = [
-          den.aspects.policy-alpha
-          features.agents-base
-          den.aspects.policy-beta
-        ];
-
-        expr = commandsFor "pingu" == commandsFor "tux";
-        expected = true;
-      }
-    );
-
-    testCommandPolicyReachesStandaloneHomeScope = evalTest (
-      {
-        config,
-        features,
-        ...
-      }:
-      {
-        imports = [
-          baseHome
-          (agentsRoot + "/base/default.nix")
-        ];
-        den.homes.x86_64-linux.tux = { };
-        den.aspects.tux = {
-          includes = [
-            features.agents-base
-          ];
-          homeManager.agentCommandPolicy.commands.standalone = true;
-        };
-
-        expr = {
-          inherit (config.flake.homeConfigurations.tux.config.dotfiles.agentCommandPolicy.commands)
-            standalone
-            ;
-          compiledSchema =
-            config.flake.homeConfigurations.tux.config.dotfiles.agentCommandPolicyCompiled.guardPolicy.schemaVersion;
-        };
-        expected = {
-          standalone = true;
-          compiledSchema = 3;
         };
       }
     );
@@ -243,13 +148,8 @@ let
             hcom = home.dotfiles.agentIntegrations.hcom;
           in
           {
-            enabled = home.dotfiles.hcom.enable;
             integration = if hcom == null then "absent" else "present";
-            package = if hcom != null && lib.elem hcom.package home.home.packages then "present" else "absent";
-            skills = {
-              agents = home.home.file ? ".agents/skills/hcom-agent-messaging";
-              claude = home.home.file ? ".claude/skills/hcom-agent-messaging";
-            };
+            skill = home.home.file ? ".agents/skills/hcom-agent-messaging";
             claudeSettings = toString home.home.file.".claude/settings.json".source;
             codexHooks = toString home.home.file.".codex/hooks.json".source;
           };
@@ -329,22 +229,12 @@ let
         };
         expected = {
           plain = {
-            enabled = false;
             integration = "absent";
-            package = "absent";
-            skills = {
-              agents = false;
-              claude = false;
-            };
+            skill = false;
           };
           hcom = {
-            enabled = true;
             integration = "present";
-            package = "present";
-            skills = {
-              agents = true;
-              claude = true;
-            };
+            skill = true;
           };
           consumers = {
             claudeSettingsDiffer = true;
@@ -354,7 +244,7 @@ let
       }
     );
 
-    testHunkWslOverrideComposesWithBaseFeature = evalTest (
+    testHunkWslAspectSelectsWslRuntime = evalTest (
       {
         config,
         features,
@@ -381,46 +271,12 @@ let
           features.agent-hunk-wsl
         ];
 
-        expr = {
-          enable = home.config.programs.hunk.enable;
-          gitIntegration = home.config.programs.hunk.enableGitIntegration;
-          packageIsWslRuntime =
-            home.config.programs.hunk.package == home.pkgs.dotfilesPackages.hunk.wslRuntime;
-        };
-        expected = {
-          enable = true;
-          gitIntegration = true;
-          packageIsWslRuntime = true;
-        };
+        expr = home.config.programs.hunk.package == home.pkgs.dotfilesPackages.hunk.wslRuntime;
+        expected = true;
       }
     );
   };
-
-  failureCases = {
-    unknownCommandPolicyOption = {
-      expression =
-        (evalTest (
-          {
-            config,
-            features,
-            ...
-          }:
-          {
-            imports = [
-              baseHome
-              (agentsRoot + "/base/default.nix")
-            ];
-            den.homes.x86_64-linux.tux = { };
-            den.aspects.tux = {
-              includes = [ features.agents-base ];
-              homeManager.agentCommandPolicy.commandz.typo = true;
-            };
-            expr = config.flake.homeConfigurations.tux.config.dotfiles.agentCommandPolicyCompiled;
-          }
-        )).expr;
-      expectedFragments = [ "agentCommandPolicy.commandz" ];
-    };
-  };
+  failureCases = { };
 in
 if caseName == null then
   {

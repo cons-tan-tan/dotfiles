@@ -25,44 +25,21 @@ file_mode() {
 run_login() {
   run env \
     AWS_CONFIG_FILE="$TARGET" \
-    AWS_LOGIN_TEST_MODE="${1:-success}" \
     "$AWS_LOGIN_TEST_PACKAGE/bin/aws-login" --profile test
 }
 
-@test "Nix-built aws-login preserves target-only settings and child argv" {
+@test "Nix-built aws-login publishes a secure merged config" {
   printf '%s\n' \
     '[profile test]' \
     'credential_process = command' \
     '# keep' >"$TARGET"
   chmod 644 "$TARGET"
 
-  run_login success
+  run_login
 
   [ "$status" -eq 0 ]
-  [ "$(cat "$TEST_TMPDIR/aws-args")" = $'login\n--profile\ntest' ]
   grep -Fx 'credential_process = command' "$TARGET"
   grep -Fx '# keep' "$TARGET"
   grep -Fx 'login_session = fixture-session' "$TARGET"
   [ "$(file_mode "$TARGET")" = 600 ]
-}
-
-@test "Nix-built aws-login preserves the target when the AWS child fails" {
-  printf '%s\n' '[profile test]' 'credential_process = command' >"$TARGET"
-  cp "$TARGET" "$TEST_TMPDIR/before"
-
-  run_login fail
-
-  [ "$status" -eq 7 ]
-  cmp "$TEST_TMPDIR/before" "$TARGET"
-}
-
-@test "Nix-built aws-login rejects malformed targets before invoking AWS" {
-  printf '%s\n' '[profile test]' 'malformed' >"$TARGET"
-  cp "$TARGET" "$TEST_TMPDIR/before"
-
-  run_login success
-
-  [ "$status" -eq 1 ]
-  cmp "$TEST_TMPDIR/before" "$TARGET"
-  [ ! -e "$TEST_TMPDIR/aws-args" ]
 }

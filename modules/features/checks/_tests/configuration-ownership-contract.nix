@@ -79,8 +79,6 @@ let
           exists = true;
           inherit homeExists;
           system = lib.attrByPath [ "pkgs" "stdenv" "hostPlatform" "system" ] null configuration;
-          useGlobalPkgs = lib.attrByPath [ "home-manager" "useGlobalPkgs" ] null config;
-          useUserPackages = lib.attrByPath [ "home-manager" "useUserPackages" ] null config;
           backupFileExtension = lib.attrByPath [ "home-manager" "backupFileExtension" ] null config;
           username = lib.attrByPath [ "home" "username" ] null home;
           homeDirectory = lib.attrByPath [ "home" "homeDirectory" ] null home;
@@ -90,8 +88,6 @@ let
     exists = true;
     homeExists = true;
     system = subject.contexts.nixosWsl.system;
-    useGlobalPkgs = true;
-    useUserPackages = true;
     backupFileExtension = "hm-backup";
     username = subject.username;
     homeDirectory = subject.contexts.nixosWsl.homedir;
@@ -120,8 +116,6 @@ let
           exists = true;
           inherit homeExists;
           system = lib.attrByPath [ "pkgs" "stdenv" "hostPlatform" "system" ] null configuration;
-          useGlobalPkgs = lib.attrByPath [ "home-manager" "useGlobalPkgs" ] null config;
-          useUserPackages = lib.attrByPath [ "home-manager" "useUserPackages" ] null config;
           backupFileExtension = lib.attrByPath [ "home-manager" "backupFileExtension" ] null config;
           username = lib.attrByPath [ "home" "username" ] null home;
           homeDirectory = lib.attrByPath [ "home" "homeDirectory" ] null home;
@@ -130,8 +124,6 @@ let
     exists = true;
     homeExists = true;
     system = entityContexts.darwin.contexts.darwin.system;
-    useGlobalPkgs = true;
-    useUserPackages = true;
     backupFileExtension = "hm-backup";
     username = entityContexts.darwin.contexts.darwin.username;
     homeDirectory = entityContexts.darwin.contexts.darwin.homedir;

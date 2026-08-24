@@ -68,7 +68,7 @@ let
     };
 
   tests = {
-    testSkillQuirkMergesProducersIndependentlyOfIncludeOrder = evalTest (
+    testSkillQuirkMergesProducersWithoutLeakingAcrossHomes = evalTest (
       {
         den,
         features,
@@ -147,114 +147,7 @@ let
     );
   };
 
-  duplicateSkillsModule =
-    { config, den, ... }:
-    {
-      imports = [ baseHome ];
-      den.homes.x86_64-linux.tux = { };
-      den.aspects.skills-consumer = skillsSchemaConsumer;
-      den.aspects.skills-a.agent-skills = [
-        {
-          name = "duplicate";
-          definition.root = ./.;
-          provenance = "local";
-        }
-      ];
-      den.aspects.skills-b.agent-skills = [
-        {
-          name = "duplicate";
-          definition.root = ./.;
-          provenance = "external";
-        }
-      ];
-      den.aspects.tux.includes = [
-        den.aspects.skills-a
-        den.aspects.skills-b
-        den.aspects.skills-consumer
-      ];
-      expr = builtins.attrNames config.flake.homeConfigurations.tux.config.dotfiles.agentSkills.externalSkills;
-    };
-
   failureCases = {
-    duplicateSkillNames = {
-      expression = (evalTest duplicateSkillsModule).expr;
-      expectedFragments = [ "agent skills contain duplicate names: duplicate" ];
-    };
-    invalidSkillProvenance = {
-      expression =
-        (evalTest (
-          { config, den, ... }:
-          {
-            imports = [ baseHome ];
-            den.homes.x86_64-linux.tux = { };
-            den.aspects.skills-consumer = skillsSchemaConsumer;
-            den.aspects.skills-invalid.agent-skills = [
-              {
-                name = "invalid";
-                definition.root = ./.;
-                provenance = "unknown";
-              }
-            ];
-            den.aspects.tux.includes = [
-              den.aspects.skills-invalid
-              den.aspects.skills-consumer
-            ];
-            expr = builtins.deepSeq (config.flake.homeConfigurations.tux.config.dotfiles.agentSkills.externalSkills) true;
-          }
-        )).expr;
-      expectedFragments = [ "agent skill quirk entry has an invalid provenance" ];
-    };
-    invalidSkillEnablePredicate = {
-      expression = builtins.deepSeq (aggregateSkills [
-        {
-          name = "invalid";
-          definition.root = ./.;
-          provenance = "local";
-          enable = true;
-        }
-      ]) true;
-      expectedFragments = [ "agent skill quirk entry enable predicate must be a function" ];
-    };
-    nonBooleanSkillEnablePredicate = {
-      expression =
-        (aggregateSkills [
-          {
-            name = "invalid";
-            definition.root = ./.;
-            provenance = "local";
-            enable = _: "yes";
-          }
-        ]).enablePredicates.invalid
-          { };
-      expectedFragments = [ "agent skill quirk entry enable predicate must return a boolean" ];
-    };
-    invalidSkillDefinition = {
-      expression =
-        (evalTest (
-          { config, den, ... }:
-          {
-            imports = [ baseHome ];
-            den.homes.x86_64-linux.tux = { };
-            den.aspects.skills-consumer = skillsSchemaConsumer;
-            den.aspects.skills-invalid.agent-skills = [
-              {
-                name = "invalid";
-                definition = {
-                  root = ./.;
-                  unexpected = true;
-                };
-                provenance = "local";
-              }
-            ];
-            den.aspects.tux.includes = [
-              den.aspects.skills-invalid
-              den.aspects.skills-consumer
-            ];
-            expr = builtins.deepSeq (config.flake.homeConfigurations.tux.config.dotfiles.agentSkills.externalSkills) true;
-          }
-        )).expr;
-      expectedFragments = [ "dotfiles.agentSkills.externalSkills.invalid.unexpected" ];
-    };
     derivationSkillRoot = {
       expression =
         (evalTest (

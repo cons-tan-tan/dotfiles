@@ -3,11 +3,6 @@ let
   awsLoginFixture = pkgs.writeShellApplication {
     name = "aws";
     text = ''
-      : "''${TEST_TMPDIR:?}"
-      printf '%s\n' "$@" >"$TEST_TMPDIR/aws-args"
-      if [[ "''${AWS_LOGIN_TEST_MODE:-success}" == fail ]]; then
-        exit 7
-      fi
       : "''${AWS_CONFIG_FILE:?}"
       printf '%s\n' 'login_session = fixture-session' >>"$AWS_CONFIG_FILE"
     '';

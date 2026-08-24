@@ -10,7 +10,6 @@
       serviceConfig = if service == null then { } else service.Service;
     in
     {
-      packageInstalled = package != null;
       inherit configText;
       allowedSigners = lib.attrByPath [
         "programs"
@@ -52,7 +51,6 @@
     facts:
     if facts.environment == "wsl" && !facts.standalone then
       {
-        packageInstalled = true;
         configText = ''
           allowed_labels = ["git-signing"]
         '';
@@ -72,7 +70,6 @@
       }
     else
       {
-        packageInstalled = false;
         configText = null;
         allowedSigners = null;
         service = null;

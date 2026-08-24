@@ -82,6 +82,15 @@ let
     && timer.Timer.RandomizedDelaySec == "30min"
     && timer.Install.WantedBy == [ "timers.target" ]
     && !(evaluated.launchd.agents ? trash-gc);
+  activationContract =
+    evaluated:
+    let
+      activation = evaluated.home.activation.trashDirectory;
+      trashDirectory = "${evaluated.xdg.dataHome}/Trash";
+    in
+    activation.after == [ "writeBoundary" ]
+    && lib.hasInfix "/bin/prepare-trash-directory" activation.data
+    && lib.hasInfix "TRASH_DIRECTORY=${lib.escapeShellArg trashDirectory}" activation.data;
 in
 {
   testFeatureOwnedPolicyPreservesRecoverableDeletionBoundary = {
@@ -122,6 +131,15 @@ in
 
   testWslUsesTheSameGcContractAsLinux = platformTest pkgs.stdenv.hostPlatform.isLinux {
     expr = systemdContract wsl && systemdContract wsl == systemdContract linux;
+    expected = true;
+  };
+
+  testActivationPreparesThePlatformTrashDirectory = {
+    expr = builtins.all activationContract [
+      linux
+      wsl
+      darwin
+    ];
     expected = true;
   };
 

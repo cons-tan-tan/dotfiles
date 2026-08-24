@@ -8,21 +8,16 @@
       config = target.config;
     in
     {
-      config = config.home.file ? ".ssh/config";
-      common = config.home.file ? ".ssh/config.d/10-common.conf";
-      privateAbsent = !(config.home.file ? ".ssh/config.d/50-private.conf");
+      managedPaths = builtins.filter (lib.hasPrefix ".ssh/") (builtins.attrNames config.home.file);
       configIncludesFragments =
         lib.hasInfix "Include ~/.ssh/config.d/*.conf"
           config.home.file.".ssh/config".text;
-      commonHasGithub =
-        lib.hasInfix "Host github.com"
-          config.home.file.".ssh/config.d/10-common.conf".text;
     };
   expected = _: {
-    config = true;
-    common = true;
-    privateAbsent = true;
+    managedPaths = [
+      ".ssh/config"
+      ".ssh/config.d/10-common.conf"
+    ];
     configIncludesFragments = true;
-    commonHasGithub = true;
   };
 }

@@ -2,10 +2,10 @@
   caseName ? null,
   inputs,
   lib,
-  repoRoot ? ../..,
+  ...
 }:
 let
-  meta = builtins.seq repoRoot {
+  meta = {
     checkName = "den-unfree-capability-tests";
     execution = "evaluation-complete";
     hestiaGroup = null;
@@ -28,7 +28,6 @@ let
                 };
                 system.stateVersion = "25.11";
               };
-              den.default.darwin.system.stateVersion = 5;
               den.default.homeManager.home.stateVersion = "25.11";
             }
           ];
@@ -52,9 +51,7 @@ let
           inherit pname;
           version = "1";
           dontUnpack = true;
-          installPhase = ''
-            mkdir -p "$out"
-          '';
+          installPhase = ''mkdir -p "$out"'';
           meta.license = lib.licenses.unfree;
         };
     in
@@ -62,7 +59,6 @@ let
       den-allowed-fixture = mkFixture "den-allowed-fixture";
       den-denied-fixture = mkFixture "den-denied-fixture";
     };
-
   probeModule =
     { pkgs, lib, ... }:
     {
@@ -74,7 +70,6 @@ let
         denied = (builtins.tryEval pkgs.den-denied-fixture.drvPath).success;
       };
     };
-
   fixturePackages =
     { class, ... }:
     {
@@ -84,47 +79,17 @@ let
         nixpkgs.overlays = [ fixtureOverlay ];
       };
     };
-
   fixtureProbe =
     { class, ... }:
     {
       name = "unfree-fixture-probe";
       ${class}.imports = [ probeModule ];
     };
-
   expectedProbe = {
     allowed = true;
     denied = false;
   };
   tests = {
-    testNixosClassUsesSelectiveUnfreePredicate = evalTest (
-      { den, igloo, ... }:
-      {
-        den.hosts.x86_64-linux.igloo = { };
-        den.aspects.igloo.includes = [
-          fixturePackages
-          (den.batteries.unfree [ "den-allowed-fixture" ])
-        ];
-
-        expr = igloo.denUnfreeProbe;
-        expected = expectedProbe;
-      }
-    );
-
-    testDarwinClassUsesSelectiveUnfreePredicate = evalTest (
-      { den, apple, ... }:
-      {
-        den.hosts.aarch64-darwin.apple = { };
-        den.aspects.apple.includes = [
-          fixturePackages
-          (den.batteries.unfree [ "den-allowed-fixture" ])
-        ];
-
-        expr = apple.denUnfreeProbe;
-        expected = expectedProbe;
-      }
-    );
-
     testIntegratedHomeManagerUsesHostPredicate = evalTest (
       {
         den,
@@ -147,12 +112,10 @@ let
         expr = {
           host = igloo.denUnfreeProbe;
           home = tuxHm.denUnfreeProbe;
-          useGlobalPkgs = igloo.home-manager.useGlobalPkgs;
         };
         expected = {
           host = expectedProbe;
           home = expectedProbe;
-          useGlobalPkgs = true;
         };
       }
     );

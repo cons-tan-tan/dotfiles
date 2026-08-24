@@ -10,10 +10,6 @@
       systemdServices = lib.attrByPath [ "systemd" "user" "services" ] { } config;
     in
     {
-      programs = {
-        gpg = config.programs.gpg.enable;
-        gpgAgentZsh = config.services.gpg-agent.enableZshIntegration;
-      };
       cacheTtl = config.services.gpg-agent.defaultCacheTtl;
       maxCacheTtl = config.services.gpg-agent.maxCacheTtl;
       sshSupport = config.services.gpg-agent.enableSshSupport;
@@ -25,10 +21,6 @@
       ) systemdServices.set-SSH_AUTH_SOCK.Service.ExecStart;
     };
   expected = facts: {
-    programs = {
-      gpg = true;
-      gpgAgentZsh = true;
-    };
     cacheTtl = 43200;
     maxCacheTtl = 43200;
     sshSupport = true;

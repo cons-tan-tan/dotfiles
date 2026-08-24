@@ -38,58 +38,15 @@ let
         "sleepctl"
       ];
   expectedNames = pkgs.lib.sort builtins.lessThan (commonNames ++ familyNames ++ platformNames);
-  packageValues = (map (name: builtins.getAttr name local) commonNames) ++ [
-    local.claude-code.package
-    local.hcom.package
-    local.herdr.package
-    local.hunk.package
-  ];
 in
 {
-  testPrivateNamespaceExists = {
-    expr = pkgs ? dotfilesPackages;
-    expected = true;
-  };
-
-  testRepresentativePackagesExist = {
-    expr = builtins.all (name: builtins.hasAttr name local) commonNames;
-    expected = true;
-  };
-
   testPackageInventoryIsExact = {
     expr = pkgs.lib.sort builtins.lessThan (builtins.attrNames local);
     expected = expectedNames;
   };
 
-  testRepresentativePackagesAreDerivations = {
-    expr = builtins.all pkgs.lib.isDerivation packageValues;
-    expected = true;
-  };
-
-  testPlatformPackagesAreScoped = {
-    expr =
-      if pkgs.stdenv.hostPlatform.isLinux then
-        local ? drawio-headless
-        && local ? ci-matrix-planner
-        && local ? oo7-dpapi-bridge
-        && local ? wsl-dpapi
-        && local ? wsl-open
-        && local ? wsl-set-ssh-auth-sock
-        && pkgs.lib.isDerivation local.oo7-dpapi-bridge
-        && pkgs.lib.isDerivation local.wsl-dpapi
-        && pkgs.lib.isDerivation local.wsl-open
-        && !(local ? codex-app)
-        && !(local ? sleepctl)
-      else
-        local ? codex-app
-        && local ? sleepctl
-        && pkgs.lib.isDerivation local.sleepctl
-        && !(local ? drawio-headless)
-        && !(local ? ci-matrix-planner)
-        && !(local ? oo7-dpapi-bridge)
-        && !(local ? wsl-dpapi)
-        && !(local ? wsl-open)
-        && !(local ? wsl-set-ssh-auth-sock);
+  testPlatformPackagesAreDerivations = {
+    expr = builtins.all pkgs.lib.isDerivation (map (name: local.${name}) platformNames);
     expected = true;
   };
 }

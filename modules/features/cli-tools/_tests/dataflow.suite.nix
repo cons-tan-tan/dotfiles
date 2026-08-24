@@ -18,9 +18,8 @@ let
         default = { };
       };
     }
+    (repoRoot + "/modules/features/windows/class.nix")
     (repoRoot + "/modules/features/cli-tools/quirk.nix")
-    (repoRoot + "/modules/features/agents/skills/quirk.nix")
-    (repoRoot + "/modules/features/agents/base/quirk.nix")
   ];
 
   evalTest =
@@ -44,197 +43,97 @@ let
     { lib, ... }:
     {
       den.default.homeManager.home = {
-        username = "test";
-        homeDirectory = lib.mkForce "/home/test";
+        username = lib.mkDefault "test";
+        homeDirectory = lib.mkDefault "/home/test";
         stateVersion = "25.11";
       };
     };
 
-  consumer = {
-    homeManager =
+  tests = {
+    testSyntheticEntryReachesNixAndWingetConsumers = evalTest (
       {
-        cli-tools,
-        lib,
-        pkgs,
+        config,
+        features,
         ...
       }:
       let
-        aggregated = import ../_lib/aggregate.nix { inherit lib pkgs; } cli-tools;
-      in
-      {
-        home.sessionVariables = {
-          CLI_TOOL_IDS = builtins.toJSON (map (entry: entry.id) aggregated.checked);
-          CLI_TOOL_NIX_PACKAGES = builtins.toJSON (map lib.getName aggregated.nixHomePackages);
-          CLI_TOOL_WINGET_IDS = builtins.toJSON (map (entry: entry.id) aggregated.winget);
-        };
-      };
-  };
-
-  tests = {
-    testCliToolsBundleKeepsToolOwnedProjectionsTogether = evalTest (
-      { config, features, ... }:
-      let
-        home = config.flake.homeConfigurations.tux.config;
-        overlayPlan = (import ../../nixpkgs/_interface).mkOverlayPlan {
-          inherit inputs;
-          system = "x86_64-linux";
+        homeFor = name: config.flake.homeConfigurations.${name};
+        wingetSourceFor =
+          name:
+          let
+            files = (homeFor name).config.dotfiles.windows.deployments.winget.files;
+            file = lib.findFirst (candidate: candidate.destination == ".config/dev.winget") null files;
+          in
+          if file == null then null else file.source;
+        mkAspect = name: {
+          includes = [
+            features.platform-context
+            features.windows-base
+            features.cli-tools-consumer
+            features.cli-tools-winget
+          ];
+          homeManager = {
+            home = {
+              username = lib.mkForce name;
+              homeDirectory = lib.mkForce "/home/${name}";
+            };
+            dotfiles.platform = {
+              environment = "wsl";
+              source = "/source/${name}";
+              standalone = true;
+              windows = {
+                enable = true;
+                username = "${name}-win";
+                homedir = "/mnt/c/Users/${name}-win";
+              };
+            };
+          };
         };
       in
       {
         imports = [
           baseHome
+          (repoRoot + "/modules/features/platform/context.nix")
+          (repoRoot + "/modules/features/windows/base.nix")
           (repoRoot + "/modules/features/cli-tools/default.nix")
-          (repoRoot + "/modules/features/cli-tools/reuse.nix")
-          (repoRoot + "/modules/features/cli-tools/rg.nix")
-          (repoRoot + "/modules/features/cli-tools/fd.nix")
-          (repoRoot + "/modules/features/cli-tools/bat.nix")
-          (repoRoot + "/modules/features/cli-tools/eza.nix")
-          (repoRoot + "/modules/features/cli-tools/jq.nix")
-          (repoRoot + "/modules/features/cli-tools/fzf.nix")
-          (repoRoot + "/modules/features/ast-grep.nix")
-          (repoRoot + "/modules/features/agents/skills/default.nix")
-          (repoRoot + "/modules/features/agents/base/default.nix")
+          (repoRoot + "/modules/features/cli-tools/winget.nix")
         ];
-        den.default.homeManager.nixpkgs.overlays = overlayPlan.overlays;
-        den.homes.x86_64-linux.tux = { };
-        den.aspects.tux.includes = [
-          features.cli-tools
-          features.agent-skills-consumer
-          features.agents-base
-        ];
-
-        expr = {
-          hasAstGrepSkill = home.dotfiles.agentSkills.externalSkills ? ast-grep;
-          commandDecisions = {
-            ast-grep = home.dotfiles.agentCommandPolicy.commands.ast-grep;
-            bat = home.dotfiles.agentCommandPolicy.commands.bat;
-            eza = home.dotfiles.agentCommandPolicy.commands.eza;
-            fd = home.dotfiles.agentCommandPolicy.commands.fd;
-            jq = home.dotfiles.agentCommandPolicy.commands.jq;
-            rg = home.dotfiles.agentCommandPolicy.commands.rg;
-          };
-          fdGrammar = {
-            options = lib.getAttrs [
-              "-C"
-              "-E"
-              "-H"
-              "--base-directory"
-              "--exclude"
-              "--literal"
-              "--no-hidden"
-            ] home.dotfiles.agentCommandPolicy.commandGrammars.fd.options;
-            terminalOptions = home.dotfiles.agentCommandPolicy.commandGrammars.fd.terminalOptions;
-          };
-        };
-        expected = {
-          hasAstGrepSkill = true;
-          commandDecisions = {
-            ast-grep = true;
-            bat = true;
-            eza = true;
-            fd = true;
-            jq = true;
-            rg = true;
-          };
-          fdGrammar = {
-            options = {
-              "-C" = 1;
-              "-E" = 1;
-              "-H" = 0;
-              "--base-directory" = 1;
-              "--exclude" = 1;
-              "--literal" = 0;
-              "--no-hidden" = 0;
-            };
-            terminalOptions = [
-              "-h"
-              "--help"
-              "-V"
-              "--version"
-              "--gen-completions"
-            ];
-          };
-        };
-      }
-    );
-
-    testQuirkMergesIndependentOfIncludeOrderAndKeepsHomeScopesIsolated = evalTest (
-      {
-        config,
-        den,
-        ...
-      }:
-      let
-        describe =
-          name:
-          let
-            variables = config.flake.homeConfigurations.${name}.config.home.sessionVariables;
-          in
-          {
-            ids = builtins.fromJSON variables.CLI_TOOL_IDS;
-            nixPackages = builtins.fromJSON variables.CLI_TOOL_NIX_PACKAGES;
-            wingetIds = builtins.fromJSON variables.CLI_TOOL_WINGET_IDS;
-          };
-      in
-      {
-        imports = [ baseHome ];
         den.homes.x86_64-linux = {
-          pingu = { };
-          tux = { };
+          fixture = { };
+          plain = { };
         };
-        den.aspects.alpha.cli-tools = [
-          {
-            id = "alpha";
-            nix = {
-              route = "home-packages";
-              nixpkgsAttr = "reuse";
-            };
-          }
-        ];
-        den.aspects.beta.cli-tools = [
-          {
-            id = "beta";
-            winget.packageId = "Example.Beta";
-          }
-        ];
-        den.aspects.pingu = {
-          includes = [ consumer ];
+        den.aspects.plain = mkAspect "plain";
+        den.aspects.fixture = (mkAspect "fixture") // {
           cli-tools = [
             {
-              id = "pingu";
-              winget.packageId = "Example.Pingu";
+              id = "fixture";
+              nix = {
+                route = "home-packages";
+                nixpkgsAttr = "reuse";
+              };
+              winget.packageId = "Example.Fixture";
             }
           ];
         };
-        den.aspects.tux.includes = [
-          den.aspects.beta
-          consumer
-          den.aspects.alpha
-        ];
 
         expr = {
-          pingu = describe "pingu";
-          tux = describe "tux";
+          fixtureNixPackage = builtins.elem (homeFor "fixture").pkgs.reuse (homeFor "fixture")
+          .config.home.packages;
+          plainNixPackage = builtins.elem (homeFor "plain").pkgs.reuse (homeFor "plain").config.home.packages;
+          wingetDestination =
+            map (file: file.destination)
+              (homeFor "fixture").config.dotfiles.windows.deployments.winget.files;
+          wingetSourceChanged = toString (wingetSourceFor "fixture") != toString (wingetSourceFor "plain");
         };
         expected = {
-          pingu = {
-            ids = [ "pingu" ];
-            nixPackages = [ ];
-            wingetIds = [ "pingu" ];
-          };
-          tux = {
-            ids = [
-              "beta"
-              "alpha"
-            ];
-            nixPackages = [ "reuse" ];
-            wingetIds = [ "beta" ];
-          };
+          fixtureNixPackage = true;
+          plainNixPackage = false;
+          wingetDestination = [ ".config/dev.winget" ];
+          wingetSourceChanged = true;
         };
       }
     );
   };
-
   failureCases = { };
 in
 if caseName == null then

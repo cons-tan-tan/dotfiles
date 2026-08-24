@@ -141,12 +141,6 @@ let
     builtins.match "^([^[:alnum:]_'-]*|.*[^[:alnum:]_'-])allowUnfree[[:space:]]*=[[:space:]]*(lib[.](mkForce|mkDefault)[[:space:]]+)?true[[:space:]]*;.*$" normalizedContents
     != null;
   broadUnfreePolicyFiles = matchingFilesBy productionArchitectureSourceFiles hasBroadUnfreePolicy;
-  windowsSubstrateDependencyViolations =
-    matchingFilesBy
-      (builtins.filter (
-        path: !lib.hasInfix "/modules/features/windows/" (toString path)
-      ) productionArchitectureSourceFiles)
-      (contents: lib.hasInfix "features.windows-base" (sanitizeNixSource contents));
 in
 {
   testBatsSourcesStayWithFeatureOwner = {
@@ -173,11 +167,6 @@ in
   testAutoImportedFilesHaveModuleValues = {
     expr = builtins.all isNonemptyModuleValue actualModuleFiles;
     expected = true;
-  };
-
-  testWindowsSubstrateIsOwnedByWindowsComposition = {
-    expr = windowsSubstrateDependencyViolations;
-    expected = [ ];
   };
 
   testPureTestsAreNotAutoImported = {

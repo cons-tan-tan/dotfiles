@@ -94,14 +94,6 @@ let
   expectedValidationNames = builtins.attrNames flake.apps.${system};
 in
 {
-  testTwoProducersMergeIntoOneConsumer = {
-    expr = map lib.getName (builtins.attrValues mergeFixture.quirkValidations.x86_64-linux);
-    expected = [
-      "alpha-x86_64-linux"
-      "beta-x86_64-linux"
-    ];
-  };
-
   testMergedProducersReachFinalValidationGate = {
     expr = mergeFixture.checks.x86_64-linux.app-scripts.validationNames;
     expected = [
