@@ -9,7 +9,6 @@ import os
 import shlex
 import subprocess
 import sys
-import tempfile
 import time
 from pathlib import Path
 
@@ -24,17 +23,14 @@ def phase(status: str, duration_ms: int, exit_code: int | None) -> dict[str, obj
     return {"status": status, "duration_ms": duration_ms, "exit_code": exit_code}
 
 
-def run_prefetch(script: Path) -> tuple[int, int, str]:
-    with tempfile.TemporaryDirectory() as directory:
-        result_path = Path(directory) / "prefetch-result"
-        environment = os.environ.copy()
-        environment["PREFETCH_ONLY"] = "true"
-        environment["PREFETCH_RESULT_FILE"] = str(result_path)
-        started = time.monotonic()
-        result = subprocess.run(["bash", str(script)], check=False, env=environment)
-        duration = round((time.monotonic() - started) * 1000)
-        outcome = result_path.read_text().strip() if result_path.exists() else "failed"
-    return result.returncode, duration, outcome
+def run_prefetch(hestia_bin: str, installables: list[str]) -> tuple[int, int]:
+    started = time.monotonic()
+    result = subprocess.run(
+        [hestia_bin, "prefetch", *installables],
+        check=False,
+    )
+    duration = round((time.monotonic() - started) * 1000)
+    return result.returncode, duration
 
 
 def printable_message(event: dict[str, object], raw: str) -> str:
@@ -131,6 +127,41 @@ def run_build(
     )
 
 
+def run_matrix_build(
+    hestia_bin: str, installables: list[str]
+) -> tuple[
+    int,
+    dict[str, dict[str, object]],
+    list[dict[str, object]],
+    list[dict[str, object]],
+]:
+    # A completed prefetch failure is recoverable through normal substitution.
+    # Spawn failures remain infrastructure errors and are handled by the CLI entry point.
+    prefetch_code, prefetch_ms = run_prefetch(hestia_bin, installables)
+    if prefetch_code != 0:
+        print(
+            "::warning::Hestia closure prefetch failed; "
+            "falling back to normal Nix substitution",
+            file=sys.stderr,
+        )
+    build_code, build_ms, events, substitutions = run_build(installables)
+    return (
+        build_code,
+        {
+            "prefetch": phase(
+                "success" if prefetch_code == 0 else "fallback",
+                prefetch_ms,
+                prefetch_code,
+            ),
+            "nix_build": phase(
+                "success" if build_code == 0 else "failure", build_ms, build_code
+            ),
+        },
+        events,
+        substitutions,
+    )
+
+
 def required(name: str) -> str:
     value = os.environ.get(name)
     if value is None or not value:
@@ -157,17 +188,9 @@ def main() -> int:
     wrapper_started = round(time.time() * 1000)
     installables = shlex.split(required("INSTALLABLES"))
     root_ids = sorted(drv_id(value.removesuffix("^*")) for value in installables)
-    prefetch_code, prefetch_ms, prefetch_outcome = run_prefetch(
-        Path(required("HESTIA_PREFETCH_SCRIPT"))
+    build_code, build_phases, events, substitutions = run_matrix_build(
+        required("HESTIA_BIN"), installables
     )
-    if prefetch_code == 0:
-        build_code, build_ms, events, substitutions = run_build(installables)
-        build_phase = phase(
-            "success" if build_code == 0 else "failure", build_ms, build_code
-        )
-    else:
-        build_code, events, substitutions = prefetch_code, [], []
-        build_phase = phase("not_run", 0, None)
 
     system = required("SYSTEM")
     job = document(
@@ -193,18 +216,7 @@ def main() -> int:
                 "github_job_setup": phase(
                     "success", max(0, wrapper_started - job_started), 0
                 ),
-                "prefetch": phase(
-                    (
-                        "success"
-                        if prefetch_outcome == "imported"
-                        else "fallback"
-                        if prefetch_outcome == "fallback" and prefetch_code == 0
-                        else "failure"
-                    ),
-                    prefetch_ms,
-                    prefetch_code,
-                ),
-                "nix_build": build_phase,
+                **build_phases,
             },
             "derivation_events": events,
             "substitution_events": substitutions,
