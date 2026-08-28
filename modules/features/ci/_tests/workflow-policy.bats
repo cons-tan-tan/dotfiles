@@ -319,7 +319,7 @@ YAML
   source=$(yq -r '.runs.steps[] | select(.id == "build-hestia") | .env.HESTIA_SOURCE' "$HESTIA_SETUP_ACTION")
   source=${source#github:}
   source_action="${source%/*}@${source##*/}"
-  setup_action=$(yq -r '.runs.steps[] | select((.uses // "") | test("^[^/]+/hestia@")) | .uses' "$HESTIA_SETUP_ACTION")
+  setup_action=$(yq -r '.runs.steps[] | select((.uses // "") | test("^Mic92/hestia@")) | .uses' "$HESTIA_SETUP_ACTION")
   matrix_action=$(yq -r '.jobs.evaluate.steps[] | select(.id == "hestia-matrix") | .uses' "$HESTIA_WORKFLOW")
   cache_gc_action=$(yq -r '.jobs.gc.steps[] | select((.uses // "") == "$/.github/actions/setup-hestia") | .uses' "$CACHE_GC_WORKFLOW")
 
@@ -346,26 +346,26 @@ YAML
     )] | length) == 1
     and ([.runs.steps[] | select(.id == "build-hestia")] | length) == 1
     and ([.runs.steps[] | select(.id == "build-hestia")][0] | (
-      (.env.HESTIA_SOURCE | test("^github:[^/]+/hestia/[0-9a-f]{40}$"))
+      (.env.HESTIA_SOURCE | test("^github:Mic92/hestia/[0-9a-f]{40}$"))
       and (.run | contains("nix build --no-link --print-out-paths"))
     ))
     and ([.runs.steps[] | select(
-      (.uses // "") | test("^[^/]+/hestia@")
+      (.uses // "") | test("^Mic92/hestia@")
     )] | length) == 1
     and ([.runs.steps[] | select(
-      (.uses // "") | test("^[^/]+/hestia@")
+      (.uses // "") | test("^Mic92/hestia@")
     )][0].with.binary)
       == "${{ steps.build-hestia.outputs.binary }}"
     and ([.runs.steps[] | select(
-      (.uses // "") | test("^[^/]+/hestia@")
+      (.uses // "") | test("^Mic92/hestia@")
     )][0].with."upstream-cache-filter")
       == "${{ inputs.upstream-cache-filter }}"
     and ([.runs.steps[] | select(
-      (.uses // "") | test("^[^/]+/hestia@")
+      (.uses // "") | test("^Mic92/hestia@")
     )][0].with."filter-drv-closures")
       == "${{ inputs.filter-drv-closures }}"
     and ([.runs.steps[] | select(
-      (.uses // "") | test("^[^/]+/hestia@")
+      (.uses // "") | test("^Mic92/hestia@")
     )][0].with."wait-manifest-version")
       == "${{ inputs.wait-manifest-version }}"
   ' "$HESTIA_SETUP_ACTION"
@@ -442,7 +442,7 @@ YAML
       | length) == 1
     and ([.jobs.evaluate.steps[] | select(.id == "hestia-matrix")] | length) == 1
     and ([.jobs.evaluate.steps[] | select(.id == "hestia-matrix")][0].uses
-      | test("^[^/]+/hestia/matrix@"))
+      | test("^Mic92/hestia/matrix@"))
     and ([.jobs.evaluate.steps[] | select(.id == "hestia-matrix")][0].with.flake)
       == ".#lib.hestiaJobs.ci.${{ inputs.system }}"
     and ([.jobs.evaluate.steps[] | select(.id == "hestia-matrix")][0].with."attr-prefix")
@@ -728,7 +728,7 @@ YAML
         (.outputs."nix-extra-substituters".value
           == strenv(EXPECTED_SUBSTITUTERS)),
         (([.runs.steps[] | select(
-          (.uses // "") | test("^[^/]+/hestia@")
+          (.uses // "") | test("^Mic92/hestia@")
         )][0].with."upstream-cache-key-names" | sub("[[:space:]]+"; " "))
           == "${{ inputs.upstream-cache-filter == '\''true'\'' && '\''"
             + strenv(EXPECTED_HESTIA_KEY_NAMES) + "'\'' || '\'''\'' }}")

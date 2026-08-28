@@ -41,7 +41,7 @@ runs:
       id: build-hestia
       shell: bash
       env:
-        HESTIA_SOURCE: github:cons-tan-tan/hestia/42102da2c331dcd3267b54d17b2d518a80482d54
+        HESTIA_SOURCE: github:Mic92/hestia/78ea99bce0e807ce45f63323a5dd3f54e4a89cfc
       run: |
         set -euo pipefail
         result="$(nix build --no-link --print-out-paths "$HESTIA_SOURCE")"
@@ -51,7 +51,7 @@ runs:
         printf 'binary=%s\n' "$binary" >> "$GITHUB_OUTPUT"
         printf 'version=v%s\n' "${version#hestia }" >> "$GITHUB_OUTPUT"
     - name: Start Hestia
-      uses: cons-tan-tan/hestia@42102da2c331dcd3267b54d17b2d518a80482d54 # feat/filtered-drv-closure-prefetch
+      uses: Mic92/hestia@78ea99bce0e807ce45f63323a5dd3f54e4a89cfc # PR #136 merge
       with:
         binary: ${{ steps.build-hestia.outputs.binary }}
         upstream-cache-filter: ${{ inputs.upstream-cache-filter }}

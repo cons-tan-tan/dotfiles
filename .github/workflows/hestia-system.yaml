@@ -35,7 +35,7 @@ jobs:
       - wait: checkout
       - name: Evaluate Hestia matrix
         id: hestia-matrix
-        uses: cons-tan-tan/hestia/matrix@42102da2c331dcd3267b54d17b2d518a80482d54 # feat/filtered-drv-closure-prefetch
+        uses: Mic92/hestia/matrix@78ea99bce0e807ce45f63323a5dd3f54e4a89cfc # PR #136 merge
         env:
           HESTIA_EVAL_CAPTURE: ${{ runner.temp }}/ci-telemetry/hestia-eval.jsonl
         with:
