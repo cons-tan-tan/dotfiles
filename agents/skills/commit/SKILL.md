@@ -1,140 +1,45 @@
 ---
 name: commit
-description: Creates atomic, revertible git commits following Conventional Commits. Splits changes into logical units by hunk. Use when committing code (e.g., "commit this" or "done, let's commit").
+description: Creates atomic Conventional Commits. Use when committing code changes, splitting hunks into revertible units, or writing commit messages.
 ---
 
-You are an expert git commit architect creating fine-grained, independently revertible commits following Conventional Commits specification.
+# Commit
 
-- Current status: !`git status --short`
-- Changes: !`git diff HEAD`
-- Recent commits: !`git log --oneline -20`
+Create small, independently revertible Conventional Commits.
 
-## Core Philosophy
+## Arguments
 
-Revertibility first: Each commit must be independently revertible without breaking other functionality. Prefer smaller, granular commits over large groupings. Split by hunks within files, not just entire files.
+`push`: whether to push after committing (default: `false`).
 
 ## Workflow
 
-1. Analyze the changes above: Review the git state already provided. Summarize what changed before asking any splitting questions.
-2. Review history: Match existing Conventional Commits patterns for type, scope naming, subject style, and tone. Ignore non-Conventional Commit styles. Do not add or omit a body merely to match recent history; decide body presence from the Body rules below.
-3. Identify revertible units: Examine each hunk separately - can it be reverted independently?
-4. Propose split plan: Recommend a commit split and explain it before proceeding. When confirmation is required, ask the user.
+1. Inspect the current branch, staged and unstaged changes, and relevant untracked files:
 
-5. Create safety backup (only when splitting hunks within a file):
-   If a single file needs to be split into multiple commits:
-   ```bash
-   cp "$file" "${file}.local.bak"
-   ```
-   Example: `path/to/file.ext` → `path/to/file.ext.local.bak`
-
-   Skip this step if each file goes into its own commit.
-
-6. For each commit unit:
-   - If splitting hunks: Reset the worktree file with `git restore --worktree -- <file>`, then reference the backup
-   - Edit the file to apply only the changes for this unit
-   - Stage: `git add <file>`
-   - Craft message following format below
-   - Commit and verify with `git show HEAD`
-   - Repeat until all changes are committed
-
-7. Verify: Confirm the committed result matches the original changes:
-   ```bash
-   diff "$file" "${file}.local.bak"
-   ```
-   If there is any difference, restore from backup and redo the split.
-
-8. Cleanup: Remove the `*.local.bak` files created in step 6:
-   ```bash
-   rm "path/to/file.ext.local.bak"
+   ```sh
+   git status --short --branch
+   git diff
+   git diff --cached
+   git log --oneline -10
    ```
 
-Never use `git add -p` or `git add --interactive`; agents cannot reliably handle interactive commands.
+2. Review relevant history and split the changes into the smallest independently revertible units. Briefly explain non-obvious commit boundaries. Keep unrelated changes out of the commit. For moves or extractions, include both sides and update references.
 
-## Recovery
+3. Check the index before each unit: changes staged for a build may not belong to this commit. Preserve any staged-only edits before using `git restore --staged <path>` to remove changes outside the unit. If one file mixes units, restage only the current unit.
 
-If something goes wrong when splitting hunks within a file:
+   Split through the index without rewriting working-tree files: stage selected hunks with `git apply --cached -v`, or a whole file with `git add <path>`. Do not use interactive staging, catch-all commands such as `git add -A` or `git add .`, or `git commit -a`/`-am`.
 
-```bash
-# Restore the complete modified file from backup
-cp "path/to/file.ext.local.bak" "path/to/file.ext"
-```
+4. Write a Conventional Commit message with a concise, imperative subject. Follow user and repository language requirements; otherwise match representative recent commits. Follow existing Conventional Commit subject conventions, and use a scope only when requested or customary in the repository.
 
-Keep `*.local.bak` files until all commits from that file are complete.
+   When the subject and diff leave important reasons, constraints, tradeoffs, or impact unstated, explain them in a concise body. Decide body presence from the change, not recent commit lengths. Wrap body prose at 72 characters. For multiline messages, use `git commit --file -` with stdin to preserve actual line breaks.
 
-## Commit Message Format
+   For formatter-only changes, use `chore: format`.
 
-```
-<type>: <subject>
+5. Review `git diff --cached` and run `git diff --cached --check`. Commit from the index, then verify with `git show HEAD` and `git status --short`. Repeat steps 3–5 for each unit.
 
-[<body>]
-```
+6. Compare the combined commit diff and remaining changes with the original state: every intended change should be committed, and unrelated work preserved, including any saved staged-only edits.
 
-### Type
+Keep published review fixes as separate follow-up commits; amend only unpublished local mistakes or when explicitly requested.
 
-Choose one of: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`.
+## Push
 
-### Scope
-
-Omit by default. Use a scope only when matching existing commit patterns in the project or when explicitly specified (e.g., prefer `feat: add login` over `feat(auth): add login`).
-
-### Subject
-
-Summarize what changed in a concise, imperative phrase.
-
-### Body
-
-Omit unless the subject and diff leave important context unstated. Do not omit a body solely because recent commits are subject-only, and do not add one solely because recent commits include bodies. When included, explain why the change exists, plus relevant constraints, tradeoffs, or impact. Do not restate the diff.
-
-Include only relevant context, rationale, constraints, tradeoffs, or impact.
-
-Wrap body lines at 72 characters.
-
-### Command
-
-For subject-only commits, use `git commit -m "<type>: <subject>"`.
-
-For commit messages with a body, pass the full message on stdin so
-line breaks and wrapping are explicit:
-
-```bash
-git commit --file - <<'EOF'
-<type>: <subject>
-
-<body wrapped at 72 characters>
-EOF
-```
-
-## Quality Checks
-
-- Can this be reverted without breaking other functionality?
-- Is this the smallest logical unit?
-- If a body is needed, does it explain the reason or context for the change?
-- Does it match project's Conventional Commits patterns (if any)?
-- No debugging statements or commented code without explanation
-
-## Example
-
-```
-feat: add RefreshTokenService class
-```
-
-```
-feat: integrate token rotation in middleware
-```
-
-```
-fix: prevent race condition in token refresh
-
-Multiple concurrent requests could trigger simultaneous token
-refreshes, causing invalid token errors. Added mutex lock to
-ensure only one refresh occurs at a time.
-```
-
-## Key Principles
-
-- Always use English for commit messages
-- Never push directly to the default branch - create a PR instead
-- When in doubt, prefer smaller commits (can squash later, can't easily split)
-- Match project's scope naming and conventions only when Conventional Commits are found
-- Each commit must pass: "If I revert this, will it break other features?"
-- If the commit is just for applying formatter, use `chore: format`
+Push only when requested, including `push=true`, after all commits are complete. Check the current branch, its upstream, and the commits to publish. Follow user and repository requirements for the remote and publication workflow, including an existing stack; set an upstream when needed. Let repository hooks run.
