@@ -112,10 +112,6 @@
       url = "github:hercules-ci/flake-parts";
       inputs.nixpkgs-lib.follows = "nixpkgs-lib";
     };
-    gh-stack-src = {
-      url = "github:github/gh-stack/v0.1.0";
-      flake = false;
-    };
     hcom-src = {
       url = "github:aannoo/hcom/v0.7.21";
       flake = false;

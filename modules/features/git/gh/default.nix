@@ -1,14 +1,8 @@
 {
   features,
-  inputs,
   ...
 }:
 {
-  flake-file.inputs.gh-stack-src = {
-    url = "github:github/gh-stack/v0.1.0";
-    flake = false;
-  };
-
   features.gh =
     { config, ... }:
     {
@@ -57,13 +51,15 @@
           };
         }
       ];
-      agent-skills = [
-        {
-          name = "gh-stack";
-          provenance = "external";
-          definition.root = inputs.gh-stack-src.outPath + "/skills/gh-stack";
-        }
-      ];
+      agent-skills =
+        { pkgs, ... }:
+        [
+          {
+            name = "gh-stack";
+            provenance = "external";
+            definition.root = "${pkgs.gh-stack}/share/skills/gh-stack/gh-stack";
+          }
+        ];
       homeManager = { pkgs, ... }: {
         programs.gh = {
           enable = true;
