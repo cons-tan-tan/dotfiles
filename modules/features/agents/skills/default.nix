@@ -55,55 +55,15 @@ in
           name: _: aggregated.enablePredicates.${name} config
         ) aggregated.definitions;
         skills = config.dotfiles.agentSkills.externalSkills;
-        inherit (import ./_data/policy.nix { inherit lib; })
-          defaultInheritedFrontmatterFields
-          ;
-        inherit (import (skillsLib + "/skill-policy.nix") { inherit lib; })
-          prepareSkill
-          validateSkillDefinition
-          ;
-        inherit (import (skillsLib + "/codex-invocation-policy.nix") { inherit lib; })
-          disableCodexImplicitInvocation
-          ;
+        mkSkillSource = import (skillsLib + "/mk-skill-source.nix") { inherit pkgs; };
 
-        mkSkillSource =
-          name: skill:
-          let
-            definition = validateSkillDefinition name skill;
-            inherit (definition) root customization;
-            originalSkillMd = builtins.readFile (root + "/SKILL.md");
-            prepared = prepareSkill {
-              inherit name root customization;
-              defaultInheritedFields = defaultInheritedFrontmatterFields;
-              requireExplicitFieldDecisions = aggregated.provenance.${name} != "local";
-            } originalSkillMd;
-            inherit (prepared) skillMd disableAutomaticInvocation;
-            sourceOpenaiYamlPath = root + "/agents/openai.yaml";
-            openaiYaml = disableCodexImplicitInvocation (
-              if builtins.pathExists sourceOpenaiYamlPath then builtins.readFile sourceOpenaiYamlPath else ""
-            );
-          in
-          if definition.hasCustomization || prepared.frontmatterWasFiltered then
-            pkgs.runCommandLocal "skill-${name}"
-              (
-                {
-                  inherit skillMd;
-                  passAsFile = [ "skillMd" ] ++ lib.optionals disableAutomaticInvocation [ "openaiYaml" ];
-                }
-                // lib.optionalAttrs disableAutomaticInvocation { inherit openaiYaml; }
-              )
-              ''
-                cp -rL --no-preserve=mode ${root} $out
-                cp "$skillMdPath" "$out/SKILL.md"
-                ${lib.optionalString disableAutomaticInvocation ''
-                  mkdir -p "$out/agents"
-                  cp "$openaiYamlPath" "$out/agents/openai.yaml"
-                ''}
-              ''
-          else
-            root;
-
-        skillSources = lib.mapAttrs mkSkillSource skills;
+        skillSources = lib.mapAttrs (
+          name: definition:
+          mkSkillSource {
+            inherit definition name;
+            provenance = aggregated.provenance.${name};
+          }
+        ) skills;
         deployTo =
           prefix:
           lib.mapAttrs' (

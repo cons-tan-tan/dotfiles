@@ -30,16 +30,24 @@ let
       builtins.attrNames skills
     )) "external skill names must use 1-64 lowercase letters, digits, and hyphens";
     skills;
-  validateSourceRoot =
-    root:
-    let
-      context = builtins.getContext (toString root);
-      hasDerivationOutput = lib.any (entry: (entry.outputs or [ ]) != [ ]) (builtins.attrValues context);
-    in
-    assert lib.assertMsg (
-      !hasDerivationOutput
-    ) "agent skill roots must be repository or flake input paths, not derivation outputs";
-    root;
+  bodyType = types.submodule {
+    options = {
+      program = mkOption {
+        type = types.path;
+        description = "Nix program imported during the skill build; it must return a body transformer.";
+      };
+      arguments = mkOption {
+        default = { };
+        type = types.attrsOf types.raw;
+        apply =
+          arguments:
+          builtins.addErrorContext "while serializing customization.body.arguments to JSON" (
+            builtins.seq (builtins.toJSON arguments) arguments
+          );
+        description = "Explicit JSON-serializable arguments passed to the build-time body transformer.";
+      };
+    };
+  };
 
   customizationType = types.submodule {
     options = {
@@ -79,12 +87,14 @@ let
         type = types.nullOr (
           types.unique {
             message = "Only one body transformer may be defined for each skill.";
-          } (types.functionTo types.str)
+          } (types.addCheck bodyType builtins.isAttrs)
         );
-        description = "Pure `{ original, skillName, root } -> string` body transformer.";
+        description = "Build-time Nix body transformer and its explicit arguments.";
         example = lib.literalExpression ''
-          { original, skillName, root }:
-          "# " + skillName + " (" + toString root + ")\n" + original
+          {
+            program = ./agent-skills/example;
+            arguments.notice = "Managed locally";
+          }
         '';
       };
 
@@ -100,7 +110,6 @@ let
     options = {
       root = mkOption {
         type = types.path;
-        apply = validateSourceRoot;
         description = "Directory containing the skill's SKILL.md.";
       };
       customization = mkOption {

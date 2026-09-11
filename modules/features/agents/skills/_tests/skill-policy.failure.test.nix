@@ -111,17 +111,6 @@ let
       expectedFragment = "skill demo: frontmatter must contain exactly one description field";
     };
 
-    unmodifiedResultStillValidated = {
-      expression =
-        (prepare { } ''
-          ---
-          name: demo
-          ---
-          body
-        '').frontmatterWasFiltered;
-      expectedFragment = "skill demo: frontmatter must contain exactly one description field";
-    };
-
     duplicateNameField = {
       expression = prepare { } ''
         ---
@@ -293,23 +282,6 @@ let
       } validSkill;
       expectedFragment = "skill demo customization.frontmatter: unknown attributes: remove";
     };
-
-    unknownSkillDefinitionKey = {
-      expression = fm.validateSkillDefinition "demo" {
-        root = sourceRoot;
-        customisation.disableAutomaticInvocation = true;
-      };
-      expectedFragment = "skill demo definition: unknown attributes: customisation";
-    };
-
-    legacyInvocationDefinitionKey = {
-      expression = fm.validateSkillDefinition "demo" {
-        root = sourceRoot;
-        disableAutomaticInvocation = true;
-      };
-      expectedFragment = "skill demo definition: unknown attributes: disableAutomaticInvocation";
-    };
-
   };
 in
 if caseName == null then cases else cases.${caseName}.expression

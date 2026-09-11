@@ -119,32 +119,6 @@ rec {
       inherit body disableAutomaticInvocation;
     };
 
-  validateSkillDefinition =
-    name: value:
-    assert lib.assertMsg (builtins.isAttrs value) "skill ${name} definition must be an attribute set";
-    let
-      skill = validateKnownAttrs "skill ${name} definition" [
-        "root"
-        "customization"
-      ] value;
-      customization = validateCustomization "skill ${name} customization" (skill.customization or { });
-    in
-    assert lib.assertMsg (skill ? root) "skill ${name} definition requires root";
-    assert lib.assertMsg (
-      builtins.isPath skill.root || builtins.isString skill.root
-    ) "skill ${name} definition root must be a path or string";
-    {
-      inherit (skill) root;
-      inherit customization;
-      hasCustomization =
-        customization.frontmatter.description != null
-        || builtins.attrNames customization.frontmatter.set != [ ]
-        || customization.frontmatter.inheritFields != [ ]
-        || customization.frontmatter.excludeFields != [ ]
-        || customization.body != null
-        || customization.disableAutomaticInvocation;
-    };
-
   setFrontmatterValues =
     values: original:
     lib.foldl' (text: key: setFrontmatterField key (builtins.toJSON values.${key}) text) original (
@@ -278,7 +252,6 @@ rec {
       "${context}.frontmatter has unclassified upstream fields: ${lib.concatStringsSep ", " unclassifiedFields}";
     builtins.seq skillMd {
       inherit skillMd;
-      frontmatterWasFiltered = filtered != original;
       inherit (checkedCustomization) disableAutomaticInvocation;
     };
 

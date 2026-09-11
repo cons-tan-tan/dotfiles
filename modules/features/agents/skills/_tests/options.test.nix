@@ -11,9 +11,18 @@ let
       dotfiles.agentSkills.externalSkills.demo = {
         root = ./.;
         customization.frontmatter.inheritFields = [ "hidden" ];
-        customization.body =
-          { original, ... }:
-          builtins.replaceStrings [ "first" ] [ "first replacement" ] original;
+        customization.body = {
+          program = ./fixtures/body-transformers/demo;
+          arguments = {
+            # Nix serializes outPath without visiting the other attributes.
+            prefix = {
+              outPath = "NOTE\n";
+              unused = value: value;
+            };
+            from = "first";
+            to = "first replacement";
+          };
+        };
       };
     }
     {
@@ -36,10 +45,9 @@ in
     expr = {
       inherit (evaluatedSkill) root;
       inherit (evaluatedSkill.customization) frontmatter disableAutomaticInvocation;
-      body = evaluatedSkill.customization.body {
-        original = "first body";
-        skillName = "demo";
-        root = ./.;
+      body = {
+        inherit (evaluatedSkill.customization.body) program;
+        arguments = builtins.fromJSON (builtins.toJSON evaluatedSkill.customization.body.arguments);
       };
     };
     expected = {
@@ -53,7 +61,14 @@ in
         ];
         excludeFields = [ ];
       };
-      body = "first replacement body";
+      body = {
+        program = ./fixtures/body-transformers/demo;
+        arguments = {
+          prefix = "NOTE\n";
+          from = "first";
+          to = "first replacement";
+        };
+      };
       disableAutomaticInvocation = true;
     };
   };

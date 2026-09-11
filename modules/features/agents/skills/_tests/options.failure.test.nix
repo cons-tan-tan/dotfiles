@@ -134,20 +134,32 @@ let
             {
               dotfiles.agentSkills.externalSkills.demo = {
                 root = ./.;
-                customization.body = _: "same";
+                customization.body.program = ./fixtures/body-transformers/demo;
               };
             }
             {
-              dotfiles.agentSkills.externalSkills.demo.customization.body = _: "same";
+              dotfiles.agentSkills.externalSkills.demo.customization.body.program =
+                ./fixtures/body-transformers/demo;
             }
           ];
         in
-        conflicting.config.dotfiles.agentSkills.externalSkills.demo.customization.body {
-          original = "body";
-          skillName = "demo";
-          root = ./.;
-        };
-      expectedFragment = "Only one body transformer";
+        conflicting.config.dotfiles.agentSkills.externalSkills.demo.customization.body;
+      expectedFragment = "defined multiple times while it's expected to be unique";
+    };
+
+    rejectsNonSerializableBodyArguments = {
+      expression = evalConfig [
+        {
+          dotfiles.agentSkills.externalSkills.demo = {
+            root = ./.;
+            customization.body = {
+              program = ./fixtures/body-transformers/demo;
+              arguments.transform = value: value;
+            };
+          };
+        }
+      ];
+      expectedFragment = "cannot convert a function to JSON";
     };
 
     rejectsUnknownNestedFrontmatterField = {

@@ -11,7 +11,6 @@ let
     hestiaGroup = "eval-tests";
   };
   skillsRoot = repoRoot + "/modules/features/agents/skills";
-  aggregateSkills = import (skillsRoot + "/_lib/aggregate.nix") { inherit lib; };
 
   testImports = lib.optional (inputs ? flake-parts) inputs.den.flakeOutputs.flake ++ [
     (inputs.den.namespace "features" false)
@@ -40,22 +39,6 @@ let
         )
       ];
     }).config.result;
-
-  skillsSchemaConsumer = {
-    homeManager =
-      {
-        agent-skills,
-        ...
-      }:
-      let
-        aggregated = aggregateSkills agent-skills;
-      in
-      {
-        imports = [ (skillsRoot + "/_interface/options.nix") ];
-        dotfiles.agentSkills.externalSkills = aggregated.definitions;
-        home.sessionVariables.AGENT_SKILL_PROVENANCE = builtins.toJSON aggregated.provenance;
-      };
-  };
 
   baseHome =
     { lib, ... }:
@@ -92,13 +75,21 @@ let
             provenance = "external";
           }
         ];
-        den.aspects.skills-local.agent-skills = [
-          {
-            name = "local";
-            definition.root = repoRoot + "/agents/skills/commit";
-            provenance = "local";
-          }
-        ];
+        den.aspects.skills-local.agent-skills =
+          { pkgs, ... }:
+          [
+            {
+              name = "local";
+              definition.root = "${pkgs.writeTextDir "SKILL.md" ''
+                ---
+                name: local
+                description: Generated skill.
+                ---
+                body
+              ''}";
+              provenance = "local";
+            }
+          ];
         den.aspects.tux.includes = [
           den.aspects.skills-local
           features.agent-skills-consumer
@@ -117,6 +108,9 @@ let
               external = tuxHm.home.file ? ".agents/skills/external";
               local = tuxHm.home.file ? ".agents/skills/local";
             };
+            localSourceRendered =
+              toString tuxHm.home.file.".agents/skills/local".source
+              != toString tuxHm.dotfiles.agentSkills.externalSkills.local.root;
           };
           pingu = {
             names = builtins.attrNames pinguHm.dotfiles.agentSkills.externalSkills;
@@ -137,6 +131,7 @@ let
               external = true;
               local = true;
             };
+            localSourceRendered = true;
           };
           pingu = {
             names = [ ];
@@ -147,42 +142,7 @@ let
     );
   };
 
-  failureCases = {
-    derivationSkillRoot = {
-      expression =
-        (evalTest (
-          {
-            config,
-            den,
-            inputs,
-            ...
-          }:
-          let
-            generatedSkill = inputs.nixpkgs.legacyPackages.x86_64-linux.writeTextDir "SKILL.md" "# generated";
-          in
-          {
-            imports = [ baseHome ];
-            den.homes.x86_64-linux.tux = { };
-            den.aspects.skills-consumer = skillsSchemaConsumer;
-            den.aspects.skills-generated.agent-skills = [
-              {
-                name = "generated";
-                definition.root = "${generatedSkill}";
-                provenance = "local";
-              }
-            ];
-            den.aspects.tux.includes = [
-              den.aspects.skills-generated
-              den.aspects.skills-consumer
-            ];
-            expr = builtins.deepSeq (config.flake.homeConfigurations.tux.config.dotfiles.agentSkills.externalSkills) true;
-          }
-        )).expr;
-      expectedFragments = [
-        "agent skill roots must be repository or flake input paths, not derivation outputs"
-      ];
-    };
-  };
+  failureCases = { };
 in
 if caseName == null then
   {
