@@ -162,6 +162,7 @@ let
           (agentsRoot + "/default.nix")
           (agentsRoot + "/ax.nix")
           (agentsRoot + "/base/default.nix")
+          (agentsRoot + "/bee/default.nix")
           (agentsRoot + "/browser/default.nix")
           (agentsRoot + "/ccusage.nix")
           (agentsRoot + "/claude/default.nix")

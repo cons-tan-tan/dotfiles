@@ -12,6 +12,7 @@
       features.agent-copilot
       features.agent-gemini
       features.agent-guidance
+      features.agent-bee
       features.agent-browser
       features.agent-claude
       features.agent-codex

@@ -42,6 +42,10 @@
         nixpkgs.follows = "nixpkgs";
       };
     };
+    bee-src = {
+      url = "github:nulab/bee/v1.1.1";
+      flake = false;
+    };
     brew-api = {
       url = "github:BatteredBunny/brew-api";
       flake = false;

@@ -90,6 +90,23 @@
         "type": "github"
       }
     },
+    "bee-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1787654054,
+        "narHash": "sha256-IdSDAT5bIPoOqoHFydD6LGkAD29SpXfD59/xVmWLjBc=",
+        "owner": "nulab",
+        "repo": "bee",
+        "rev": "a6e106730a1492b201fb1034acdc8851a6634535",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nulab",
+        "ref": "v1.1.1",
+        "repo": "bee",
+        "type": "github"
+      }
+    },
     "brew-api": {
       "flake": false,
       "locked": {
@@ -894,6 +911,7 @@
         "anthropic-skills": "anthropic-skills",
         "ast-grep-skill": "ast-grep-skill",
         "ax": "ax",
+        "bee-src": "bee-src",
         "brew-api": "brew-api",
         "brew-nix": "brew-nix",
         "bun2nix": "bun2nix",

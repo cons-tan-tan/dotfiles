@@ -12,6 +12,11 @@ let
       throw "${name} must be a direct root flake input";
 in
 {
+  testBeeSkillsMatchPackageVersion = {
+    expr = lockedRef "bee-src";
+    expected = "v${pkgs.dotfilesPackages.bee.version}";
+  };
+
   testAgentBrowserSkillMatchesPackageVersion = {
     expr = lockedRef "agent-browser-skill";
     expected = "v${pkgs.dotfilesPackages.agent-browser.version}";

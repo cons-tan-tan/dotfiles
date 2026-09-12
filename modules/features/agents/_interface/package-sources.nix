@@ -3,6 +3,7 @@ let
 in
 base
 // {
+  bee = ../bee/_packages/bee;
   browser = ../browser/_packages/agent-browser;
   claudeCode = ../claude/_packages/claude-code;
   codex = ../codex/_packages/codex;

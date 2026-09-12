@@ -51,6 +51,7 @@ in
     agentSlackSource = inputs.agent-slack-skill;
     inherit ghApiGet mkPinnedAsset;
   };
+  bee = pkgs.callPackage agentPackageSources.bee { };
   claude-code = import agentPackageSources.claudeCode {
     inherit (pkgs) callPackage;
     claudeCode = pkgs.claude-code;

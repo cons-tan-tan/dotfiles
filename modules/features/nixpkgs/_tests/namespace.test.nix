@@ -5,6 +5,7 @@ let
     "agent-browser"
     "agent-command-guard"
     "agent-slack"
+    "bee"
     "curl-fetch"
     "difit"
     "gh-api-get"
