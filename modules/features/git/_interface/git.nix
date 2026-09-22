@@ -25,6 +25,7 @@ rec {
     ".vscode"
     ".idea"
     ".direnv"
+    ".nix-local/"
     ".venv"
     ".ruff.toml"
     "docker-compose.override.yml"
