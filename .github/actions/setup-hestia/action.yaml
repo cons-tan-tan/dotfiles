@@ -6,6 +6,10 @@ inputs:
     description: Skip store paths signed by the configured public caches
     required: false
     default: "true"
+  filter-drv-closures:
+    description: Apply the upstream cache filter to registered derivation closures
+    required: false
+    default: "false"
   wait-manifest-version:
     description: Minimum Hestia manifest version to observe before continuing
     required: false
@@ -19,7 +23,7 @@ outputs:
       https://nix-community.cachix.org
   hestia-version:
     description: Hestia version started by this action
-    value: v3.0.0
+    value: v3.1.0
 
 runs:
   using: composite
@@ -34,12 +38,13 @@ runs:
           extra-substituters = https://cache.numtide.com https://nix-community.cachix.org
           extra-trusted-public-keys = niks3.numtide.com-1:DTx8wZduET09hRmMtKdQDxNNthLQETkc/yaX7M4qK0g= nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
     - name: Start Hestia
-      uses: Mic92/hestia@b21a1aaf8c3d5c2e430c9ba278c0f78abd46a320 # v3.0.0
+      uses: Mic92/hestia@dfed9ced335d28978ba74e513939a10db1f71025 # v3.1.0
       with:
-        version: v3.0.0
+        version: v3.1.0
         upstream-cache-filter: ${{ inputs.upstream-cache-filter }}
         upstream-cache-key-names: >-
           ${{ inputs.upstream-cache-filter == 'true'
               && 'cache.nixos.org-1 niks3.numtide.com-1 nix-community.cachix.org-1'
               || '' }}
+        filter-drv-closures: ${{ inputs.filter-drv-closures }}
         wait-manifest-version: ${{ inputs.wait-manifest-version }}

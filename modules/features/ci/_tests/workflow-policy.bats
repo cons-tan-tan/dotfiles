@@ -322,7 +322,7 @@ YAML
 
   [ "$cache_gc_action" = '$/.github/actions/setup-hestia' ]
   [ "${setup_action##*@}" = "${matrix_action##*@}" ]
-  [ "$version" = "v3.0.0" ]
+  [ "$(yq -r '.outputs."hestia-version".value' "$HESTIA_SETUP_ACTION")" = "$version" ]
   [ "$(yq -r '.jobs.gc.steps[] | select(.uses == "$/.github/actions/setup-hestia") | .with."upstream-cache-filter"' "$CACHE_GC_WORKFLOW")" = "false" ]
 }
 
@@ -330,10 +330,10 @@ YAML
   run yq -e '
     .runs.using == "composite"
     and .inputs."upstream-cache-filter".default == "true"
+    and .inputs."filter-drv-closures".default == "false"
     and .inputs."wait-manifest-version".default == "0"
     and .outputs."nix-extra-substituters".value
       == "https://cache.numtide.com https://nix-community.cachix.org"
-    and .outputs."hestia-version".value == "v3.0.0"
     and ([.runs.steps[] | .uses // "" | select(length > 0)
       | test("@[0-9a-f]{40}$")] | all)
     and ([.runs.steps[] | select(
@@ -344,12 +344,17 @@ YAML
     )] | length) == 1
     and ([.runs.steps[] | select(
       (.uses // "") | test("^Mic92/hestia@")
+    )][0].with | (
+      .binary == null and (.version | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))
+    ))
+    and ([.runs.steps[] | select(
+      (.uses // "") | test("^Mic92/hestia@")
     )][0].with."upstream-cache-filter")
       == "${{ inputs.upstream-cache-filter }}"
     and ([.runs.steps[] | select(
       (.uses // "") | test("^Mic92/hestia@")
-    )][0].with."upstream-cache-key-names" | sub("[[:space:]]+"; " "))
-      == "${{ inputs.upstream-cache-filter == '\''true'\'' && '\''cache.nixos.org-1 niks3.numtide.com-1 nix-community.cachix.org-1'\'' || '\'''\'' }}"
+    )][0].with."filter-drv-closures")
+      == "${{ inputs.filter-drv-closures }}"
     and ([.runs.steps[] | select(
       (.uses // "") | test("^Mic92/hestia@")
     )][0].with."wait-manifest-version")
@@ -419,6 +424,9 @@ YAML
     and ([.jobs.evaluate.steps[] | select(
       .uses == "$/.github/actions/setup-hestia"
     )][0].id) == "setup-hestia"
+    and ([.jobs.evaluate.steps[] | select(
+      .uses == "$/.github/actions/setup-hestia"
+    )][0].with."filter-drv-closures") == "true"
     and ([.jobs.evaluate.steps[] | select(.id == "checkout")][0].background
       == true)
     and ([.jobs.evaluate.steps[] | select(.wait == "checkout")]
@@ -710,10 +718,6 @@ YAML
           == "extra-trusted-public-keys = " + strenv(EXPECTED_KEYS)),
         (.outputs."nix-extra-substituters".value
           == strenv(EXPECTED_SUBSTITUTERS)),
-        (.outputs."hestia-version".value == "v3.0.0"),
-        (([.runs.steps[] | select(
-          (.uses // "") | test("^nixbuild/nix-quick-install-action@")
-        )] | length) == 1),
         (([.runs.steps[] | select(
           (.uses // "") | test("^Mic92/hestia@")
         )][0].with."upstream-cache-key-names" | sub("[[:space:]]+"; " "))

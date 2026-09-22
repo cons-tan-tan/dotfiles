@@ -31,7 +31,7 @@ from optimize_hestia_matrix import (
     collect_group_plans,
     member_ids_for_rows,
 )
-from run_hestia_build import run_build
+from run_hestia_build import run_build, run_matrix_build, run_prefetch
 from validate_hestia_matrix import validate_conservation, validate_matrix
 
 
@@ -443,6 +443,74 @@ class TelemetryTests(unittest.TestCase):
         self.assertEqual(events[0]["drv_path"], root)
         self.assertEqual(events[0]["outcome"], "completed")
         self.assertEqual(substitutions, [])
+
+    def test_hestia_prefetch_receives_all_matrix_installables(self) -> None:
+        installables = [f"{drv(1, 'first')}^*", f"{drv(2, 'second')}^*"]
+        result = subprocess.CompletedProcess([], 0)
+        with patch("run_hestia_build.subprocess.run", return_value=result) as run:
+            code, duration = run_prefetch("/bin/hestia", installables)
+
+        run.assert_called_once_with(
+            ["/bin/hestia", "prefetch", *installables],
+            check=False,
+        )
+        self.assertEqual(code, 0)
+        self.assertGreaterEqual(duration, 0)
+
+    def test_hestia_prefetch_and_build_outcomes_are_preserved(self) -> None:
+        installables = [f"{drv(1, 'root')}^*"]
+        cases = (
+            (42, 0, "fallback", "success", True),
+            (0, 42, "success", "failure", False),
+        )
+        for prefetch_code, build_code, prefetch_status, build_status, warns in cases:
+            with (
+                self.subTest(prefetch_code=prefetch_code, build_code=build_code),
+                patch(
+                    "run_hestia_build.run_prefetch", return_value=(prefetch_code, 7)
+                ),
+                patch(
+                    "run_hestia_build.run_build",
+                    return_value=(build_code, 11, [], []),
+                ) as build,
+                patch("run_hestia_build.sys.stderr", new=StringIO()) as stderr,
+            ):
+                code, phases, events, substitutions = run_matrix_build(
+                    "/bin/hestia", installables
+                )
+
+            build.assert_called_once_with(installables)
+            self.assertEqual(
+                "falling back to normal Nix substitution" in stderr.getvalue(), warns
+            )
+            self.assertEqual(code, build_code)
+            self.assertEqual(
+                phases["prefetch"],
+                {
+                    "status": prefetch_status,
+                    "duration_ms": 7,
+                    "exit_code": prefetch_code,
+                },
+            )
+            self.assertEqual(
+                phases["nix_build"],
+                {
+                    "status": build_status,
+                    "duration_ms": 11,
+                    "exit_code": build_code,
+                },
+            )
+            self.assertEqual((events, substitutions), ([], []))
+
+    def test_hestia_prefetch_spawn_failure_does_not_hide_broken_setup(self) -> None:
+        with (
+            patch("run_hestia_build.run_prefetch", side_effect=OSError("missing")),
+            patch("run_hestia_build.run_build") as build,
+            self.assertRaises(OSError),
+        ):
+            run_matrix_build("/bin/hestia", [f"{drv(1, 'root')}^*"])
+
+        build.assert_not_called()
 
     def test_unknown_schema_is_rejected(self) -> None:
         value = {
