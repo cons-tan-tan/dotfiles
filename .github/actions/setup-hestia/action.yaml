@@ -23,7 +23,7 @@ outputs:
       https://nix-community.cachix.org
   hestia-version:
     description: Hestia version started by this action
-    value: ${{ steps.build-hestia.outputs.version }}
+    value: v3.1.0
 
 runs:
   using: composite
@@ -37,23 +37,10 @@ runs:
         nix_conf: |
           extra-substituters = https://cache.numtide.com https://nix-community.cachix.org
           extra-trusted-public-keys = niks3.numtide.com-1:DTx8wZduET09hRmMtKdQDxNNthLQETkc/yaX7M4qK0g= nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
-    - name: Build Hestia
-      id: build-hestia
-      shell: bash
-      env:
-        HESTIA_SOURCE: github:Mic92/hestia/78ea99bce0e807ce45f63323a5dd3f54e4a89cfc
-      run: |
-        set -euo pipefail
-        result="$(nix build --no-link --print-out-paths "$HESTIA_SOURCE")"
-        binary="$result/bin/hestia"
-        test -x "$binary"
-        version="$("$binary" --version)"
-        printf 'binary=%s\n' "$binary" >> "$GITHUB_OUTPUT"
-        printf 'version=v%s\n' "${version#hestia }" >> "$GITHUB_OUTPUT"
     - name: Start Hestia
-      uses: Mic92/hestia@78ea99bce0e807ce45f63323a5dd3f54e4a89cfc # PR #136 merge
+      uses: Mic92/hestia@dfed9ced335d28978ba74e513939a10db1f71025 # v3.1.0
       with:
-        binary: ${{ steps.build-hestia.outputs.binary }}
+        version: v3.1.0
         upstream-cache-filter: ${{ inputs.upstream-cache-filter }}
         upstream-cache-key-names: >-
           ${{ inputs.upstream-cache-filter == 'true'

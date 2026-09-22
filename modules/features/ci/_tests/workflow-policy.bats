@@ -313,19 +313,16 @@ YAML
 @test "Hestia workflow versions stay aligned" {
   local cache_gc_action
   local matrix_action
-  local source
-  local source_action
   local setup_action
-  source=$(yq -r '.runs.steps[] | select(.id == "build-hestia") | .env.HESTIA_SOURCE' "$HESTIA_SETUP_ACTION")
-  source=${source#github:}
-  source_action="${source%/*}@${source##*/}"
+  local version
+  version=$(yq -r '.runs.steps[] | select((.uses // "") | test("^Mic92/hestia@")) | .with.version' "$HESTIA_SETUP_ACTION")
   setup_action=$(yq -r '.runs.steps[] | select((.uses // "") | test("^Mic92/hestia@")) | .uses' "$HESTIA_SETUP_ACTION")
   matrix_action=$(yq -r '.jobs.evaluate.steps[] | select(.id == "hestia-matrix") | .uses' "$HESTIA_WORKFLOW")
   cache_gc_action=$(yq -r '.jobs.gc.steps[] | select((.uses // "") == "$/.github/actions/setup-hestia") | .uses' "$CACHE_GC_WORKFLOW")
 
   [ "$cache_gc_action" = '$/.github/actions/setup-hestia' ]
-  [ "$setup_action" = "$source_action" ]
-  [ "$matrix_action" = "${source_action%@*}/matrix@${source_action##*@}" ]
+  [ "${setup_action##*@}" = "${matrix_action##*@}" ]
+  [ "$(yq -r '.outputs."hestia-version".value' "$HESTIA_SETUP_ACTION")" = "$version" ]
   [ "$(yq -r '.jobs.gc.steps[] | select(.uses == "$/.github/actions/setup-hestia") | .with."upstream-cache-filter"' "$CACHE_GC_WORKFLOW")" = "false" ]
 }
 
@@ -337,25 +334,19 @@ YAML
     and .inputs."wait-manifest-version".default == "0"
     and .outputs."nix-extra-substituters".value
       == "https://cache.numtide.com https://nix-community.cachix.org"
-    and .outputs."hestia-version".value
-      == "${{ steps.build-hestia.outputs.version }}"
     and ([.runs.steps[] | .uses // "" | select(length > 0)
       | test("@[0-9a-f]{40}$")] | all)
     and ([.runs.steps[] | select(
       (.uses // "") | test("^nixbuild/nix-quick-install-action@")
     )] | length) == 1
-    and ([.runs.steps[] | select(.id == "build-hestia")] | length) == 1
-    and ([.runs.steps[] | select(.id == "build-hestia")][0] | (
-      (.env.HESTIA_SOURCE | test("^github:Mic92/hestia/[0-9a-f]{40}$"))
-      and (.run | contains("nix build --no-link --print-out-paths"))
-    ))
     and ([.runs.steps[] | select(
       (.uses // "") | test("^Mic92/hestia@")
     )] | length) == 1
     and ([.runs.steps[] | select(
       (.uses // "") | test("^Mic92/hestia@")
-    )][0].with.binary)
-      == "${{ steps.build-hestia.outputs.binary }}"
+    )][0].with | (
+      .binary == null and (.version | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))
+    ))
     and ([.runs.steps[] | select(
       (.uses // "") | test("^Mic92/hestia@")
     )][0].with."upstream-cache-filter")
