@@ -1,10 +1,8 @@
 _: {
-  features.platform-darwin-system = {
-    name = "feature/platform/darwin/system";
-    darwin = {
-      # Determinate Nix owns the daemon and /etc/nix configuration.
-      nix.enable = false;
-      system.stateVersion = 5;
-    };
+  flake.modules.darwin.platform-darwin = {
+    key = "modules/features/platform/darwin/system.nix#darwin.platform-darwin";
+    # Determinate Nix owns the daemon and /etc/nix configuration.
+    nix.enable = false;
+    system.stateVersion = 5;
   };
 }

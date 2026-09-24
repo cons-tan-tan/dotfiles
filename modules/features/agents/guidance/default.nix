@@ -3,10 +3,9 @@ let
   payload = import ./_interface/payload.nix;
 in
 {
-  features.agent-guidance = {
-    name = "feature/agents/guidance";
-    windows =
-      { config, ... }:
+  flake.modules.homeManager.agent-guidance = { config, lib, ... }: {
+    key = "modules/features/agents/guidance/default.nix#homeManager.agent-guidance";
+    config = lib.mkIf config.dotfiles.platform.windows.enable (
       let
         contextRoot = "${config.dotfiles.platform.source}/${payload.repositoryRelative.contextRoot}";
       in
@@ -33,6 +32,7 @@ in
             }
           ];
         };
-      };
+      }
+    );
   };
 }

@@ -5,19 +5,15 @@
 }:
 let
   commandPolicyInterface = import ../../agents/base/_interface/command-policy.nix;
-  policyFeatures = (import ../command-policy.nix { inherit lib; }).features;
-  trashPolicyFeature = policyFeatures.trash {
-    config.name = "feature/trash";
-  };
-  safeDeletionFeatures =
+  trashPolicy =
+    (import ../command-policy.nix { inherit lib; })
+    .flake.modules.homeManager.trash.dotfiles.agentCommandPolicyContributions;
+  safeDeletionPolicy =
     (import ../../safe-deletion.nix {
-      features.trash = { };
+      config = { };
       inherit lib;
-    }).features;
-  safeDeletionFeature = safeDeletionFeatures.safe-deletion {
-    config.name = "feature/safe-deletion";
-  };
-  policyEntries = trashPolicyFeature.agent-command-policy ++ safeDeletionFeature.agent-command-policy;
+    }).flake.modules.homeManager.safe-deletion.dotfiles.agentCommandPolicyContributions;
+  policyEntries = trashPolicy ++ safeDeletionPolicy;
   aggregatedPolicy = commandPolicyInterface.aggregate { inherit lib; } policyEntries;
   evaluatedPolicy =
     (lib.evalModules {
@@ -35,7 +31,7 @@ let
     (homeManager.lib.homeManagerConfiguration {
       inherit pkgs;
       modules = [
-        (import ../home.nix).features.trash.homeManager
+        (import ../home.nix).flake.modules.homeManager.trash
         platformModule
         {
           home = {
@@ -57,13 +53,13 @@ let
         expected = true;
       };
   linux = mkEvaluated {
-    platformModule = (import ../systemd.nix).features.trash-systemd.homeManager;
+    platformModule = (import ../systemd.nix).flake.modules.homeManager.trash-systemd;
   };
   wsl = mkEvaluated {
-    platformModule = (import ../systemd.nix).features.trash-systemd.homeManager;
+    platformModule = (import ../systemd.nix).flake.modules.homeManager.trash-systemd;
   };
   darwin = mkEvaluated {
-    platformModule = (import ../darwin.nix).features.trash-darwin.homeManager;
+    platformModule = (import ../darwin.nix).flake.modules.homeManager.trash-darwin;
     homeDirectory = "/Users/test";
   };
   systemdContract =

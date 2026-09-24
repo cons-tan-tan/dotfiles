@@ -1,10 +1,9 @@
 {
-  features.development-watchexec = {
-    name = "feature/development/watchexec";
-    homeManager =
-      { pkgs, ... }:
-      {
-        home.packages = [ pkgs.watchexec ];
-      };
-  };
+  flake.modules.homeManager.development-watchexec =
+    { pkgs, ... }:
+    {
+      key = "modules/features/development/watchexec/default.nix#homeManager.development-watchexec";
+
+      home.packages = [ pkgs.watchexec ];
+    };
 }

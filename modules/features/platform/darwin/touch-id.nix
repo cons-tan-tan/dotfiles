@@ -1,6 +1,6 @@
 _: {
-  features.platform-darwin-touch-id = {
-    name = "feature/platform/darwin/touch-id";
-    darwin.security.pam.services.sudo_local.touchIdAuth = true;
+  flake.modules.darwin.platform-darwin = {
+    key = "modules/features/platform/darwin/touch-id.nix#darwin.platform-darwin";
+    security.pam.services.sudo_local.touchIdAuth = true;
   };
 }

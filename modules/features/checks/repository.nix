@@ -1,13 +1,11 @@
 {
   config,
-  den,
   inputs,
   lib,
   ...
 }:
 let
   ciCheck = import ../ci/_interface/check.nix { inherit lib; };
-  configurationTargets = import ../../flake/_interface/configuration-targets.nix { inherit lib; };
   composeUniqueChecks = import ./_lib/compose.nix { inherit ciCheck lib; };
   modulesRoot = ../..;
   testDiscovery = import ./_lib/test-discovery.nix { inherit lib; };
@@ -35,25 +33,16 @@ let
   repositoryChecks =
     { pkgs, system }:
     let
-      entityContext = configurationTargets { inherit den system; };
+      entityContext = config.dotfiles.targets.${system};
       username = entityContext.username;
       entityContexts = {
-        darwin = configurationTargets {
-          inherit den;
-          system = "aarch64-darwin";
-        };
-        linuxX86 = configurationTargets {
-          inherit den;
-          system = "x86_64-linux";
-        };
-        linuxAarch64 = configurationTargets {
-          inherit den;
-          system = "aarch64-linux";
-        };
+        darwin = config.dotfiles.targets."aarch64-darwin";
+        linuxX86 = config.dotfiles.targets."x86_64-linux";
+        linuxAarch64 = config.dotfiles.targets."aarch64-linux";
       };
-      denSuiteProducer =
+      moduleSuiteProducer =
         if system == "x86_64-linux" then
-          (import ./_lib/eval/den-suite-harness.nix {
+          (import ./_lib/eval/module-suite-harness.nix {
             inherit
               ciCheck
               inputs
@@ -62,7 +51,7 @@ let
               ;
             repoRoot = ../../..;
           }).producer
-            evalInventory.denSuiteFiles
+            evalInventory.moduleSuiteFiles
         else
           {
             buildEntries = { };
@@ -72,14 +61,6 @@ let
         ci-required-gates-contract = import ../ci/_tests/required-gates-contract.nix {
           checks = config.flake.checks;
           inherit lib pkgs;
-        };
-        den-entity-topology-tests = import ../../entities/_tests/topology-check.nix {
-          inherit
-            den
-            inputs
-            lib
-            pkgs
-            ;
         };
         home-feature-contract = import ./_interface/home-contract.nix {
           inherit
@@ -132,13 +113,13 @@ let
       };
       repositoryOwnedNames =
         builtins.attrNames repositoryBuildEntries
-        ++ builtins.attrNames denSuiteProducer.buildEntries
+        ++ builtins.attrNames moduleSuiteProducer.buildEntries
         ++ builtins.attrNames repositoryEvaluationCompleteChecks
-        ++ builtins.attrNames denSuiteProducer.evaluationCompleteChecks;
+        ++ builtins.attrNames moduleSuiteProducer.evaluationCompleteChecks;
       testCheckSet = import ./_interface/repository-tests.nix {
+        configurationTargets = config.dotfiles.targets;
         inherit
           ciCheck
-          den
           inputs
           lib
           pkgs
@@ -159,8 +140,8 @@ let
           checks = repositoryEvaluationCompleteChecks;
         }
         {
-          owner = "Den suites";
-          checks = denSuiteProducer.evaluationCompleteChecks;
+          owner = "Module suites";
+          checks = moduleSuiteProducer.evaluationCompleteChecks;
         }
         {
           owner = "repository test checks";
@@ -174,8 +155,8 @@ let
             entries = repositoryBuildEntries;
           })
           (ciCheck.mkBuildProducer {
-            owner = "Den suites";
-            entries = denSuiteProducer.buildEntries;
+            owner = "Module suites";
+            entries = moduleSuiteProducer.buildEntries;
           })
           {
             owner = "repository test checks";
@@ -202,24 +183,24 @@ in
 
   perSystem =
     { pkgs, system, ... }:
+    let
+      checks = repositoryChecks { inherit pkgs system; };
+    in
     {
-      dotfiles.ci.evaluationCompleteCheckProducers = [
-        {
-          owner = "repository checks";
-          checks = (repositoryChecks { inherit pkgs system; }).evaluationCompleteChecks;
-        }
-      ];
-      dotfiles.ci.buildRouteProducers = [
-        {
-          owner = "repository checks";
-          routes = (repositoryChecks { inherit pkgs system; }).buildRoutes;
-        }
-      ];
+      checks = checks.buildChecks;
+      dotfiles.ci = {
+        evaluationCompleteCheckProducers = [
+          {
+            owner = "repository checks";
+            checks = checks.evaluationCompleteChecks;
+          }
+        ];
+        buildRouteProducers = [
+          {
+            owner = "repository checks";
+            routes = checks.buildRoutes;
+          }
+        ];
+      };
     };
-
-  den.aspects.repository-checks.checks =
-    { pkgs, system, ... }:
-    (repositoryChecks { inherit pkgs system; }).buildChecks;
-
-  den.schema.flake-parts.includes = [ den.aspects.repository-checks ];
 }

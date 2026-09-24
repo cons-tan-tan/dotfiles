@@ -1,5 +1,5 @@
 # デプロイ対象skillの宣言。CLIやappなど別の責務も持つskillは、
-# この共有catalogではなく所有featureからagent-skills quirkへ寄与する。
+# この共有catalogではなく所有featureからagentSkillContributionsへ寄与する。
 { inputs }:
 let
   inherit (inputs)

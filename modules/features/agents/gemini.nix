@@ -1,10 +1,9 @@
 {
-  features.agent-gemini = {
-    name = "feature/agents/gemini";
-    homeManager =
-      { pkgs, ... }:
-      {
-        home.packages = [ pkgs.gemini-cli ];
-      };
-  };
+  flake.modules.homeManager.agent-gemini =
+    { pkgs, ... }:
+    {
+      key = "modules/features/agents/gemini.nix#homeManager.agent-gemini";
+
+      home.packages = [ pkgs.gemini-cli ];
+    };
 }

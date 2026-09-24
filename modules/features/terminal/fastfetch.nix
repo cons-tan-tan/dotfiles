@@ -1,10 +1,9 @@
 {
-  features.terminal-fastfetch = {
-    name = "feature/terminal/fastfetch";
-    homeManager =
-      { pkgs, ... }:
-      {
-        home.packages = [ pkgs.fastfetch ];
-      };
-  };
+  flake.modules.homeManager.terminal-fastfetch =
+    { pkgs, ... }:
+    {
+      key = "modules/features/terminal/fastfetch.nix#homeManager.terminal-fastfetch";
+
+      home.packages = [ pkgs.fastfetch ];
+    };
 }

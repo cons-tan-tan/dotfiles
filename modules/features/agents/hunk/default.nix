@@ -6,9 +6,9 @@
     inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  features.agent-hunk = {
-    name = "feature/agents/hunk";
-    agent-skills = [
+  flake.modules.homeManager.agent-hunk = {
+    key = "modules/features/agents/hunk/default.nix#homeManager.agent-hunk";
+    dotfiles.agentSkillContributions = [
       {
         name = "hunk-review";
         provenance = "external";
@@ -17,10 +17,9 @@
     ];
   };
 
-  features.agent-hunk-wsl = {
-    name = "feature/agents/hunk/wsl";
-    homeManager = { pkgs, ... }: {
-      programs.hunk.package = pkgs.dotfilesPackages.hunk.wslRuntime;
-    };
+  flake.modules.homeManager.agent-hunk-wsl = { pkgs, ... }: {
+    key = "modules/features/agents/hunk/default.nix#homeManager.agent-hunk-wsl";
+
+    programs.hunk.package = pkgs.dotfilesPackages.hunk.wslRuntime;
   };
 }

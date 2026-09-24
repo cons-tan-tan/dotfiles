@@ -29,7 +29,7 @@ in
     expr = {
       tests = map discovery.checkName classified.testFiles;
       failures = map discovery.failureCheckName classified.failureTestFiles;
-      suites = map toString classified.denSuiteFiles;
+      suites = map toString classified.moduleSuiteFiles;
     };
     expected = {
       tests = [
@@ -77,14 +77,14 @@ in
       failureSuite = builtins.elem "home-contract-protocol.failure.test.nix" (
         map baseNameOf inventory.testFiles
       );
-      denSuite = builtins.elem "den-schema.suite.nix" (map baseNameOf inventory.testFiles);
+      moduleSuite = builtins.elem "unfree-policy.suite.nix" (map baseNameOf inventory.testFiles);
       sourcesExist = builtins.all builtins.pathExists bootstrap.all;
     };
     expected = {
       autoPositive = true;
       bootstrapPositive = false;
       failureSuite = false;
-      denSuite = false;
+      moduleSuite = false;
       sourcesExist = true;
     };
   };

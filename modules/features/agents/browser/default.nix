@@ -5,9 +5,14 @@
     flake = false;
   };
 
-  features.agent-browser = {
-    name = "feature/agents/browser";
-    agent-skills = [
+  flake.modules.homeManager.agent-browser = {
+    key = "modules/features/agents/browser/default.nix#homeManager.agent-browser";
+    imports = [
+      ({ pkgs, ... }: {
+        home.packages = [ pkgs.dotfilesPackages.agent-browser ];
+      })
+    ];
+    dotfiles.agentSkillContributions = [
       {
         name = "agent-browser";
         provenance = "external";
@@ -21,8 +26,5 @@
         };
       }
     ];
-    homeManager = { pkgs, ... }: {
-      home.packages = [ pkgs.dotfilesPackages.agent-browser ];
-    };
   };
 }

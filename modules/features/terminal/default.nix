@@ -1,10 +1,10 @@
-{ features, ... }:
+{ config, ... }:
 {
-  features.terminal-default = {
-    name = "feature/terminal/default";
-    includes = [
-      features.terminal-fastfetch
-      features.terminal-yazi
+  flake.modules.homeManager.terminal-default = {
+    key = "modules/features/terminal/default.nix#homeManager.terminal-default";
+    imports = [
+      config.flake.modules.homeManager.terminal-fastfetch
+      config.flake.modules.homeManager.terminal-yazi
     ];
   };
 }

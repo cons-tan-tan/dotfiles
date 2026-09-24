@@ -12,6 +12,6 @@ let
 in
 {
   inherit testFiles;
-  inherit (classifiedTests) denSuiteFiles;
+  inherit (classifiedTests) moduleSuiteFiles;
   inherit (classifiedTests) failureTestFiles;
 }

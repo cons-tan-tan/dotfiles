@@ -1,49 +1,57 @@
 {
   inputs,
   lib,
+  repoRoot,
 }:
 let
-  feature =
-    (import ../default.nix {
-      features = { };
-      inherit inputs lib;
-    }).features.agent-skills-consumer;
+  mkHome = import ../../../checks/_lib/eval/home-fixture.nix { inherit inputs lib repoRoot; };
   evaluate =
-    skills:
-    (lib.evalModules {
-      modules = [
+    windows: hasSkills:
+    (mkHome {
+      files = [
+        "platform/context.nix"
+        "windows/options.nix"
+        "agents/skills/options.nix"
+        "agents/skills/default.nix"
+      ];
+      modules = hm: [
+        hm.platform-context
+        hm.home-base
+        hm.agent-skills-consumer
         {
-          options = {
-            home.homeDirectory = lib.mkOption { type = lib.types.str; };
-            dotfiles.agentSkills.externalSkills = lib.mkOption {
-              type = lib.types.attrs;
-              default = { };
-            };
-            dotfiles.windows.staticResources = lib.mkOption {
-              type = lib.types.attrs;
-              default = { };
+          dotfiles.platform = {
+            environment = if windows then "wsl" else "linux";
+            source = "/source/test";
+            standalone = true;
+            windows = lib.optionalAttrs windows {
+              enable = true;
+              username = "test-win";
+              homedir = "/mnt/c/Users/test-win";
             };
           };
-          config = {
-            home.homeDirectory = "/home/test";
-            dotfiles.agentSkills.externalSkills = skills;
+          dotfiles.agentSkillContributions = lib.optional hasSkills {
+            name = "example";
+            provenance = "external";
+            definition.root = repoRoot + "/agents/skills/missing-tools";
           };
         }
-        feature.windows
       ];
     }).config.dotfiles.windows.staticResources;
 in
 {
   testConsumerWithoutProducersHasNoWindowsSourceTrees = {
-    expr = evaluate { };
+    expr = evaluate true false;
     expected = { };
   };
-
   testConsumerWithSkillsPublishesBothWindowsDestinations = {
-    expr = map (tree: tree.destination) (evaluate { example = { }; }).skills.trees;
+    expr = map (tree: tree.destination) (evaluate true true).skills.trees;
     expected = [
       ".claude/skills"
       ".agents/skills"
     ];
+  };
+  testLinuxSkillsDoNotCreateWindowsResources = {
+    expr = evaluate false true;
+    expected = { };
   };
 }

@@ -11,9 +11,7 @@ let
   };
   fixture = inputs.flake-parts.lib.mkFlake { inherit inputs; } {
     imports = [
-      inputs.den.flakeModule
       inputs.flake-file.flakeModules.dendritic
-      ../../../flake/den-output-routing.nix
       ../../../flake/systems.nix
       ../../apps/scripts.nix
       ../../nixpkgs
@@ -31,12 +29,12 @@ let
   };
 in
 {
-  testFormatterUsesDenTreefmtRoute = {
+  testFormatterUsesTreefmtRoute = {
     expr = fixture.formatter.${system}.drvPath;
     expected = fixture.packages.${system}.formatter-route-probe.drvPath;
   };
 
-  testTreefmtCheckUsesDenTreefmtRoute = {
+  testTreefmtCheckUsesTreefmtRoute = {
     expr = fixture.checks.${system}.treefmt.drvPath;
     expected = fixture.packages.${system}.treefmt-check-route-probe.drvPath;
   };

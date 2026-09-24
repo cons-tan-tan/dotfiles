@@ -6,9 +6,14 @@
     flake = false;
   };
 
-  features.agent-difit = {
-    name = "feature/agents/difit";
-    agent-skills = [
+  flake.modules.homeManager.agent-difit = {
+    key = "modules/features/agents/difit/default.nix#homeManager.agent-difit";
+    imports = [
+      ({ pkgs, ... }: {
+        home.packages = [ pkgs.dotfilesPackages.difit ];
+      })
+    ];
+    dotfiles.agentSkillContributions = [
       {
         name = "difit";
         provenance = "external";
@@ -26,8 +31,5 @@
         };
       }
     ];
-    homeManager = { pkgs, ... }: {
-      home.packages = [ pkgs.dotfilesPackages.difit ];
-    };
   };
 }

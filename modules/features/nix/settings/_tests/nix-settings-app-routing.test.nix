@@ -1,15 +1,12 @@
 {
-  den,
+  configurationTargets,
   flake,
-  lib,
   pkgs,
   ...
 }:
 let
   system = pkgs.stdenv.hostPlatform.system;
-  targets = (import ../../../../flake/_interface/configuration-targets.nix { inherit lib; }) {
-    inherit den system;
-  };
+  targets = configurationTargets.${system};
   expected = import ../_interface/app-set.nix {
     inherit pkgs;
     username = targets.username;

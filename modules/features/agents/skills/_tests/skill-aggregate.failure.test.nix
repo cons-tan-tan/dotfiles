@@ -24,15 +24,15 @@ let
     };
     invalidSkillProvenance = {
       expression = force (aggregate [ (valid // { provenance = "unknown"; }) ]);
-      expectedFragment = "agent skill quirk entry has an invalid provenance";
+      expectedFragment = "agent skill contribution has an invalid provenance";
     };
     invalidSkillEnablePredicate = {
       expression = force (aggregate [ (valid // { enable = true; }) ]);
-      expectedFragment = "agent skill quirk entry enable predicate must be a function";
+      expectedFragment = "agent skill contribution enable predicate must be a function";
     };
     nonBooleanSkillEnablePredicate = {
       expression = (aggregate [ (valid // { enable = _: "yes"; }) ]).enablePredicates.demo { };
-      expectedFragment = "agent skill quirk entry enable predicate must return a boolean";
+      expectedFragment = "agent skill contribution enable predicate must return a boolean";
     };
   };
 in

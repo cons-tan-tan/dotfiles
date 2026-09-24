@@ -9,9 +9,13 @@ let
   };
 in
 {
-  features.platform-integrated-home-manager = {
-    name = "feature/platform/integrated-home-manager";
-    nixos = settings;
-    darwin = settings;
+  flake.modules.darwin.platform-integrated-home-manager = {
+    key = "modules/features/platform/home-manager.nix#darwin.platform-integrated-home-manager";
+    imports = [ settings ];
+  };
+
+  flake.modules.nixos.platform-integrated-home-manager = {
+    key = "modules/features/platform/home-manager.nix#nixos.platform-integrated-home-manager";
+    imports = [ settings ];
   };
 }

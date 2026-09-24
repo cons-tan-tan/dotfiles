@@ -6,12 +6,12 @@
 let
   pkgs = inputs.nixpkgs.legacyPackages.x86_64-linux;
   contextModule =
-    (import ../../../platform/context.nix { inherit lib; }).features.platform-context.homeManager;
+    (import ../../../platform/context.nix { inherit lib; }).flake.modules.homeManager.platform-context;
   nhModule =
     (import ../default.nix {
-      features.nix-lifecycle = "nix-lifecycle";
+      config = { };
       inherit inputs;
-    }).features.nix-lifecycle.homeManager;
+    }).flake.modules.homeManager.nix-lifecycle;
   evaluate =
     {
       environment,
@@ -28,6 +28,11 @@ let
           dotfiles.platform = {
             inherit environment standalone;
             source = "/source/test";
+            windows = lib.optionalAttrs (environment == "wsl") {
+              enable = true;
+              username = "test-win";
+              homedir = "/mnt/c/Users/test-win";
+            };
           };
           home = {
             username = "test";

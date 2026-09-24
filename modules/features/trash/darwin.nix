@@ -2,7 +2,7 @@ let
   inherit (import ./_data/policy.nix) retentionDays scheduleHour;
 in
 {
-  features.trash-darwin.homeManager =
+  flake.modules.homeManager.trash-darwin =
     {
       config,
       lib,
@@ -13,6 +13,8 @@ in
       trashEmpty = lib.getExe' pkgs.trash-cli "trash-empty";
     in
     {
+      key = "modules/features/trash/darwin.nix#homeManager.trash-darwin";
+
       launchd.agents.trash-gc = {
         enable = true;
         domain = "user";

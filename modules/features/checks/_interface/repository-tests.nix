@@ -2,7 +2,7 @@
   advisoryDb,
   advisoryDbLastModified,
   ciCheck,
-  den,
+  configurationTargets,
   flake,
   homeManager,
   inputs,
@@ -19,17 +19,11 @@ let
   testDiscovery = import ../_lib/test-discovery.nix { inherit lib; };
   composeUniqueChecks = import ../_lib/compose.nix { inherit ciCheck lib; };
   cacheSettings = (import ../../nix/settings/_interface).cache;
-  configurationTargets = import ../../../flake/_interface/configuration-targets.nix {
-    inherit lib;
-  };
-  currentTargets = configurationTargets {
-    inherit den;
-    system = pkgs.stdenv.hostPlatform.system;
-  };
+  currentTargets = configurationTargets.${pkgs.stdenv.hostPlatform.system};
   testContext = {
     inherit
       ciCheck
-      den
+      configurationTargets
       flake
       homeManager
       inputs

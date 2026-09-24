@@ -1,7 +1,7 @@
 {
-  features.cli-tool-fzf = {
-    name = "feature/cli-tools/fzf";
-    cli-tools = [
+  flake.modules.homeManager.cli-tools = {
+    key = "modules/features/cli-tools/fzf.nix#homeManager.cli-tools";
+    dotfiles.cliTools = [
       {
         id = "fzf";
         nix = {

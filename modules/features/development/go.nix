@@ -1,10 +1,9 @@
 {
-  features.development-go = {
-    name = "feature/development/go";
-    homeManager =
-      { pkgs, ... }:
-      {
-        home.packages = [ pkgs.go ];
-      };
-  };
+  flake.modules.homeManager.development-go =
+    { pkgs, ... }:
+    {
+      key = "modules/features/development/go.nix#homeManager.development-go";
+
+      home.packages = [ pkgs.go ];
+    };
 }

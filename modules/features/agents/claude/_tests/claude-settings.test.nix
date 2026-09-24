@@ -1,4 +1,4 @@
-{ lib }:
+{ lib, flake }:
 let
   commandPolicyInterface = import ../../base/_interface/command-policy.nix;
   evaluatedPolicy = lib.evalModules {
@@ -21,7 +21,10 @@ let
       shellfirm
       ;
   };
-  settingsLib = import ../_interface/settings.nix { inherit lib commandPolicy; };
+  settingsLib = import ../_lib/settings.nix {
+    inherit lib commandPolicy;
+    settings = flake.homeConfigurations."constantan@linux-x86_64".config.dotfiles.claude.settings;
+  };
   settings = settingsLib.mkSettings { };
   wslSettings = settingsLib.mkSettings {
     wslUserProfile = "/mnt/c/Users/test-user";

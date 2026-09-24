@@ -1,14 +1,15 @@
-{ den, ... }:
+{ ... }:
 {
-  features.agent-copilot = {
-    name = "feature/agents/copilot";
-    includes = [
-      (den.batteries.unfree [ "github-copilot-cli" ])
+  flake.modules.homeManager.agent-copilot = {
+    key = "modules/features/agents/copilot.nix#homeManager.agent-copilot";
+    imports = [
+      (
+        { pkgs, ... }:
+        {
+          home.packages = [ pkgs.github-copilot-cli ];
+        }
+      )
     ];
-    homeManager =
-      { pkgs, ... }:
-      {
-        home.packages = [ pkgs.github-copilot-cli ];
-      };
+    dotfiles.unfreePackages = [ "github-copilot-cli" ];
   };
 }

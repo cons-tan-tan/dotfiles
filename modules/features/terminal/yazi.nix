@@ -1,10 +1,9 @@
 {
-  features.terminal-yazi = {
-    name = "feature/terminal/yazi";
-    homeManager =
-      { pkgs, ... }:
-      {
-        home.packages = [ pkgs.yazi ];
-      };
-  };
+  flake.modules.homeManager.terminal-yazi =
+    { pkgs, ... }:
+    {
+      key = "modules/features/terminal/yazi.nix#homeManager.terminal-yazi";
+
+      home.packages = [ pkgs.yazi ];
+    };
 }

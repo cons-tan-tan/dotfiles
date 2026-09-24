@@ -1,5 +1,5 @@
 {
-  features.trash.homeManager =
+  flake.modules.homeManager.trash =
     {
       config,
       lib,
@@ -15,6 +15,8 @@
       };
     in
     {
+      key = "modules/features/trash/home.nix#homeManager.trash";
+
       home.packages = [ pkgs.trash-cli ];
 
       # Codex sandbox grants only existing directories, so create the Freedesktop

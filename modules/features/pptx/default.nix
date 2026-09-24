@@ -1,5 +1,4 @@
 {
-  den,
   inputs,
   ...
 }:
@@ -25,18 +24,9 @@ in
     };
   };
 
-  den.aspects.pptx-toolchain = {
-    apps = args: (appsFor args).apps;
-    app-validations = [
-      {
-        produce = args: (appsFor args).validationsByName;
-      }
-    ];
-  };
-
-  features.pptx-agent-skill = {
-    name = "feature/pptx/agent-skill";
-    agent-skills = [
+  flake.modules.homeManager.pptx-agent-skill = {
+    key = "modules/features/pptx/default.nix#homeManager.pptx-agent-skill";
+    dotfiles.agentSkillContributions = [
       {
         name = "pptx";
         provenance = "external";
@@ -48,5 +38,13 @@ in
     ];
   };
 
-  den.schema.flake-parts.includes = [ den.aspects.pptx-toolchain ];
+  perSystem =
+    { pkgs, ... }:
+    let
+      appSet = appsFor { inherit pkgs; };
+    in
+    {
+      inherit (appSet) apps;
+      dotfiles.appValidationSets = [ appSet.validationsByName ];
+    };
 }

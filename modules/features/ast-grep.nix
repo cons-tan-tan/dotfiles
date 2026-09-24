@@ -8,38 +8,36 @@
     flake = false;
   };
 
-  features.ast-grep =
-    { config, ... }:
-    {
-      name = "feature/ast-grep";
-      cli-tools = [
-        {
-          id = "ast-grep";
-          nix = {
-            route = "home-packages";
-            nixpkgsAttr = "ast-grep";
-          };
-          winget = {
-            packageId = "ast-grep.ast-grep";
-            description = "ast-grep";
-          };
-        }
-      ];
-      agent-skills = [
-        {
-          name = "ast-grep";
-          provenance = "external";
-          definition = {
-            root = inputs.ast-grep-skill.outPath + "/ast-grep/skills/ast-grep";
-            customization.frontmatter.description = "Performs syntax-aware structural code search when tasks require matching language constructs, nested relationships, or code patterns that plain-text search cannot express reliably.";
-          };
-        }
-      ];
-      agent-command-policy = [
-        {
-          owner = config.name;
-          policy.commands.ast-grep = true;
-        }
-      ];
-    };
+  flake.modules.homeManager.ast-grep = {
+    key = "modules/features/ast-grep.nix#homeManager.ast-grep";
+    dotfiles.cliTools = [
+      {
+        id = "ast-grep";
+        nix = {
+          route = "home-packages";
+          nixpkgsAttr = "ast-grep";
+        };
+        winget = {
+          packageId = "ast-grep.ast-grep";
+          description = "ast-grep";
+        };
+      }
+    ];
+    dotfiles.agentSkillContributions = [
+      {
+        name = "ast-grep";
+        provenance = "external";
+        definition = {
+          root = inputs.ast-grep-skill.outPath + "/ast-grep/skills/ast-grep";
+          customization.frontmatter.description = "Performs syntax-aware structural code search when tasks require matching language constructs, nested relationships, or code patterns that plain-text search cannot express reliably.";
+        };
+      }
+    ];
+    dotfiles.agentCommandPolicyContributions = [
+      {
+        owner = "feature/ast-grep";
+        policy.commands.ast-grep = true;
+      }
+    ];
+  };
 }

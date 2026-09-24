@@ -1,16 +1,16 @@
-{ features, ... }:
+{ config, ... }:
 {
-  features.trash = {
-    name = "feature/trash";
+  flake.modules.homeManager.trash-systemd = {
+    key = "modules/features/trash/default.nix#homeManager.trash-systemd";
+    imports = [
+      config.flake.modules.homeManager.trash
+    ];
   };
 
-  features.trash-systemd = {
-    name = "feature/trash/systemd";
-    includes = [ features.trash ];
-  };
-
-  features.trash-darwin = {
-    name = "feature/trash/darwin";
-    includes = [ features.trash ];
+  flake.modules.homeManager.trash-darwin = {
+    key = "modules/features/trash/default.nix#homeManager.trash-darwin";
+    imports = [
+      config.flake.modules.homeManager.trash
+    ];
   };
 }

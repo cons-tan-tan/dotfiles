@@ -149,41 +149,39 @@ let
   ];
 in
 {
-  features.cli-tool-fd =
-    { config, ... }:
-    {
-      name = "feature/cli-tools/fd";
-      cli-tools = [
-        {
-          id = "fd";
-          nix = {
-            route = "home-packages";
-            nixpkgsAttr = "fd";
+  flake.modules.homeManager.cli-tools = {
+    key = "modules/features/cli-tools/fd.nix#homeManager.cli-tools";
+    dotfiles.cliTools = [
+      {
+        id = "fd";
+        nix = {
+          route = "home-packages";
+          nixpkgsAttr = "fd";
+        };
+        winget = {
+          packageId = "sharkdp.fd";
+          description = "fd";
+        };
+      }
+    ];
+    dotfiles.agentCommandPolicyContributions = [
+      {
+        owner = "feature/cli-tools/fd";
+        policy = {
+          commandGrammars.fd = {
+            options = lib.genAttrs flagOptions (_: 0) // lib.genAttrs valueTakingOptions (_: 1);
+            terminalOptions = [
+              "-h"
+              "--help"
+              "-V"
+              "--version"
+              "--gen-completions"
+            ];
+            stages = [ ];
           };
-          winget = {
-            packageId = "sharkdp.fd";
-            description = "fd";
-          };
-        }
-      ];
-      agent-command-policy = [
-        {
-          owner = config.name;
-          policy = {
-            commandGrammars.fd = {
-              options = lib.genAttrs flagOptions (_: 0) // lib.genAttrs valueTakingOptions (_: 1);
-              terminalOptions = [
-                "-h"
-                "--help"
-                "-V"
-                "--version"
-                "--gen-completions"
-              ];
-              stages = [ ];
-            };
-            commands.fd = true;
-          };
-        }
-      ];
-    };
+          commands.fd = true;
+        };
+      }
+    ];
+  };
 }

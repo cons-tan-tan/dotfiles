@@ -1,17 +1,22 @@
-{ features, ... }:
+{ config, ... }:
 {
-  features.platform-wsl = {
-    name = "feature/platform/wsl";
-    includes = [
-      features.platform-context
-      features.drawio-linux-headless
-      features.platform-wsl-base
-      features.platform-wsl-docker
-      features.platform-wsl-memory
-      features.nix-settings-wsl
-      features.nix-lifecycle-wsl
-      features.platform-wsl-open
-      features.windows-default
+  flake.modules.homeManager.platform-wsl = {
+    key = "modules/features/platform/wsl/default.nix#homeManager.platform-wsl";
+    imports = [
+      config.flake.modules.homeManager.platform-context
+      config.flake.modules.homeManager.drawio-linux-headless
+      config.flake.modules.homeManager.nix-lifecycle-wsl
+      config.flake.modules.homeManager.platform-wsl-open
+      config.flake.modules.homeManager.windows-default
+    ];
+  };
+
+  flake.modules.nixos.platform-wsl = {
+    key = "modules/features/platform/wsl/default.nix#nixos.platform-wsl";
+    imports = [
+      config.flake.modules.nixos.platform-wsl-docker
+      config.flake.modules.nixos.nix-settings-wsl
+      config.flake.modules.nixos.nix-lifecycle-wsl
     ];
   };
 }

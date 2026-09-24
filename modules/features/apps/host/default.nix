@@ -1,14 +1,10 @@
 {
   config,
-  den,
   inputs,
   lib,
   ...
 }:
 let
-  configurationTargets = import ../../../flake/_interface/configuration-targets.nix {
-    inherit lib;
-  };
   nhPackageSources = import ../../nix/lifecycle/_interface/package-sources.nix;
   appsFor =
     { pkgs, ... }:
@@ -18,7 +14,7 @@ let
     in
     if lib.hasSuffix "-darwin" system then
       let
-        targets = configurationTargets { inherit den system; };
+        targets = config.dotfiles.targets.${system};
         darwinConfiguration = config.flake.darwinConfigurations.${targets.darwin};
         darwinAppsFor = import ./_interface/darwin-apps.nix {
           inherit appSet;
@@ -31,7 +27,7 @@ let
       }
     else
       let
-        targets = configurationTargets { inherit den system; };
+        targets = config.dotfiles.targets.${system};
         nixosConfiguration = config.flake.nixosConfigurations.${targets.nixosWsl};
         mkLinuxApps = import ./_interface/linux-apps.nix {
           inherit appSet inputs;
@@ -51,14 +47,13 @@ let
       };
 in
 {
-  den.aspects.host-apps = {
-    apps = args: (appsFor args).apps;
-    app-validations = [
-      {
-        produce = args: (appsFor args).validationsByName;
-      }
-    ];
-  };
-
-  den.schema.flake-parts.includes = [ den.aspects.host-apps ];
+  perSystem =
+    { pkgs, ... }:
+    let
+      appSet = appsFor { inherit pkgs; };
+    in
+    {
+      inherit (appSet) apps;
+      dotfiles.appValidationSets = [ appSet.validationsByName ];
+    };
 }

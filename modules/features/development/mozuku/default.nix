@@ -4,12 +4,11 @@
   # from nixpkgs so routine nixpkgs updates do not rebuild that chain.
   flake-file.inputs.mozuku.url = "github:t3tra-dev/MoZuKu";
 
-  features.development-mozuku = {
-    name = "feature/development/mozuku";
-    homeManager =
-      { pkgs, ... }:
-      {
-        home.packages = [ pkgs.mozuku-lsp ];
-      };
-  };
+  flake.modules.homeManager.development-mozuku =
+    { pkgs, ... }:
+    {
+      key = "modules/features/development/mozuku/default.nix#homeManager.development-mozuku";
+
+      home.packages = [ pkgs.mozuku-lsp ];
+    };
 }

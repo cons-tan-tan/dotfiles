@@ -1,6 +1,5 @@
 {
-  den,
-  lib,
+  config,
   ...
 }:
 let
@@ -14,9 +13,7 @@ let
       ...
     }:
     let
-      targets = (import ../../../flake/_interface/configuration-targets.nix { inherit lib; }) {
-        inherit den system;
-      };
+      targets = config.dotfiles.targets.${system};
     in
     mkAppSet {
       inherit pkgs;
@@ -37,33 +34,31 @@ in
     ];
   };
 
-  den.aspects.apply-nix-settings = {
-    apps = args: (appsFor args).apps;
-    app-validations = [
-      {
-        produce = args: (appsFor args).validationsByName;
-      }
-    ];
-  };
+  flake.modules.nixos.nix-settings-wsl =
+    { config, lib, ... }:
+    {
+      key = "modules/features/nix/settings/default.nix#nixos.nix-settings-wsl";
 
-  den.schema.flake-parts.includes = [ den.aspects.apply-nix-settings ];
+      nix.settings =
+        (mkSettings {
+          inherit lib;
+          username = config.wsl.defaultUser;
+        }).settings
+        // {
+          experimental-features = [
+            "nix-command"
+            "flakes"
+          ];
+        };
+    };
 
-  features.nix-settings-wsl = {
-    name = "feature/nix/settings/wsl";
-    nixos =
-      { config, lib, ... }:
-      {
-        nix.settings =
-          (mkSettings {
-            inherit lib;
-            username = config.wsl.defaultUser;
-          }).settings
-          // {
-            experimental-features = [
-              "nix-command"
-              "flakes"
-            ];
-          };
-      };
-  };
+  perSystem =
+    { pkgs, system, ... }:
+    let
+      appSet = appsFor { inherit pkgs system; };
+    in
+    {
+      inherit (appSet) apps;
+      dotfiles.appValidationSets = [ appSet.validationsByName ];
+    };
 }

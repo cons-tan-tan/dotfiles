@@ -1,8 +1,10 @@
+{ flake }:
 let
-  trashDirectory = "/home/test/.local/share/Trash";
-  settings = (import ../_interface/settings.nix).mkMergePayload {
+  home = flake.homeConfigurations."constantan@linux-x86_64".config;
+  trashDirectory = "${home.xdg.dataHome}/Trash";
+  settings = (import ../_lib/merge-payload.nix) {
     codexHome = "/home/test/.codex";
-    inherit trashDirectory;
+    settings = home.dotfiles.codex.settings;
   };
 in
 {
@@ -22,7 +24,7 @@ in
   testTrashIsWritableWithoutOpeningTheWholeDataDirectory = {
     expr = {
       trash = settings.permissions.local-dev.filesystem.${trashDirectory};
-      dataDirectory = settings.permissions.local-dev.filesystem ? "/home/test/.local/share";
+      dataDirectory = builtins.hasAttr home.xdg.dataHome settings.permissions.local-dev.filesystem;
     };
     expected = {
       trash = "write";
