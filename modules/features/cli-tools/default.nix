@@ -18,16 +18,12 @@
 
   flake.modules.homeManager.cli-tools = {
     key = "modules/features/cli-tools/default.nix#homeManager.cli-tools";
+    # Baseline tool files contribute to this module directly, so adding a tool
+    # does not require updating an import list. Keep independently reusable
+    # features as named imports.
     imports = [
       config.flake.modules.homeManager.cli-tools-consumer
-      config.flake.modules.homeManager.cli-tool-reuse
-      config.flake.modules.homeManager.cli-tool-rg
-      config.flake.modules.homeManager.cli-tool-fd
-      config.flake.modules.homeManager.cli-tool-bat
-      config.flake.modules.homeManager.cli-tool-eza
-      config.flake.modules.homeManager.cli-tool-jq
       config.flake.modules.homeManager.ast-grep
-      config.flake.modules.homeManager.cli-tool-fzf
     ];
   };
 }

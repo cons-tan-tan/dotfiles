@@ -1,6 +1,6 @@
 {
-  flake.modules.homeManager.cli-tool-rg = {
-    key = "modules/features/cli-tools/rg.nix#homeManager.cli-tool-rg";
+  flake.modules.homeManager.cli-tools = {
+    key = "modules/features/cli-tools/rg.nix#homeManager.cli-tools";
     dotfiles.cliTools = [
       {
         id = "rg";

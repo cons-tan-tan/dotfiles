@@ -1,6 +1,6 @@
 {
-  flake.modules.homeManager.cli-tool-bat = {
-    key = "modules/features/cli-tools/bat.nix#homeManager.cli-tool-bat";
+  flake.modules.homeManager.cli-tools = {
+    key = "modules/features/cli-tools/bat.nix#homeManager.cli-tools";
     dotfiles.cliTools = [
       {
         id = "bat";

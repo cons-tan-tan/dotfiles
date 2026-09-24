@@ -149,8 +149,8 @@ let
   ];
 in
 {
-  flake.modules.homeManager.cli-tool-fd = {
-    key = "modules/features/cli-tools/fd.nix#homeManager.cli-tool-fd";
+  flake.modules.homeManager.cli-tools = {
+    key = "modules/features/cli-tools/fd.nix#homeManager.cli-tools";
     dotfiles.cliTools = [
       {
         id = "fd";

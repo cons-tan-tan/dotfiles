@@ -1,8 +1,4 @@
-{
-  config,
-  inputs,
-  ...
-}:
+{ inputs, ... }:
 {
   # nixd consumes the root flake-parts option declarations through
   # `flake.debug.options`.
@@ -13,18 +9,10 @@
     inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  flake.modules.homeManager.nix-default = {
+  flake.modules.homeManager.nix-default = { pkgs, ... }: {
     key = "modules/features/nix/default.nix#homeManager.nix-default";
-    imports = [
-      config.flake.modules.homeManager.nix-command-policy
-      (
-        { pkgs, ... }:
-        {
-          imports = [ inputs.nix-index-database.homeModules.default ];
-          programs.nix-index-database.comma.enable = true;
-          home.packages = [ pkgs.nixd ];
-        }
-      )
-    ];
+    imports = [ inputs.nix-index-database.homeModules.default ];
+    programs.nix-index-database.comma.enable = true;
+    home.packages = [ pkgs.nixd ];
   };
 }

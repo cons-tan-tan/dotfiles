@@ -3,9 +3,6 @@
   flake.modules.darwin.platform-darwin = {
     key = "modules/features/platform/darwin/default.nix#darwin.platform-darwin";
     imports = [
-      config.flake.modules.darwin.platform-darwin-system
-      config.flake.modules.darwin.platform-darwin-fonts
-      config.flake.modules.darwin.platform-darwin-touch-id
       config.flake.modules.darwin.platform-homebrew
       config.flake.modules.darwin.input-methods-azookey
       config.flake.modules.darwin.media-fiji

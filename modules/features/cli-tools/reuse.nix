@@ -1,6 +1,6 @@
 {
-  flake.modules.homeManager.cli-tool-reuse = {
-    key = "modules/features/cli-tools/reuse.nix#homeManager.cli-tool-reuse";
+  flake.modules.homeManager.cli-tools = {
+    key = "modules/features/cli-tools/reuse.nix#homeManager.cli-tools";
     dotfiles.cliTools = [
       {
         id = "reuse";

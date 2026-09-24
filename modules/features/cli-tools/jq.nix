@@ -1,6 +1,6 @@
 {
-  flake.modules.homeManager.cli-tool-jq = {
-    key = "modules/features/cli-tools/jq.nix#homeManager.cli-tool-jq";
+  flake.modules.homeManager.cli-tools = {
+    key = "modules/features/cli-tools/jq.nix#homeManager.cli-tools";
     dotfiles.cliTools = [
       {
         id = "jq";

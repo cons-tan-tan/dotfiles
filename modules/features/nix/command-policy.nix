@@ -210,8 +210,8 @@ let
     };
 in
 {
-  flake.modules.homeManager.nix-command-policy = {
-    key = "modules/features/nix/command-policy.nix#homeManager.nix-command-policy";
+  flake.modules.homeManager.nix-default = {
+    key = "modules/features/nix/command-policy.nix#homeManager.nix-default";
     dotfiles.agentCommandPolicyContributions = [
       {
         owner = "feature/nix/command-policy";

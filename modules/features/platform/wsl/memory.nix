@@ -1,6 +1,6 @@
 _: {
-  flake.modules.nixos.platform-wsl-memory = {
-    key = "modules/features/platform/wsl/memory.nix#nixos.platform-wsl-memory";
+  flake.modules.nixos.platform-wsl = {
+    key = "modules/features/platform/wsl/memory.nix#nixos.platform-wsl";
     # Kill the pressured cgroup before the WSL VM exhausts its memory limit.
     systemd.oomd = {
       enable = true;

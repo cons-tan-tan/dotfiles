@@ -1,6 +1,6 @@
 {
-  flake.modules.homeManager.cli-tool-eza = {
-    key = "modules/features/cli-tools/eza.nix#homeManager.cli-tool-eza";
+  flake.modules.homeManager.cli-tools = {
+    key = "modules/features/cli-tools/eza.nix#homeManager.cli-tools";
     dotfiles.cliTools = [
       {
         id = "eza";

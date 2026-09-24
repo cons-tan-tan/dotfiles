@@ -1,6 +1,6 @@
 {
-  flake.modules.homeManager.cli-tool-fzf = {
-    key = "modules/features/cli-tools/fzf.nix#homeManager.cli-tool-fzf";
+  flake.modules.homeManager.cli-tools = {
+    key = "modules/features/cli-tools/fzf.nix#homeManager.cli-tools";
     dotfiles.cliTools = [
       {
         id = "fzf";

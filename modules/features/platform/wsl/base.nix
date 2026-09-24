@@ -1,7 +1,7 @@
 { inputs, ... }:
 {
-  flake.modules.nixos.platform-wsl-base = {
-    key = "modules/features/platform/wsl/base.nix#nixos.platform-wsl-base";
+  flake.modules.nixos.platform-wsl = {
+    key = "modules/features/platform/wsl/base.nix#nixos.platform-wsl";
     imports = [
       {
         wsl = {

@@ -14,9 +14,7 @@
   flake.modules.nixos.platform-wsl = {
     key = "modules/features/platform/wsl/default.nix#nixos.platform-wsl";
     imports = [
-      config.flake.modules.nixos.platform-wsl-base
       config.flake.modules.nixos.platform-wsl-docker
-      config.flake.modules.nixos.platform-wsl-memory
       config.flake.modules.nixos.nix-settings-wsl
       config.flake.modules.nixos.nix-lifecycle-wsl
     ];
