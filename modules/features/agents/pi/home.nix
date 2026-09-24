@@ -1,5 +1,5 @@
 {
-  features.agent-pi.homeManager =
+  flake.modules.homeManager.agent-pi =
     {
       config,
       lib,
@@ -7,7 +7,7 @@
       ...
     }:
     let
-      models = import ../_interface/models.nix;
+      models = config.dotfiles.agentModels;
       payload = import ./_interface/payload.nix;
       piFamily = pkgs.dotfilesPackages.pi;
       piPnpm = piFamily.packageManager;
@@ -59,6 +59,8 @@
       };
     in
     {
+      key = "modules/features/agents/pi/home.nix#homeManager.agent-pi";
+
       home.packages = [ pi ];
 
       home.file.".pi/agent/package".source = "${pkgs.pi}/libexec/pi";

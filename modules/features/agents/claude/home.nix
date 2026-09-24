@@ -3,7 +3,7 @@
   ...
 }:
 {
-  features.agent-claude.homeManager =
+  flake.modules.homeManager.agent-claude =
     {
       config,
       lib,
@@ -25,7 +25,8 @@
       herdrHookCommand = herdrSettings.mkSessionHookCommand herdrHookPath;
 
       commandPolicy = config.dotfiles.agentCommandPolicyCompiled;
-      settingsLib = import ./_interface/settings.nix {
+      settingsLib = import ./_lib/settings.nix {
+        settings = config.dotfiles.claude.settings;
         inherit lib commandPolicy;
       };
       settingsValidator = import ./_interface/settings-validator.nix {
@@ -44,7 +45,6 @@
 
       baseSettingsFile = jsonFormat.generate "claude-settings-base.json" (
         settingsLib.mkSettings {
-          isDarwin = platform.environment == "darwin";
           wslUserProfile = if platform.environment == "wsl" then platform.windows.homedir else null;
           hcomPath = if hcom == null then null else "${hcom.package}/bin/hcom";
           guardCommand = guardHook.command;
@@ -94,6 +94,8 @@
       };
     in
     {
+      key = "modules/features/agents/claude/home.nix#homeManager.agent-claude";
+
       programs.claude-code = {
         enable = true;
         package = pkgs.dotfilesPackages.claude-code.package;

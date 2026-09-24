@@ -1,26 +1,24 @@
 {
-  features.cli-tool-bat =
-    { config, ... }:
-    {
-      name = "feature/cli-tools/bat";
-      cli-tools = [
-        {
-          id = "bat";
-          nix = {
-            route = "home-packages";
-            nixpkgsAttr = "bat";
-          };
-          winget = {
-            packageId = "sharkdp.bat";
-            description = "bat";
-          };
-        }
-      ];
-      agent-command-policy = [
-        {
-          owner = config.name;
-          policy.commands.bat = true;
-        }
-      ];
-    };
+  flake.modules.homeManager.cli-tool-bat = {
+    key = "modules/features/cli-tools/bat.nix#homeManager.cli-tool-bat";
+    dotfiles.cliTools = [
+      {
+        id = "bat";
+        nix = {
+          route = "home-packages";
+          nixpkgsAttr = "bat";
+        };
+        winget = {
+          packageId = "sharkdp.bat";
+          description = "bat";
+        };
+      }
+    ];
+    dotfiles.agentCommandPolicyContributions = [
+      {
+        owner = "feature/cli-tools/bat";
+        policy.commands.bat = true;
+      }
+    ];
+  };
 }

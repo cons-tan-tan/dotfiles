@@ -5,9 +5,14 @@
     flake = false;
   };
 
-  features.agent-slack = {
-    name = "feature/agents/slack";
-    agent-skills = [
+  flake.modules.homeManager.agent-slack = {
+    key = "modules/features/agents/slack/default.nix#homeManager.agent-slack";
+    imports = [
+      ({ pkgs, ... }: {
+        home.packages = [ pkgs.dotfilesPackages.agent-slack ];
+      })
+    ];
+    dotfiles.agentSkillContributions = [
       {
         name = "agent-slack";
         provenance = "external";
@@ -23,8 +28,5 @@
         };
       }
     ];
-    homeManager = { pkgs, ... }: {
-      home.packages = [ pkgs.dotfilesPackages.agent-slack ];
-    };
   };
 }

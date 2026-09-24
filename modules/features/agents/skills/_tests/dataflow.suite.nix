@@ -5,148 +5,120 @@
   repoRoot ? ../../../../..,
 }:
 let
-  meta = {
-    checkName = "agent-skills-dataflow-tests";
-    execution = "build";
-    hestiaGroup = "eval-tests";
-  };
-  skillsRoot = repoRoot + "/modules/features/agents/skills";
-
-  testImports = lib.optional (inputs ? flake-parts) inputs.den.flakeOutputs.flake ++ [
-    (inputs.den.namespace "features" false)
-    {
-      options.flake-file = lib.mkOption {
-        type = lib.types.attrs;
-        default = { };
-      };
-    }
-    (skillsRoot + "/quirk.nix")
-  ];
-
-  evalTest =
-    module:
-    (lib.evalModules {
-      specialArgs = { inherit inputs; };
-      modules = [
-        inputs.den.flakeModules.denTest
-        { denTest.imports = testImports; }
-        (
-          { denTest, ... }:
-          {
-            options.result = lib.mkOption { type = lib.types.raw; };
-            config.result = denTest module;
-          }
-        )
+  mkHome = import ../../../checks/_lib/eval/home-fixture.nix { inherit inputs lib repoRoot; };
+  homeFor =
+    producers:
+    (mkHome {
+      files = [
+        "platform/context.nix"
+        "windows/options.nix"
+        "agents/skills/options.nix"
+        "agents/skills/default.nix"
       ];
-    }).config.result;
-
-  baseHome =
-    { lib, ... }:
+      modules =
+        hm:
+        [
+          hm.platform-context
+          hm.home-base
+          hm.agent-skills-consumer
+          {
+            dotfiles.platform = {
+              environment = "linux";
+              source = "/source/test";
+              standalone = true;
+            };
+          }
+        ]
+        ++ producers;
+    }).config;
+  external = {
+    key = "fixture/external";
+    dotfiles.agentSkillContributions = [
+      {
+        name = "external";
+        definition.root = repoRoot + "/agents/skills/missing-tools";
+        provenance = "external";
+      }
+    ];
+  };
+  local = { pkgs, ... }: {
+    dotfiles.agentSkillContributions = [
+      {
+        name = "local";
+        provenance = "local";
+        definition.root = "${pkgs.writeTextDir "SKILL.md" ''
+          ---
+          name: local
+          description: Generated skill.
+          ---
+          body
+        ''}";
+      }
+    ];
+  };
+  # A diamond import must contribute once, just as two features may share a skill.
+  tux = homeFor [
+    { imports = [ external ]; }
     {
-      den.default.homeManager.home = {
-        username = "test";
-        homeDirectory = lib.mkForce "/home/test";
-        stateVersion = "25.11";
+      imports = [
+        external
+        local
+      ];
+    }
+  ];
+  pingu = homeFor [ ];
+in
+if caseName != null then
+  throw "agent-skills-dataflow has no failure cases"
+else
+  {
+    meta = {
+      checkName = "agent-skills-dataflow-tests";
+      execution = "build";
+      hestiaGroup = "eval-tests";
+    };
+    tests.testMergedSkillsAreRenderedAndIsolated = {
+      expr = {
+        tux = {
+          names = builtins.attrNames tux.dotfiles.agentSkills.externalSkills;
+          claude = {
+            external = tux.home.file ? ".claude/skills/external";
+            local = tux.home.file ? ".claude/skills/local";
+          };
+          agents = {
+            external = tux.home.file ? ".agents/skills/external";
+            local = tux.home.file ? ".agents/skills/local";
+          };
+          localSourceRendered =
+            toString tux.home.file.".agents/skills/local".source
+            != toString tux.dotfiles.agentSkills.externalSkills.local.root;
+        };
+        pingu = {
+          names = builtins.attrNames pingu.dotfiles.agentSkills.externalSkills;
+          leaked = pingu.home.file ? ".agents/skills/external";
+        };
+      };
+      expected = {
+        tux = {
+          names = [
+            "external"
+            "local"
+          ];
+          claude = {
+            external = true;
+            local = true;
+          };
+          agents = {
+            external = true;
+            local = true;
+          };
+          localSourceRendered = true;
+        };
+        pingu = {
+          names = [ ];
+          leaked = false;
+        };
       };
     };
-
-  tests = {
-    testSkillQuirkMergesProducersWithoutLeakingAcrossHomes = evalTest (
-      {
-        den,
-        features,
-        pinguHm,
-        tuxHm,
-        ...
-      }:
-      {
-        imports = [
-          baseHome
-          (skillsRoot + "/default.nix")
-        ];
-        den.hosts.x86_64-linux.igloo.users = {
-          tux = { };
-          pingu = { };
-        };
-        den.aspects.skills-external.agent-skills = [
-          {
-            name = "external";
-            definition.root = repoRoot + "/agents/skills/missing-tools";
-            provenance = "external";
-          }
-        ];
-        den.aspects.skills-local.agent-skills =
-          { pkgs, ... }:
-          [
-            {
-              name = "local";
-              definition.root = "${pkgs.writeTextDir "SKILL.md" ''
-                ---
-                name: local
-                description: Generated skill.
-                ---
-                body
-              ''}";
-              provenance = "local";
-            }
-          ];
-        den.aspects.tux.includes = [
-          den.aspects.skills-local
-          features.agent-skills-consumer
-          den.aspects.skills-external
-        ];
-        den.aspects.pingu.includes = [ features.agent-skills-consumer ];
-
-        expr = {
-          tux = {
-            names = builtins.attrNames tuxHm.dotfiles.agentSkills.externalSkills;
-            claude = {
-              external = tuxHm.home.file ? ".claude/skills/external";
-              local = tuxHm.home.file ? ".claude/skills/local";
-            };
-            agents = {
-              external = tuxHm.home.file ? ".agents/skills/external";
-              local = tuxHm.home.file ? ".agents/skills/local";
-            };
-            localSourceRendered =
-              toString tuxHm.home.file.".agents/skills/local".source
-              != toString tuxHm.dotfiles.agentSkills.externalSkills.local.root;
-          };
-          pingu = {
-            names = builtins.attrNames pinguHm.dotfiles.agentSkills.externalSkills;
-            leaked = pinguHm.home.file ? ".agents/skills/external";
-          };
-        };
-        expected = {
-          tux = {
-            names = [
-              "external"
-              "local"
-            ];
-            claude = {
-              external = true;
-              local = true;
-            };
-            agents = {
-              external = true;
-              local = true;
-            };
-            localSourceRendered = true;
-          };
-          pingu = {
-            names = [ ];
-            leaked = false;
-          };
-        };
-      }
-    );
-  };
-
-  failureCases = { };
-in
-if caseName == null then
-  {
-    inherit failureCases meta tests;
+    failureCases = { };
   }
-else
-  failureCases.${caseName}.expression

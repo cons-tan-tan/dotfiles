@@ -9,18 +9,16 @@
     };
   };
 
-  features.shell-direnv = {
-    name = "feature/shell/direnv";
-    homeManager = {
-      imports = [ inputs.direnv-instant.homeModules.direnv-instant ];
+  flake.modules.homeManager.shell-direnv = {
+    key = "modules/features/shell/direnv.nix#homeManager.shell-direnv";
+    imports = [ inputs.direnv-instant.homeModules.direnv-instant ];
 
-      programs = {
-        direnv = {
-          enable = true;
-          nix-direnv.enable = true;
-        };
-        direnv-instant.enable = true;
+    programs = {
+      direnv = {
+        enable = true;
+        nix-direnv.enable = true;
       };
+      direnv-instant.enable = true;
     };
   };
 }

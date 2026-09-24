@@ -1,5 +1,5 @@
 {
-  features.agent-opencode.homeManager =
+  flake.modules.homeManager.agent-opencode =
     {
       config,
       lib,
@@ -9,10 +9,12 @@
     let
       claudePayload = import ../claude/_interface/payload.nix;
       herdrOpenCodeIntegration = pkgs.dotfilesPackages.herdr.integrations.opencode;
-      models = import ../_interface/models.nix;
+      models = config.dotfiles.agentModels;
       openaiModelName = lib.removePrefix "openai/" models.opencode.model;
     in
     {
+      key = "modules/features/agents/opencode/home.nix#homeManager.agent-opencode";
+
       programs.opencode = {
         enable = true;
         settings = {

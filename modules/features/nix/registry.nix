@@ -1,37 +1,16 @@
 {
-  features.nix-registry-host = {
-    name = "feature/nix/registry/host";
-    homeManager =
-      { host, ... }:
-      {
-        nix.registry.dotfiles = {
-          from = {
-            type = "indirect";
-            id = "dotfiles";
-          };
-          to = {
-            type = "path";
-            path = host.dotfiles.source;
-          };
-        };
-      };
-  };
+  flake.modules.homeManager.nix-registry = { config, ... }: {
+    key = "modules/features/nix/registry.nix#homeManager.nix-registry";
 
-  features.nix-registry-home = {
-    name = "feature/nix/registry/home";
-    homeManager =
-      { home, ... }:
-      {
-        nix.registry.dotfiles = {
-          from = {
-            type = "indirect";
-            id = "dotfiles";
-          };
-          to = {
-            type = "path";
-            path = home.dotfiles.source;
-          };
-        };
+    nix.registry.dotfiles = {
+      from = {
+        type = "indirect";
+        id = "dotfiles";
       };
+      to = {
+        type = "path";
+        path = config.dotfiles.platform.source;
+      };
+    };
   };
 }

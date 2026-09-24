@@ -1,13 +1,12 @@
 {
-  features.development-javascript = {
-    name = "feature/development/javascript";
-    homeManager =
-      { pkgs, ... }:
-      {
-        home.packages = [
-          pkgs.ni
-          pkgs.pnpm
-        ];
-      };
-  };
+  flake.modules.homeManager.development-javascript =
+    { pkgs, ... }:
+    {
+      key = "modules/features/development/javascript.nix#homeManager.development-javascript";
+
+      home.packages = [
+        pkgs.ni
+        pkgs.pnpm
+      ];
+    };
 }

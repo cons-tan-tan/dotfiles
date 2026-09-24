@@ -1,7 +1,7 @@
 _: {
-  features.platform-wsl-docker = {
-    name = "feature/platform/wsl/docker";
-    nixos.virtualisation.docker = {
+  flake.modules.nixos.platform-wsl-docker = {
+    key = "modules/features/platform/wsl/docker.nix#nixos.platform-wsl-docker";
+    virtualisation.docker = {
       enable = true;
       enableOnBoot = true;
     };

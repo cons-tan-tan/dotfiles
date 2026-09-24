@@ -1,12 +1,12 @@
-{ den, ... }:
+{ ... }:
 {
-  features.productivity-raycast = {
-    name = "feature/productivity/raycast";
-    includes = [
-      (den.batteries.unfree [ "raycast" ])
+  flake.modules.homeManager.productivity-raycast = {
+    key = "modules/features/productivity/raycast/default.nix#homeManager.productivity-raycast";
+    imports = [
+      ({ pkgs, ... }: {
+        home.packages = [ pkgs.raycast ];
+      })
     ];
-    homeManager = { pkgs, ... }: {
-      home.packages = [ pkgs.raycast ];
-    };
+    dotfiles.unfreePackages = [ "raycast" ];
   };
 }

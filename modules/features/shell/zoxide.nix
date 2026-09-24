@@ -1,7 +1,10 @@
 {
-  features.shell-zoxide = {
-    name = "feature/shell/zoxide";
-    cli-tools = [
+  flake.modules.homeManager.shell-zoxide = {
+    key = "modules/features/shell/zoxide.nix#homeManager.shell-zoxide";
+    imports = [
+      { programs.zoxide.enable = true; }
+    ];
+    dotfiles.cliTools = [
       {
         id = "zoxide";
         nix.route = "programs";
@@ -11,6 +14,5 @@
         };
       }
     ];
-    homeManager.programs.zoxide.enable = true;
   };
 }

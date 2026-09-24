@@ -5,9 +5,9 @@
     flake = false;
   };
 
-  features.drawio-agent-skill = {
-    name = "feature/drawio/agent-skill";
-    agent-skills = [
+  flake.modules.homeManager.drawio-agent-skill = {
+    key = "modules/features/drawio/default.nix#homeManager.drawio-agent-skill";
+    dotfiles.agentSkillContributions = [
       {
         name = "drawio";
         provenance = "external";
@@ -19,12 +19,8 @@
     ];
   };
 
-  features.drawio-linux-headless = {
-    name = "feature/drawio/linux-headless";
-    # The agent and platform bundles meet again at each home. Including the
-    # sibling skill here would therefore emit its quirk contribution twice.
-    homeManager = { pkgs, ... }: {
-      home.packages = [ pkgs.dotfilesPackages.drawio-headless ];
-    };
+  flake.modules.homeManager.drawio-linux-headless = { pkgs, ... }: {
+    key = "modules/features/drawio/default.nix#homeManager.drawio-linux-headless";
+    home.packages = [ pkgs.dotfilesPackages.drawio-headless ];
   };
 }

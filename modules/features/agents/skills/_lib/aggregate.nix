@@ -15,22 +15,22 @@ let
   ];
   validateEntry =
     entry:
-    assert lib.assertMsg (builtins.isAttrs entry) "agent skill quirk entries must be attribute sets";
+    assert lib.assertMsg (builtins.isAttrs entry) "agent skill contributions must be attribute sets";
     assert lib.assertMsg (lib.all (name: lib.elem name allowedEntryAttrs) (
       builtins.attrNames entry
-    )) "agent skill quirk entry contains unknown attributes";
+    )) "agent skill contribution contains unknown attributes";
     assert lib.assertMsg (
       entry ? name && isSkillName entry.name
-    ) "agent skill quirk entry has an invalid name";
+    ) "agent skill contribution has an invalid name";
     assert lib.assertMsg (
       entry ? definition && builtins.isAttrs entry.definition
-    ) "agent skill quirk entry requires an attribute-set definition";
+    ) "agent skill contribution requires an attribute-set definition";
     assert lib.assertMsg (
-      !entry ? enable || builtins.isFunction entry.enable
-    ) "agent skill quirk entry enable predicate must be a function";
+      !entry ? enable || lib.isFunction entry.enable
+    ) "agent skill contribution enable predicate must be a function";
     assert lib.assertMsg (
       entry ? provenance && lib.elem entry.provenance validProvenance
-    ) "agent skill quirk entry has an invalid provenance";
+    ) "agent skill contribution has an invalid provenance";
     entry;
   enablePredicate =
     entry:
@@ -40,7 +40,7 @@ let
         enabled = entry.enable config;
       in
       assert lib.assertMsg (builtins.isBool enabled)
-        "agent skill quirk entry enable predicate must return a boolean";
+        "agent skill contribution enable predicate must return a boolean";
       enabled
     else
       _: true;

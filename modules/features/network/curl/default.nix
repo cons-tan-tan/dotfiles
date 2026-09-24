@@ -1,8 +1,7 @@
 {
-  features.network-curl = {
-    name = "feature/network/curl";
-    homeManager = { pkgs, ... }: {
-      home.packages = [ pkgs.curl ];
-    };
+  flake.modules.homeManager.network-curl = { pkgs, ... }: {
+    key = "modules/features/network/curl/default.nix#homeManager.network-curl";
+
+    home.packages = [ pkgs.curl ];
   };
 }

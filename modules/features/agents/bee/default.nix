@@ -6,9 +6,14 @@
     flake = false;
   };
 
-  features.agent-bee = {
-    name = "feature/agents/bee";
-    agent-skills =
+  flake.modules.homeManager.agent-bee = {
+    key = "modules/features/agents/bee/default.nix#homeManager.agent-bee";
+    imports = [
+      ({ pkgs, ... }: {
+        home.packages = [ pkgs.dotfilesPackages.bee ];
+      })
+    ];
+    dotfiles.agentSkillContributions =
       map
         (name: {
           inherit name;
@@ -19,8 +24,5 @@
           "using-bee"
           "backlog-notation"
         ];
-    homeManager = { pkgs, ... }: {
-      home.packages = [ pkgs.dotfilesPackages.bee ];
-    };
   };
 }

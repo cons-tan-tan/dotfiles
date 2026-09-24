@@ -100,7 +100,7 @@ let
       checked.nix != null || checked.winget != null
     ) "cli-tools.${entry.id} must target Nix, WinGet, or both";
     checked;
-  # An aspect can be reached through more than one named variant. Identical
+  # Several features may declare the same tool. Identical
   # emissions are idempotent; distinct declarations for the same ID remain an
   # error below.
   checked = lib.unique (map validateEntry entries);

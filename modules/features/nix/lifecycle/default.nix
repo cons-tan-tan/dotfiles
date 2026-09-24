@@ -1,5 +1,5 @@
 {
-  features,
+  config,
   inputs,
   ...
 }:
@@ -16,181 +16,183 @@ in
     };
   };
 
-  features.nix-lifecycle = {
-    name = "feature/nix/lifecycle";
+  flake.modules.homeManager.nix-lifecycle =
+    {
+      config,
+      lib,
+      pkgs,
+      ...
+    }:
+    let
+      platform = config.dotfiles.platform;
+      # Home Manager owns cleanup only for standalone Linux. WSL delegates it
+      # to its system or switch app, while Darwin keeps automatic cleanup off.
+      enableUserCleanup = platform.environment == "linux" && platform.standalone;
+      enableUserResultRootCleanup = enableUserCleanup;
+      cleanupArgs = lib.escapeShellArgs cleanupPolicy.arguments;
+      nixPackage =
+        if config.nix.enable && config.nix.package != null then config.nix.package else pkgs.nix;
+      userCleanupRunner = pkgs.callPackage ./_packages/clean-user {
+        nh = config.programs.nh.package;
+        nix = nixPackage;
+      };
+      resultRootPruner = pkgs.callPackage ./_packages/result-root-pruner { };
+    in
+    {
+      key = "modules/features/nix/lifecycle/default.nix#homeManager.nix-lifecycle";
 
-    homeManager =
-      {
-        config,
-        lib,
-        pkgs,
-        ...
-      }:
-      let
-        platform = config.dotfiles.platform;
-        # Home Manager owns cleanup only for standalone Linux. WSL delegates it
-        # to its system or switch app, while Darwin keeps automatic cleanup off.
-        enableUserCleanup = platform.environment == "linux" && platform.standalone;
-        enableUserResultRootCleanup = enableUserCleanup;
-        cleanupArgs = lib.escapeShellArgs cleanupPolicy.arguments;
-        nixPackage =
-          if config.nix.enable && config.nix.package != null then config.nix.package else pkgs.nix;
-        userCleanupRunner = pkgs.callPackage ./_packages/clean-user {
-          nh = config.programs.nh.package;
-          nix = nixPackage;
+      programs.nh = {
+        enable = true;
+        clean = {
+          # WSL owns cleanup outside Home Manager; Darwin leaves it disabled.
+          enable = enableUserCleanup;
+          dates = if platform.environment == "darwin" then "weekly" else cleanupPolicy.dates;
+          extraArgs = cleanupArgs;
         };
-        resultRootPruner = pkgs.callPackage ./_packages/result-root-pruner { };
-      in
-      {
-        programs.nh = {
-          enable = true;
-          clean = {
-            # WSL owns cleanup outside Home Manager; Darwin leaves it disabled.
-            enable = enableUserCleanup;
-            dates = if platform.environment == "darwin" then "weekly" else cleanupPolicy.dates;
-            extraArgs = cleanupArgs;
-          };
-        };
+      };
 
-        systemd.user.services =
-          lib.optionalAttrs enableUserResultRootCleanup {
-            nh-clean-result-roots = {
-              Unit.Description = "Prune stale Nix build result roots";
-              Service = {
-                Type = "oneshot";
-                ExecStart = "${resultRootPruner}/bin/nh-prune-result-roots --keep-minutes ${toString cleanupPolicy.resultRoots.keepMinutes}";
-                Nice = 10;
-                IOSchedulingClass = "idle";
-              };
-            };
-          }
-          // lib.optionalAttrs enableUserCleanup {
-            nh-clean.Service = {
-              ExecStart = lib.mkForce "${userCleanupRunner}/bin/nh-clean-user";
+      systemd.user.services =
+        lib.optionalAttrs enableUserResultRootCleanup {
+          nh-clean-result-roots = {
+            Unit.Description = "Prune stale Nix build result roots";
+            Service = {
+              Type = "oneshot";
+              ExecStart = "${resultRootPruner}/bin/nh-prune-result-roots --keep-minutes ${toString cleanupPolicy.resultRoots.keepMinutes}";
               Nice = 10;
               IOSchedulingClass = "idle";
             };
           };
-
-        systemd.user.timers = lib.optionalAttrs enableUserResultRootCleanup {
-          nh-clean-result-roots = {
-            Unit.Description = "Weekly cleanup of stale Nix build result roots";
-            Timer = {
-              OnCalendar = cleanupPolicy.resultRoots.dates;
-              Persistent = true;
-              RandomizedDelaySec = "30min";
-            };
-            Install.WantedBy = [ "timers.target" ];
-          };
-        };
-      };
-  };
-
-  features.nix-lifecycle-wsl = {
-    name = "feature/nix/lifecycle/wsl";
-    includes = [ features.nix-lifecycle ];
-
-    nixos =
-      {
-        config,
-        lib,
-        pkgs,
-        ...
-      }:
-      let
-        growthChecker = pkgs.callPackage ./_packages/store-growth-checker {
-          nix = config.nix.package;
-        };
-        profileCleanupRunner = pkgs.callPackage ./_packages/clean-user {
-          nh = config.programs.nh.package;
-          nix = config.nix.package;
-          scope = "all";
-        };
-        storeCleanupRunner = pkgs.callPackage ./_packages/store-cleanup {
-          fastNixGc = inputs.fast-nix-gc.packages.${pkgs.stdenv.hostPlatform.system}.default;
-          fastNixGcArguments = cleanupPolicy.storeGc.arguments;
-          nix = config.nix.package;
-          profileCleanup = profileCleanupRunner;
-        };
-        resultRootPruner = pkgs.callPackage ./_packages/result-root-pruner { };
-        username = config.wsl.defaultUser;
-        homedir = config.users.users.${username}.home;
-        lock = import ./_interface/cleanup-lock.nix {
-          coreutils = pkgs.coreutils;
-          inherit lib username;
-        };
-        growth = cleanupPolicy.growth;
-        statePath = "/var/lib/${growth.stateDirectory}";
-        growthRunner = pkgs.callPackage ./_packages/clean-growth-runner {
-          checker = growthChecker;
-          cleanupCommand = lib.getExe storeCleanupRunner;
-          inherit (growth)
-            maximumAgeSeconds
-            queryTimeout
-            retryIntervalSeconds
-            thresholdBytes
-            ;
-        };
-      in
-      {
-        # The system generation owns root cleanup; interactive nh remains HM-owned.
-        programs.nh.clean.enable = false;
-
-        systemd.services.nh-clean = {
-          description = "Clean Nix store after growth or maximum age";
-          after = [ "nix-daemon.socket" ];
-          wants = [ "nix-daemon.socket" ];
-          serviceConfig = {
-            Type = "oneshot";
-            User = "root";
+        }
+        // lib.optionalAttrs enableUserCleanup {
+          nh-clean.Service = {
+            ExecStart = lib.mkForce "${userCleanupRunner}/bin/nh-clean-user";
             Nice = 10;
             IOSchedulingClass = "idle";
-            StateDirectory = growth.stateDirectory;
-            StateDirectoryMode = "0750";
-            ExecStartPre = lock.preparationCommands;
-            ExecStart = "${lib.getExe' pkgs.util-linux "flock"} --exclusive ${lock.cleanupFile} ${lib.getExe growthRunner} check ${statePath}";
-            TimeoutStartSec = growth.cleanupTimeout;
-          };
-        };
-        systemd.timers.nh-clean = {
-          description = "Check Nix store cleanup policy periodically";
-          wantedBy = [ "timers.target" ];
-          timerConfig = {
-            OnBootSec = growth.checkInterval;
-            OnUnitActiveSec = growth.checkInterval;
-            AccuracySec = "30s";
           };
         };
 
-        systemd.services.nh-clean-result-roots = {
-          description = "Prune stale Nix build result roots";
-          serviceConfig = {
-            Type = "oneshot";
-            User = username;
-            Environment = "HOME=${homedir}";
-            WorkingDirectory = homedir;
-            Nice = 10;
-            IOSchedulingClass = "idle";
-            ExecStartPre = lock.preparationCommands;
-            ExecStart = "${lib.getExe' pkgs.util-linux "flock"} --exclusive ${lock.cleanupFile} ${lib.getExe resultRootPruner} --keep-minutes ${toString cleanupPolicy.resultRoots.keepMinutes}";
-          };
-        };
-        systemd.timers.nh-clean-result-roots = {
-          description = "Weekly cleanup of stale Nix build result roots";
-          wantedBy = [ "timers.target" ];
-          timerConfig = {
+      systemd.user.timers = lib.optionalAttrs enableUserResultRootCleanup {
+        nh-clean-result-roots = {
+          Unit.Description = "Weekly cleanup of stale Nix build result roots";
+          Timer = {
             OnCalendar = cleanupPolicy.resultRoots.dates;
             Persistent = true;
             RandomizedDelaySec = "30min";
           };
+          Install.WantedBy = [ "timers.target" ];
         };
-
-        assertions = [
-          {
-            assertion = !config.nix.gc.automatic;
-            message = "programs.nh.clean and nix.gc.automatic must not run together";
-          }
-        ];
       };
+    };
+
+  flake.modules.homeManager.nix-lifecycle-wsl = {
+    key = "modules/features/nix/lifecycle/default.nix#homeManager.nix-lifecycle-wsl";
+    imports = [
+      config.flake.modules.homeManager.nix-lifecycle
+    ];
   };
+
+  flake.modules.nixos.nix-lifecycle-wsl =
+    {
+      config,
+      lib,
+      pkgs,
+      ...
+    }:
+    let
+      growthChecker = pkgs.callPackage ./_packages/store-growth-checker {
+        nix = config.nix.package;
+      };
+      profileCleanupRunner = pkgs.callPackage ./_packages/clean-user {
+        nh = config.programs.nh.package;
+        nix = config.nix.package;
+        scope = "all";
+      };
+      storeCleanupRunner = pkgs.callPackage ./_packages/store-cleanup {
+        fastNixGc = inputs.fast-nix-gc.packages.${pkgs.stdenv.hostPlatform.system}.default;
+        fastNixGcArguments = cleanupPolicy.storeGc.arguments;
+        nix = config.nix.package;
+        profileCleanup = profileCleanupRunner;
+      };
+      resultRootPruner = pkgs.callPackage ./_packages/result-root-pruner { };
+      username = config.wsl.defaultUser;
+      homedir = config.users.users.${username}.home;
+      lock = import ./_interface/cleanup-lock.nix {
+        coreutils = pkgs.coreutils;
+        inherit lib username;
+      };
+      growth = cleanupPolicy.growth;
+      statePath = "/var/lib/${growth.stateDirectory}";
+      growthRunner = pkgs.callPackage ./_packages/clean-growth-runner {
+        checker = growthChecker;
+        cleanupCommand = lib.getExe storeCleanupRunner;
+        inherit (growth)
+          maximumAgeSeconds
+          queryTimeout
+          retryIntervalSeconds
+          thresholdBytes
+          ;
+      };
+    in
+    {
+      key = "modules/features/nix/lifecycle/default.nix#nixos.nix-lifecycle-wsl";
+
+      # The system generation owns root cleanup; interactive nh remains HM-owned.
+      programs.nh.clean.enable = false;
+
+      systemd.services.nh-clean = {
+        description = "Clean Nix store after growth or maximum age";
+        after = [ "nix-daemon.socket" ];
+        wants = [ "nix-daemon.socket" ];
+        serviceConfig = {
+          Type = "oneshot";
+          User = "root";
+          Nice = 10;
+          IOSchedulingClass = "idle";
+          StateDirectory = growth.stateDirectory;
+          StateDirectoryMode = "0750";
+          ExecStartPre = lock.preparationCommands;
+          ExecStart = "${lib.getExe' pkgs.util-linux "flock"} --exclusive ${lock.cleanupFile} ${lib.getExe growthRunner} check ${statePath}";
+          TimeoutStartSec = growth.cleanupTimeout;
+        };
+      };
+      systemd.timers.nh-clean = {
+        description = "Check Nix store cleanup policy periodically";
+        wantedBy = [ "timers.target" ];
+        timerConfig = {
+          OnBootSec = growth.checkInterval;
+          OnUnitActiveSec = growth.checkInterval;
+          AccuracySec = "30s";
+        };
+      };
+
+      systemd.services.nh-clean-result-roots = {
+        description = "Prune stale Nix build result roots";
+        serviceConfig = {
+          Type = "oneshot";
+          User = username;
+          Environment = "HOME=${homedir}";
+          WorkingDirectory = homedir;
+          Nice = 10;
+          IOSchedulingClass = "idle";
+          ExecStartPre = lock.preparationCommands;
+          ExecStart = "${lib.getExe' pkgs.util-linux "flock"} --exclusive ${lock.cleanupFile} ${lib.getExe resultRootPruner} --keep-minutes ${toString cleanupPolicy.resultRoots.keepMinutes}";
+        };
+      };
+      systemd.timers.nh-clean-result-roots = {
+        description = "Weekly cleanup of stale Nix build result roots";
+        wantedBy = [ "timers.target" ];
+        timerConfig = {
+          OnCalendar = cleanupPolicy.resultRoots.dates;
+          Persistent = true;
+          RandomizedDelaySec = "30min";
+        };
+      };
+
+      assertions = [
+        {
+          assertion = !config.nix.gc.automatic;
+          message = "programs.nh.clean and nix.gc.automatic must not run together";
+        }
+      ];
+    };
 }

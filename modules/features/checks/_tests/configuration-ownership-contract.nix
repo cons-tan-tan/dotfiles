@@ -43,7 +43,7 @@ let
     exists = true;
     activationPackage = true;
     activationSystem = subject.context.system;
-    username = subject.context.userName;
+    username = subject.context.username;
     homeDirectory = subject.context.homedir;
   }) standaloneSubjects;
 

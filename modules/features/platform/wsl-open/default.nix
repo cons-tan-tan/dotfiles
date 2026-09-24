@@ -1,11 +1,10 @@
 {
-  features.platform-wsl-open = {
-    name = "feature/platform/wsl-open";
-    homeManager =
-      { pkgs, ... }:
-      {
-        home.packages = [ pkgs.dotfilesPackages.wsl-open ];
-        home.sessionVariables.BROWSER = "wsl-open";
-      };
-  };
+  flake.modules.homeManager.platform-wsl-open =
+    { pkgs, ... }:
+    {
+      key = "modules/features/platform/wsl-open/default.nix#homeManager.platform-wsl-open";
+
+      home.packages = [ pkgs.dotfilesPackages.wsl-open ];
+      home.sessionVariables.BROWSER = "wsl-open";
+    };
 }

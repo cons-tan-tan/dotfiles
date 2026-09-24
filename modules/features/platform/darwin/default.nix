@@ -1,22 +1,29 @@
-{ features, ... }:
+{ config, ... }:
 {
-  features.platform-darwin = {
-    name = "feature/platform/darwin";
-    includes = [
-      features.platform-context
-      features.platform-darwin-system
-      features.platform-darwin-fonts
-      features.platform-darwin-touch-id
-      features.platform-homebrew
-      features.input-methods-azookey
-      features.media-aqua-voice
-      features.media-fiji
-      features.network-tailscale
-      features.platform-darwin-scroll-reverser
-      features.productivity-raycast
-      features.platform-ghostty
-      features.platform-sleepctl
-      features.nix-lifecycle
+  flake.modules.darwin.platform-darwin = {
+    key = "modules/features/platform/darwin/default.nix#darwin.platform-darwin";
+    imports = [
+      config.flake.modules.darwin.platform-darwin-system
+      config.flake.modules.darwin.platform-darwin-fonts
+      config.flake.modules.darwin.platform-darwin-touch-id
+      config.flake.modules.darwin.platform-homebrew
+      config.flake.modules.darwin.input-methods-azookey
+      config.flake.modules.darwin.media-fiji
+      config.flake.modules.darwin.network-tailscale
+      config.flake.modules.darwin.platform-darwin-scroll-reverser
+      config.flake.modules.darwin.platform-sleepctl
+    ];
+  };
+
+  flake.modules.homeManager.platform-darwin = {
+    key = "modules/features/platform/darwin/default.nix#homeManager.platform-darwin";
+    imports = [
+      config.flake.modules.homeManager.platform-context
+      config.flake.modules.homeManager.media-aqua-voice
+      config.flake.modules.homeManager.productivity-raycast
+      config.flake.modules.homeManager.platform-ghostty
+      config.flake.modules.homeManager.platform-sleepctl
+      config.flake.modules.homeManager.nix-lifecycle
     ];
   };
 }

@@ -32,6 +32,13 @@ let
       static = [ "linkGeneration" ];
     };
   };
+  hasWindowsEffects =
+    config:
+    config.dotfiles.windows.deployments != { }
+    || config.dotfiles.windows.staticResources != { }
+    || config.dotfiles.windows.wingetEnabled
+    || config.home.activation ? deployWindowsCompanion
+    || config.home.activation ? deployWindowsCompanionStatic;
   actual = {
     delivery = {
       integratedX86 = describeWsl (integratedConfig entityContexts.linuxX86);
@@ -40,10 +47,10 @@ let
       standaloneAarch64 = describeWsl (standaloneConfig entityContexts.linuxAarch64);
     };
     isolation = {
-      linux = flake.homeConfigurations.${entityContexts.linuxX86.home.linux}.config.dotfiles ? windows;
+      linux = hasWindowsEffects flake.homeConfigurations.${entityContexts.linuxX86.home.linux}.config;
       darwin =
-        flake.darwinConfigurations.${entityContexts.darwin.darwin}.config.home-manager.users.${entityContexts.darwin.username}.dotfiles
-        ? windows;
+        hasWindowsEffects
+          flake.darwinConfigurations.${entityContexts.darwin.darwin}.config.home-manager.users.${entityContexts.darwin.username};
     };
     staticResources =
       lib.genAttrs

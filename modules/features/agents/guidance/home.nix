@@ -1,5 +1,5 @@
 {
-  features.agent-guidance.homeManager =
+  flake.modules.homeManager.agent-guidance =
     { lib, ... }:
     let
       payload = import ./_interface/payload.nix;
@@ -18,6 +18,8 @@
         + "\n";
     in
     {
+      key = "modules/features/agents/guidance/home.nix#homeManager.agent-guidance";
+
       home.file = {
         ".agents/context".source = contextRoot;
         ".claude/CLAUDE.md".source = globalContext;

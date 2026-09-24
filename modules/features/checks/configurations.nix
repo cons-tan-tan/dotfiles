@@ -1,18 +1,16 @@
 {
   config,
-  den,
   inputs,
   lib,
   ...
 }:
 let
   darwinSystem = "aarch64-darwin";
-  configurationTargets = import ../../flake/_interface/configuration-targets.nix { inherit lib; };
   ciCheck = import ../ci/_interface/check.nix { inherit lib; };
   checkContext =
     { pkgs, system }:
     let
-      targets = configurationTargets { inherit den system; };
+      targets = config.dotfiles.targets.${system};
       inherit (config.flake)
         darwinConfigurations
         homeConfigurations
@@ -32,18 +30,9 @@ let
         ;
       username = targets.username;
       entityContexts = {
-        darwin = configurationTargets {
-          inherit den;
-          system = "aarch64-darwin";
-        };
-        linuxX86 = configurationTargets {
-          inherit den;
-          system = "x86_64-linux";
-        };
-        linuxAarch64 = configurationTargets {
-          inherit den;
-          system = "aarch64-linux";
-        };
+        darwin = config.dotfiles.targets."aarch64-darwin";
+        linuxX86 = config.dotfiles.targets."x86_64-linux";
+        linuxAarch64 = config.dotfiles.targets."aarch64-linux";
       };
       homeEntries = lib.mapAttrsToList (environment: name: {
         hostKind = environment;
@@ -189,24 +178,24 @@ in
 
   perSystem =
     { pkgs, system, ... }:
+    let
+      build = buildComposition { inherit pkgs system; };
+    in
     {
-      dotfiles.ci.evaluationCompleteCheckProducers = [
-        {
-          owner = "configuration checks";
-          checks = evaluationCompleteChecks { inherit pkgs system; };
-        }
-      ];
-      dotfiles.ci.buildRouteProducers = [
-        {
-          owner = "configuration checks";
-          routes = (buildComposition { inherit pkgs system; }).routes;
-        }
-      ];
+      checks = build.checks;
+      dotfiles.ci = {
+        evaluationCompleteCheckProducers = [
+          {
+            owner = "configuration checks";
+            checks = evaluationCompleteChecks { inherit pkgs system; };
+          }
+        ];
+        buildRouteProducers = [
+          {
+            owner = "configuration checks";
+            routes = build.routes;
+          }
+        ];
+      };
     };
-
-  den.aspects.configuration-checks.checks =
-    { pkgs, system, ... }:
-    (buildComposition { inherit pkgs system; }).checks;
-
-  den.schema.flake-parts.includes = [ den.aspects.configuration-checks ];
 }

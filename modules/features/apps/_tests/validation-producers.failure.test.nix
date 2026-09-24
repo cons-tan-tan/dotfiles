@@ -13,38 +13,13 @@ let
       };
   validateNames = import (repoRoot + "/modules/features/apps/_interface/validation-names.nix");
   force = value: builtins.deepSeq value true;
-  merge =
-    producers:
-    force (mergeValidationProducers {
-      args = { };
-      inherit producers;
-    });
+  merge = sets: force (mergeValidationProducers sets);
   validation = pkgs.writeText "fixture-validation" "validated";
   cases = {
-    producerRecordWithoutProduce = {
-      expression = merge [ { } ];
-      expectedFragment = "app-validation producers must be { produce = <function>; } records";
-    };
-
-    nonFunctionProduceField = {
-      expression = merge [ { produce = "not-a-function"; } ];
-      expectedFragment = "app-validation producer records must contain produce functions";
-    };
-
-    nonAttributeSetProducerResult = {
-      expression = merge [ { produce = _: [ ]; } ];
-      expectedFragment = "app-validation producers must return attribute sets";
-    };
-
-    nonDerivationProducerValue = {
-      expression = merge [ { produce = _: { invalid = "not-a-derivation"; }; } ];
-      expectedFragment = "app-validation producers must return derivations";
-    };
-
     duplicateValidationNames = {
       expression = merge [
-        { produce = _: { duplicate = validation; }; }
-        { produce = _: { duplicate = validation; }; }
+        { duplicate = validation; }
+        { duplicate = validation; }
       ];
       expectedFragment = "app-validation names must be unique across producers";
     };

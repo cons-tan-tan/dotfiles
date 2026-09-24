@@ -4,7 +4,7 @@
   pkgs,
 }:
 let
-  guidanceHome = (import ../home.nix).features.agent-guidance.homeManager;
+  guidanceHome = (import ../home.nix).flake.modules.homeManager.agent-guidance;
   evaluated =
     (homeManager.lib.homeManagerConfiguration {
       inherit pkgs;

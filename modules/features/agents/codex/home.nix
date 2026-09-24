@@ -1,5 +1,5 @@
 {
-  features.agent-codex.homeManager =
+  flake.modules.homeManager.agent-codex =
     {
       config,
       lib,
@@ -18,7 +18,7 @@
       configPath = "${codexHome}/config.toml";
       hooksJsonPath = "${codexHome}/hooks.json";
 
-      settingsLib = import ./_interface/settings.nix;
+      mkMergePayload = import ./_lib/merge-payload.nix;
       commandPolicy = config.dotfiles.agentCommandPolicyCompiled;
       commandPolicyInterface = import ../base/_interface/command-policy.nix;
       guardHook = commandPolicyInterface.mkGuard {
@@ -59,12 +59,10 @@
               -- rg --files >/dev/null
           '';
 
-      baseMergePayloadJson = jsonFormat.generate "codex-config-merge-base.json" (
-        settingsLib.mkMergePayload {
-          inherit codexHome;
-          trashDirectory = "${config.xdg.dataHome}/Trash";
-        }
-      );
+      baseMergePayloadJson = jsonFormat.generate "codex-config-merge-base.json" (mkMergePayload {
+        inherit codexHome;
+        settings = config.dotfiles.codex.settings;
+      });
 
       emptyHooksJson = jsonFormat.generate "codex-hooks-hcom-disabled.json" { hooks = { }; };
       hcomHooksJson = if hcom == null then emptyHooksJson else "${hcomCodex}/hooks.json";
@@ -158,6 +156,8 @@
       '';
     in
     {
+      key = "modules/features/agents/codex/home.nix#homeManager.agent-codex";
+
       home.packages = [
         codex
       ]

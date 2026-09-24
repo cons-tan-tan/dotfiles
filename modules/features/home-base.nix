@@ -1,43 +1,41 @@
-{ features, ... }:
+{ config, ... }:
 {
-  features.home-base = {
-    name = "feature/home-base";
-    homeManager = {
-      home = {
-        stateVersion = "24.11";
+  flake.modules.homeManager.home-base = {
+    key = "modules/features/home-base.nix#homeManager.home-base";
+    home = {
+      stateVersion = "24.11";
 
-        # home-manager and nixpkgs both follow the same unstable input, so the
-        # release mismatch check remains useful.
-        enableNixpkgsReleaseCheck = true;
-      };
-
-      programs.home-manager.enable = true;
+      # home-manager and nixpkgs both follow the same unstable input, so the
+      # release mismatch check remains useful.
+      enableNixpkgsReleaseCheck = true;
     };
+
+    programs.home-manager.enable = true;
   };
 
-  features.common-home = {
-    name = "feature/common-home";
-    includes = [
-      features.home-base
-      features.nix-default
-      features.ci-tools
-      features.cli-tools
-      features.development-default
-      features.editors-default
-      features.media-ffmpeg
-      features.shell-zsh
-      features.git
-      features.git-wt
-      features.gh
-      features.ghq-sync
-      features.terminal-default
-      features.cloud-aws
-      features.cloud-gcloud
-      features.network-curl
-      features.security-gpg
-      features.security-secrets
-      features.security-ssh
-      features.safe-deletion
+  flake.modules.homeManager.common-home = {
+    key = "modules/features/home-base.nix#homeManager.common-home";
+    imports = [
+      config.flake.modules.homeManager.home-base
+      config.flake.modules.homeManager.nix-default
+      config.flake.modules.homeManager.ci-tools
+      config.flake.modules.homeManager.cli-tools
+      config.flake.modules.homeManager.development-default
+      config.flake.modules.homeManager.editors-default
+      config.flake.modules.homeManager.media-ffmpeg
+      config.flake.modules.homeManager.shell-zsh
+      config.flake.modules.homeManager.git
+      config.flake.modules.homeManager.git-wt
+      config.flake.modules.homeManager.gh
+      config.flake.modules.homeManager.ghq-sync
+      config.flake.modules.homeManager.terminal-default
+      config.flake.modules.homeManager.cloud-aws
+      config.flake.modules.homeManager.cloud-gcloud
+      config.flake.modules.homeManager.network-curl
+      config.flake.modules.homeManager.security-gpg
+      config.flake.modules.homeManager.security-secrets
+      config.flake.modules.homeManager.security-ssh
+      config.flake.modules.homeManager.safe-deletion
     ];
   };
 }

@@ -25,15 +25,12 @@ let
     overrideModule:
     inputs.flake-parts.lib.mkFlake { inherit inputs; } {
       imports = [
+        inputs.flake-parts.flakeModules.modules
         inputs.treefmt-nix.flakeModule
         ../../nixpkgs
         ../default.nix
         overrideModule
       ];
-      options.features = lib.mkOption {
-        type = lib.types.lazyAttrsOf lib.types.raw;
-        default = { };
-      };
       config = {
         systems = [
           darwinSystem

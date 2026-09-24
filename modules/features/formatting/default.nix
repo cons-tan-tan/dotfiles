@@ -1,5 +1,4 @@
 {
-  den,
   inputs,
   lib,
   ...
@@ -32,51 +31,43 @@ in
     ../ci/_interface/options.nix
   ];
 
-  den.aspects.formatting = {
-    flake-parts.treefmt = {
-      flakeCheck = false;
-      projectRootFile = "flake.nix";
-      programs = {
-        nixf-diagnose = {
-          enable = true;
-          autoFix = true;
-        };
-        nixfmt.enable = true;
-        rustfmt.enable = true;
-        shfmt.enable = true;
-      };
-      settings = {
-        formatter.nixf-diagnose.priority = -1;
-        global.excludes = [
-          ".direnv/**"
-          ".git/**"
-          "*.lock"
-          "result"
-        ];
-      };
-    };
-
-    apps = args: (appsFor args).apps;
-    app-validations = [
-      {
-        produce = args: (appsFor args).validationsByName;
-      }
-    ];
-    checks =
-      { config, ... }:
-      (checkProducer { inherit config; }).checks;
-  };
-
   perSystem =
-    { config, ... }:
     {
-      dotfiles.ci.buildRouteProducers = [
-        {
-          owner = "formatting checks";
-          routes = (checkProducer { inherit config; }).routes;
-        }
-      ];
+      pkgs,
+      config,
+      self',
+      ...
+    }:
+    let
+      appSet = appsFor { inherit pkgs self'; };
+      producer = checkProducer { inherit config; };
+    in
+    {
+      treefmt = {
+        flakeCheck = false;
+        projectRootFile = "flake.nix";
+        programs = {
+          nixf-diagnose = {
+            enable = true;
+            autoFix = true;
+          };
+          nixfmt.enable = true;
+          rustfmt.enable = true;
+          shfmt.enable = true;
+        };
+        settings = {
+          formatter.nixf-diagnose.priority = -1;
+          global.excludes = [
+            ".direnv/**"
+            ".git/**"
+            "*.lock"
+            "result"
+          ];
+        };
+      };
+      inherit (appSet) apps;
+      dotfiles.appValidationSets = [ appSet.validationsByName ];
+      checks = producer.checks;
+      dotfiles.ci.buildRouteProducers = [ { inherit (producer) owner routes; } ];
     };
-
-  den.schema.flake-parts.includes = [ den.aspects.formatting ];
 }

@@ -34,7 +34,7 @@ let
       builtins.attrNames entry.policy
     )) "agent-command-policy.${entry.owner}.policy contains an unknown top-level field";
     entry;
-  # The same named aspect may be reached through multiple include paths.
+  # The same policy may be contributed through multiple feature imports.
   # Identical contributions are one owner; differing policies under one owner
   # remain an ownership error.
   checked = lib.unique (map validateEntry entries);

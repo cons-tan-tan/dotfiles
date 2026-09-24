@@ -1,8 +1,7 @@
 {
-  features.media-aqua-voice = {
-    name = "feature/media/aqua-voice";
-    homeManager = { pkgs, ... }: {
-      home.packages = [ pkgs.brewCasks.aqua-voice ];
-    };
+  flake.modules.homeManager.media-aqua-voice = { pkgs, ... }: {
+    key = "modules/features/media/aqua-voice/default.nix#homeManager.media-aqua-voice";
+
+    home.packages = [ pkgs.brewCasks.aqua-voice ];
   };
 }

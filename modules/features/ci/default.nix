@@ -82,18 +82,17 @@ in
         };
       };
 
-    features.ci-tools = {
-      name = "feature/ci/tools";
-      homeManager =
-        { pkgs, ... }:
-        {
-          home.packages = [
-            pkgs.pinact
-            pkgs.dotfilesPackages.gha-diag
-            pkgs.dotfilesPackages.zizmor
-          ];
-        };
-    };
+    flake.modules.homeManager.ci-tools =
+      { pkgs, ... }:
+      {
+        key = "modules/features/ci/default.nix#homeManager.ci-tools";
+
+        home.packages = [
+          pkgs.pinact
+          pkgs.dotfilesPackages.gha-diag
+          pkgs.dotfilesPackages.zizmor
+        ];
+      };
 
     flake.lib.hestiaJobs.ci = builtins.seq validation (
       ciCheck.mkHestiaJobs {

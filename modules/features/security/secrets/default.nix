@@ -1,4 +1,4 @@
-{ den, ... }:
+{ ... }:
 let
   appsFor =
     { pkgs, ... }:
@@ -8,27 +8,25 @@ let
     };
 in
 {
-  den.aspects.apply-secrets = {
-    apps = args: (appsFor args).apps;
-    app-validations = [
-      {
-        produce = args: (appsFor args).validationsByName;
-      }
-    ];
-  };
+  flake.modules.homeManager.security-secrets =
+    { pkgs, ... }:
+    {
+      key = "modules/features/security/secrets/default.nix#homeManager.security-secrets";
 
-  den.schema.flake-parts.includes = [ den.aspects.apply-secrets ];
+      home.packages = [
+        pkgs.sops
+        pkgs.gopass
+        pkgs.trufflehog
+      ];
+    };
 
-  features.security-secrets = {
-    name = "feature/security/secrets";
-    homeManager =
-      { pkgs, ... }:
-      {
-        home.packages = [
-          pkgs.sops
-          pkgs.gopass
-          pkgs.trufflehog
-        ];
-      };
-  };
+  perSystem =
+    { pkgs, ... }:
+    let
+      appSet = appsFor { inherit pkgs; };
+    in
+    {
+      inherit (appSet) apps;
+      dotfiles.appValidationSets = [ appSet.validationsByName ];
+    };
 }

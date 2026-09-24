@@ -1,7 +1,7 @@
 _: {
-  features.platform-homebrew = {
-    name = "feature/platform/darwin/homebrew";
-    darwin.homebrew = {
+  flake.modules.darwin.platform-homebrew = {
+    key = "modules/features/platform/darwin/homebrew.nix#darwin.platform-homebrew";
+    homebrew = {
       enable = true;
       onActivation = {
         # nix-darwin maps cleanup = "uninstall" to --force-cleanup, while

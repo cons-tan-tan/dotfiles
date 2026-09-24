@@ -1,5 +1,5 @@
 {
-  features,
+  config,
   lib,
   ...
 }:
@@ -41,22 +41,22 @@ let
   };
 in
 {
-  features.safe-deletion =
-    { config, ... }:
-    {
-      name = "feature/safe-deletion";
-      includes = [ features.trash ];
-      agent-command-policy = [
-        {
-          owner = config.name;
-          policy.commands.rm = (commandPolicy.guarded lib) rmProfile {
-            guidance = trashGuidance;
-            deny.recursiveForce = {
-              reason = "Recursive forced deletion is disabled for coding agents.";
-              alternatives = [ trashGuidance ];
-            };
+  flake.modules.homeManager.safe-deletion = {
+    key = "modules/features/safe-deletion.nix#homeManager.safe-deletion";
+    imports = [
+      config.flake.modules.homeManager.trash
+    ];
+    dotfiles.agentCommandPolicyContributions = [
+      {
+        owner = "feature/safe-deletion";
+        policy.commands.rm = (commandPolicy.guarded lib) rmProfile {
+          guidance = trashGuidance;
+          deny.recursiveForce = {
+            reason = "Recursive forced deletion is disabled for coding agents.";
+            alternatives = [ trashGuidance ];
           };
-        }
-      ];
-    };
+        };
+      }
+    ];
+  };
 }

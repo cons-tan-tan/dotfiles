@@ -1,26 +1,24 @@
 {
-  features.cli-tool-rg =
-    { config, ... }:
-    {
-      name = "feature/cli-tools/rg";
-      cli-tools = [
-        {
-          id = "rg";
-          nix = {
-            route = "home-packages";
-            nixpkgsAttr = "ripgrep";
-          };
-          winget = {
-            packageId = "BurntSushi.ripgrep.MSVC";
-            description = "ripgrep";
-          };
-        }
-      ];
-      agent-command-policy = [
-        {
-          owner = config.name;
-          policy.commands.rg = true;
-        }
-      ];
-    };
+  flake.modules.homeManager.cli-tool-rg = {
+    key = "modules/features/cli-tools/rg.nix#homeManager.cli-tool-rg";
+    dotfiles.cliTools = [
+      {
+        id = "rg";
+        nix = {
+          route = "home-packages";
+          nixpkgsAttr = "ripgrep";
+        };
+        winget = {
+          packageId = "BurntSushi.ripgrep.MSVC";
+          description = "ripgrep";
+        };
+      }
+    ];
+    dotfiles.agentCommandPolicyContributions = [
+      {
+        owner = "feature/cli-tools/rg";
+        policy.commands.rg = true;
+      }
+    ];
+  };
 }

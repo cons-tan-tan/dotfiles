@@ -2,12 +2,9 @@
 {
   imports = [
     inputs.flake-file.flakeModules.dendritic
-    inputs.den.flakeModules.dendritic
-    (inputs.den.namespace "features" false)
-
-    # https://github.com/denful/den/issues/632
-    # A fixed Den revision must make strictRejectsValidAspectClassIssue632 in
-    # modules/_tests/den-capabilities.suite.nix stop reproducing the rejection. Turn
-    # that fixture into a positive contract before importing strict here.
+    # Named modules wrap their fragments anonymously. Feature fragments supply a
+    # source-specific Nix module key so shared imports apply once; contributors
+    # to the same named module must keep distinct keys.
+    inputs.flake-parts.flakeModules.modules
   ];
 }

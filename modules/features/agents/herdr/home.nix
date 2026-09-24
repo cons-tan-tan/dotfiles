@@ -1,5 +1,5 @@
 {
-  features.agent-herdr.homeManager =
+  flake.modules.homeManager.agent-herdr =
     { pkgs, ... }:
     let
       tomlFormat = pkgs.formats.toml { };
@@ -17,6 +17,8 @@
       };
     in
     {
+      key = "modules/features/agents/herdr/home.nix#homeManager.agent-herdr";
+
       home.packages = [ pkgs.dotfilesPackages.herdr.wrappedPackage ];
       home.file.".config/herdr/config.toml".source = configFile;
     };
