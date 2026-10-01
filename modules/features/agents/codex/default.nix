@@ -13,6 +13,44 @@ in
     let
       codexHome = "${config.home.homeDirectory}/.codex";
       trashDirectory = "${config.xdg.dataHome}/Trash";
+      # In v0.159.2, remote plugin state overrides local enabled settings.
+      # Disable unwanted skills by qualified name until plugin-level disables work.
+      # Names survive cache version changes without hiding same-named local skills.
+      # Update this list for new or renamed skills. https://github.com/openai/codex/issues/28443
+      # Default templates cannot be uninstalled either. https://github.com/openai/codex/issues/32513
+      disabledSkillNames = [
+        "openai-templates:artifact-template-analytics-dashboard"
+        "openai-templates:artifact-template-business-review"
+        "openai-templates:artifact-template-design-report"
+        "openai-templates:artifact-template-experiment-analysis"
+        "openai-templates:artifact-template-financial-budget"
+        "openai-templates:artifact-template-investment-committee-memo"
+        "openai-templates:artifact-template-legal-memorandum"
+        "openai-templates:artifact-template-market-trends-report"
+        "openai-templates:artifact-template-minimal-letterhead"
+        "openai-templates:artifact-template-operating-calendar"
+        "openai-templates:artifact-template-operating-review"
+        "openai-templates:artifact-template-project-kickoff"
+        "openai-templates:artifact-template-project-tracker"
+        "openai-templates:artifact-template-sales-pipeline"
+        "openai-templates:artifact-template-simple-dark-mode"
+        "openai-templates:artifact-template-simple-light-mode"
+        "openai-templates:artifact-template-strategy-memorandum"
+        "openai-templates:artifact-template-system-design"
+        "openai-templates:artifact-template-team-alignment"
+        "openai-templates:artifact-template-three-statement-forecast"
+
+        "pages:maintain-space"
+        "pages:manage-schedules"
+        "pages:organize-space"
+        "pages:write-page"
+
+        "work-pets:create-pet"
+        "work-pets:pets"
+        "work-pets:update-pet"
+
+        "plugin-management:plugin-management"
+      ];
     in
     {
       key = "modules/features/agents/codex/default.nix#homeManager.agent-codex";
@@ -50,11 +88,11 @@ in
             };
           };
 
-          # Codex/Herdr hooks はこの module が導入するため feature gate も固定する。
-          # Apps は GitHub connector の個別 disable が v0.139.0 では tool 注入へ
-          # 効かないため、機能全体を落として GitHub app の露出を止める。
-          # Remote plugin も個別 disable が v0.144.5 では skill 注入へ効かないため、
-          # GitHub bundled skills を model context へ露出させないよう機能全体を落とす。
+          # This module installs Codex/Herdr hooks, so keep their feature gate on.
+          # In v0.139.0, disabling the GitHub connector did not prevent tool injection;
+          # disable Apps entirely to keep the GitHub app out of the tool inventory.
+          # Disabling the remote catalog does not stop installed-plugin sync in
+          # v0.159.2, so unwanted skills must also be disabled by name.
           features = {
             apps = false;
             hooks = true;
@@ -62,8 +100,8 @@ in
           };
 
           plugins = {
-            # GitHub 操作の権限境界は gh に一本化し、connector/MCP とそれらを
-            # 優先する bundled skills は local/remote marketplace とも読み込まない。
+            # Keep gh as the sole GitHub access boundary; request local and remote
+            # disables for the connector/MCP and bundled skills that prefer them.
             "github@openai-curated" = {
               enabled = false;
             };
@@ -99,7 +137,11 @@ in
                 path = "${codexHome}/skills/.system/skill-installer/SKILL.md";
                 enabled = false;
               }
-            ];
+            ]
+            ++ map (name: {
+              inherit name;
+              enabled = false;
+            }) disabledSkillNames;
           };
 
           tui = {
