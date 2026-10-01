@@ -17,8 +17,8 @@ in
       };
 
       codex = {
-        model = codexFamilyModel;
-        reasoningEffort = "high";
+        model = "gpt-6.1-sol";
+        reasoningEffort = "xhigh";
       };
 
       pi = {
