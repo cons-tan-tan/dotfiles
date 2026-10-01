@@ -45,6 +45,11 @@ let
       }
     )
   );
+  # Require explicit Codex invocation instead of toggling skills.config by environment.
+  codexInvocationPolicy = writeText "herdr-openai.yaml" ''
+    policy:
+      allow_implicit_invocation: false
+  '';
   plugin =
     runCommand "herdr-agent-plugin-${version}"
       {
@@ -68,6 +73,7 @@ in
   skill =
     runCommand "herdr-agent-skill-${version}"
       {
+        inherit src;
         meta = {
           description = "Herdr agent skill without plugin metadata";
           homepage = "https://herdr.dev";
@@ -76,7 +82,8 @@ in
         };
       }
       ''
-        mkdir -p "$out"
+        mkdir -p "$out/agents"
         cp ${src}/SKILL.md "$out/SKILL.md"
+        cp ${codexInvocationPolicy} "$out/agents/openai.yaml"
       '';
 }

@@ -99,10 +99,6 @@ in
                 path = "${codexHome}/skills/.system/skill-installer/SKILL.md";
                 enabled = false;
               }
-              {
-                path = "${codexHome}/skills/herdr/SKILL.md";
-                enabled = false;
-              }
             ];
           };
 

@@ -26,16 +26,13 @@
         policy = commandPolicy.guardPolicy;
       };
       jsonFormat = pkgs.formats.json { };
-      herdrSkillPath = "${codexHome}/skills/herdr/SKILL.md";
       herdrHookPath = "${codexHome}/herdr-agent-state.sh";
       herdrSettings = import ../herdr/_interface/session-hook.nix {
         inherit lib pkgs;
       };
       herdrHookCommand = herdrSettings.mkSessionHookCommand herdrHookPath;
 
-      codex = pkgs.dotfilesPackages.codex.mkWrappedPackage {
-        inherit herdrSkillPath;
-      };
+      codex = pkgs.dotfilesPackages.codex.mkWrappedPackage { };
       agentPackageSources = import ../base/_interface/package-sources.nix;
       agentConfigHelper = pkgs.callPackage agentPackageSources.configHelper { };
 
@@ -175,10 +172,9 @@
         recursive = false;
       };
 
-      # Herdr の Codex plugin enable は SessionFlags (`-c`) で反転できないため、
-      # Codex では通常 skill として配置し、skills.config だけを wrapper から反転する。
-      # Codex の skill scanner は symlink ファイルを SKILL.md として読まないが、
-      # symlink ディレクトリは辿るため、recursive 展開せず directory symlink にする。
+      # Install Herdr as a standalone skill; its policy prevents implicit invocation.
+      # Codex's skill scanner follows directory symlinks but skips symlinked SKILL.md
+      # files, so link the directory without recursive expansion.
       home.file.".codex/skills/herdr".source = pkgs.dotfilesPackages.herdr.agent.skill;
 
       # programs.codex は config.toml を read-only symlink で置き Codex の動的書き込み

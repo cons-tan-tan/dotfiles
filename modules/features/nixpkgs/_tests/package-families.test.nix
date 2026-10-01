@@ -61,11 +61,7 @@ in
   };
 
   testCodexWrapperBuildsDerivation = {
-    expr = pkgs.lib.isDerivation (
-      codex.mkWrappedPackage {
-        herdrSkillPath = "/home/test/.codex/skills/herdr/SKILL.md";
-      }
-    );
+    expr = pkgs.lib.isDerivation (codex.mkWrappedPackage { });
     expected = true;
   };
 

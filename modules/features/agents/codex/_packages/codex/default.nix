@@ -15,8 +15,8 @@ in
   });
 
   mkWrappedPackage =
-    { herdrSkillPath }:
+    { }:
     callPackage ./wrapped-package.nix {
-      inherit codex herdrSkillPath;
+      inherit codex;
     };
 }

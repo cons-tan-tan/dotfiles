@@ -8,6 +8,15 @@ let
   };
 in
 {
+  testHerdrSkillIsNotDisabledByManagedConfig = {
+    expr = builtins.filter (
+      entry:
+      (entry.path or null) == "${home.home.homeDirectory}/.codex/skills/herdr/SKILL.md"
+      || (entry.name or null) == "herdr"
+    ) settings.skills.config;
+    expected = [ ];
+  };
+
   testManagedHookTrustStateIsAlwaysReplaced = {
     expr = settings.__delete_prefixes;
     expected = [

@@ -7,13 +7,8 @@ let
       printf 'arg:%s\n' "$@" >"$TEST_TMPDIR/result"
     '';
   };
-  herdrSkillFixture = pkgs.runCommand "herdr-skill-fixture" { } ''
-    mkdir -p "$out"
-    touch "$out/SKILL.md"
-  '';
   testPackage = pkgs.callPackage ../_packages/codex/wrapped-package.nix {
     codex = codexFixture;
-    herdrSkillPath = "${herdrSkillFixture}/SKILL.md";
   };
 in
 {

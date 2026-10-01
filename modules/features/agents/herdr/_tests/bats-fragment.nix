@@ -23,20 +23,26 @@ in
       pkgs.coreutils
       pkgs.git
       pkgs.jq
+      pkgs.yq-go
       testPackage
     ];
     environment = {
       HERDR_UPDATE_TEST_FIXTURE = "1";
       HERDR_WRAPPER_TEST_PACKAGE = testPackage;
+      HERDR_SKILL_TEST_PACKAGE = pkgs.dotfilesPackages.herdr.agent.skill;
+      HERDR_SKILL_TEST_SOURCE = pkgs.dotfilesPackages.herdr.agent.skill.src;
     };
     requiredEnvironment = [
       "HERDR_UPDATE_TEST_FIXTURE"
       "HERDR_WRAPPER_TEST_PACKAGE"
+      "HERDR_SKILL_TEST_PACKAGE"
+      "HERDR_SKILL_TEST_SOURCE"
     ];
   };
   shard = {
     testFiles = [
       "modules/features/agents/herdr/_tests/herdr-wrapper.bats"
+      "modules/features/agents/herdr/_tests/herdr-skill.bats"
       "modules/features/agents/herdr/_tests/update-script.bats"
     ];
     sourceFiles = [
