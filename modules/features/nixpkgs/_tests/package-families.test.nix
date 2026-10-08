@@ -3,7 +3,6 @@
 { pkgs }:
 let
   inherit (pkgs.dotfilesPackages)
-    aws
     claude-code
     codex
     hcom
@@ -20,25 +19,6 @@ in
 
   testClaudeCodePackageIsDerivation = {
     expr = pkgs.lib.isDerivation claude-code.package;
-    expected = true;
-  };
-
-  testAwsFamilyShape = {
-    expr = builtins.attrNames aws;
-    expected = [ "mkLoginPackage" ];
-  };
-
-  testAwsLoginPackageIsBuilder = {
-    expr = builtins.isFunction aws.mkLoginPackage;
-    expected = true;
-  };
-
-  testAwsLoginBuilderCreatesDerivation = {
-    expr = pkgs.lib.isDerivation (
-      aws.mkLoginPackage {
-        loginConfigFile = pkgs.writeText "aws-login-test-config" "";
-      }
-    );
     expected = true;
   };
 

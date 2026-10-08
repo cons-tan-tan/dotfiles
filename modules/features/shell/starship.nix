@@ -7,6 +7,8 @@
           enable = true;
           presets = [ "nerd-font-symbols" ];
           settings = {
+            # Starship does not recognize the login_session used by `aws login`.
+            aws.force_display = true;
             gcloud.detect_env_vars = [ "CLOUDSDK_ACTIVE_CONFIG_NAME" ];
             python = {
               detect_extensions = [ ];

@@ -80,14 +80,6 @@ impl TargetLock {
         })
     }
 
-    pub fn target(&self) -> &Path {
-        &self.target
-    }
-
-    pub fn directory(&self) -> &Path {
-        &self.directory
-    }
-
     pub fn read(&self) -> Result<Vec<u8>> {
         read_regular_file(&self.target, true)
     }
@@ -112,25 +104,6 @@ impl TargetLock {
 
 pub fn read_required(path: &Path) -> Result<Vec<u8>> {
     read_regular_file(path, false)
-}
-
-pub fn create_candidate(directory: &Path, content: &[u8]) -> Result<tempfile::NamedTempFile> {
-    let mut candidate = Builder::new()
-        .prefix(".aws-config-helper.candidate.")
-        .tempfile_in(directory)
-        .map_err(|error| AppError::io("create candidate in", directory, error))?;
-    candidate
-        .as_file_mut()
-        .set_permissions(fs::Permissions::from_mode(0o600))
-        .map_err(|error| AppError::io("set candidate mode on", candidate.path(), error))?;
-    candidate
-        .write_all(content)
-        .map_err(|error| AppError::io("write candidate", candidate.path(), error))?;
-    candidate
-        .as_file_mut()
-        .sync_all()
-        .map_err(|error| AppError::io("sync candidate", candidate.path(), error))?;
-    Ok(candidate)
 }
 
 fn parent_or_current(path: &Path) -> &Path {

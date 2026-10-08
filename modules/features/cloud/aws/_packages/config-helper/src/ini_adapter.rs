@@ -7,35 +7,19 @@ use ini_edit::{ParseOptions, SyntaxKind, SyntaxNode, parse_with};
 use crate::error::{AppError, Result};
 
 const LOGIN_SESSION_KEY: &str = "login_session";
-const REGION_KEY: &str = "region";
-type CollectedSectionEntries = (
-    BTreeMap<String, String>,
-    BTreeMap<String, usize>,
-    Vec<String>,
-);
+type CollectedSectionEntries = (BTreeMap<String, String>, BTreeMap<String, usize>);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SectionData {
     raw_name: String,
     values: BTreeMap<String, String>,
     entry_indices: BTreeMap<String, usize>,
-    nested_entries: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct Document {
-    preamble: BTreeMap<String, String>,
-    preamble_nested_entries: Vec<String>,
     sections: BTreeMap<String, SectionData>,
     profiles: BTreeMap<String, String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct LoginUpdate {
-    logical_profile: String,
-    raw_section: String,
-    login_session: String,
-    added_region: Option<String>,
 }
 
 fn parse_options() -> ParseOptions {
@@ -57,7 +41,7 @@ fn parse_document(source: &str) -> Result<Document> {
     }
     let file = File::cast(parsed.syntax())
         .ok_or_else(|| AppError::new("aws-config-helper: parser did not return an INI file"))?;
-    let (preamble, preamble_nested_entries) = collect_entries(file.preamble_entries(), "preamble")?;
+    validate_entries(file.preamble_entries(), "preamble")?;
     let mut sections = BTreeMap::new();
     let mut profiles = BTreeMap::new();
     for section in file.sections() {
@@ -70,12 +54,11 @@ fn parse_document(source: &str) -> Result<Document> {
                 "aws-config-helper: duplicate section [{raw_name}]"
             )));
         }
-        let (values, entry_indices, nested_entries) = collect_section_entries(&section, &raw_name)?;
+        let (values, entry_indices) = collect_section_entries(&section, &raw_name)?;
         let data = SectionData {
             raw_name: raw_name.clone(),
             values,
             entry_indices,
-            nested_entries,
         };
         if let Some(logical) = logical_profile(&raw_name)?
             && let Some(previous) = profiles.insert(logical.clone(), raw_name.clone())
@@ -86,27 +69,20 @@ fn parse_document(source: &str) -> Result<Document> {
         }
         sections.insert(raw_name, data);
     }
-    Ok(Document {
-        preamble,
-        preamble_nested_entries,
-        sections,
-        profiles,
-    })
+    Ok(Document { sections, profiles })
 }
 
 pub fn validate(source: &str) -> Result<()> {
     parse_document(source).map(|_| ())
 }
 
-fn collect_entries(
+fn validate_entries(
     entries: impl Iterator<Item = ini_edit::ast::Entry>,
     location: &str,
-) -> Result<(BTreeMap<String, String>, Vec<String>)> {
+) -> Result<()> {
     let mut values = BTreeMap::new();
-    let mut nested_entries = Vec::new();
     for entry in entries {
         if is_indented(&entry) {
-            nested_entries.push(entry.syntax().text().to_string());
             continue;
         }
         let key = entry.key().ok_or_else(|| {
@@ -124,16 +100,14 @@ fn collect_entries(
             )));
         }
     }
-    Ok((values, nested_entries))
+    Ok(())
 }
 
 fn collect_section_entries(section: &Section, raw_name: &str) -> Result<CollectedSectionEntries> {
     let mut values = BTreeMap::new();
     let mut entry_indices = BTreeMap::new();
-    let mut nested_entries = Vec::new();
     for (index, entry) in section.entries().enumerate() {
         if is_indented(&entry) {
-            nested_entries.push(entry.syntax().text().to_string());
             continue;
         }
         let key = entry.key().ok_or_else(|| {
@@ -154,7 +128,7 @@ fn collect_section_entries(section: &Section, raw_name: &str) -> Result<Collecte
         }
         entry_indices.insert(normalized, index);
     }
-    Ok((values, entry_indices, nested_entries))
+    Ok((values, entry_indices))
 }
 
 fn is_indented(entry: &ini_edit::ast::Entry) -> bool {
@@ -216,176 +190,6 @@ fn logical_profile(raw_name: &str) -> Result<Option<String>> {
 fn profile<'a>(document: &'a Document, logical: &str) -> Option<&'a SectionData> {
     let raw = document.profiles.get(logical)?;
     document.sections.get(raw)
-}
-
-pub fn validate_login_candidate(baseline: &str, candidate: &str) -> Result<LoginUpdate> {
-    let baseline = parse_document(baseline)?;
-    let candidate = parse_document(candidate)?;
-    if baseline.preamble != candidate.preamble
-        || baseline.preamble_nested_entries != candidate.preamble_nested_entries
-    {
-        return Err(AppError::new(
-            "aws-config-helper: aws login changed preamble settings",
-        ));
-    }
-
-    let profile_sections = baseline
-        .profiles
-        .values()
-        .chain(candidate.profiles.values())
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    let section_names = baseline
-        .sections
-        .keys()
-        .chain(candidate.sections.keys())
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    for raw_name in section_names.difference(&profile_sections) {
-        if baseline.sections.get(raw_name) != candidate.sections.get(raw_name) {
-            return Err(AppError::new(format!(
-                "aws-config-helper: aws login changed non-profile section [{raw_name}]"
-            )));
-        }
-    }
-
-    let logical_profiles = baseline
-        .profiles
-        .keys()
-        .chain(candidate.profiles.keys())
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    let mut update = None;
-    for logical in logical_profiles {
-        let before = profile(&baseline, &logical);
-        let Some(after) = profile(&candidate, &logical) else {
-            return Err(AppError::new(format!(
-                "aws-config-helper: aws login removed profile {logical}"
-            )));
-        };
-        if let Some(before) = before
-            && before.raw_name != after.raw_name
-        {
-            return Err(AppError::new(format!(
-                "aws-config-helper: aws login renamed profile {logical}"
-            )));
-        }
-        let before_nested = before.map_or(&[][..], |section| section.nested_entries.as_slice());
-        if before_nested != after.nested_entries {
-            return Err(AppError::new(format!(
-                "aws-config-helper: aws login changed nested settings in profile {logical}"
-            )));
-        }
-        let empty = BTreeMap::new();
-        let before_values = before.map_or(&empty, |section| &section.values);
-        let keys = before_values
-            .keys()
-            .chain(after.values.keys())
-            .cloned()
-            .collect::<BTreeSet<_>>();
-        let mut session_change = None;
-        let mut added_region = None;
-        let mut changed = false;
-        for key in keys {
-            let old = before_values.get(&key);
-            let new = after.values.get(&key);
-            if old == new {
-                continue;
-            }
-            changed = true;
-            match key.as_str() {
-                LOGIN_SESSION_KEY => {
-                    let Some(value) = new else {
-                        return Err(AppError::new(format!(
-                            "aws-config-helper: aws login removed {LOGIN_SESSION_KEY} from profile {logical}"
-                        )));
-                    };
-                    if value.trim().is_empty() {
-                        return Err(AppError::new(format!(
-                            "aws-config-helper: aws login produced an empty {LOGIN_SESSION_KEY} for profile {logical}"
-                        )));
-                    }
-                    session_change = Some(value.clone());
-                }
-                REGION_KEY if old.is_none() => {
-                    let Some(value) = new else {
-                        return Err(AppError::new(format!(
-                            "aws-config-helper: aws login removed {REGION_KEY} from profile {logical}"
-                        )));
-                    };
-                    if value.trim().is_empty() {
-                        return Err(AppError::new(format!(
-                            "aws-config-helper: aws login produced an empty {REGION_KEY} for profile {logical}"
-                        )));
-                    }
-                    added_region = Some(value.clone());
-                }
-                _ => {
-                    return Err(AppError::new(format!(
-                        "aws-config-helper: aws login changed disallowed key {key} in profile {logical}"
-                    )));
-                }
-            }
-        }
-        if before.is_none() && !changed {
-            return Err(AppError::new(format!(
-                "aws-config-helper: aws login added empty profile {logical}"
-            )));
-        }
-        if changed {
-            let Some(login_session) = session_change else {
-                return Err(AppError::new(format!(
-                    "aws-config-helper: aws login changed profile {logical} without changing {LOGIN_SESSION_KEY}"
-                )));
-            };
-            if update.is_some() {
-                return Err(AppError::new(
-                    "aws-config-helper: aws login changed more than one profile",
-                ));
-            }
-            update = Some(LoginUpdate {
-                logical_profile: logical,
-                raw_section: after.raw_name.clone(),
-                login_session,
-                added_region,
-            });
-        }
-    }
-    update.ok_or_else(|| {
-        AppError::new(format!(
-            "aws-config-helper: aws login did not change {LOGIN_SESSION_KEY}"
-        ))
-    })
-}
-
-pub fn apply_login_update(target: &str, update: &LoginUpdate) -> Result<String> {
-    let document = parse_document(target)?;
-    let raw_section = profile(&document, &update.logical_profile)
-        .map_or(update.raw_section.as_str(), |section| {
-            section.raw_name.as_str()
-        });
-    let mut output = set_profile_value(
-        target,
-        &update.logical_profile,
-        raw_section,
-        LOGIN_SESSION_KEY,
-        &update.login_session,
-    )?;
-    if let Some(region) = &update.added_region {
-        let refreshed = parse_document(&output)?;
-        let has_region = profile(&refreshed, &update.logical_profile)
-            .is_some_and(|section| section.values.contains_key(REGION_KEY));
-        if !has_region {
-            output = set_profile_value(
-                &output,
-                &update.logical_profile,
-                raw_section,
-                REGION_KEY,
-                region,
-            )?;
-        }
-    }
-    Ok(output)
 }
 
 pub fn reconcile(baseline: &str, current: &str, managed_sections: &[String]) -> Result<String> {
@@ -640,14 +444,14 @@ mod tests {
             "  login_session = nested\r\n",
             "login_session = old-session # note\r\n",
         );
-        let update = LoginUpdate {
-            logical_profile: "with space".to_string(),
-            raw_section: "profile \"with space\"".to_string(),
-            login_session: "new-session".to_string(),
-            added_region: None,
-        };
-
-        let output = apply_login_update(source, &update).unwrap();
+        let output = set_profile_value(
+            source,
+            "with space",
+            "profile \"with space\"",
+            LOGIN_SESSION_KEY,
+            "new-session",
+        )
+        .unwrap();
 
         assert!(output.contains("  login_session = nested\r\n"));
         assert!(output.contains("login_session = new-session # note\r\n"));
@@ -716,95 +520,12 @@ mod tests {
     }
 
     #[test]
-    fn candidate_allows_only_one_session_and_prompted_region() {
-        let baseline = "[profile test]\noutput = json\n";
-        let candidate =
-            "[profile test]\noutput = json\nregion = ap-northeast-1\nlogin_session = token\n";
-        let update = validate_login_candidate(baseline, candidate).unwrap();
-        assert_eq!(update.logical_profile, "test");
-        assert_eq!(update.added_region.as_deref(), Some("ap-northeast-1"));
-
-        let target = "[profile test]\ncredential_process = command\nregion = keep\n# comment\n";
-        let output = apply_login_update(target, &update).unwrap();
-        assert!(output.contains("credential_process = command"));
-        assert!(output.contains("region = keep"));
-        assert!(output.contains("login_session = token"));
-    }
-
-    #[test]
-    fn candidate_rejects_other_changes_multiple_profiles_and_session_removal() {
-        let baseline =
-            "[profile one]\noutput = json\nlogin_session = old\n\n[profile two]\noutput = json\n";
-        for candidate in [
-            "[profile one]\noutput = yaml\nlogin_session = new\n\n[profile two]\noutput = json\n",
-            "[profile one]\noutput = json\nlogin_session = new\n\n[profile two]\noutput = json\nlogin_session = other\n",
-            "[profile one]\noutput = json\n\n[profile two]\noutput = json\n",
-        ] {
-            assert!(validate_login_candidate(baseline, candidate).is_err());
-        }
-    }
-
-    #[test]
-    fn candidate_rejects_nested_and_preamble_changes() {
-        let baseline = concat!(
-            "global = keep\n",
-            "[profile test]\n",
-            "services =\n",
-            "  endpoint = old\n",
-        );
-        for candidate in [
-            concat!(
-                "global = changed\n",
-                "[profile test]\n",
-                "services =\n",
-                "  endpoint = old\n",
-                "login_session = token\n",
-            ),
-            concat!(
-                "global = keep\n",
-                "[profile test]\n",
-                "services =\n",
-                "  endpoint = new\n",
-                "login_session = token\n",
-            ),
-        ] {
-            assert!(validate_login_candidate(baseline, candidate).is_err());
-        }
-    }
-
-    #[test]
-    fn candidate_rejects_empty_region_and_empty_extra_profile() {
-        let baseline = "[profile test]\noutput = json\n";
-        for candidate in [
-            concat!(
-                "[profile test]\n",
-                "output = json\n",
-                "login_session =   \n",
-            ),
-            concat!(
-                "[profile test]\n",
-                "output = json\n",
-                "region =   \n",
-                "login_session = token\n",
-            ),
-            concat!(
-                "[profile test]\n",
-                "output = json\n",
-                "login_session = token\n",
-                "\n",
-                "[profile extra]\n",
-            ),
-        ] {
-            assert!(validate_login_candidate(baseline, candidate).is_err());
-        }
-    }
-
-    #[test]
-    fn reconcile_keeps_managed_sessions_and_removes_undeclared_profiles() {
-        let baseline = "[profile managed]\nregion = one\ncredential_process = command\n";
+    fn reconcile_keeps_managed_sessions_and_removes_legacy_credentials_and_profiles() {
+        let baseline = "[profile managed]\nregion = one\n";
         let current = concat!(
             "[profile managed]\n",
             "region = changed\n",
+            "credential_process = command\n",
             "login_session = session\n",
             "\n",
             "[profile unknown]\n",
@@ -814,7 +535,7 @@ mod tests {
         let output = reconcile(baseline, current, &["profile managed".to_string()]).unwrap();
 
         assert!(output.contains("region = one"));
-        assert!(output.contains("credential_process = command"));
+        assert!(!output.contains("credential_process"));
         assert!(output.contains("login_session = session"));
         assert!(!output.contains("unknown"));
         assert!(!output.contains("changed"));

@@ -42,7 +42,7 @@ run_reconcile() {
 
   [ "$status" -eq 0 ]
   grep -Fx 'region = baseline' "$TARGET"
-  grep -Fx 'credential_process = command' "$TARGET"
+  grep -Fx 'output = json' "$TARGET"
   grep -Fx 'login_session = fixture-session' "$TARGET"
   ! grep -F 'unknown' "$TARGET"
   [ "$(file_mode "$TARGET")" = 600 ]
@@ -52,7 +52,7 @@ run_reconcile() {
   printf '%s\n' \
     '[profile test]' \
     'region = baseline' \
-    'credential_process = command' \
+    'output = json' \
     'login_session = fixture-session' >"$TARGET"
 
   run_reconcile

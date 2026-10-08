@@ -12,7 +12,6 @@ let
         "/nix/store/aws-config-helper"
       else
         "/nix/store/aws-config-reconcile";
-    dotfilesPackages.aws.mkLoginPackage = _: "/nix/store/aws-login";
     writeText = name: _: "/nix/store/${name}";
   };
   module = (import ../default.nix).flake.modules.homeManager.cloud-aws {

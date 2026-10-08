@@ -15,7 +15,6 @@ let
     "zizmor"
   ];
   familyNames = [
-    "aws"
     "claude-code"
     "codex"
     "hcom"

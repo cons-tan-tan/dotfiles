@@ -10,7 +10,6 @@ let
   mkPinnedAsset = import ./_lib/mk-pinned-asset.nix;
   agentPackageSources = import ../agents/_interface/package-sources.nix;
   ciPackageSources = import ../ci/_interface/package-sources.nix;
-  cloudPackageSources = import ../cloud/_interface/package-sources.nix;
   drawioPackageSources = import ../drawio/_interface/package-sources.nix;
   networkPackageSources = import ../network/_interface/package-sources.nix;
   platformPackageSources = import ../platform/_interface/package-sources.nix;
@@ -20,9 +19,6 @@ let
   safeFetch = pkgs.callPackage networkPackageSources.safeFetch { };
   ghApiGet = pkgs.callPackage gitPackageSources.ghApiGet {
     safeFetchCore = safeFetch.core;
-  };
-  aws = import cloudPackageSources.aws {
-    inherit (pkgs) callPackage;
   };
   hcom = import agentPackageSources.hcom {
     inherit (pkgs) callPackage;
@@ -72,7 +68,6 @@ in
   zizmor = pkgs.callPackage ciPackageSources.zizmor { };
 
   inherit
-    aws
     codex
     hcom
     herdr
