@@ -32,8 +32,11 @@ in
           autoMemoryEnabled = false;
           language = "japanese";
           model = config.dotfiles.agentModels.claude.main;
-          effortLevel = "xhigh";
-          # Fable 5 の安全分類でフラグされた時に Opus へ自動継続せず、確認で止める。
+          # ユーザー設定のトップレベル effortLevel は旧形式で、Opus 5.5 以降には効かない。
+          # CLAUDE_CODE_EFFORT_LEVEL は起動後のモデル/effort 切り替えより優先されるため使わない。
+          # claude-code wrapper の --effort xhigh は、wrapper を通らない Windows や IDE からの起動には効かない。
+          modelSettings.${config.dotfiles.agentModels.claude.main}.effortLevel = "xhigh";
+          # 安全分類でフラグされた時に別モデルへ自動継続せず、確認で止める。
           switchModelsOnFlag = false;
           env = {
             USE_BUILTIN_RIPGREP = "0";
@@ -46,9 +49,6 @@ in
             # ANTHROPIC_DEFAULT_*_MODEL は完全なモデル名のみ許容するため、
             # Sonnet 更新時は models.nix の値だけを変更する。
             ANTHROPIC_DEFAULT_SONNET_MODEL = config.dotfiles.agentModels.claude.sonnet;
-            # CLAUDE_CODE_EFFORT_LEVEL はハードピンされ、起動後のモデル/effort
-            # 切り替えより優先されるため使わない。起動時の xhigh 既定値は
-            # claude-code wrapper の --effort xhigh で指定する。
             # macOS のトラックパッドだと速すぎるのでデフォルトの 3 のまま
             CLAUDE_CODE_SCROLL_SPEED = if config.dotfiles.platform.environment == "darwin" then "3" else "6";
             # サブエージェントも同じ Sonnet に固定する。

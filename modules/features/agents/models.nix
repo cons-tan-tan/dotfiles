@@ -12,7 +12,7 @@ in
     };
     config.dotfiles.agentModels = {
       claude = {
-        main = "claude-opus-4-7[1m]";
+        main = "claude-opus-5-5";
         sonnet = "claude-sonnet-5";
       };
 
