@@ -13,7 +13,6 @@ in
     config.dotfiles.agentModels = {
       claude = {
         main = "claude-opus-5-5";
-        sonnet = "claude-sonnet-5";
       };
 
       codex = {

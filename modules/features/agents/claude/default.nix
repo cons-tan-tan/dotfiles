@@ -45,14 +45,8 @@ in
             # 1M context は維持しつつ、Codex と近い 270k tokens 付近で自動圧縮する。
             CLAUDE_CODE_AUTO_COMPACT_WINDOW = "300000";
             CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = "90";
-            # `sonnet` エイリアスを Sonnet 5.0 の固定 ID に向ける。
-            # ANTHROPIC_DEFAULT_*_MODEL は完全なモデル名のみ許容するため、
-            # Sonnet 更新時は models.nix の値だけを変更する。
-            ANTHROPIC_DEFAULT_SONNET_MODEL = config.dotfiles.agentModels.claude.sonnet;
             # macOS のトラックパッドだと速すぎるのでデフォルトの 3 のまま
             CLAUDE_CODE_SCROLL_SPEED = if config.dotfiles.platform.environment == "darwin" then "3" else "6";
-            # サブエージェントも同じ Sonnet に固定する。
-            CLAUDE_CODE_SUBAGENT_MODEL = config.dotfiles.agentModels.claude.sonnet;
           };
           permissions = {
             defaultMode = "auto";
