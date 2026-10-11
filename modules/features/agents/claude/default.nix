@@ -41,11 +41,12 @@ in
           modelSettings.${config.dotfiles.agentModels.claude.main}.effortLevel = "xhigh";
           # 安全分類でフラグされた時に別モデルへ自動継続せず、確認で止める。
           switchModelsOnFlag = false;
+          tui = "fullscreen";
+          # 1M context は維持しつつ、Codex と近い 270k tokens 付近で自動圧縮する。
+          # 圧縮閾値の割合に対応する設定キーはないため、CLAUDE_AUTOCOMPACT_PCT_OVERRIDE は env で渡す。
+          autoCompactWindow = 300000;
           env = {
             USE_BUILTIN_RIPGREP = "0";
-            CLAUDE_CODE_NO_FLICKER = "1";
-            # 1M context は維持しつつ、Codex と近い 270k tokens 付近で自動圧縮する。
-            CLAUDE_CODE_AUTO_COMPACT_WINDOW = "300000";
             CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = "90";
             # macOS のトラックパッドだと速すぎるのでデフォルトの 3 のまま
             CLAUDE_CODE_SCROLL_SPEED = if config.dotfiles.platform.environment == "darwin" then "3" else "6";
