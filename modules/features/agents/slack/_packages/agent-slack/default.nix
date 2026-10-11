@@ -40,6 +40,10 @@ in
   # libsecret-1.so.0 は dlopen 参照 (DT_NEEDED ではない) なので不要。
   # 必要になったら buildInputs に libsecret を追加する。
 
+  # bun build --compile のバイナリは JS バンドルを .bun セクションに持つ。
+  # strip で ELF が書き直されるとバンドルを見失い、素の bun として起動する。
+  dontStrip = true;
+
   installPhase = ''
     runHook preInstall
     install -Dm755 "$src" "$out/bin/agent-slack"
