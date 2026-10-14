@@ -17,6 +17,7 @@
       direnv = {
         enable = true;
         nix-direnv.enable = true;
+        stdlib = builtins.readFile ./_scripts/direnvrc.sh;
       };
       direnv-instant.enable = true;
     };

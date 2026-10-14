@@ -26,6 +26,8 @@ let
         ".vscode"
         ".idea"
         ".direnv"
+        ".envrc"
+        ".envrc.local"
         ".nix-local/"
         ".venv"
         ".ruff.toml"
