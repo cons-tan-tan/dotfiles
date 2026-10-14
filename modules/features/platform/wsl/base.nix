@@ -23,9 +23,13 @@
       ({ lib, pkgs, ... }: {
         nix.channel.enable = false;
 
-        # Zed transfers remote extensions through `wsl.exe --exec cp`, which does
-        # not load the login shell environment. Expose cp through WSL's /bin set.
-        wsl.extraBin = [ { src = lib.getExe' pkgs.coreutils "cp"; } ];
+        wsl.extraBin = [
+          # Zed transfers remote extensions through `wsl.exe --exec cp`, which does
+          # not load the login shell environment. Expose cp through WSL's /bin set.
+          { src = lib.getExe' pkgs.coreutils "cp"; }
+          # WSL's generated mount guard invokes /bin/true when it starts.
+          { src = lib.getExe' pkgs.coreutils "true"; }
+        ];
 
         # WSL never uses Linux VT1. autovt@tty1 otherwise restart-loops and can
         # make a successful switch appear failed.
