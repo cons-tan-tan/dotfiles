@@ -23,6 +23,9 @@
       ({ lib, pkgs, ... }: {
         nix.channel.enable = false;
 
+        # uv-managed Python and other downloaded ELF binaries need the FHS loader.
+        programs.nix-ld.enable = true;
+
         wsl.extraBin = [
           # Zed transfers remote extensions through `wsl.exe --exec cp`, which does
           # not load the login shell environment. Expose cp through WSL's /bin set.
