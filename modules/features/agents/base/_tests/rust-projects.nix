@@ -67,16 +67,7 @@ in
     lock = {
       owner = "shellfirm";
       path = "modules/features/agents/base/_packages/shellfirm/Cargo.lock";
-      ignoredAdvisories = [
-        {
-          id = "RUSTSEC-2026-0002";
-          reviewedAt = "2026-07-24";
-          # 2026-11-01T00:00:00Z. ratatui 0.29 is the only lru consumer and
-          # does not call the affected LruCache::iter_mut API. Remove this
-          # exception when shellfirm upgrades to ratatui with lru >= 0.16.3.
-          expiresAt = 1793491200;
-        }
-      ];
+      ignoredAdvisories = [ ];
     };
     packages = { };
     subjects = { };
