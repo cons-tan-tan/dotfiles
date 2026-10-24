@@ -4,6 +4,6 @@
     {
       key = "modules/features/development/go.nix#homeManager.development-go";
 
-      home.packages = [ pkgs.go ];
+      home.packages = [ (pkgs.callPackage ./_packages/go.nix { }) ];
     };
 }
