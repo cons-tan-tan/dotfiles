@@ -86,10 +86,6 @@
         treefmt-nix.follows = "treefmt-nix";
       };
     };
-    drawio-skill = {
-      url = "github:jgraph/drawio-mcp";
-      flake = false;
-    };
     fast-nix-gc = {
       url = "github:Mic92/fast-nix-gc/0243fbc569251eea46894e681e2c86eed7185c46";
       inputs = {

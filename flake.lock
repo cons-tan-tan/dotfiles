@@ -323,22 +323,6 @@
         "type": "github"
       }
     },
-    "drawio-skill": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1783573480,
-        "narHash": "sha256-/qVIVmYE8Mj/p8kZEvNU/OPvZ8xH/qLD2tI0+TbZft4=",
-        "owner": "jgraph",
-        "repo": "drawio-mcp",
-        "rev": "883b34c8aea72ca7bc978a281061c411bc3e3745",
-        "type": "github"
-      },
-      "original": {
-        "owner": "jgraph",
-        "repo": "drawio-mcp",
-        "type": "github"
-      }
-    },
     "fast-nix-gc": {
       "inputs": {
         "nix-darwin": [
@@ -789,7 +773,6 @@
         "darwin": "darwin",
         "difit-src": "difit-src",
         "direnv-instant": "direnv-instant",
-        "drawio-skill": "drawio-skill",
         "fast-nix-gc": "fast-nix-gc",
         "flake-file": "flake-file",
         "flake-parts": "flake-parts_2",

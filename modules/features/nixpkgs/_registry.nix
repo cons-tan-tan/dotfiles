@@ -10,7 +10,6 @@ let
   mkPinnedAsset = import ./_lib/mk-pinned-asset.nix;
   agentPackageSources = import ../agents/_interface/package-sources.nix;
   ciPackageSources = import ../ci/_interface/package-sources.nix;
-  drawioPackageSources = import ../drawio/_interface/package-sources.nix;
   networkPackageSources = import ../network/_interface/package-sources.nix;
   platformPackageSources = import ../platform/_interface/package-sources.nix;
   securityPackageSources = import ../security/_interface/package-sources.nix;
@@ -69,7 +68,6 @@ in
 }
 // lib.optionalAttrs hostPlatform.isLinux {
   ci-matrix-planner = pkgs.callPackage ciPackageSources.matrixPlanner { };
-  drawio-headless = pkgs.callPackage drawioPackageSources.headless { };
   oo7-dpapi-bridge = pkgs.callPackage securityPackageSources.oo7DpapiBridge { };
   wsl-dpapi = pkgs.callPackage securityPackageSources.wslDpapi { };
   wsl-open = pkgs.callPackage platformPackageSources.wslOpen { };

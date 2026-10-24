@@ -4,7 +4,6 @@
     key = "modules/features/platform/wsl/default.nix#homeManager.platform-wsl";
     imports = [
       config.flake.modules.homeManager.platform-context
-      config.flake.modules.homeManager.drawio-linux-headless
       config.flake.modules.homeManager.nix-lifecycle-wsl
       config.flake.modules.homeManager.platform-wsl-open
       config.flake.modules.homeManager.windows-default
