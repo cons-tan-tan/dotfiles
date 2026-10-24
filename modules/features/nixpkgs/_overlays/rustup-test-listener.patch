@@ -1,0 +1,9 @@
+--- a/src/download/tests.rs
++++ b/src/download/tests.rs
+@@ -157,5 +157,5 @@
++        let listener = TcpListener::bind("127.0.0.1:1080").unwrap();
+         thread::spawn(move || {
+-            let listener = TcpListener::bind("127.0.0.1:1080").unwrap();
+             let incoming = listener.incoming();
+             for _ in incoming {
+                 CALL_COUNT.fetch_add(1, Ordering::SeqCst);

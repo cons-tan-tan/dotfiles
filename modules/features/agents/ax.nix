@@ -12,7 +12,10 @@
       (
         { pkgs, ... }:
         {
-          home.packages = [ inputs.ax.packages.${pkgs.stdenv.hostPlatform.system}.ax ];
+          # The input has its own pkgs; explicitly use our security-updated runtime.
+          home.packages = [
+            (inputs.ax.packages.${pkgs.stdenv.hostPlatform.system}.ax.override { inherit (pkgs) bun; })
+          ];
         }
       )
     ];

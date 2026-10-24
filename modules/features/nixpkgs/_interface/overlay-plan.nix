@@ -18,6 +18,10 @@ let
       value = llmAgentsOverlay inputs.llm-agents;
     }
     {
+      name = "emudhra";
+      value = import ../_overlays/emudhra.nix;
+    }
+    {
       name = "package-compatibility";
       value = import ../_overlays/compatibility.nix;
     }
