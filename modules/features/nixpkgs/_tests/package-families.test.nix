@@ -82,17 +82,11 @@ in
 
   testHunkFamilyShape = {
     expr = builtins.attrNames hunk;
-    expected = [
-      "package"
-      "wslRuntime"
-    ];
+    expected = [ "package" ];
   };
 
-  testHunkPackagesAreDerivations = {
-    expr = builtins.all pkgs.lib.isDerivation [
-      hunk.package
-      hunk.wslRuntime
-    ];
+  testHunkPackageIsDerivation = {
+    expr = pkgs.lib.isDerivation hunk.package;
     expected = true;
   };
 

@@ -1,7 +1,7 @@
 { inputs, ... }:
 {
   flake-file.inputs.ax = {
-    url = "github:yusukebe/ax/v0.1.23";
+    url = "github:yusukebe/ax/v0.1.25";
     inputs.bun2nix.follows = "bun2nix";
     inputs.nixpkgs.follows = "nixpkgs";
   };

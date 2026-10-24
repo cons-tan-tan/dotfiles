@@ -12,14 +12,8 @@
       {
         name = "hunk-review";
         provenance = "external";
-        definition.root = inputs.hunk.outPath + "/skills/hunk-review";
+        definition.root = inputs.hunk.outPath + "/packages/hunk/skills/hunk-review";
       }
     ];
-  };
-
-  flake.modules.homeManager.agent-hunk-wsl = { pkgs, ... }: {
-    key = "modules/features/agents/hunk/default.nix#homeManager.agent-hunk-wsl";
-
-    programs.hunk.package = pkgs.dotfilesPackages.hunk.wslRuntime;
   };
 }

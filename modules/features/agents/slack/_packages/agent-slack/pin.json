@@ -2,19 +2,19 @@
   "assets": {
     "aarch64-darwin": {
       "name": "agent-slack-darwin-arm64",
-      "hash": "sha256-ISvecKk6btX0kRyOc4jLH1a1HuCFABa8K9VbdByiBZY="
+      "hash": "sha256-/5ANXHZAM7c3ZiETtOjFqVPf4mRbhwhTb0GGet1U/js="
     },
     "x86_64-darwin": {
       "name": "agent-slack-darwin-x64",
-      "hash": "sha256-zsL7JR1YjygD77i/JCHwz0G5TUuQWPSy36e1D7zO2Ds="
+      "hash": "sha256-eR/qchRH4VprQ3hHl+yKGcXAedais847vSpBblS++H8="
     },
     "aarch64-linux": {
       "name": "agent-slack-linux-arm64",
-      "hash": "sha256-kcxLXERyKsIHu6o+RuJwi9rfZyOHYQMecWsYRbD2Y1Y="
+      "hash": "sha256-AucaaYFqpnmy61dW/uk0kZX9co2pnmWC3GrBp29j8e4="
     },
     "x86_64-linux": {
       "name": "agent-slack-linux-x64",
-      "hash": "sha256-x6ZyNXh/vUDRRuYGWREeotbfuqerQU9mb1gf1nnQXsc="
+      "hash": "sha256-rU1l1O4sg+x+ulk5UVaOi3yXIrcpcaCejK5uCQBX1IM="
     }
   }
 }

@@ -20,7 +20,7 @@ setup() {
   ' >"$repo/$pin"
   jq -n \
     --arg name "$asset" \
-    --arg url "https://github.com/ogulcancelik/herdr/releases/download/v2.0.0/${asset}" '
+    --arg url "https://github.com/herdrdev/herdr/releases/download/v2.0.0/${asset}" '
     {tag_name: "v2.0.0", assets: [{name: $name, state: "uploaded", browser_download_url: $url}]}
   ' >"$release_json"
 

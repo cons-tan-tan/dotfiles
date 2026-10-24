@@ -69,8 +69,8 @@ else
           };
         };
       };
-      testWslProfileSelectsHunkWslRuntime = {
-        expr = wsl.config.programs.hunk.package == wsl.pkgs.dotfilesPackages.hunk.wslRuntime;
+      testWslProfileUsesDefaultHunkPackage = {
+        expr = wsl.config.programs.hunk.package == wsl.pkgs.dotfilesPackages.hunk.package;
         expected = true;
       };
     };

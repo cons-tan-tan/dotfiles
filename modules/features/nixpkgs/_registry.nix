@@ -54,7 +54,7 @@ in
   gha-diag = pkgs.callPackage ciPackageSources.ghaDiag { };
   ghq-fetch-all = pkgs.callPackage gitPackageSources.ghqFetchAll { };
   hunk = import agentPackageSources.hunk {
-    inherit (pkgs) callPackage stdenv;
+    inherit (pkgs) stdenv;
     hunkInput = inputs.hunk;
   };
   shellfirm = pkgs.callPackage agentPackageSources.shellfirm { inherit ghApiGet; };

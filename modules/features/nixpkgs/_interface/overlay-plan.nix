@@ -18,6 +18,10 @@ let
       value = llmAgentsOverlay inputs.llm-agents;
     }
     {
+      name = "package-compatibility";
+      value = import ../_overlays/compatibility.nix;
+    }
+    {
       name = "local-packages";
       value = import ../_overlays/local-packages.nix {
         inherit inputs;

@@ -5,7 +5,7 @@ set -euo pipefail
 repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
 
-repository=ogulcancelik/herdr
+repository=herdrdev/herdr
 pin_path=modules/features/agents/herdr/_packages/herdr/pin.json
 release_json=$(mktemp)
 pin_tmp=$(mktemp "${pin_path}.tmp.XXXXXX")

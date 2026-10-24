@@ -7,6 +7,7 @@
   platforms,
 }:
 let
+  skillSource = "${src}/skills/herdr";
   pluginBase = {
     name = "herdr";
     inherit version;
@@ -15,7 +16,7 @@ let
       name = "Ogulcan Celik";
     };
     homepage = "https://herdr.dev";
-    repository = "https://github.com/ogulcancelik/herdr";
+    repository = "https://github.com/herdrdev/herdr";
     license = "AGPL-3.0-or-later";
     keywords = [
       "herdr"
@@ -62,7 +63,7 @@ let
       }
       ''
         mkdir -p "$out/.claude-plugin" "$out/.codex-plugin" "$out/skills/herdr"
-        cp ${src}/SKILL.md "$out/skills/herdr/SKILL.md"
+        cp ${skillSource}/SKILL.md "$out/skills/herdr/SKILL.md"
         cp ${claudePluginJson} "$out/.claude-plugin/plugin.json"
         cp ${codexPluginJson} "$out/.codex-plugin/plugin.json"
       '';
@@ -73,7 +74,7 @@ in
   skill =
     runCommand "herdr-agent-skill-${version}"
       {
-        inherit src;
+        src = skillSource;
         meta = {
           description = "Herdr agent skill without plugin metadata";
           homepage = "https://herdr.dev";
@@ -83,7 +84,7 @@ in
       }
       ''
         mkdir -p "$out/agents"
-        cp ${src}/SKILL.md "$out/SKILL.md"
+        cp ${skillSource}/SKILL.md "$out/SKILL.md"
         cp ${codexInvocationPolicy} "$out/agents/openai.yaml"
       '';
 }

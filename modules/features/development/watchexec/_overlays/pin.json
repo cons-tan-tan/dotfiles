@@ -1,13 +1,13 @@
 {
-  "version": "2.5.1",
+  "version": "2.8.0",
   "assets": {
     "aarch64-darwin": {
       "target": "aarch64-apple-darwin",
-      "hash": "sha256-xeQF3REJlAslEDmNIYKZDBvlkGO5ThHXrOnHtDXLHfE="
+      "hash": "sha256-jai9v7hWgThhaggsBahyJOCNXLKZT+uVZCYpHPDG/hA="
     },
     "x86_64-darwin": {
       "target": "x86_64-apple-darwin",
-      "hash": "sha256-u3S/Myhv9/Md2Odj4Bf7wEGDYNiLrv01vFfWYtKDlOI="
+      "hash": "sha256-t/aUrRnBzxaDiPMpWl6CVCX32sXNJ8/9LYmlHtSrDyI="
     }
   }
 }

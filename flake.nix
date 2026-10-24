@@ -20,11 +20,11 @@
 
   inputs = {
     agent-browser-skill = {
-      url = "github:vercel-labs/agent-browser/v0.31.1";
+      url = "github:vercel-labs/agent-browser/v0.39.1";
       flake = false;
     };
     agent-slack-skill = {
-      url = "github:stablyai/agent-slack/v0.9.3";
+      url = "github:stablyai/agent-slack/v0.10.2";
       flake = false;
     };
     anthropic-skills = {
@@ -36,7 +36,7 @@
       flake = false;
     };
     ax = {
-      url = "github:yusukebe/ax/v0.1.23";
+      url = "github:yusukebe/ax/v0.1.25";
       inputs = {
         bun2nix.follows = "bun2nix";
         nixpkgs.follows = "nixpkgs";
@@ -75,7 +75,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     difit-src = {
-      url = "github:yoshiko-pg/difit/v5.0.8";
+      url = "github:yoshiko-pg/difit/v5.0.12";
       flake = false;
     };
     direnv-instant = {
