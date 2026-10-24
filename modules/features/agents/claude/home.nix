@@ -13,7 +13,6 @@
     let
       platform = config.dotfiles.platform;
       dotfilesDir = platform.source;
-      hcom = config.dotfiles.agentIntegrations.hcom;
       payload = import ./_interface/payload.nix;
 
       claudeHome = "${config.home.homeDirectory}/.claude";
@@ -46,19 +45,9 @@
       baseSettingsFile = jsonFormat.generate "claude-settings-base.json" (
         settingsLib.mkSettings {
           wslUserProfile = if platform.environment == "wsl" then platform.windows.homedir else null;
-          hcomPath = if hcom == null then null else "${hcom.package}/bin/hcom";
           guardCommand = guardHook.command;
         }
       );
-
-      hcomSettingsFile =
-        if hcom != null then
-          hcom.claudeHooks
-        else
-          jsonFormat.generate "claude-hcom-disabled.json" {
-            hooks = { };
-            permissions.allow = [ ];
-          };
 
       herdrSettingsFile =
         pkgs.runCommand "claude-herdr-settings.json"
@@ -72,7 +61,6 @@
               > "$out"
           '';
 
-      # hcom が有効な場合は package が生成した設定を使い、手書きで二重管理しない。
       mergedSettingsRaw =
         pkgs.runCommand "claude-settings.json"
           {
@@ -81,7 +69,6 @@
           ''
             ${lib.getExe agentConfigHelper} claude merge-settings \
               --base ${baseSettingsFile} \
-              --hcom ${hcomSettingsFile} \
               --herdr ${herdrSettingsFile} \
               > "$out"
           '';

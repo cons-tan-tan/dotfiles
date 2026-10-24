@@ -58,38 +58,19 @@ pub fn claude_rewrite_session_command(settings: &Value, command: &str) -> Result
     Ok(Value::Object(output))
 }
 
-pub fn claude_merge_settings(base: &Value, hcom: &Value, herdr: &Value) -> Result<Value> {
+pub fn claude_merge_settings(base: &Value, herdr: &Value) -> Result<Value> {
     let mut output = object_clone(base, "Claude base settings")?;
-    let hcom = object_ref(hcom, "Claude hcom settings")?;
     let herdr = object_ref(herdr, "Claude Herdr settings")?;
 
-    let base_allow = nested_optional_array(&output, "permissions", "allow")?;
-    let hcom_allow = nested_optional_array(hcom, "permissions", "allow")?;
-    let merged_allow = match (base_allow, hcom_allow) {
-        (None, None) => Value::Null,
-        (Some(base), None) => Value::Array(base.to_vec()),
-        (None, Some(hcom)) => Value::Array(hcom.to_vec()),
-        (Some(base), Some(hcom)) => {
-            let mut values = base.to_vec();
-            values.extend_from_slice(hcom);
-            Value::Array(values)
-        }
-    };
-    let permissions = object_field_or_default(&mut output, "permissions", "Claude permissions")?;
-    permissions.insert("allow".to_owned(), merged_allow);
-
     let base_hooks = optional_hook_map(output.get("hooks"), "Claude base hooks")?;
-    let hcom_hooks = optional_hook_map(hcom.get("hooks"), "Claude hcom hooks")?;
     let herdr_hooks = optional_hook_map(herdr.get("hooks"), "Claude Herdr hooks")?;
     let mut event_names = BTreeSet::new();
     event_names.extend(base_hooks.keys().cloned());
-    event_names.extend(hcom_hooks.keys().cloned());
     event_names.extend(herdr_hooks.keys().cloned());
 
     let mut merged_hooks = Map::new();
     for event in event_names {
         let mut entries = Vec::new();
-        entries.extend(optional_event_array(hcom_hooks.get(&event))?);
         entries.extend(optional_event_array(base_hooks.get(&event))?);
         entries.extend(optional_event_array(herdr_hooks.get(&event))?);
         merged_hooks.insert(event, Value::Array(entries));
@@ -196,9 +177,8 @@ pub fn codex_append_command_hook(
     Ok(Value::Object(output))
 }
 
-pub fn codex_merge_payloads(base: &Value, hcom: &Value, herdr: &Value) -> Result<Value> {
+pub fn codex_merge_payloads(base: &Value, herdr: &Value) -> Result<Value> {
     let mut output = object_clone(base, "Codex base payload")?;
-    recursive_merge(&mut output, object_ref(hcom, "Codex hcom payload")?);
     recursive_merge(&mut output, object_ref(herdr, "Codex Herdr payload")?);
     Ok(Value::Object(output))
 }
@@ -238,29 +218,6 @@ fn object_field_or_default<'a>(
     value
         .as_object_mut()
         .ok_or_else(|| shape_error(format!("{name} must be an object or null")))
-}
-
-fn nested_optional_array<'a>(
-    object: &'a Map<String, Value>,
-    parent: &str,
-    child: &str,
-) -> Result<Option<&'a [Value]>> {
-    let Some(parent) = object.get(parent) else {
-        return Ok(None);
-    };
-    if parent.is_null() {
-        return Ok(None);
-    }
-    let parent = parent
-        .as_object()
-        .ok_or_else(|| shape_error("Claude permissions must be an object or null"))?;
-    match parent.get(child) {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::Array(values)) => Ok(Some(values)),
-        Some(_) => Err(shape_error(
-            "Claude permissions.allow must be an array or null",
-        )),
-    }
 }
 
 fn optional_hook_map<'a>(value: Option<&'a Value>, name: &str) -> Result<&'a Map<String, Value>> {
@@ -384,7 +341,7 @@ mod tests {
     fn selects_only_claude_integration_fields_and_defaults_missing_to_null() {
         let selected = claude_select_integration(&json!({
             "hooks": {"SessionStart": []},
-            "env": {"HCOM": "1"},
+            "env": {"KEEP": "1"},
             "unknown": "discarded"
         }))
         .unwrap();
@@ -393,7 +350,7 @@ mod tests {
             selected,
             json!({
                 "hooks": {"SessionStart": []},
-                "env": {"HCOM": "1"},
+                "env": {"KEEP": "1"},
                 "permissions": null
             })
         );
@@ -436,7 +393,7 @@ mod tests {
     }
 
     #[test]
-    fn merges_claude_permissions_and_hooks_in_the_existing_order() {
+    fn preserves_claude_permissions_and_merges_hooks_in_order() {
         let output = claude_merge_settings(
             &json!({
                 "permissions": {"allow": ["base", "duplicate"]},
@@ -447,28 +404,21 @@ mod tests {
                 "base_unknown": true
             }),
             &json!({
-                "permissions": {"allow": ["hcom", "duplicate"]},
-                "hooks": {"Alpha": [{"source": "hcom"}]},
-                "env": {"discarded": true}
-            }),
-            &json!({
                 "hooks": {
                     "Alpha": [{"source": "herdr"}],
                     "Beta": [{"source": "herdr-b"}]
                 },
+                "permissions": {"allow": ["discarded"]},
+                "env": {"discarded": true},
                 "discarded": true
             }),
         )
         .unwrap();
 
-        assert_eq!(
-            output["permissions"]["allow"],
-            json!(["base", "duplicate", "hcom", "duplicate"])
-        );
+        assert_eq!(output["permissions"]["allow"], json!(["base", "duplicate"]));
         assert_eq!(
             output["hooks"]["Alpha"],
             json!([
-                {"source": "hcom"},
                 {"source": "base-a"},
                 {"source": "herdr"}
             ])
@@ -614,24 +564,18 @@ not_a_number = nan
             &json!({
                 "hooks": {"state": {"base": 1}},
                 "array": [1],
+                "__delete_prefixes": [{"path": ["hooks"], "prefix": "old"}],
                 "__delete": [["base"]]
             }),
             &json!({
-                "hooks": {"state": {"hcom": 2}},
-                "array": [2],
-                "__delete_prefixes": [{"path": ["hooks"], "prefix": "old"}]
-            }),
-            &json!({
                 "hooks": {"state": {"base": 3, "herdr": 4}},
+                "array": [2],
                 "__delete": [["herdr"]]
             }),
         )
         .unwrap();
 
-        assert_eq!(
-            output["hooks"]["state"],
-            json!({"base": 3, "hcom": 2, "herdr": 4})
-        );
+        assert_eq!(output["hooks"]["state"], json!({"base": 3, "herdr": 4}));
         assert_eq!(output["array"], json!([2]));
         assert_eq!(output["__delete"], json!([["herdr"]]));
         assert_eq!(output["__delete_prefixes"][0]["prefix"], "old");
@@ -645,7 +589,6 @@ not_a_number = nan
             claude_merge_settings(
                 &json!({}),
                 &json!({"hooks": {"SYNTHETIC_SECRET_MARKER": {}}}),
-                &json!({}),
             )
             .unwrap_err(),
             codex_extract_hook_state_from_toml("[hooks]\nstate = 1").unwrap_err(),
@@ -662,7 +605,7 @@ not_a_number = nan
             )
             .unwrap_err(),
             codex_append_command_hook(&json!({}), "Unknown", None, secret, 10).unwrap_err(),
-            codex_merge_payloads(&json!({}), &json!([]), &json!({})).unwrap_err(),
+            codex_merge_payloads(&json!({}), &json!([])).unwrap_err(),
         ];
         for error in errors {
             assert!(!error.to_string().contains(secret));

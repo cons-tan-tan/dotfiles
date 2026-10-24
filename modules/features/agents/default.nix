@@ -17,7 +17,6 @@
       config.flake.modules.homeManager.agent-claude
       config.flake.modules.homeManager.agent-codex
       config.flake.modules.homeManager.agent-difit
-      config.flake.modules.homeManager.agent-hcom
       config.flake.modules.homeManager.agent-herdr
       config.flake.modules.homeManager.agent-hunk
       config.flake.modules.homeManager.agent-opencode

@@ -15,15 +15,9 @@ let
   platformPackageSources = import ../platform/_interface/package-sources.nix;
   securityPackageSources = import ../security/_interface/package-sources.nix;
   gitPackageSources = import ../git/_interface/package-sources.nix;
-  agentConfigHelper = pkgs.callPackage agentPackageSources.configHelper { };
   safeFetch = pkgs.callPackage networkPackageSources.safeFetch { };
   ghApiGet = pkgs.callPackage gitPackageSources.ghApiGet {
     safeFetchCore = safeFetch.core;
-  };
-  hcom = import agentPackageSources.hcom {
-    inherit (pkgs) callPackage;
-    inherit agentConfigHelper ghApiGet mkPinnedAsset;
-    hcomSource = inputs.hcom-src;
   };
   codex = import agentPackageSources.codex {
     inherit (pkgs) callPackage;
@@ -69,7 +63,6 @@ in
 
   inherit
     codex
-    hcom
     herdr
     pi
     ;

@@ -17,7 +17,6 @@ let
   familyNames = [
     "claude-code"
     "codex"
-    "hcom"
     "herdr"
     "hunk"
     "pi"

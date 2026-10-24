@@ -499,23 +499,6 @@
         "type": "github"
       }
     },
-    "hcom-src": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1780741215,
-        "narHash": "sha256-7p8kmktTQ3MBlUecWO9HkArZn1tJtkWoyowOfmKpw04=",
-        "owner": "aannoo",
-        "repo": "hcom",
-        "rev": "516db08c882aecfd65db383b7eed6b4f5600c232",
-        "type": "github"
-      },
-      "original": {
-        "owner": "aannoo",
-        "ref": "v0.7.21",
-        "repo": "hcom",
-        "type": "github"
-      }
-    },
     "home-manager": {
       "inputs": {
         "nixpkgs": [
@@ -856,7 +839,6 @@
         "fast-nix-gc": "fast-nix-gc",
         "flake-file": "flake-file",
         "flake-parts": "flake-parts_2",
-        "hcom-src": "hcom-src",
         "home-manager": "home-manager",
         "hunk": "hunk",
         "import-tree": "import-tree",

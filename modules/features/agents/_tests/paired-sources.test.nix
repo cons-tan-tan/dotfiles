@@ -31,9 +31,4 @@ in
     expr = lockedRef "difit-src";
     expected = "v${pkgs.dotfilesPackages.difit.version}";
   };
-
-  testHcomSkillMatchesPackageVersion = {
-    expr = lockedRef "hcom-src";
-    expected = "v${pkgs.dotfilesPackages.hcom.package.version}";
-  };
 }
