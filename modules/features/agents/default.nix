@@ -10,7 +10,6 @@
       config.flake.modules.homeManager.agent-ax
       config.flake.modules.homeManager.agent-ccusage
       config.flake.modules.homeManager.agent-copilot
-      config.flake.modules.homeManager.agent-gemini
       config.flake.modules.homeManager.agent-guidance
       config.flake.modules.homeManager.agent-bee
       config.flake.modules.homeManager.agent-browser
