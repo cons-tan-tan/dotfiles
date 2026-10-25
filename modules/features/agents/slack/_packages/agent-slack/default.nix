@@ -25,7 +25,7 @@ in
 # autoPatchelfHook で Nix の glibc に向ける (Ubuntu-WSL では素でも動くが、
 # NixOS では patch なしだと実行できない)。autoPatchelfHook は stdenv の
 # dynamic linker 情報を使うため Linux では full stdenv にする。
-(if stdenv.isLinux then stdenv else stdenvNoCC).mkDerivation {
+(if stdenv.hostPlatform.isLinux then stdenv else stdenvNoCC).mkDerivation {
   pname = "agent-slack";
   inherit version;
 
@@ -36,7 +36,7 @@ in
 
   dontUnpack = true;
 
-  nativeBuildInputs = lib.optionals stdenv.isLinux [ autoPatchelfHook ];
+  nativeBuildInputs = lib.optionals stdenv.hostPlatform.isLinux [ autoPatchelfHook ];
   # libsecret-1.so.0 は dlopen 参照 (DT_NEEDED ではない) なので不要。
   # 必要になったら buildInputs に libsecret を追加する。
 
