@@ -67,7 +67,6 @@ in
     expected = [
       "claude"
       "codex"
-      "opencode"
       "pi"
     ];
   };

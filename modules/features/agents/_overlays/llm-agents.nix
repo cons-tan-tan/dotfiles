@@ -8,7 +8,6 @@ in
   inherit (llm)
     codex
     claude-code
-    opencode
     pi
     ccusage
     ;

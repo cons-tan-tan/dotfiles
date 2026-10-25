@@ -1,8 +1,4 @@
 { lib, ... }:
-let
-  # Updating model IDs is a deliberate runtime choice, separate from package pins.
-  codexFamilyModel = "gpt-5.6-sol";
-in
 {
   flake.modules.homeManager.agents-base = {
     key = "modules/features/agents/models.nix#homeManager.agents-base";
@@ -10,6 +6,7 @@ in
       type = lib.types.attrsOf (lib.types.attrsOf lib.types.str);
       description = "Shared model choices for agent features.";
     };
+    # Updating model IDs is a deliberate runtime choice, separate from package pins.
     config.dotfiles.agentModels = {
       claude = {
         main = "claude-opus-5-5";
@@ -22,13 +19,8 @@ in
 
       pi = {
         provider = "openai-codex";
-        model = codexFamilyModel;
+        model = "gpt-5.6-sol";
         thinkingLevel = "high";
-      };
-
-      opencode = {
-        model = "openai/${codexFamilyModel}";
-        reasoningEffort = "high";
       };
     };
   };

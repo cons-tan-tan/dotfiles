@@ -66,14 +66,4 @@ in
     destPath = "extensions/herdr-agent-state.ts";
     mode = "644";
   };
-
-  opencode = mkIntegration {
-    target = "opencode";
-    description = "Herdr OpenCode native agent state plugin";
-    homeDir = ".config/opencode";
-    outDir = "plugins";
-    srcPath = ".config/opencode/plugins/herdr-agent-state.js";
-    destPath = "plugins/herdr-agent-state.js";
-    mode = "644";
-  };
 }

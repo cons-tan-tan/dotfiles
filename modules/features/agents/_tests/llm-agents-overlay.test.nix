@@ -6,14 +6,12 @@ let
         claude-code = "selected-claude-code";
         codex = "selected-codex";
         ignored = "selected-ignored";
-        opencode = "selected-opencode";
         pi = "selected-pi";
       };
       "other-system" = {
         ccusage = "other-ccusage";
         claude-code = "other-claude-code";
         codex = "other-codex";
-        opencode = "other-opencode";
         pi = "other-pi";
       };
     };
@@ -29,7 +27,6 @@ in
       "ccusage"
       "claude-code"
       "codex"
-      "opencode"
       "pi"
     ];
   };
@@ -40,7 +37,6 @@ in
       ccusage = "selected-ccusage";
       claude-code = "selected-claude-code";
       codex = "selected-codex";
-      opencode = "selected-opencode";
       pi = "selected-pi";
     };
   };
