@@ -21,6 +21,7 @@
         herdrSkillPath = "${pkgs.dotfilesPackages.herdr.agent.plugin}/skills/herdr";
       };
       herdrPiIntegration = pkgs.dotfilesPackages.herdr.integrations.pi;
+      commitProfiles = config.dotfiles.agentSkills.commitProfiles;
       commandPolicy = config.dotfiles.agentCommandPolicyCompiled;
       commandPolicyInterface = import ../base/_interface/command-policy.nix;
       guardHook = commandPolicyInterface.mkGuard {
@@ -66,6 +67,13 @@
       home.file.".pi/agent/package".source = "${pkgs.pi}/libexec/pi";
 
       home.file.".pi/agent/extensions/herdr-skill-loader.ts".source = herdrSkillLoader;
+
+      home.file.".pi/agent/extensions/commit-skill-loader.ts" = lib.mkIf (commitProfiles != null) {
+        source = pkgs.replaceVars payload.commitSkillLoader {
+          commitProfileSelector = lib.getExe commitProfiles.selector;
+          commitProfileArtifacts = toString commitProfiles.artifacts;
+        };
+      };
 
       home.file.".pi/agent/extensions/agent-command-guard.ts".source = commandGuard;
 

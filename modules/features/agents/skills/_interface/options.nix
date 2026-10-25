@@ -122,6 +122,12 @@ let
 
 in
 {
+  options.dotfiles.agentSkills.commitProfiles = mkOption {
+    default = null;
+    type = types.nullOr (types.attrsOf types.package);
+    internal = true;
+    description = "Rendered commit variants and their shared runtime selector.";
+  };
   options.dotfiles.agentSkills.externalSkills = mkOption {
     default = { };
     type = types.attrsOf skillType;

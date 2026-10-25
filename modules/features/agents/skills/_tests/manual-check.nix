@@ -61,6 +61,12 @@ let
     policy:
       allow_implicit_invocation: false
   '';
+  profiles = import ./commit-profiles-fixture.nix { inherit pkgs; };
+  payload = import ../_interface/payload.nix;
+  piLoader = pkgs.replaceVars (import ../../pi/_interface/payload.nix).commitSkillLoader {
+    commitProfileSelector = pkgs.lib.getExe profiles.selector;
+    commitProfileArtifacts = toString profiles.artifacts;
+  };
 in
 {
   owner = "agent skill renderer checks";
@@ -71,5 +77,21 @@ in
       cmp ${expectedOpenaiYaml} ${rendered}/agents/openai.yaml
       touch "$out"
     ''
+  );
+  buildEntries.commit-skill-profiles = ciCheck.buildEntry (ciCheck.targets.both "eval-tests") (
+    pkgs.runCommand "commit-skill-profiles-check"
+      {
+        nativeBuildInputs = [
+          pkgs.python3
+          pkgs.nodejs
+        ];
+      }
+      ''
+        python ${./check-commit-profiles.py} ${payload.localSkillsRoot}/commit \
+          ${profiles.standard} ${profiles.fineGrained} ${profiles.artifacts}
+        node --experimental-strip-types ${../../pi/_tests/commit-skill-loader.test.mjs} \
+          ${piLoader} ${pkgs.lib.getExe profiles.selector}
+        touch "$out"
+      ''
   );
 }

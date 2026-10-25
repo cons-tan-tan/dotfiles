@@ -10,6 +10,9 @@ let
   testPackage = pkgs.callPackage ../_packages/codex/wrapped-package.nix {
     codex = codexFixture;
   };
+  profiledPackage = testPackage.override {
+    commitProfiles = import ../../skills/_tests/commit-profiles-fixture.nix { inherit pkgs; };
+  };
 in
 {
   group = "shellWrappers";
@@ -28,10 +31,12 @@ in
     environment = {
       CODEX_UPDATE_TEST_FIXTURE = "1";
       CODEX_WRAPPER_TEST_PACKAGE = testPackage;
+      CODEX_PROFILED_TEST_PACKAGE = profiledPackage;
     };
     requiredEnvironment = [
       "CODEX_UPDATE_TEST_FIXTURE"
       "CODEX_WRAPPER_TEST_PACKAGE"
+      "CODEX_PROFILED_TEST_PACKAGE"
     ];
   };
   shard = {

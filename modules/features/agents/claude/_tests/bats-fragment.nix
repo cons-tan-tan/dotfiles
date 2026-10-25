@@ -17,6 +17,9 @@ let
     claudeCode = claudeFixture;
     herdrPlugin = herdrPluginFixture;
   };
+  profiledPackage = testPackage.override {
+    commitProfiles = import ../../skills/_tests/commit-profiles-fixture.nix { inherit pkgs; };
+  };
 in
 {
   group = "shellWrappers";
@@ -30,10 +33,12 @@ in
     environment = {
       CLAUDE_UPDATE_TEST_FIXTURE = "1";
       CLAUDE_WRAPPER_TEST_PACKAGE = testPackage;
+      CLAUDE_PROFILED_TEST_PACKAGE = profiledPackage;
     };
     requiredEnvironment = [
       "CLAUDE_UPDATE_TEST_FIXTURE"
       "CLAUDE_WRAPPER_TEST_PACKAGE"
+      "CLAUDE_PROFILED_TEST_PACKAGE"
     ];
   };
   shard = {

@@ -1,5 +1,6 @@
 {
   codex,
+  commitProfiles ? null,
   lib,
   symlinkJoin,
   writeShellApplication,
@@ -10,6 +11,10 @@ let
     name = "codex";
     text = ''
       CODEX_BIN=${lib.escapeShellArg "${codex}/bin/codex"}
+      ${lib.optionalString (commitProfiles != null) ''
+        COMMIT_PROFILE_SELECTOR=${lib.escapeShellArg (lib.getExe commitProfiles.selector)}
+        COMMIT_PROFILE_ARTIFACTS=${lib.escapeShellArg (toString commitProfiles.artifacts)}
+      ''}
       ${builtins.readFile ./codex-wrapper.sh}
     '';
   };

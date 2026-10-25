@@ -9,6 +9,7 @@ setup() {
   TEST_TMPDIR="$(mktemp -d)"
   export TEST_TMPDIR
   unset HERDR_ENV
+  unset COMMIT_PROFILE_SELECTOR COMMIT_PROFILE_ARTIFACTS
 
   write_bash_stub "$TEST_TMPDIR/codex" <<'SH'
 printf 'arg:%s\n' "$@" >"$TEST_TMPDIR/result"
@@ -65,6 +66,36 @@ run_wrapper() {
   CODEX_TEST_EXIT_STATUS=42 run_wrapper user-arg
 
   [ "$status" -eq 42 ]
+}
+
+@test "adds a session override without duplicating embedded mode or modifying user arguments" {
+  write_bash_stub "$TEST_TMPDIR/selector" <<'SH'
+printf 'selector:%s\n' "$@" >"$TEST_TMPDIR/selection"
+printf 'fine-grained\n'
+SH
+  mkdir -p "$TEST_TMPDIR/profiles/fine-grained"
+  printf '%s' 'skills.config=[{path="/fine/SKILL.md",enabled=true}]' >"$TEST_TMPDIR/profiles/fine-grained/codex-override"
+  export COMMIT_PROFILE_SELECTOR="$TEST_TMPDIR/selector" COMMIT_PROFILE_ARTIFACTS="$TEST_TMPDIR/profiles"
+  run_wrapper --no-daemon -C '/repo with spaces' -c 'model="example"' -- 'prompt with spaces'
+  [ "$status" -eq 0 ]
+  [ "$(cat "$TEST_TMPDIR/result")" = $'arg:-c\narg:skills.config=[{path="/fine/SKILL.md",enabled=true}]\narg:--no-daemon\narg:-C\narg:/repo with spaces\narg:-c\narg:model="example"\narg:--\narg:prompt with spaces' ]
+  [ "$(cat "$TEST_TMPDIR/selection")" = $'selector:--codex\nselector:--no-daemon\nselector:-C\nselector:/repo with spaces\nselector:-c\nselector:model="example"\nselector:--\nselector:prompt with spaces' ]
+}
+
+@test "packaged profile selection enables only the chosen commit path" {
+  require_nix_fixture CODEX_PROFILED_TEST_PACKAGE "profile-aware Codex wrapper"
+  export GIT_CONFIG_GLOBAL="$TEST_TMPDIR/gitconfig" GIT_CONFIG_NOSYSTEM=1
+  unset GHQ_ROOT
+  git config --global ghq.root "$TEST_TMPDIR/root"
+  mkdir -p "$TEST_TMPDIR/root/github.com/team/repo" "$TEST_TMPDIR/other"
+  run "$CODEX_PROFILED_TEST_PACKAGE/bin/codex" -C "$TEST_TMPDIR/root/github.com/team/repo" prompt
+  [ "$status" -eq 0 ]
+  selected=$(rg '^arg:skills.config=' "$TEST_TMPDIR/result")
+  [[ $selected == *'enabled=false},{path='*'enabled=true}]' ]]
+  run "$CODEX_PROFILED_TEST_PACKAGE/bin/codex" -C "$TEST_TMPDIR/other" prompt
+  [ "$status" -eq 0 ]
+  selected=$(rg '^arg:skills.config=' "$TEST_TMPDIR/result")
+  [[ $selected == *'enabled=true},{path='*'enabled=false}]' ]]
 }
 
 @test "Nix package pins the Codex child instead of using runtime overrides" {

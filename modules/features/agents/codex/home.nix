@@ -27,7 +27,8 @@
       };
       herdrHookCommand = herdrSettings.mkSessionHookCommand herdrHookPath;
 
-      codex = pkgs.dotfilesPackages.codex.mkWrappedPackage { };
+      commitProfiles = config.dotfiles.agentSkills.commitProfiles;
+      codex = pkgs.dotfilesPackages.codex.mkWrappedPackage { inherit commitProfiles; };
       agentPackageSources = import ../base/_interface/package-sources.nix;
       agentConfigHelper = pkgs.callPackage agentPackageSources.configHelper { };
 
@@ -152,6 +153,20 @@
       # Codex's skill scanner follows directory symlinks but skips symlinked SKILL.md
       # files, so link the directory without recursive expansion.
       home.file.".codex/skills/herdr".source = pkgs.dotfilesPackages.herdr.agent.skill;
+
+      # Keep both artifacts immutable; only the enabled path changes per process.
+      home.file.".codex/skills/commit-profiles/standard/commit" = lib.mkIf (commitProfiles != null) {
+        source = commitProfiles.standard;
+      };
+      home.file.".codex/skills/commit-profiles/fine-grained/commit" = lib.mkIf (commitProfiles != null) {
+        source = commitProfiles.fineGrained;
+      };
+      dotfiles.codex.settings.skills.config = lib.optionals (commitProfiles != null) [
+        {
+          path = "${commitProfiles.fineGrained}/SKILL.md";
+          enabled = false;
+        }
+      ];
 
       # programs.codex は config.toml を read-only symlink で置き Codex の動的書き込み
       # ([projects]/[notice]/[tui]) を壊すため使わない。候補で検証してから mv するのは

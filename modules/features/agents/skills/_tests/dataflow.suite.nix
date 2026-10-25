@@ -67,6 +67,17 @@ let
     }
   ];
   pingu = homeFor [ ];
+  profiled = homeFor [
+    {
+      dotfiles.agentSkillContributions = [
+        {
+          name = "commit";
+          provenance = "local";
+          definition.root = repoRoot + "/agents/skills/commit";
+        }
+      ];
+    }
+  ];
 in
 if caseName != null then
   throw "agent-skills-dataflow has no failure cases"
@@ -76,6 +87,20 @@ else
       checkName = "agent-skills-dataflow-tests";
       execution = "build";
       hestiaGroup = "eval-tests";
+    };
+    tests.testCommitUsesRuntimeDistribution = {
+      expr = {
+        commonAgents = profiled.home.file ? ".agents/skills/commit";
+        commonClaude = profiled.home.file ? ".claude/skills/commit";
+        hasSelector = lib.isDerivation profiled.dotfiles.agentSkills.commitProfiles.selector;
+        emptyHome = pingu.dotfiles.agentSkills.commitProfiles;
+      };
+      expected = {
+        commonAgents = false;
+        commonClaude = false;
+        hasSelector = true;
+        emptyHome = null;
+      };
     };
     tests.testMergedSkillsAreRenderedAndIsolated = {
       expr = {

@@ -1,5 +1,6 @@
 {
   claudeCode,
+  commitProfiles ? null,
   herdrPlugin,
   lib,
   nodejs,
@@ -14,6 +15,10 @@ let
       CLAUDE_BASE=${lib.escapeShellArg "${claudeCode}/bin/claude"}
       NODE_BIN=${lib.escapeShellArg "${nodejs}/bin"}
       HERDR_PLUGIN=${lib.escapeShellArg "${herdrPlugin}"}
+      ${lib.optionalString (commitProfiles != null) ''
+        COMMIT_PROFILE_SELECTOR=${lib.escapeShellArg (lib.getExe commitProfiles.selector)}
+        COMMIT_PROFILE_ARTIFACTS=${lib.escapeShellArg (toString commitProfiles.artifacts)}
+      ''}
       ${builtins.readFile ./claude-wrapper.sh}
     '';
   };

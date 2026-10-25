@@ -5,5 +5,6 @@ in
   inherit extensionsRoot;
   agentCommandGuard = extensionsRoot + "/agent-command-guard.ts";
   herdrSkillLoader = extensionsRoot + "/herdr-skill-loader.ts";
+  commitSkillLoader = extensionsRoot + "/commit-skill-loader.ts";
   repositoryRelative.extensionsRoot = "pi/extensions";
 }

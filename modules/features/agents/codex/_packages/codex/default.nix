@@ -15,8 +15,10 @@ in
   });
 
   mkWrappedPackage =
-    { }:
+    {
+      commitProfiles ? null,
+    }:
     callPackage ./wrapped-package.nix {
-      inherit codex;
+      inherit codex commitProfiles;
     };
 }
