@@ -10,20 +10,13 @@ let
   mkPinnedAsset = import ./_lib/mk-pinned-asset.nix;
   agentPackageSources = import ../agents/_interface/package-sources.nix;
   ciPackageSources = import ../ci/_interface/package-sources.nix;
-  drawioPackageSources = import ../drawio/_interface/package-sources.nix;
   networkPackageSources = import ../network/_interface/package-sources.nix;
   platformPackageSources = import ../platform/_interface/package-sources.nix;
   securityPackageSources = import ../security/_interface/package-sources.nix;
   gitPackageSources = import ../git/_interface/package-sources.nix;
-  agentConfigHelper = pkgs.callPackage agentPackageSources.configHelper { };
   safeFetch = pkgs.callPackage networkPackageSources.safeFetch { };
   ghApiGet = pkgs.callPackage gitPackageSources.ghApiGet {
     safeFetchCore = safeFetch.core;
-  };
-  hcom = import agentPackageSources.hcom {
-    inherit (pkgs) callPackage;
-    inherit agentConfigHelper ghApiGet mkPinnedAsset;
-    hcomSource = inputs.hcom-src;
   };
   codex = import agentPackageSources.codex {
     inherit (pkgs) callPackage;
@@ -61,7 +54,7 @@ in
   gha-diag = pkgs.callPackage ciPackageSources.ghaDiag { };
   ghq-fetch-all = pkgs.callPackage gitPackageSources.ghqFetchAll { };
   hunk = import agentPackageSources.hunk {
-    inherit (pkgs) callPackage stdenv;
+    inherit (pkgs) stdenv;
     hunkInput = inputs.hunk;
   };
   shellfirm = pkgs.callPackage agentPackageSources.shellfirm { inherit ghApiGet; };
@@ -69,14 +62,12 @@ in
 
   inherit
     codex
-    hcom
     herdr
     pi
     ;
 }
 // lib.optionalAttrs hostPlatform.isLinux {
   ci-matrix-planner = pkgs.callPackage ciPackageSources.matrixPlanner { };
-  drawio-headless = pkgs.callPackage drawioPackageSources.headless { };
   oo7-dpapi-bridge = pkgs.callPackage securityPackageSources.oo7DpapiBridge { };
   wsl-dpapi = pkgs.callPackage securityPackageSources.wslDpapi { };
   wsl-open = pkgs.callPackage platformPackageSources.wslOpen { };

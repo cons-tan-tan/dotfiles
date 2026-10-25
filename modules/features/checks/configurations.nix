@@ -119,18 +119,9 @@ let
         homeEntries
         nixosWslConfiguration
         targets
-        username
         ;
-      hcomProfile =
-        homeConfiguration: import ../agents/hcom/_tests/profile-check.nix { inherit homeConfiguration; };
       darwinChecks = lib.optionalAttrs (system == darwinSystem) {
         darwin-system = darwinConfigurations.${targets.darwin}.system;
-        home-darwin-hcom-profile =
-          (darwinConfigurations.${targets.darwin}.extendModules {
-            modules = [
-              { home-manager.users.${username}.dotfiles.hcom.enable = true; }
-            ];
-          }).system;
       };
       linuxChecks =
         lib.optionalAttrs (lib.hasSuffix "-linux" system) {
@@ -147,16 +138,10 @@ let
         }
         // lib.optionalAttrs (lib.hasSuffix "-linux" system) (
           lib.listToAttrs (
-            lib.concatMap (entry: [
-              {
-                name = "home-${entry.hostKind}";
-                value = homeConfigurations.${entry.name}.activationPackage;
-              }
-              {
-                name = "home-${entry.hostKind}-hcom-profile";
-                value = hcomProfile homeConfigurations.${entry.name};
-              }
-            ]) homeEntries
+            map (entry: {
+              name = "home-${entry.hostKind}";
+              value = homeConfigurations.${entry.name}.activationPackage;
+            }) homeEntries
           )
         );
     in

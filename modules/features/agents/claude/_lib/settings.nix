@@ -8,7 +8,6 @@
     {
       forWindows ? false,
       wslUserProfile ? null,
-      hcomPath ? null,
       guardCommand ? null,
     }:
     let
@@ -31,8 +30,7 @@
           # Claude Code 2.1.212 otherwise queries USERPROFILE through PowerShell.
           # https://github.com/anthropics/claude-code/issues/619#issuecomment-4106944524
           USERPROFILE = wslUserProfile;
-        }
-        // lib.optionalAttrs (!forWindows && hcomPath != null) { HCOM = hcomPath; };
+        };
       permissions =
         settings.permissions
         // {
@@ -44,7 +42,6 @@
           }
           // lib.optionalAttrs (commandPermissions ? ask) { inherit (commandPermissions) ask; }
         );
-      # Build-time hcom output is merged later; reading it here would introduce IFD.
       hooks.PreToolUse = lib.optionals (!forWindows && guardCommand != null) [
         {
           matcher = "Bash";

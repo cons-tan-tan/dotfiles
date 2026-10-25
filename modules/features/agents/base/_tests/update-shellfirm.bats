@@ -14,9 +14,19 @@ setup() {
   local calls="$BATS_TEST_TMPDIR/calls"
   local package_dir=modules/features/agents/base/_packages/shellfirm
   local guard_dir=modules/features/agents/base/_packages/command-guard
-  mkdir -p "$repo/$package_dir" "$repo/$guard_dir" "$stubs" "$source"
+  mkdir -p "$repo/$package_dir" "$repo/$guard_dir" "$stubs" "$source/shellfirm"
   git -C "$repo" init --quiet
   printf '[package]\nname = "shellfirm"\nversion = "2.0.0"\n' >"$source/Cargo.toml"
+  cat >"$source/shellfirm/Cargo.toml" <<'TOML'
+], optional = true }
+uuid = { version = "1", features = ["v4"] }
+ratatui = { version = "0.29", optional = true }
+crossterm = { version = "0.28", optional = true }
+tui-input = { version = "0.13", optional = true }
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+TOML
+  cp "$DOTFILES_TEST_REPO_ROOT/$package_dir/ratatui-0.30.patch" "$repo/$package_dir/"
   printf 'old package lock\n' >"$repo/$package_dir/Cargo.lock"
   printf '{}\n' >"$repo/$package_dir/pin.json"
   printf '[dependencies]\nshellfirm = { version = "=1.0.0", default-features = false }\n' \
@@ -42,6 +52,8 @@ while (($# > 0)); do
   shift
 done
 if [[ $manifest == */source/Cargo.toml ]]; then
+  rg -F 'ratatui = { version = "0.30.2", optional = true }' \
+    "${manifest%/*}/shellfirm/Cargo.toml"
   printf 'candidate package lock\n' >"${manifest%/*}/Cargo.lock"
 else
   printf 'updated guard lock\n' >"${manifest%/*}/Cargo.lock"

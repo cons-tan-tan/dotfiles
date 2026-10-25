@@ -7,11 +7,6 @@
       ...
     }:
     let
-      hcom = config.dotfiles.agentIntegrations.hcom;
-
-      # 生成は package (hcom+codex を実行) に任せ参照のみ — Codex の内部仕様 (hash
-      # アルゴリズム等) をこちらで再実装しないため。
-      hcomCodex = if hcom == null then null else hcom.codexHooks;
       herdrCodexIntegration = pkgs.dotfilesPackages.herdr.integrations.codex;
 
       codexHome = "${config.home.homeDirectory}/.codex";
@@ -61,25 +56,7 @@
         settings = config.dotfiles.codex.settings;
       });
 
-      emptyHooksJson = jsonFormat.generate "codex-hooks-hcom-disabled.json" { hooks = { }; };
-      hcomHooksJson = if hcom == null then emptyHooksJson else "${hcomCodex}/hooks.json";
-
-      # hcom state key は実環境の hooks.json 絶対パスを含むため、有効時はbuild時に
-      # 生成する。古いstateの削除はbase payloadで常に行い、後段で現行hookだけ戻す。
-      hcomHooksPayloadJson =
-        if hcom != null then
-          pkgs.runCommand "codex-hcom-hooks-payload.json"
-            {
-              nativeBuildInputs = [ agentConfigHelper ];
-            }
-            ''
-              ${lib.getExe agentConfigHelper} codex rekey-hook-state \
-                --hooks-path ${lib.escapeShellArg hooksJsonPath} \
-                ${hcomCodex}/hooks-state.json \
-                > "$out"
-            ''
-        else
-          jsonFormat.generate "codex-hcom-hooks-disabled-payload.json" { };
+      baseHooksJson = jsonFormat.generate "codex-hooks-base.json" { hooks = { }; };
 
       hooksJson =
         pkgs.runCommand "codex-hooks.json"
@@ -89,7 +66,7 @@
           ''
             ${lib.getExe agentConfigHelper} codex apply-hook-manifest \
               --manifest ${managedHookManifest} \
-              ${hcomHooksJson} \
+              ${baseHooksJson} \
               > "$out"
           '';
 
@@ -140,7 +117,6 @@
           ''
             ${lib.getExe agentConfigHelper} codex merge-payloads \
               ${baseMergePayloadJson} \
-              ${hcomHooksPayloadJson} \
               ${managedHooksStatePayloadJson} \
               > "$out"
           '';

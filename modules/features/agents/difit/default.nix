@@ -2,7 +2,7 @@
 {
   # CLI pin と agent skill source は package-owned updateScript が揃える。
   flake-file.inputs.difit-src = {
-    url = "github:yoshiko-pg/difit/v5.0.8";
+    url = "github:yoshiko-pg/difit/v5.0.12";
     flake = false;
   };
 

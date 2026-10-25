@@ -77,11 +77,10 @@ fn run_main() -> Result<u8> {
             )?)?;
             Ok(0)
         }
-        Action::Run(Command::ClaudeMergeSettings { base, hcom, herdr }) => {
+        Action::Run(Command::ClaudeMergeSettings { base, herdr }) => {
             let base = read_json(&base, "Claude base settings")?;
-            let hcom = read_json(&hcom, "Claude hcom settings")?;
             let herdr = read_json(&herdr, "Claude Herdr settings")?;
-            write_json(&transforms::claude_merge_settings(&base, &hcom, &herdr)?)?;
+            write_json(&transforms::claude_merge_settings(&base, &herdr)?)?;
             Ok(0)
         }
         Action::Run(Command::CodexExtractHookState { config }) => {
@@ -130,11 +129,10 @@ fn run_main() -> Result<u8> {
             )?)?;
             Ok(0)
         }
-        Action::Run(Command::CodexMergePayloads { base, hcom, herdr }) => {
+        Action::Run(Command::CodexMergePayloads { base, herdr }) => {
             let base = read_json(&base, "Codex base payload")?;
-            let hcom = read_json(&hcom, "Codex hcom payload")?;
             let herdr = read_json(&herdr, "Codex Herdr payload")?;
-            write_json(&transforms::codex_merge_payloads(&base, &hcom, &herdr)?)?;
+            write_json(&transforms::codex_merge_payloads(&base, &herdr)?)?;
             Ok(0)
         }
     }

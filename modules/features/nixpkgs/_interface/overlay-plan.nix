@@ -18,6 +18,14 @@ let
       value = llmAgentsOverlay inputs.llm-agents;
     }
     {
+      name = "emudhra";
+      value = import ../_overlays/emudhra.nix;
+    }
+    {
+      name = "package-compatibility";
+      value = import ../_overlays/compatibility.nix;
+    }
+    {
       name = "local-packages";
       value = import ../_overlays/local-packages.nix {
         inherit inputs;

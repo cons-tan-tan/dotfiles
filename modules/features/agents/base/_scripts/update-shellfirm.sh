@@ -5,8 +5,9 @@ set -euo pipefail
 repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
 
-pin_path=modules/features/agents/base/_packages/shellfirm/pin.json
-package_lock=modules/features/agents/base/_packages/shellfirm/Cargo.lock
+package_dir=modules/features/agents/base/_packages/shellfirm
+pin_path="$package_dir/pin.json"
+package_lock="$package_dir/Cargo.lock"
 guard_manifest=modules/features/agents/base/_packages/command-guard/Cargo.toml
 package_set=modules/features/nixpkgs/_interface/nix-update-package-set.nix
 
@@ -23,6 +24,7 @@ work_dir=$(mktemp -d "${TMPDIR:-/tmp}/shellfirm-update.XXXXXX")
 trap 'rm -rf -- "$work_dir"' EXIT
 cp -R "$source_path" "$work_dir/source"
 chmod -R u+w "$work_dir/source"
+patch --directory="$work_dir/source" --strip=1 --input="$repo_root/$package_dir/ratatui-0.30.patch"
 cp "$package_lock" "$work_dir/source/Cargo.lock"
 cargo update --manifest-path "$work_dir/source/Cargo.toml"
 cp "$work_dir/source/Cargo.lock" "$package_lock"

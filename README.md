@@ -52,7 +52,7 @@ wsl --install --from-file .\nixos.wsl --name NixOS
 
 そのほかの公開appは`nix flake show`で確認する。
 
-`update-pins`は各packageの`passthru.updateScript`を実行する。対象を省略すると全件を更新し、`nix run .#update-pins -- hcom`のように名前を渡すと1件だけ更新する。更新にはcleanなworktreeが必要で、使い捨てのcloneで全対象が成功してから差分を反映する。`--check`を付けると差分を反映せず、更新が必要な場合に失敗する。通常のpackage更新は`nix-update`へ委譲し、複数assetやflake inputを同時に扱う更新だけを各featureのscriptで補う。GitHub releaseを参照する対象には、`gh auth login`または`GH_TOKEN`による認証が必要となる。旧updaterの`--force`、`--jobs`、`--retry`はpackage側へ更新処理を移したため廃止した。
+`update-pins`は各packageの`passthru.updateScript`を実行する。対象を省略すると全件を更新し、`nix run .#update-pins -- herdr`のように名前を渡すと1件だけ更新する。更新にはcleanなworktreeが必要で、使い捨てのcloneで全対象が成功してから差分を反映する。`--check`を付けると差分を反映せず、更新が必要な場合に失敗する。通常のpackage更新は`nix-update`へ委譲し、複数assetやflake inputを同時に扱う更新だけを各featureのscriptで補う。GitHub releaseを参照する対象には、`gh auth login`または`GH_TOKEN`による認証が必要となる。旧updaterの`--force`、`--jobs`、`--retry`はpackage側へ更新処理を移したため廃止した。
 
 `flake-file.inputs`を定義するmoduleを直接変更した場合は、`nix run .#write-flake`で`flake.nix`を再生成する。inputを所有する`updateScript`は、`flake.nix`と`flake.lock`も更新する。
 

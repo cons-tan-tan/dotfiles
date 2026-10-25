@@ -20,11 +20,11 @@
 
   inputs = {
     agent-browser-skill = {
-      url = "github:vercel-labs/agent-browser/v0.31.1";
+      url = "github:vercel-labs/agent-browser/v0.39.1";
       flake = false;
     };
     agent-slack-skill = {
-      url = "github:stablyai/agent-slack/v0.9.3";
+      url = "github:stablyai/agent-slack/v0.10.2";
       flake = false;
     };
     anthropic-skills = {
@@ -36,7 +36,7 @@
       flake = false;
     };
     ax = {
-      url = "github:yusukebe/ax/v0.1.23";
+      url = "github:yusukebe/ax/v0.1.25";
       inputs = {
         bun2nix.follows = "bun2nix";
         nixpkgs.follows = "nixpkgs";
@@ -75,7 +75,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     difit-src = {
-      url = "github:yoshiko-pg/difit/v5.0.8";
+      url = "github:yoshiko-pg/difit/v5.0.12";
       flake = false;
     };
     direnv-instant = {
@@ -85,10 +85,6 @@
         nixpkgs.follows = "nixpkgs";
         treefmt-nix.follows = "treefmt-nix";
       };
-    };
-    drawio-skill = {
-      url = "github:jgraph/drawio-mcp";
-      flake = false;
     };
     fast-nix-gc = {
       url = "github:Mic92/fast-nix-gc/0243fbc569251eea46894e681e2c86eed7185c46";
@@ -102,10 +98,6 @@
     flake-parts = {
       url = "github:hercules-ci/flake-parts";
       inputs.nixpkgs-lib.follows = "nixpkgs-lib";
-    };
-    hcom-src = {
-      url = "github:aannoo/hcom/v0.7.21";
-      flake = false;
     };
     home-manager = {
       url = "github:nix-community/home-manager";
@@ -136,18 +128,6 @@
     };
     nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
     nixpkgs-lib.follows = "nixpkgs";
-    pyproject-build-systems = {
-      url = "github:pyproject-nix/build-system-pkgs";
-      inputs = {
-        nixpkgs.follows = "nixpkgs";
-        pyproject-nix.follows = "pyproject-nix";
-        uv2nix.follows = "uv2nix";
-      };
-    };
-    pyproject-nix = {
-      url = "github:pyproject-nix/pyproject.nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
     rustsec-advisory-db = {
       url = "github:RustSec/advisory-db";
       flake = false;
@@ -159,13 +139,6 @@
     treefmt-nix = {
       url = "github:numtide/treefmt-nix";
       inputs.nixpkgs.follows = "nixpkgs";
-    };
-    uv2nix = {
-      url = "github:pyproject-nix/uv2nix";
-      inputs = {
-        nixpkgs.follows = "nixpkgs";
-        pyproject-nix.follows = "pyproject-nix";
-      };
     };
   };
 }

@@ -108,8 +108,6 @@ in
     key = "modules/features/agents/skills/default.nix#homeManager.agent-skills";
     imports = [
       config.flake.modules.homeManager.agent-skills-external
-      config.flake.modules.homeManager.pptx-agent-skill
-      config.flake.modules.homeManager.drawio-agent-skill
       config.flake.modules.homeManager.agent-skills-local
       config.flake.modules.homeManager.agent-skills-consumer
     ];

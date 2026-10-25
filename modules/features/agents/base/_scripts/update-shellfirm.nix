@@ -6,8 +6,10 @@
   jq,
   nix,
   nix-update,
+  patch,
   perl,
   ripgrep,
+  rustc,
   writeShellApplication,
 }:
 writeShellApplication {
@@ -20,8 +22,10 @@ writeShellApplication {
     jq
     nix
     nix-update
+    patch
     perl
     ripgrep
+    rustc
   ];
   text = builtins.readFile ./update-shellfirm.sh;
 }

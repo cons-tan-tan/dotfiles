@@ -56,7 +56,6 @@ in
       key = "modules/features/agents/codex/default.nix#homeManager.agent-codex";
       imports = [
         hm.agents-base
-        hm.agent-hcom-contract
         hm.agent-herdr
       ];
       options.dotfiles.codex.settings = lib.mkOption {

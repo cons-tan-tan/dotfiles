@@ -2,19 +2,19 @@
   "assets": {
     "aarch64-darwin": {
       "name": "agent-browser-darwin-arm64",
-      "hash": "sha256-/XrNF7MHH/f3WgPB7NMFAZWdnC0GO9qgWttvd6vyp78="
+      "hash": "sha256-zBj6xB2dyYIZGDQKE25kMobqBVRMTdNWcbeW8ah0ze8="
     },
     "x86_64-darwin": {
       "name": "agent-browser-darwin-x64",
-      "hash": "sha256-Bao+LtNVDgb7PrdCOhzvDZ1gMcTWqINbnb4DO6+D720="
+      "hash": "sha256-M5y5qm39QEhWz5ON80zTtHecYd/Vf8JXvhGxT9Gohfk="
     },
     "aarch64-linux": {
       "name": "agent-browser-linux-musl-arm64",
-      "hash": "sha256-HKOX9xSCDKlUxrV16BbAisyTf/rOorkB9c9lJPxKaFM="
+      "hash": "sha256-xJWfPhk8W8jzM2EzY/JfLqzuyv4loIIYQ7JxkGR0og8="
     },
     "x86_64-linux": {
       "name": "agent-browser-linux-musl-x64",
-      "hash": "sha256-t0kqPgDlJ5C/+9KQDDmSZeaoBZgnb4n7iy+/oxTMjSI="
+      "hash": "sha256-dFB82rmKqRvcFDRsVFr/l0ZAoiXkP4w9bCMWT4wPm7k="
     }
   }
 }

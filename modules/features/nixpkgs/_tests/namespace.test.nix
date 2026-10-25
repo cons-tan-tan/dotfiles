@@ -17,7 +17,6 @@ let
   familyNames = [
     "claude-code"
     "codex"
-    "hcom"
     "herdr"
     "hunk"
     "pi"
@@ -26,7 +25,6 @@ let
     if pkgs.stdenv.hostPlatform.isLinux then
       [
         "ci-matrix-planner"
-        "drawio-headless"
         "oo7-dpapi-bridge"
         "wsl-dpapi"
         "wsl-open"

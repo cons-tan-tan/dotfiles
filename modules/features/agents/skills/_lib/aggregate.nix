@@ -10,7 +10,6 @@ let
   ];
   validProvenance = [
     "external"
-    "hcom"
     "local"
   ];
   validateEntry =

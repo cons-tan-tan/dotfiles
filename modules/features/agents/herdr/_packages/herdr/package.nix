@@ -20,7 +20,7 @@ let
   asset = pinnedAsset.asset;
   platforms = pinnedAsset.platforms;
   src = fetchFromGitHub {
-    owner = "ogulcancelik";
+    owner = "herdrdev";
     repo = "herdr";
     rev = "v${version}";
     hash = herdrPin.srcHash;
@@ -36,7 +36,7 @@ in
     inherit version;
 
     src = fetchurl {
-      url = "https://github.com/ogulcancelik/herdr/releases/download/v${version}/${asset.name}";
+      url = "https://github.com/herdrdev/herdr/releases/download/v${version}/${asset.name}";
       inherit (asset) hash;
     };
 
@@ -57,7 +57,7 @@ in
     meta = {
       description = "Terminal workspace manager for AI coding agents";
       homepage = "https://herdr.dev";
-      changelog = "https://github.com/ogulcancelik/herdr/releases/tag/v${version}";
+      changelog = "https://github.com/herdrdev/herdr/releases/tag/v${version}";
       license = lib.licenses.agpl3Plus;
       inherit platforms;
       mainProgram = "herdr";

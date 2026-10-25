@@ -37,7 +37,6 @@ in
       hm.platform-wsl
       hm.nix-registry
       hm.security-ssh-signing
-      hm.agent-hunk-wsl
       hm.platform-wsl-nixbuild
       hm.ghq-sync-systemd
       hm.trash-systemd
@@ -47,7 +46,6 @@ in
       hm.platform-wsl
       hm.nix-registry
       hm.git-signing-openpgp
-      hm.agent-hunk-wsl
       hm.security-gpg-wsl
       hm.ghq-sync-systemd
       hm.trash-systemd

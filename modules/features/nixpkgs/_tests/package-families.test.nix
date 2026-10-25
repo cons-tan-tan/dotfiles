@@ -5,7 +5,6 @@ let
   inherit (pkgs.dotfilesPackages)
     claude-code
     codex
-    hcom
     herdr
     hunk
     pi
@@ -42,27 +41,6 @@ in
 
   testCodexWrapperBuildsDerivation = {
     expr = pkgs.lib.isDerivation (codex.mkWrappedPackage { });
-    expected = true;
-  };
-
-  testHcomFamilyShape = {
-    expr = builtins.attrNames hcom;
-    expected = [
-      "integrations"
-      "package"
-    ];
-  };
-
-  testHcomIntegrationShape = {
-    expr = builtins.attrNames hcom.integrations;
-    expected = [
-      "claudeHooks"
-      "codexHooks"
-    ];
-  };
-
-  testHcomPackageIsDerivation = {
-    expr = pkgs.lib.isDerivation hcom.package;
     expected = true;
   };
 
@@ -104,17 +82,11 @@ in
 
   testHunkFamilyShape = {
     expr = builtins.attrNames hunk;
-    expected = [
-      "package"
-      "wslRuntime"
-    ];
+    expected = [ "package" ];
   };
 
-  testHunkPackagesAreDerivations = {
-    expr = builtins.all pkgs.lib.isDerivation [
-      hunk.package
-      hunk.wslRuntime
-    ];
+  testHunkPackageIsDerivation = {
+    expr = pkgs.lib.isDerivation hunk.package;
     expected = true;
   };
 

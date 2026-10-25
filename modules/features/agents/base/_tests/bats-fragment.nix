@@ -6,6 +6,7 @@
       coreutils
       git
       jq
+      patch
       perl
       ripgrep
     ];
@@ -14,6 +15,9 @@
   };
   shard = {
     testFiles = [ "modules/features/agents/base/_tests/update-shellfirm.bats" ];
-    sourceFiles = [ "modules/features/agents/base/_scripts/update-shellfirm.sh" ];
+    sourceFiles = [
+      "modules/features/agents/base/_scripts/update-shellfirm.sh"
+      "modules/features/agents/base/_packages/shellfirm/ratatui-0.30.patch"
+    ];
   };
 }

@@ -26,7 +26,6 @@ let
     "build"
     "fmt"
     "markdownlint"
-    "pptx"
     "switch"
     "textlint"
     "update"

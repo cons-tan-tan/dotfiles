@@ -11,7 +11,6 @@
               type = lib.types.enum [
                 "external"
                 "local"
-                "hcom"
               ];
             };
             definition = lib.mkOption { type = lib.types.attrs; };

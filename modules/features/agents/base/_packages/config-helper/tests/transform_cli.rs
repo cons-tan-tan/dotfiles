@@ -84,14 +84,6 @@ fn claude_commands_read_transform_and_emit_compact_json() {
     );
     assert_eq!(rewritten["discarded"], true);
 
-    let hcom = write_json(
-        &directory,
-        "hcom.json",
-        &json!({
-            "permissions": {"allow": ["hcom"]},
-            "hooks": {"SessionStart": [{"source": "hcom"}]}
-        }),
-    );
     let herdr = write_json(
         &directory,
         "herdr.json",
@@ -104,14 +96,11 @@ fn claude_commands_read_transform_and_emit_compact_json() {
         path(&herdr),
         OsStr::new("--base"),
         path(&settings),
-        OsStr::new("--hcom"),
-        path(&hcom),
     ]));
-    assert_eq!(merged["permissions"]["allow"], json!(["base", "hcom"]));
+    assert_eq!(merged["permissions"]["allow"], json!(["base"]));
     assert_eq!(
         merged["hooks"]["SessionStart"],
         json!([
-            {"source": "hcom"},
             {"hooks": [{"type": "command", "command": "old"}]},
             {"source": "herdr"}
         ])
@@ -228,11 +217,6 @@ fn codex_commands_read_transform_and_emit_compact_json() {
         "base.json",
         &json!({"nested": {"base": true, "replace": "base"}}),
     );
-    let hcom = write_json(
-        &directory,
-        "payload-hcom.json",
-        &json!({"nested": {"hcom": true, "replace": "hcom"}}),
-    );
     let herdr = write_json(
         &directory,
         "payload-herdr.json",
@@ -242,7 +226,6 @@ fn codex_commands_read_transform_and_emit_compact_json() {
         OsStr::new("codex"),
         OsStr::new("merge-payloads"),
         path(&base),
-        path(&hcom),
         path(&herdr),
     ]));
     assert_eq!(
@@ -250,7 +233,6 @@ fn codex_commands_read_transform_and_emit_compact_json() {
         json!({
             "nested": {
                 "base": true,
-                "hcom": true,
                 "herdr": true,
                 "replace": "herdr"
             }
@@ -281,15 +263,12 @@ fn malformed_json_diagnostic_does_not_echo_input_contents() {
         "base.json",
         &json!({"hooks": {"SYNTHETIC_SECRET_MARKER": {}}}),
     );
-    let hcom = write_json(&directory, "hcom.json", &json!({}));
     let herdr = write_json(&directory, "herdr.json", &json!({}));
     let output = helper([
         OsStr::new("claude"),
         OsStr::new("merge-settings"),
         OsStr::new("--base"),
         path(&base),
-        OsStr::new("--hcom"),
-        path(&hcom),
         OsStr::new("--herdr"),
         path(&herdr),
     ]);

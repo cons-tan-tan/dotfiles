@@ -25,7 +25,6 @@ pub enum Command {
     },
     ClaudeMergeSettings {
         base: PathBuf,
-        hcom: PathBuf,
         herdr: PathBuf,
     },
     CodexExtractHookState {
@@ -48,7 +47,6 @@ pub enum Command {
     },
     CodexMergePayloads {
         base: PathBuf,
-        hcom: PathBuf,
         herdr: PathBuf,
     },
 }
@@ -66,13 +64,13 @@ Usage:
     --codex-bin <path> --manifest <json> --hooks-json-path <path> [--cwd <path>]
   agent-config-helper claude select-integration <settings.json>
   agent-config-helper claude rewrite-session-command --command <command> <settings.json>
-  agent-config-helper claude merge-settings --base <json> --hcom <json> --herdr <json>
+  agent-config-helper claude merge-settings --base <json> --herdr <json>
   agent-config-helper codex extract-hook-state <config.toml>
   agent-config-helper codex rekey-hook-state --hooks-path <path> <state.json>
   agent-config-helper codex apply-hook-manifest --manifest <json> <hooks.json>
   agent-config-helper codex append-command-hook \
     --event <event> [--matcher <regex>] --command <command> --timeout <seconds> <hooks.json>
-  agent-config-helper codex merge-payloads <base.json> <hcom.json> <herdr.json>
+  agent-config-helper codex merge-payloads <base.json> <herdr.json>
 ";
 
 pub fn parse(arguments: &[OsString]) -> Result<Action> {
@@ -204,15 +202,11 @@ fn parse_claude_rewrite_session_command(arguments: &[OsString]) -> Result<Action
 }
 
 fn parse_claude_merge_settings(arguments: &[OsString]) -> Result<Action> {
-    if help_requested(arguments, &["--base", "--hcom", "--herdr"]) {
+    if help_requested(arguments, &["--base", "--herdr"]) {
         return Ok(Action::Help);
     }
-    let (base, hcom, herdr) = parse_three_named_paths(arguments, "claude merge-settings")?;
-    Ok(Action::Run(Command::ClaudeMergeSettings {
-        base,
-        hcom,
-        herdr,
-    }))
+    let (base, herdr) = parse_two_named_paths(arguments, "claude merge-settings")?;
+    Ok(Action::Run(Command::ClaudeMergeSettings { base, herdr }))
 }
 
 fn parse_codex(arguments: &[OsString]) -> Result<Action> {
@@ -380,14 +374,13 @@ fn parse_codex_merge_payloads(arguments: &[OsString]) -> Result<Action> {
     if help_requested(arguments, &[]) {
         return Ok(Action::Help);
     }
-    let [base, hcom, herdr] = arguments else {
+    let [base, herdr] = arguments else {
         return Err(AppError::new(
-            "agent-config-helper: codex merge-payloads requires base, hcom, and Herdr JSON paths",
+            "agent-config-helper: codex merge-payloads requires base and Herdr JSON paths",
         ));
     };
     Ok(Action::Run(Command::CodexMergePayloads {
         base: base.into(),
-        hcom: hcom.into(),
         herdr: herdr.into(),
     }))
 }
@@ -432,12 +425,8 @@ fn parse_command_and_path(
     ))
 }
 
-fn parse_three_named_paths(
-    arguments: &[OsString],
-    command_name: &str,
-) -> Result<(PathBuf, PathBuf, PathBuf)> {
+fn parse_two_named_paths(arguments: &[OsString], command_name: &str) -> Result<(PathBuf, PathBuf)> {
     let mut base = None;
-    let mut hcom = None;
     let mut herdr = None;
     let mut index = 0;
     while index < arguments.len() {
@@ -446,10 +435,6 @@ fn parse_three_named_paths(
             Some("--base") => {
                 let value = option_value(arguments, index, option)?;
                 set_once(&mut base, PathBuf::from(value), option)?;
-            }
-            Some("--hcom") => {
-                let value = option_value(arguments, index, option)?;
-                set_once(&mut hcom, PathBuf::from(value), option)?;
             }
             Some("--herdr") => {
                 let value = option_value(arguments, index, option)?;
@@ -461,7 +446,6 @@ fn parse_three_named_paths(
     }
     Ok((
         required(base, &format!("{command_name}: --base"))?,
-        required(hcom, &format!("{command_name}: --hcom"))?,
         required(herdr, &format!("{command_name}: --herdr"))?,
     ))
 }
@@ -623,11 +607,11 @@ mod tests {
                 "rewrite-session-command",
                 "settings.json",
                 "--command",
-                "hcom hook",
+                "herdr hook",
             ]))
             .unwrap(),
             Action::Run(Command::ClaudeRewriteSessionCommand {
-                command: "hcom hook".to_owned(),
+                command: "herdr hook".to_owned(),
                 settings: "settings.json".into(),
             })
         );
@@ -639,13 +623,10 @@ mod tests {
                 "herdr.json",
                 "--base",
                 "base.json",
-                "--hcom",
-                "hcom.json",
             ]))
             .unwrap(),
             Action::Run(Command::ClaudeMergeSettings {
                 base: "base.json".into(),
-                hcom: "hcom.json".into(),
                 herdr: "herdr.json".into(),
             })
         );
@@ -715,13 +696,11 @@ mod tests {
                 "codex",
                 "merge-payloads",
                 "base.json",
-                "hcom.json",
                 "herdr.json",
             ]))
             .unwrap(),
             Action::Run(Command::CodexMergePayloads {
                 base: "base.json".into(),
-                hcom: "hcom.json".into(),
                 herdr: "herdr.json".into(),
             })
         );
@@ -732,18 +711,11 @@ mod tests {
         for arguments in [
             &["claude", "select-integration"][..],
             &["claude", "rewrite-session-command", "--command", "hook"],
-            &[
-                "claude",
-                "merge-settings",
-                "--base",
-                "base",
-                "--hcom",
-                "hcom",
-            ],
+            &["claude", "merge-settings", "--base", "base"],
             &["codex", "extract-hook-state"],
             &["codex", "rekey-hook-state", "state"],
             &["codex", "apply-hook-manifest", "hooks"],
-            &["codex", "merge-payloads", "base", "hcom"],
+            &["codex", "merge-payloads", "base"],
         ] {
             assert!(parse(&args(arguments)).is_err(), "{arguments:?}");
         }
@@ -765,8 +737,6 @@ mod tests {
                 "one",
                 "--base",
                 "two",
-                "--hcom",
-                "hcom",
                 "--herdr",
                 "herdr",
             ],
@@ -796,8 +766,6 @@ mod tests {
                 "merge-settings",
                 "--base",
                 "base",
-                "--hcom",
-                "hcom",
                 "--unknown",
                 "value",
                 "--herdr",

@@ -1,7 +1,7 @@
 { inputs, ... }:
 {
   flake-file.inputs.ax = {
-    url = "github:yusukebe/ax/v0.1.23";
+    url = "github:yusukebe/ax/v0.1.25";
     inputs.bun2nix.follows = "bun2nix";
     inputs.nixpkgs.follows = "nixpkgs";
   };
@@ -12,7 +12,10 @@
       (
         { pkgs, ... }:
         {
-          home.packages = [ inputs.ax.packages.${pkgs.stdenv.hostPlatform.system}.ax ];
+          # The input has its own pkgs; explicitly use our security-updated runtime.
+          home.packages = [
+            (inputs.ax.packages.${pkgs.stdenv.hostPlatform.system}.ax.override { inherit (pkgs) bun; })
+          ];
         }
       )
     ];

@@ -18,7 +18,6 @@ in
       key = "modules/features/agents/claude/default.nix#homeManager.agent-claude";
       imports = [
         hm.agents-base
-        hm.agent-hcom-contract
         hm.agent-herdr
       ];
       options.dotfiles.claude.settings = lib.mkOption {
