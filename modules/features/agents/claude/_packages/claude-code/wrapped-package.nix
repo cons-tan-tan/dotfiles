@@ -7,9 +7,7 @@
   writeShellApplication,
 }:
 let
-  # Home Manager also wraps Claude Code when plugins are enabled, so the
-  # wrapper keeps an absolute reference to its base executable for safe
-  # composition.
+  # Pin the base executable so wrappers added by consumers cannot recurse.
   wrapper = writeShellApplication {
     name = "claude";
     text = ''
@@ -27,5 +25,6 @@ symlinkJoin {
     rm "$out/bin/claude"
     ln -s ${wrapper}/bin/claude "$out/bin/claude"
   '';
-  inherit (claudeCode) meta;
+  # Home Manager selects personal plugins or the legacy wrapper by version.
+  inherit (claudeCode) meta version;
 }

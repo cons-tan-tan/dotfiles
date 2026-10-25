@@ -2,6 +2,7 @@
 let
   claudeFixture = pkgs.writeShellApplication {
     name = "claude";
+    derivationArgs.version = "2.1.157";
     text = ''
       : "''${TEST_TMPDIR:?}"
       printf 'path:%s\n' "$PATH" >"$TEST_TMPDIR/result"

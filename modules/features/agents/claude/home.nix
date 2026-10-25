@@ -86,9 +86,7 @@
       programs.claude-code = {
         enable = true;
         package = pkgs.dotfilesPackages.claude-code.package;
-        plugins = [
-          "${inputs.codex-plugin-cc}/plugins/codex"
-        ];
+        plugins.codex = "${inputs.codex-plugin-cc}/plugins/codex";
         # settings は指定しない: settings = { } なら HM モジュールは settings.json を
         # 書かないので、build 時マージ結果 (mergedSettingsFile) を home.file で置ける。
       };
