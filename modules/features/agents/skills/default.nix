@@ -26,6 +26,10 @@ in
     url = "github:shadcn/improve";
     flake = false;
   };
+  flake-file.inputs.yomiyasu = {
+    url = "github:nanaism/yomiyasu";
+    flake = false;
+  };
 
   flake.modules.homeManager.agent-skills-external = {
     key = "modules/features/agents/skills/default.nix#homeManager.agent-skills-external";

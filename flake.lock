@@ -770,7 +770,8 @@
         ],
         "rustsec-advisory-db": "rustsec-advisory-db",
         "supported-systems": "supported-systems",
-        "treefmt-nix": "treefmt-nix_3"
+        "treefmt-nix": "treefmt-nix_3",
+        "yomiyasu": "yomiyasu"
       }
     },
     "rustsec-advisory-db": {
@@ -905,6 +906,22 @@
       "original": {
         "owner": "numtide",
         "repo": "treefmt-nix",
+        "type": "github"
+      }
+    },
+    "yomiyasu": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1792893890,
+        "narHash": "sha256-c9TO0gJS+xKCMh5ZNGA0jddwR66Ud15eJxQU3VduvRY=",
+        "owner": "nanaism",
+        "repo": "yomiyasu",
+        "rev": "552c12c472ddfb79e2ee7a15219847782686a945",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nanaism",
+        "repo": "yomiyasu",
         "type": "github"
       }
     }

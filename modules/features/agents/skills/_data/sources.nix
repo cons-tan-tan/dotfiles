@@ -5,6 +5,7 @@ let
   inherit (inputs)
     anthropic-skills
     improve-skill
+    yomiyasu
     ;
 in
 {
@@ -14,5 +15,9 @@ in
 
   improve = {
     root = improve-skill.outPath + "/skills/improve";
+  };
+
+  yomiyasu = {
+    root = yomiyasu.outPath + "/skills/yomiyasu";
   };
 }

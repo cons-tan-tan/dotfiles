@@ -140,5 +140,9 @@
       url = "github:numtide/treefmt-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    yomiyasu = {
+      url = "github:nanaism/yomiyasu";
+      flake = false;
+    };
   };
 }
