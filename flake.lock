@@ -506,6 +506,22 @@
         "type": "github"
       }
     },
+    "imozuru": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1793019185,
+        "narHash": "sha256-vtsFovyEFa76PBjf9vExV2ewXzd/FCvtIac4xDw2c4c=",
+        "owner": "MaryCache",
+        "repo": "imozuru",
+        "rev": "659f46cdd25a4f969193642b9f368859a16ae0af",
+        "type": "github"
+      },
+      "original": {
+        "owner": "MaryCache",
+        "repo": "imozuru",
+        "type": "github"
+      }
+    },
     "import-tree": {
       "locked": {
         "lastModified": 1778781969,
@@ -757,6 +773,7 @@
         "flake-parts": "flake-parts_2",
         "home-manager": "home-manager",
         "hunk": "hunk",
+        "imozuru": "imozuru",
         "import-tree": "import-tree",
         "improve-skill": "improve-skill",
         "llm-agents": "llm-agents",

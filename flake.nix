@@ -110,6 +110,10 @@
         nixpkgs.follows = "nixpkgs";
       };
     };
+    imozuru = {
+      url = "github:MaryCache/imozuru";
+      flake = false;
+    };
     import-tree.url = "github:vic/import-tree/v0.2.0";
     improve-skill = {
       url = "github:shadcn/improve";

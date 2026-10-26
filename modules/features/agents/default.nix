@@ -17,6 +17,7 @@
       config.flake.modules.homeManager.agent-difit
       config.flake.modules.homeManager.agent-herdr
       config.flake.modules.homeManager.agent-hunk
+      config.flake.modules.homeManager.agent-imozuru
       config.flake.modules.homeManager.agent-pi
       config.flake.modules.homeManager.agent-slack
     ];
