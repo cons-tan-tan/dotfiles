@@ -24,6 +24,7 @@ in
               excludes = [
                 "nix.md"
                 "nix.md.license"
+                "python.md"
                 "tools.md"
                 "tools.md.license"
                 "web-fetch.md"
