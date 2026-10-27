@@ -4,6 +4,7 @@
     key = "modules/features/home-base.nix#homeManager.home-base";
     home = {
       stateVersion = "24.11";
+      sessionVariables.TZ = "Asia/Tokyo";
 
       # home-manager and nixpkgs both follow the same unstable input, so the
       # release mismatch check remains useful.
