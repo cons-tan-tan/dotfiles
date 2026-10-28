@@ -113,6 +113,15 @@ fn normal_protocol_returns_typed_hooks_and_reaps_a_lingering_child() {
 }
 
 #[test]
+fn a_server_exiting_after_its_response_still_returns_hooks() {
+    for _ in 0..16 {
+        let (fixture, result) = fetch("exit-after-response");
+        assert_eq!(result.unwrap().data.len(), 1);
+        assert_reaped(fixture.pid());
+    }
+}
+
+#[test]
 fn pipe_holding_grandchild_is_terminated_with_the_app_server_group() {
     let (fixture, result) = fetch("grandchild-pipe-holder");
     assert_eq!(result.unwrap().data.len(), 1);

@@ -174,6 +174,16 @@ impl ManagedProcess {
             }
         };
 
+        // The first EPERM retry can still race with a shell waiting for its
+        // last subprocess. The leader has now been fully reaped, so check the
+        // group again before reporting a permission failure.
+        let group_error = match group_error {
+            Some(error) if error.raw_os_error() == Some(libc::EPERM) => {
+                signal_process_group(self.child.id()).err()
+            }
+            error => error,
+        };
+
         // A bounded stdout queue can leave the reader blocked in send. Drop
         // the receiver only after the process group is gone. Bound the joins
         // too, because a descendant can deliberately leave the group while
@@ -184,7 +194,7 @@ impl ManagedProcess {
         join_reader("stderr", self.stderr_thread.take(), READER_JOIN_TIMEOUT)?;
         if let Some(error) = group_error {
             return Err(AppError::new(format!(
-                "agent-config-helper: cannot terminate codex app-server process group: {error}"
+                "agent-config-helper: cannot terminate codex app-server process group: {error}; child_status={status}"
             )));
         }
         let tail = self

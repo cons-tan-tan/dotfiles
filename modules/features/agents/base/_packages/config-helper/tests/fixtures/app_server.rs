@@ -185,6 +185,10 @@ fn main() {
         write_json(&mut output, &response);
     }
 
+    if mode == "exit-after-response" {
+        return;
+    }
+
     // The client owns lifecycle termination. Remaining alive after a valid
     // response proves that it closes, kills, and waits instead of relying on
     // natural fixture exit.
