@@ -333,7 +333,7 @@ YAML
     and .inputs."filter-drv-closures".default == "false"
     and .inputs."wait-manifest-version".default == "0"
     and .outputs."nix-extra-substituters".value
-      == "https://cache.numtide.com https://nix-community.cachix.org"
+      == "https://cache.numtide.com?priority=50 https://nix-community.cachix.org"
     and ([.runs.steps[] | .uses // "" | select(length > 0)
       | test("@[0-9a-f]{40}$")] | all)
     and ([.runs.steps[] | select(
@@ -697,7 +697,7 @@ YAML
   numtide_key=$(cache_setting numtideTrustedPublicKey)
   nix_community_substituter=$(cache_setting nixCommunitySubstituter)
   nix_community_key=$(cache_setting nixCommunityTrustedPublicKey)
-  expected_substituters="$numtide_substituter $nix_community_substituter"
+  expected_substituters="${numtide_substituter}?priority=50 $nix_community_substituter"
   expected_keys="$numtide_key $nix_community_key"
   expected_hestia_key_names="cache.nixos.org-1 ${numtide_key%%:*} ${nix_community_key%%:*}"
 

@@ -19,7 +19,7 @@ outputs:
   nix-extra-substituters:
     description: Public substituters configured while installing Nix
     value: >-
-      https://cache.numtide.com
+      https://cache.numtide.com?priority=50
       https://nix-community.cachix.org
   hestia-version:
     description: Hestia version started by this action
@@ -35,7 +35,8 @@ runs:
       with:
         enable_kvm: false
         nix_conf: |
-          extra-substituters = https://cache.numtide.com https://nix-community.cachix.org
+          # Numtide can stall on CI runners; prefer the official cache first.
+          extra-substituters = https://cache.numtide.com?priority=50 https://nix-community.cachix.org
           extra-trusted-public-keys = niks3.numtide.com-1:DTx8wZduET09hRmMtKdQDxNNthLQETkc/yaX7M4qK0g= nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
           # HTTP/2 cache transfers stalled until the 90-minute CI limit.
           http2 = false
