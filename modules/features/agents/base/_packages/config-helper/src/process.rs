@@ -147,10 +147,10 @@ impl ManagedProcess {
             Ok(Some(status)) => (
                 status,
                 false,
-                terminate_process_group(self.child.id()).err(),
+                terminate_process_group(&mut self.child).err(),
             ),
             Ok(None) => {
-                let group_error = terminate_process_group(self.child.id()).err();
+                let group_error = terminate_process_group(&mut self.child).err();
                 if group_error.is_some() {
                     let _ = self.child.kill();
                 }
@@ -165,7 +165,7 @@ impl ManagedProcess {
                 )
             }
             Err(error) => {
-                let _ = terminate_process_group(self.child.id());
+                let _ = terminate_process_group(&mut self.child);
                 let _ = self.child.kill();
                 let _ = self.child.wait();
                 return Err(AppError::new(format!(
@@ -202,7 +202,20 @@ impl ManagedProcess {
     }
 }
 
-fn terminate_process_group(child_id: u32) -> std::io::Result<()> {
+fn terminate_process_group(child: &mut Child) -> std::io::Result<()> {
+    match signal_process_group(child.id()) {
+        Err(error) if error.raw_os_error() == Some(libc::EPERM) => {
+            // Darwin can reject a group signal when its leader has exited but
+            // has not been reaped. Retry after reaping; a live descendant still
+            // receives the signal, and a genuine permission failure stays an error.
+            child.try_wait()?;
+            signal_process_group(child.id())
+        }
+        result => result,
+    }
+}
+
+fn signal_process_group(child_id: u32) -> std::io::Result<()> {
     // SAFETY: spawn places the child in a process group whose id is the child
     // pid. killpg targets only that dedicated group.
     if unsafe { libc::killpg(child_id as libc::pid_t, libc::SIGKILL) } == 0 {
@@ -325,6 +338,34 @@ fn drain_stderr(mut stderr: impl Read, tail: &Arc<Mutex<VecDeque<u8>>>) {
 mod tests {
     use super::*;
     use std::io::Cursor;
+
+    #[test]
+    fn an_exited_unreaped_group_leader_can_be_terminated() {
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .arg("--list")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let mut information = std::mem::MaybeUninit::<libc::siginfo_t>::uninit();
+        // Keep the leader unreaped so Darwin's EPERM is exercised without a race.
+        // SAFETY: waitid only observes our child and writes into valid storage.
+        let observed = unsafe {
+            libc::waitid(
+                libc::P_PID,
+                child.id(),
+                information.as_mut_ptr(),
+                libc::WEXITED | libc::WNOWAIT,
+            )
+        };
+        let termination = terminate_process_group(&mut child);
+        let status = child.wait().unwrap();
+        assert_eq!(observed, 0);
+        assert!(termination.is_ok(), "{termination:?}");
+        assert!(status.success());
+    }
 
     #[test]
     fn stdout_reader_splits_coalesced_frames() {
