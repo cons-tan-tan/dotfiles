@@ -23,9 +23,15 @@
         dotfilesDir = lib.hasInfix "DOTFILES_DIR=${lib.escapeShellArg dotfilesSource}" claude.data;
         oldGeneration = lib.hasInfix "OLD_GEN_PATH=\"${oldGenExpansion}\"" claude.data;
       };
-      codexAfter = codex.after;
+      codex = {
+        after = codex.after;
+        stateAtActivation = lib.hasInfix "--state-generator " codex.data;
+        prebuiltState = lib.hasInfix "--payload " codex.data;
+        dryRunBoundary = lib.hasPrefix "run " codex.data;
+        configPath = lib.hasInfix (lib.escapeShellArg "${config.home.homeDirectory}/.codex/config.toml") codex.data;
+      };
     };
-  expected = _: {
+  expected = facts: {
     claude = {
       usesConfiguredPackage = true;
       personalPlugin = {
@@ -38,6 +44,12 @@
       dotfilesDir = true;
       oldGeneration = true;
     };
-    codexAfter = [ "linkGeneration" ];
+    codex = {
+      after = [ "linkGeneration" ];
+      stateAtActivation = lib.hasSuffix "-darwin" facts.system;
+      prebuiltState = !lib.hasSuffix "-darwin" facts.system;
+      dryRunBoundary = true;
+      configPath = true;
+    };
   };
 }

@@ -88,39 +88,16 @@
         }
       ];
 
-      managedHooksStatePayloadJson =
-        pkgs.runCommand "codex-managed-hooks-state-payload.json"
-          {
-            nativeBuildInputs = [ agentConfigHelper ];
-          }
-          ''
-            home="$NIX_BUILD_TOP/home"
-            mkdir -p "$home/.codex"
-            cp ${hooksJson} "$home/.codex/hooks.json"
-            printf '[features]\nhooks = true\n' > "$home/.codex/config.toml"
-
-            export HOME="$home"
-            export XDG_CONFIG_HOME="$home/.config"
-
-            ${lib.getExe agentConfigHelper} generate-managed-hook-state \
-              --codex-bin ${lib.escapeShellArg "${pkgs.codex}/bin/codex"} \
-              --manifest ${managedHookManifest} \
-              --hooks-json-path ${lib.escapeShellArg hooksJsonPath} \
-              > "$out"
-          '';
-
-      # helper には単一 payload を渡すため、Nix 管理設定と hook 生成設定をここで合成する。
-      mergePayloadJson =
-        pkgs.runCommand "codex-config-merge.json"
-          {
-            nativeBuildInputs = [ agentConfigHelper ];
-          }
-          ''
-            ${lib.getExe agentConfigHelper} codex merge-payloads \
-              ${baseMergePayloadJson} \
-              ${managedHooksStatePayloadJson} \
-              > "$out"
-          '';
+      hooksConfig = pkgs.callPackage ./_packages/hooks-config.nix {
+        inherit
+          agentConfigHelper
+          baseMergePayloadJson
+          codexSchema
+          hooksJson
+          hooksJsonPath
+          managedHookManifest
+          ;
+      };
 
       # 検証に使う schema は、実際に導入する Codex CLI と同じ source tag から取り出す。
       # developers.openai.com の live schema を直接固定すると、サイト更新だけで
@@ -168,25 +145,20 @@
         }
       ];
 
-      # programs.codex は config.toml を read-only symlink で置き Codex の動的書き込み
-      # ([projects]/[notice]/[tui]) を壊すため使わない。候補で検証してから mv するのは
-      # 検証を通った設定だけを本番に置く (落ちても本番を壊さない) ため。候補名を mktemp
-      # で一意にするのは固定名だと並行 switch が同じ候補を共有し TOCTOU になるため。
-      # サブシェル + set -e + trap は、後始末を他フラグメントへ漏らさず、検証失敗時に
-      # 本番へ mv させないため。
-      # linkGeneration が ~/.codex と管理対象 symlink を作った後に実行する。
-      # 既存ホームに依存すると、新規 NixOS-WSL の初回 activation で mktemp が失敗する。
+      # Keep config.toml writable for Codex's runtime-owned settings. Run the
+      # entire transaction through HM's dry-run boundary, after linkGeneration
+      # creates ~/.codex even on a first activation.
+      # Darwin app-server synchronizes CFPreferences, which Nix's build sandbox
+      # isolates. Generate state at activation there without relaxing the sandbox;
+      # Linux can retain a cached build-time payload from the same generator.
       home.activation.codexHooksConfig = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
-        (
-          set -e
-          candidate=$(${pkgs.coreutils}/bin/mktemp "${configPath}.hooks-XXXXXX")
-          trap '${pkgs.coreutils}/bin/rm -f "$candidate"' EXIT
-          run ${lib.getExe agentConfigHelper} merge \
-            "${configPath}" "${mergePayloadJson}" "$candidate"
-          run ${pkgs.taplo}/bin/taplo check "$candidate"
-          run ${pkgs.taplo}/bin/taplo check --schema "file://${codexSchema}" "$candidate"
-          run ${pkgs.coreutils}/bin/mv -f "$candidate" "${configPath}"
-        )
+        run ${lib.getExe hooksConfig.reconcile} ${lib.escapeShellArg configPath} \
+          ${
+            if pkgs.stdenv.hostPlatform.isDarwin then
+              "--state-generator ${lib.escapeShellArg (lib.getExe hooksConfig.generateState)}"
+            else
+              "--payload ${lib.escapeShellArg hooksConfig.mergePayload}"
+          }
       '';
     };
 }
