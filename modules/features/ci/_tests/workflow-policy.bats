@@ -708,14 +708,16 @@ YAML
     yq -e '
       ([.runs.steps[] | select(
         (.uses // "") | test("^nixbuild/nix-quick-install-action@")
-      )][0].with.nix_conf | split("\n") | map(select(. != "")))
+      )][0].with.nix_conf | split("\n")
+        | map(select(. != "" and (test("^#") | not))))
         as $nix_conf_lines
       | [
-        (($nix_conf_lines | length) == 2),
+        (($nix_conf_lines | length) == 3),
         ($nix_conf_lines[0]
           == "extra-substituters = " + strenv(EXPECTED_SUBSTITUTERS)),
         ($nix_conf_lines[1]
           == "extra-trusted-public-keys = " + strenv(EXPECTED_KEYS)),
+        ($nix_conf_lines[2] == "http2 = false"),
         (.outputs."nix-extra-substituters".value
           == strenv(EXPECTED_SUBSTITUTERS)),
         (([.runs.steps[] | select(
