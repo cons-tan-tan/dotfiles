@@ -28,7 +28,7 @@ Create small, independently revertible Conventional Commits.
 
    Split through the index without rewriting working-tree files: stage selected hunks with `git apply --cached -v`, or a whole file with `git add <path>`. Do not use interactive staging, catch-all commands such as `git add -A` or `git add .`, or `git commit -a`/`-am`.
 
-4. Write a Conventional Commit message with a concise, imperative subject. Follow user and repository language requirements; otherwise match representative recent commits. Follow existing Conventional Commit subject conventions, and use a scope only when requested or customary in the repository.
+4. Write a Conventional Commit message with a concise, imperative subject. Write the subject and body in English unless the user or repository instructions explicitly specify another language for commit messages. Do not infer the message language from the conversation or recent commits. Follow existing Conventional Commit subject conventions, and use a scope only when requested or customary in the repository.
 
    When the subject and diff leave important reasons, constraints, tradeoffs, or impact unstated, explain them in a concise body. Decide body presence from the change, not recent commit lengths. Wrap body prose at 72 characters. For multiline messages, use `git commit --file -` with stdin to preserve actual line breaks.
 
