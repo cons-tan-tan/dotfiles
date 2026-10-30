@@ -22,9 +22,19 @@ Apply these rules when revising generated PR text as well. Preserve code and tec
 Use these format defaults, overriding only the fields explicitly prescribed by the user or repository (including required PR templates):
 
 - Use the `commit` skill's Conventional Commit syntax and subject style for the PR title; the PR language rules above govern its description. Keep the prefix in English.
-- Use English H2 labels for sections that help review: `## Summary`, `## What Changed`, `## Why`, `## Testing`, and `## Related Issues`. Keep additional headings and subheadings in English too. A prose language request does not change the prefix or heading labels.
+- When sections help review, use English H2 labels and keep any subheadings in English too. A prose language request does not change the prefix or heading labels.
 
 Example titles: English `feat(agents): clarify PR language selection`; Japanese `feat(agents): PR の言語選択を明確にする`.
+
+## PR Body
+
+The body should reduce a reviewer's effort to understand and assess the change. Write for someone who has not seen the conversation, leading with the problem or motivation and the resulting behavior. A short paragraph often suffices for a focused change.
+
+Keep a detail only if it helps reviewers judge the approach, focus their attention, or understand a non-obvious consequence. Summarize behavior and decisions; omit file-by-file inventories, implementation narration, and work logs already available in the diff and history. Add structure only where it makes review easier.
+
+Let GitHub checks communicate routine CI status. Include testing context when it affects review confidence beyond CI, such as a manual behavior check or an important verification gap. Explain what the evidence establishes or leaves uncertain; omit routine command inventories and copied CI results. Omit Testing when it adds no context unless a required template calls for it.
+
+Before publishing, remove repetition and details whose absence would not make review harder. Preserve context needed to judge correctness, compatibility, or rollout.
 
 ## Workflow
 
@@ -38,8 +48,7 @@ Example titles: English `feat(agents): clarify PR language selection`; Japanese 
 
 5. Prepare a PR title and body proportional to the change:
 
-   - Apply PR Language and Format above. Explain what changed and why; a short paragraph is enough for a small focused change.
-   - Include Testing only when required by the template or when it adds useful review context beyond CI, such as a manual behavior check. Summarize outcomes; one aggregate test command and its result may suffice. Omit command inventories and duplicate local results for checks covered by CI. Base any CI status claims on observed CI results, and disclose verification gaps that affect review.
+   - Apply PR Language and Format and PR Body above, honoring required repository templates.
    - Use `--body-file` (file or stdin) for multiline bodies. Do not encode line breaks as literal `\n` sequences in `--body`.
 
 6. When visual evidence helps review and `gh pr create --help` lists `--attach`, attach real local screenshots or short videos. Prefer Markdown references to local paths in the body so alt text survives upload. For an existing PR, add media with `gh pr edit` or `gh pr comment`. See the [attachment documentation](https://gh.io/gh-attach).
