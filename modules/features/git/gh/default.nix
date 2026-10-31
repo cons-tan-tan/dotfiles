@@ -10,6 +10,7 @@
       ({ pkgs, ... }: {
         programs.gh = {
           enable = true;
+          settings.expiring_credentials = "enabled";
           gitCredentialHelper.enable = true;
           extensions = [
             pkgs.dotfilesPackages.gh-api-get
