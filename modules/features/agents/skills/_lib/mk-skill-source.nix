@@ -11,9 +11,7 @@ let
       ./render-skill.nix
       ./skill-policy.nix
       ./yaml-frontmatter.nix
-      ./codex-invocation-policy.nix
       ../_data/policy.nix
-      ../_data/codex-invocation-policy.nix
     ];
   };
 in
@@ -37,7 +35,10 @@ pkgs.runCommandLocal "skill-${name}"
     inherit manifest;
     passAsFile = [ "manifest" ];
     skillRoot = definition.root;
-    nativeBuildInputs = [ (lib.getBin pkgs.buildPackages.nix) ];
+    nativeBuildInputs = [
+      (lib.getBin pkgs.buildPackages.nix)
+      pkgs.buildPackages.yq-go
+    ];
   }
   ''
     set -euo pipefail
@@ -56,9 +57,17 @@ pkgs.runCommandLocal "skill-${name}"
       --argstr manifestPath "$manifestPath" \
       --argstr libPath ${libPath} \
       --argstr policyPath ${compilerPath}/_data/policy.nix \
-      --argstr skillPolicyPath ${compilerPath}/_lib/skill-policy.nix \
-      --argstr codexInvocationPolicyPath ${compilerPath}/_lib/codex-invocation-policy.nix
+      --argstr skillPolicyPath ${compilerPath}/_lib/skill-policy.nix
 
     cp -rL --no-preserve=mode "$skillRoot" "$out"
     cp -rL --no-preserve=mode "$rendered/." "$out/"
+    ${lib.optionalString (customization.disableAutomaticInvocation or false) ''
+      mkdir -p "$out/agents"
+      touch "$out/agents/openai.yaml"
+      # Codex does not expand YAML merge keys. Resolve aliases before replacing
+      # policy so shared anchors keep their original values elsewhere.
+      yq --yaml-fix-merge-anchor-to-spec=true -i \
+        'explode(.) | . + {"policy": ((.policy // {}) * {"allow_implicit_invocation": false})}' \
+        "$out/agents/openai.yaml"
+    ''}
   ''

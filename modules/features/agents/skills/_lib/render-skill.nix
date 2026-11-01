@@ -1,5 +1,4 @@
 {
-  codexInvocationPolicyPath,
   libPath,
   manifestPath,
   policyPath,
@@ -9,7 +8,6 @@ let
   lib = import libPath;
   manifest = builtins.fromJSON (builtins.readFile manifestPath);
   inherit (import skillPolicyPath { inherit lib; }) prepareSkill;
-  inherit (import codexInvocationPolicyPath { inherit lib; }) disableCodexImplicitInvocation;
   inherit (import policyPath { inherit lib; }) defaultInheritedFrontmatterFields;
   body = manifest.body or null;
   bodyTransform =
@@ -37,16 +35,9 @@ let
     inherit customization;
     defaultInheritedFields = defaultInheritedFrontmatterFields;
   } (builtins.readFile (manifest.root + "/SKILL.md"));
-  sourceOpenaiYamlPath = manifest.root + "/agents/openai.yaml";
-  openaiYaml = disableCodexImplicitInvocation (
-    if builtins.pathExists sourceOpenaiYamlPath then builtins.readFile sourceOpenaiYamlPath else ""
-  );
 in
 {
   output = {
     "SKILL.md" = prepared.skillMd;
-  }
-  // lib.optionalAttrs prepared.disableAutomaticInvocation {
-    agents."openai.yaml" = openaiYaml;
   };
 }
