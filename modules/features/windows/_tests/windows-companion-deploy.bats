@@ -113,6 +113,10 @@ assert_no_stages() {
 @test "restores the existing tree when publication fails" {
   mkdir -p "$ROOT/.local/share/tool" "$SOURCE/tree"
   printf 'existing\n' >"$ROOT/.local/share/tool/keep"
+  ln -s keep "$ROOT/.local/share/tool/link"
+  ln -s missing "$ROOT/.local/share/tool/dangling"
+  chmod 400 "$ROOT/.local/share/tool/keep"
+  chmod 500 "$ROOT/.local/share/tool"
   printf 'replacement\n' >"$SOURCE/tree/keep"
   trees=$(jq -nc --arg source "$SOURCE/tree" \
     '[{source: $source, destination: ".local/share/tool", excludes: []}]')
@@ -122,12 +126,20 @@ assert_no_stages() {
   run "$WINDOWS_COMPANION_DEPLOY_TEST_BIN" "$MANIFEST"
   [ "$status" -eq 1 ]
   [ "$(cat "$ROOT/.local/share/tool/keep")" = existing ]
+  [ "$(readlink "$ROOT/.local/share/tool/link")" = keep ]
+  [ "$(readlink "$ROOT/.local/share/tool/dangling")" = missing ]
+  [ "$(stat -c '%a' "$ROOT/.local/share/tool/keep")" = 400 ]
+  [ "$(stat -c '%a' "$ROOT/.local/share/tool")" = 500 ]
   assert_no_stages
 }
 
 @test "restores the existing tree when interrupted immediately after publication" {
   mkdir -p "$ROOT/.local/share/tool" "$SOURCE/tree"
   printf 'existing\n' >"$ROOT/.local/share/tool/keep"
+  ln -s keep "$ROOT/.local/share/tool/link"
+  ln -s missing "$ROOT/.local/share/tool/dangling"
+  chmod 400 "$ROOT/.local/share/tool/keep"
+  chmod 500 "$ROOT/.local/share/tool"
   printf 'replacement\n' >"$SOURCE/tree/keep"
   trees=$(jq -nc --arg source "$SOURCE/tree" \
     '[{source: $source, destination: ".local/share/tool", excludes: []}]')
@@ -137,6 +149,10 @@ assert_no_stages() {
   run "$WINDOWS_COMPANION_DEPLOY_TEST_BIN" "$MANIFEST"
   [ "$status" -eq 143 ]
   [ "$(cat "$ROOT/.local/share/tool/keep")" = existing ]
+  [ "$(readlink "$ROOT/.local/share/tool/link")" = keep ]
+  [ "$(readlink "$ROOT/.local/share/tool/dangling")" = missing ]
+  [ "$(stat -c '%a' "$ROOT/.local/share/tool/keep")" = 400 ]
+  [ "$(stat -c '%a' "$ROOT/.local/share/tool")" = 500 ]
   assert_no_stages
 }
 

@@ -48,7 +48,7 @@ cleanup_active_stage() {
     if ((rollback_remove_target)); then
       remove_tree "$rollback_target"
     elif [[ -n $rollback_source && -d $rollback_source ]]; then
-      if ! chmod -R u+w -- "$rollback_target" || ! "$rsync_bin" -aLc --chmod=u+w --delete --delay-updates -- "$rollback_source/" "$rollback_target/"; then
+      if ! chmod -R u+w -- "$rollback_target" || ! "$rsync_bin" -ac --delete --delay-updates -- "$rollback_source/" "$rollback_target/"; then
         echo "windows-companion-deploy: rollback failed; recovery snapshot kept at $rollback_source" >&2
         restored=0
         status=1
@@ -167,7 +167,7 @@ while IFS= read -r encoded; do
   active_backup=$backup
   if [[ -e $target ]]; then
     mkdir -- "$backup/original"
-    if ! "$rsync_bin" -aL --chmod=u+w --delete -- "$target/" "$backup/original/"; then
+    if ! "$rsync_bin" -a --delete -- "$target/" "$backup/original/"; then
       exit 1
     fi
     rollback_source="$backup/original"
