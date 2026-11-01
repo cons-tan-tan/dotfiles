@@ -56,12 +56,16 @@ impl ValidatedPolicy {
         ids
     }
 
-    pub fn shellfirm_matches(&self, projection: &Projection, cwd: &Path) -> Vec<ShellfirmMatch> {
+    pub fn shellfirm_matches(
+        &self,
+        projection: &Projection,
+        cwd: Option<&Path>,
+    ) -> Vec<ShellfirmMatch> {
         if self.selected_checks.is_empty() {
             return Vec::new();
         }
         let env = GuardEnvironment {
-            cwd: cwd.to_path_buf(),
+            cwd: cwd.map(Path::to_path_buf),
         };
         let mut matches = Vec::new();
         for check in &self.selected_checks {
@@ -188,7 +192,7 @@ fn is_selected(policy: &ShellfirmPolicy, meta: CatalogMeta<'_>) -> bool {
 }
 
 struct GuardEnvironment {
-    cwd: PathBuf,
+    cwd: Option<PathBuf>,
 }
 
 impl Environment for GuardEnvironment {
@@ -197,14 +201,19 @@ impl Environment for GuardEnvironment {
     }
 
     fn current_dir(&self) -> shellfirm::error::Result<PathBuf> {
-        Ok(self.cwd.clone())
+        self.cwd.clone().ok_or_else(|| {
+            shellfirm::error::Error::Other("the shell working directory may change".to_owned())
+        })
     }
 
     fn path_exists(&self, path: &Path) -> bool {
         let path = if path.is_absolute() {
             path.to_path_buf()
         } else {
-            self.cwd.join(path)
+            let Some(cwd) = &self.cwd else {
+                return true;
+            };
+            cwd.join(path)
         };
         path.exists()
     }

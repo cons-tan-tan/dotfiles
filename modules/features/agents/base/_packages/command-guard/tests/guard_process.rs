@@ -557,6 +557,23 @@ fn empty_file_redirection_only_blocks_explicit_emptying_of_existing_files() {
     for command in [
         "> existing",
         ": > existing",
+        "true && : > existing",
+        "true | : > existing",
+        "! true > existing",
+        "{ :; } > existing",
+        "{ :; :; } > existing",
+        "{ : \"$(printf text)\"; } > existing",
+        "{ : <(printf text); } > existing",
+        "{ value=$(printf text); :; } > existing",
+        "(: \"$(printf text)\") > existing",
+        "true && { : \"$(printf text)\"; } > existing",
+        "{ : \"$(printf text >&2)\"; } > existing 2> absent",
+        "(true; :) > existing",
+        "{ (true); } > existing",
+        "true && { :; } > existing",
+        "true | { :; } > existing",
+        "! (true) > existing",
+        "{ printf ''; } > existing-link",
         "true 2> existing",
         "exec > existing",
         "cat /dev/null > existing",
@@ -581,6 +598,24 @@ fn empty_file_redirection_only_blocks_explicit_emptying_of_existing_files() {
         assert_denied(&output, "Emptying an existing file");
     }
     for command in [
+        "{ printf text; } > existing",
+        "{ printf text; :; } > existing",
+        "{ printf text && :; } > existing",
+        "{ printf '%s' \"$(printf text)\"; :; } > existing",
+        "{ : >(printf text); } > existing",
+        "{ : \"$(printf text >&2)\"; } 2> existing",
+        "{ : \"$(printf text >&2)\"; } &> existing",
+        "{ : \"$(printf text >&2)\"; } > existing 2>&1",
+        "{ : <(printf text >&2); } 2> existing",
+        "(printf text; :) > existing",
+        "true && { printf text; :; } > existing",
+        "{ :; } > absent",
+        "{ :; } >> existing",
+        "{ :; } > /dev/null",
+    ] {
+        assert_safe(&fixture.run(command));
+    }
+    for command in [
         "command 2>/dev/null",
         "command 2> /dev/null",
         "printf value > existing",
@@ -595,6 +630,85 @@ fn empty_file_redirection_only_blocks_explicit_emptying_of_existing_files() {
         assert_safe(&fixture.run(command));
     }
     assert_denied(&fixture.run("> \"$TARGET\""), "dynamic destination");
+    assert_denied(
+        &fixture.run("{ : \"$(danger)\"; } > absent"),
+        "exact test command",
+    );
+}
+
+#[test]
+fn empty_file_checks_respect_child_directories_and_reject_unknown_shell_directories() {
+    let fixture = Fixture::new();
+    let directory = fixture._directory.path().join("nested");
+    fs::create_dir(&directory).unwrap();
+    fs::write(directory.join("existing"), "content").unwrap();
+    for command in [
+        "cd nested && : > existing",
+        "cd nested && > existing",
+        "builtin cd nested; : > existing",
+        "command -p cd nested; : > existing",
+        "pushd nested; : > existing",
+        "eval 'cd nested'; : > existing",
+        "f() { cd nested; }; f; : > existing",
+        "(cd nested && : > existing)",
+        "cd nested && bash -c ': > existing'",
+        "sudo --chdir=nested bash -c ': > existing'",
+        "sudo -Dnested bash -c ': > existing'",
+        "fd --base-directory nested -x bash -c ': > existing'",
+        "find nested -execdir bash -c ': > existing' \\;",
+    ] {
+        let output = fixture.run(command);
+        assert_eq!(
+            output["hookSpecificOutput"]["permissionDecision"], "deny",
+            "{command}"
+        );
+        assert_denied(&output, "working directory may change");
+    }
+    for command in [
+        "env --chdir=nested bash -c ': > existing'",
+        "env --chdir nested bash -c ': > existing'",
+        "env -C nested bash -c ': > existing'",
+        "env -Cnested bash -c ': > existing'",
+        "env -C nested env -C . bash -c ': > existing'",
+        "env -C nested true > nested/existing",
+        "env -Cnested true > nested/existing",
+    ] {
+        let output = fixture.run(command);
+        assert_eq!(
+            output["hookSpecificOutput"]["permissionDecision"], "deny",
+            "{command}"
+        );
+        assert_denied(&output, "Emptying an existing file");
+    }
+    for command in [
+        "cd nested && printf value",
+        "cd nested && : > /dev/null",
+        "env -C nested true > existing",
+        "env -Cnested true > existing",
+        "env -C nested bash -c ': > new-file'",
+        "env bash -c ': > existing'",
+    ] {
+        assert_safe(&fixture.run(command));
+    }
+    let absolute = directory.join("existing");
+    assert_denied(
+        &fixture.run(&format!(
+            "env --chdir='{}' bash -c ': > existing'",
+            directory.display()
+        )),
+        "Emptying an existing file",
+    );
+    assert_safe(&fixture.run(&format!(
+        "cd nested; env --chdir='{}' bash -c ': > new-file'",
+        directory.display()
+    )));
+    assert_denied(
+        &fixture.run(&format!("cd nested && : > '{}'", absolute.display())),
+        "Emptying an existing file",
+    );
+    assert_eq!(fs::read_to_string(absolute).unwrap(), "content");
+    assert!(!directory.join("new-file").exists());
+    assert!(!fixture._directory.path().join("existing").exists());
 }
 
 #[test]

@@ -69,7 +69,7 @@ pub fn assess(input: &HookInput, policy: &ValidatedPolicy) -> Decision {
         validated: policy,
         remaining_sources: 1024,
     };
-    match assess_source(input.command(), input.cwd(), &mut assessment, 0) {
+    match assess_source(input.command(), Some(input.cwd()), &mut assessment, 0) {
         Ok(findings) if findings.is_empty() => Decision::Safe,
         Ok(findings) if has_deny_findings(&findings) => Decision::Deny {
             reason: render_findings(&findings, FindingKind::Deny),
@@ -87,7 +87,7 @@ pub fn assess(input: &HookInput, policy: &ValidatedPolicy) -> Decision {
 
 fn assess_source(
     source: &str,
-    cwd: &Path,
+    cwd: Option<&Path>,
     assessment: &mut Assessment<'_>,
     depth: usize,
 ) -> Result<Vec<Finding>> {
@@ -96,7 +96,7 @@ fn assess_source(
 
 fn assess_source_with_functions(
     source: &str,
-    cwd: &Path,
+    cwd: Option<&Path>,
     assessment: &mut Assessment<'_>,
     depth: usize,
     inherited_functions: &[FunctionDefinition],
@@ -148,13 +148,25 @@ fn assess_source_with_functions(
 
 fn assess_parsed(
     parsed: &ParsedShell,
-    cwd: &Path,
+    cwd: Option<&Path>,
     assessment: &mut Assessment<'_>,
     depth: usize,
     scopes: FunctionScopes<'_>,
 ) -> Result<Vec<Finding>> {
     let validated = assessment.validated;
     let mut findings = Vec::new();
+    // shortcut: cwd is unknown across shell control flow; track it when relative destinations must be supported.
+    let mut cwd = cwd;
+    for command in &parsed.commands {
+        if may_change_directory(
+            command,
+            scopes.immediate,
+            validated.policy.unknown.max_decode_depth,
+        )? {
+            cwd = None;
+            break;
+        }
+    }
     if let Some(variable) = parsed
         .assignment_names
         .iter()
@@ -227,9 +239,35 @@ fn assess_parsed(
     Ok(findings)
 }
 
+fn may_change_directory(
+    command: &SimpleCommand,
+    functions: &[FunctionDefinition],
+    max_depth: usize,
+) -> Result<bool> {
+    let mut command = command.clone();
+    for _ in 0..=max_depth {
+        let Some(executable) = command.words.first().and_then(Word::static_value) else {
+            return Ok(false);
+        };
+        let inner = match executable {
+            "cd" | "pushd" | "popd" | "eval" | "trap" => return Ok(true),
+            "command" => unwrap_command_builtin(&command.words[1..])?,
+            "builtin" => unwrap_builtin(&command.words[1..])?,
+            _ => return Ok(functions.iter().any(|function| function.name == executable)),
+        };
+        let Some(inner) = inner else {
+            return Ok(false);
+        };
+        command = inner;
+    }
+    Err(GuardError::Policy(
+        "directory-state launcher decoding exceeded maxDecodeDepth".to_owned(),
+    ))
+}
+
 fn assess_simple(
     command: &SimpleCommand,
-    cwd: &Path,
+    cwd: Option<&Path>,
     assessment: &mut Assessment<'_>,
     depth: usize,
     context: ExecutionContext,
@@ -347,10 +385,17 @@ fn assess_simple(
             return Ok(());
         }
         "env" => {
-            if let Some(inner) = unwrap_env(&command.words[1..])? {
+            if let Some((inner, directory)) = unwrap_env(&command.words[1..])? {
+                let child_cwd = match directory {
+                    Some(directory) if Path::new(&directory).is_absolute() => {
+                        Some(directory.into())
+                    }
+                    Some(directory) => cwd.map(|cwd| cwd.join(directory)),
+                    None => cwd.map(Path::to_path_buf),
+                };
                 assess_simple(
                     &inner,
-                    cwd,
+                    child_cwd.as_deref(),
                     assessment,
                     depth + 1,
                     ExecutionContext::External,
@@ -366,7 +411,7 @@ fn assess_simple(
                 SudoInvocation::Command(inner) => {
                     assess_simple(
                         &inner,
-                        cwd,
+                        None,
                         assessment,
                         depth + 1,
                         ExecutionContext::External,
@@ -375,7 +420,7 @@ fn assess_simple(
                     )?;
                 }
                 SudoInvocation::ShellSource(source) => {
-                    findings.extend(assess_source(&source, cwd, assessment, depth + 1)?);
+                    findings.extend(assess_source(&source, None, assessment, depth + 1)?);
                 }
             }
             return Ok(());
@@ -559,7 +604,7 @@ fn assess_simple(
             for inner in unwrap_fd(&command.words[1..], grammar)? {
                 assess_simple(
                     &inner,
-                    cwd,
+                    None,
                     assessment,
                     depth + 1,
                     ExecutionContext::External,
@@ -586,7 +631,7 @@ fn assess_simple(
             for inner in find_exec_commands(&command.words[1..])? {
                 assess_simple(
                     &inner,
-                    cwd,
+                    None,
                     assessment,
                     depth + 1,
                     ExecutionContext::External,
@@ -763,7 +808,7 @@ fn normalize_pipeline_command(
             .transpose()
             .map(Option::flatten),
         "env" => unwrap_env(&command.words[1..])?
-            .map(|inner| {
+            .map(|(inner, _)| {
                 normalize_pipeline_command(
                     &inner,
                     depth + 1,
@@ -1081,12 +1126,15 @@ fn unwrap_builtin(words: &[Word]) -> Result<Option<SimpleCommand>> {
         name,
         "." | "alias"
             | "builtin"
+            | "cd"
             | "command"
             | "declare"
             | "eval"
             | "exec"
             | "export"
             | "local"
+            | "popd"
+            | "pushd"
             | "readonly"
             | "set"
             | "shopt"
@@ -1225,10 +1273,11 @@ fn allexport_error() -> GuardError {
     )
 }
 
-fn unwrap_env(words: &[Word]) -> Result<Option<SimpleCommand>> {
-    let value_options = BTreeSet::from(["-u", "--unset", "-C", "--chdir"]);
+fn unwrap_env(words: &[Word]) -> Result<Option<(SimpleCommand, Option<String>)>> {
+    let value_options = BTreeSet::from(["-u", "--unset"]);
     let flag_options = BTreeSet::from(["-i", "--ignore-environment", "-0", "--null", "--debug"]);
     let mut index = 0;
+    let mut directory = None;
     while let Some(word) = words.get(index) {
         let value = static_word(word, "env option or executable")?;
         if value == "--" {
@@ -1240,10 +1289,20 @@ fn unwrap_env(words: &[Word]) -> Result<Option<SimpleCommand>> {
                 "env --split-string is not decoded by the command guard".to_owned(),
             ));
         }
-        if flag_options.contains(value)
-            || value.starts_with("--unset=")
-            || value.starts_with("--chdir=")
+        if matches!(value, "-C" | "--chdir") {
+            directory = Some(require_static_value(words, index + 1, "env directory")?.to_owned());
+            index += 2;
+            continue;
+        }
+        if let Some(value) = value
+            .strip_prefix("--chdir=")
+            .or_else(|| value.strip_prefix("-C"))
         {
+            directory = Some(value.to_owned());
+            index += 1;
+            continue;
+        }
+        if flag_options.contains(value) || value.starts_with("--unset=") {
             index += 1;
             continue;
         }
@@ -1264,7 +1323,7 @@ fn unwrap_env(words: &[Word]) -> Result<Option<SimpleCommand>> {
         }
         break;
     }
-    Ok(synthetic_from(&words[index..]))
+    Ok(synthetic_from(&words[index..]).map(|command| (command, directory)))
 }
 
 fn unwrap_sudo(words: &[Word]) -> Result<SudoInvocation> {

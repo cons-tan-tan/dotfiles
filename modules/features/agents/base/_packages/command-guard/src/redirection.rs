@@ -13,13 +13,46 @@ pub(crate) struct RedirectionFinding {
 
 pub(crate) fn empty_file_findings(
     parsed: &ParsedShell,
-    cwd: &Path,
+    cwd: Option<&Path>,
     max_decode_depth: usize,
 ) -> Result<Vec<RedirectionFinding>> {
     let mut findings = Vec::new();
     for command in &parsed.commands {
         if explicitly_empties_file(command, 0, max_decode_depth)? {
             inspect_redirects(command.redirects(), cwd, &mut findings)?;
+        }
+    }
+    for group in &parsed.redirected_groups {
+        // shortcut: FD copies may route stderr to stdout; track descriptor order when finer output attribution is required.
+        let copies_descriptors = group
+            .redirects
+            .iter()
+            .any(|redirect| redirect.operator().contains(">&"));
+        for redirect in &group.redirects {
+            let stdout_only =
+                matches!(redirect.operator(), ">" | ">|" | "1>" | "1>|") && !copies_descriptors;
+            let mut empty = true;
+            for (source, stdout_captured) in &group.commands {
+                if stdout_only && *stdout_captured {
+                    continue;
+                }
+                let index = parsed
+                    .commands
+                    .binary_search_by_key(&(source.start, source.end), |command| {
+                        (command.source.start, command.source.end)
+                    })
+                    .map_err(|_| {
+                        GuardError::Parser("redirected group command was not collected".to_owned())
+                    })?;
+                let command = &parsed.commands[index];
+                if !explicitly_empties_file(command, 0, max_decode_depth)? {
+                    empty = false;
+                    break;
+                }
+            }
+            if empty {
+                inspect_redirects(std::slice::from_ref(redirect), cwd, &mut findings)?;
+            }
         }
     }
     inspect_redirects(&parsed.standalone_redirects, cwd, &mut findings)?;
@@ -138,6 +171,7 @@ fn env_empties_file(
             "-i" | "--ignore-environment" | "-0" | "--null" | "--debug"
         ) || value.starts_with("--unset=")
             || value.starts_with("--chdir=")
+            || value.starts_with("-C")
             || value.split_once('=').is_some_and(|(name, _)| {
                 !name.is_empty()
                     && name.chars().enumerate().all(|(position, character)| {
@@ -200,7 +234,7 @@ fn printf_empties_file(words: &[crate::shell::Word]) -> Result<bool> {
 
 fn inspect_redirects(
     redirects: &[Redirect],
-    cwd: &Path,
+    cwd: Option<&Path>,
     findings: &mut Vec<RedirectionFinding>,
 ) -> Result<()> {
     for redirect in redirects {
@@ -233,7 +267,9 @@ fn inspect_redirects(
         let resolved = if path.is_absolute() {
             path.to_path_buf()
         } else {
-            cwd.join(path)
+            cwd.ok_or_else(|| GuardError::Policy(
+                "the working directory may change before an empty-file redirection; use an absolute destination".to_owned(),
+            ))?.join(path)
         };
         match fs::metadata(&resolved) {
             Ok(metadata) if metadata.is_file() => findings.push(RedirectionFinding {

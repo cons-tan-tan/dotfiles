@@ -174,6 +174,13 @@ pub struct ParsedShell {
     pub functions: Vec<FunctionDefinition>,
     pub standalone_redirects: Vec<Redirect>,
     pub redirect_projections: Vec<Projection>,
+    pub(crate) redirected_groups: Vec<RedirectedGroup>,
+}
+
+#[derive(Debug)]
+pub(crate) struct RedirectedGroup {
+    pub commands: Vec<(Range<usize>, bool)>,
+    pub redirects: Vec<Redirect>,
 }
 
 #[derive(Default)]
@@ -184,6 +191,7 @@ struct CollectedShell {
     pipelines: Vec<Pipeline>,
     standalone_redirects: Vec<Redirect>,
     redirect_projections: Vec<Projection>,
+    redirected_groups: Vec<RedirectedGroup>,
 }
 
 #[derive(Debug, Clone)]
@@ -294,9 +302,17 @@ pub fn parse(source: &str) -> Result<ParsedShell> {
     collected
         .commands
         .sort_by_key(|command| (command.source.start, command.source.end));
-    collected
-        .commands
-        .dedup_by_key(|command| (command.source.start, command.source.end));
+    collected.commands.dedup_by(|duplicate, command| {
+        if duplicate.source != command.source {
+            return false;
+        }
+        command.redirects.append(&mut duplicate.redirects);
+        command
+            .redirects
+            .sort_by_key(|redirect| redirect.source.start);
+        command.redirects.dedup();
+        true
+    });
     collected.assignment_names.sort();
     collected.assignment_names.dedup();
     Ok(ParsedShell {
@@ -306,6 +322,7 @@ pub fn parse(source: &str) -> Result<ParsedShell> {
         pipelines: collected.pipelines,
         standalone_redirects: collected.standalone_redirects,
         redirect_projections: collected.redirect_projections,
+        redirected_groups: collected.redirected_groups,
     })
 }
 
@@ -344,17 +361,25 @@ fn walk(
             .map(|redirect| extract_redirect(redirect, source))
             .collect::<Result<Vec<_>>>()?;
         match node.child_by_field_name("body") {
-            Some(body)
-                if matches!(
-                    body.kind(),
-                    "command" | "declaration_command" | "unset_command"
-                ) =>
-            {
-                let mut command = extract_simple_command(body, source)?;
-                let mut redirects = redirects;
-                associate_named_descriptors(&mut command, &mut redirects, source);
-                command.redirects.extend(redirects);
-                collected.commands.push(command);
+            Some(body) if redirect_body(body).is_some() => {
+                let body = redirect_body(body).expect("the redirect has a supported body");
+                if matches!(body.kind(), "compound_statement" | "subshell") {
+                    let mut commands = Vec::new();
+                    collect_group_commands(body, false, &mut commands);
+                    collected
+                        .redirect_projections
+                        .extend(redirects.iter().map(Redirect::projection));
+                    collected.redirected_groups.push(RedirectedGroup {
+                        commands,
+                        redirects,
+                    });
+                } else {
+                    let mut command = extract_simple_command(body, source)?;
+                    let mut redirects = redirects;
+                    associate_named_descriptors(&mut command, &mut redirects, source);
+                    command.redirects.extend(redirects);
+                    collected.commands.push(command);
+                }
             }
             Some(_) => collected
                 .redirect_projections
@@ -391,6 +416,45 @@ fn walk(
         walk(child, source, inside_function, collected)?;
     }
     Ok(())
+}
+
+fn redirect_body(node: Node<'_>) -> Option<Node<'_>> {
+    match node.kind() {
+        "command" | "declaration_command" | "unset_command" | "compound_statement" | "subshell" => {
+            Some(node)
+        }
+        // tree-sitter can attach a trailing redirect to the entire list or pipeline.
+        "list" | "pipeline" | "negated_command" => node
+            .named_child(node.named_child_count().checked_sub(1)?)
+            .and_then(redirect_body),
+        "redirected_statement" => node.child_by_field_name("body").and_then(redirect_body),
+        _ => None,
+    }
+}
+
+fn collect_group_commands(
+    node: Node<'_>,
+    stdout_captured: bool,
+    commands: &mut Vec<(Range<usize>, bool)>,
+) {
+    if node.kind() == "function_definition" {
+        return;
+    }
+    // Captured stdout does not reach the group, but stderr and other descriptors can.
+    let stdout_captured = stdout_captured
+        || node.kind() == "command_substitution"
+        || (node.kind() == "process_substitution"
+            && node.child(0).is_some_and(|token| token.kind() == "<("));
+    if matches!(
+        node.kind(),
+        "command" | "declaration_command" | "unset_command"
+    ) {
+        commands.push((node.byte_range(), stdout_captured));
+    }
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        collect_group_commands(child, stdout_captured, commands);
+    }
 }
 
 fn extract_assignment_name(node: Node<'_>, source: &[u8]) -> Result<String> {
