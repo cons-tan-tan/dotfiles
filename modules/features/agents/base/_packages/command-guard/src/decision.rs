@@ -59,8 +59,17 @@ struct FunctionScopes<'a> {
     deferred: &'a [FunctionDefinition],
 }
 
+struct Assessment<'a> {
+    validated: &'a ValidatedPolicy,
+    remaining_sources: usize,
+}
+
 pub fn assess(input: &HookInput, policy: &ValidatedPolicy) -> Decision {
-    match assess_source(input.command(), input.cwd(), policy, 0) {
+    let mut assessment = Assessment {
+        validated: policy,
+        remaining_sources: 1024,
+    };
+    match assess_source(input.command(), input.cwd(), &mut assessment, 0) {
         Ok(findings) if findings.is_empty() => Decision::Safe,
         Ok(findings) if has_deny_findings(&findings) => Decision::Deny {
             reason: render_findings(&findings, FindingKind::Deny),
@@ -79,25 +88,31 @@ pub fn assess(input: &HookInput, policy: &ValidatedPolicy) -> Decision {
 fn assess_source(
     source: &str,
     cwd: &Path,
-    validated: &ValidatedPolicy,
+    assessment: &mut Assessment<'_>,
     depth: usize,
 ) -> Result<Vec<Finding>> {
-    assess_source_with_functions(source, cwd, validated, depth, &[], &[])
+    assess_source_with_functions(source, cwd, assessment, depth, &[], &[])
 }
 
 fn assess_source_with_functions(
     source: &str,
     cwd: &Path,
-    validated: &ValidatedPolicy,
+    assessment: &mut Assessment<'_>,
     depth: usize,
     inherited_functions: &[FunctionDefinition],
     deferred_functions: &[FunctionDefinition],
 ) -> Result<Vec<Finding>> {
+    let validated = assessment.validated;
     if depth > validated.policy.unknown.max_decode_depth {
         return Err(GuardError::Policy(
             "nested command decoding exceeded maxDecodeDepth".to_owned(),
         ));
     }
+    // Function and trap alternatives can branch exponentially within the depth limit.
+    assessment.remaining_sources =
+        assessment.remaining_sources.checked_sub(1).ok_or_else(|| {
+            GuardError::Policy("nested command decoding exceeded the analysis budget".to_owned())
+        })?;
     let parsed = shell::parse(source)?;
     let mut functions = inherited_functions
         .iter()
@@ -122,7 +137,7 @@ fn assess_source_with_functions(
     assess_parsed(
         &parsed,
         cwd,
-        validated,
+        assessment,
         depth,
         FunctionScopes {
             immediate: &functions,
@@ -134,10 +149,11 @@ fn assess_source_with_functions(
 fn assess_parsed(
     parsed: &ParsedShell,
     cwd: &Path,
-    validated: &ValidatedPolicy,
+    assessment: &mut Assessment<'_>,
     depth: usize,
     scopes: FunctionScopes<'_>,
 ) -> Result<Vec<Finding>> {
+    let validated = assessment.validated;
     let mut findings = Vec::new();
     if let Some(variable) = parsed
         .assignment_names
@@ -169,7 +185,7 @@ fn assess_parsed(
         if let Err(error) = assess_simple(
             command,
             cwd,
-            validated,
+            assessment,
             depth,
             ExecutionContext::Shell,
             scopes,
@@ -214,12 +230,13 @@ fn assess_parsed(
 fn assess_simple(
     command: &SimpleCommand,
     cwd: &Path,
-    validated: &ValidatedPolicy,
+    assessment: &mut Assessment<'_>,
     depth: usize,
     context: ExecutionContext,
     scopes: FunctionScopes<'_>,
     findings: &mut Vec<Finding>,
 ) -> Result<()> {
+    let validated = assessment.validated;
     if depth > validated.policy.unknown.max_decode_depth {
         return Err(GuardError::Policy(
             "nested command decoding exceeded maxDecodeDepth".to_owned(),
@@ -247,7 +264,7 @@ fn assess_simple(
         findings.extend(assess_source_with_functions(
             &function.body,
             cwd,
-            validated,
+            assessment,
             depth + 1,
             &scoped_functions,
             scopes.deferred,
@@ -292,7 +309,7 @@ fn assess_simple(
                 assess_simple(
                     &inner,
                     cwd,
-                    validated,
+                    assessment,
                     depth + 1,
                     ExecutionContext::ShellNoFunctions,
                     nested_scopes,
@@ -306,7 +323,7 @@ fn assess_simple(
                 assess_simple(
                     &inner,
                     cwd,
-                    validated,
+                    assessment,
                     depth + 1,
                     ExecutionContext::External,
                     nested_scopes,
@@ -320,7 +337,7 @@ fn assess_simple(
                 assess_simple(
                     &inner,
                     cwd,
-                    validated,
+                    assessment,
                     depth + 1,
                     ExecutionContext::ShellNoFunctions,
                     nested_scopes,
@@ -334,7 +351,7 @@ fn assess_simple(
                 assess_simple(
                     &inner,
                     cwd,
-                    validated,
+                    assessment,
                     depth + 1,
                     ExecutionContext::External,
                     nested_scopes,
@@ -350,7 +367,7 @@ fn assess_simple(
                     assess_simple(
                         &inner,
                         cwd,
-                        validated,
+                        assessment,
                         depth + 1,
                         ExecutionContext::External,
                         nested_scopes,
@@ -358,14 +375,14 @@ fn assess_simple(
                     )?;
                 }
                 SudoInvocation::ShellSource(source) => {
-                    findings.extend(assess_source(&source, cwd, validated, depth + 1)?);
+                    findings.extend(assess_source(&source, cwd, assessment, depth + 1)?);
                 }
             }
             return Ok(());
         }
         "bash" | "sh" | "dash" | "zsh" => {
             if let Some(source) = shell_source(&command.words[1..])? {
-                findings.extend(assess_source(&source, cwd, validated, depth + 1)?);
+                findings.extend(assess_source(&source, cwd, assessment, depth + 1)?);
             }
             return Ok(());
         }
@@ -383,7 +400,7 @@ fn assess_simple(
                     )
                 })?;
             if let Some(source) = nix_shell_source(&command.words[1..], grammar)? {
-                findings.extend(assess_source(&source, cwd, validated, depth + 1)?);
+                findings.extend(assess_source(&source, cwd, assessment, depth + 1)?);
             }
             return Ok(());
         }
@@ -399,7 +416,7 @@ fn assess_simple(
                 findings.extend(assess_source_with_functions(
                     &source,
                     cwd,
-                    validated,
+                    assessment,
                     depth + 1,
                     &scoped_functions,
                     scopes.deferred,
@@ -409,14 +426,22 @@ fn assess_simple(
         }
         "trap" if context.has_shell_builtins() => {
             if let Some(action) = trap_action(&command.words[1..])? {
-                findings.extend(assess_source_with_functions(
-                    &action,
-                    cwd,
-                    validated,
-                    depth + 1,
-                    scopes.deferred,
-                    scopes.deferred,
-                )?);
+                if !shell::parse(&action)?.functions.is_empty() {
+                    return Err(GuardError::Policy(
+                        "function definitions inside traps change later shell state and are not decoded".to_owned(),
+                    ));
+                }
+                // A trap can fire before a later definition or redefinition is reached.
+                for end in 0..=scopes.deferred.len() {
+                    findings.extend(assess_source_with_functions(
+                        &action,
+                        cwd,
+                        assessment,
+                        depth + 1,
+                        &scopes.deferred[..end],
+                        scopes.deferred,
+                    )?);
+                }
             }
             return Ok(());
         }
@@ -426,6 +451,25 @@ fn assess_simple(
         }
         "set" if context.has_shell_builtins() => {
             validate_set_builtin(&command.words[1..])?;
+            return Ok(());
+        }
+        "unset" if context.has_shell_builtins() => {
+            let arguments = command.words[1..]
+                .iter()
+                .map(|word| static_word(word, "unset argument"))
+                .collect::<Result<Vec<_>>>()?;
+            if !arguments.is_empty()
+                && (arguments[0] != "-v"
+                    || arguments[1..]
+                        .iter()
+                        .take_while(|value| **value != "--")
+                        .any(|value| value.starts_with('-')))
+            {
+                return Err(GuardError::Policy(
+                    "unsetting shell functions is not decoded; use unset -v for variables"
+                        .to_owned(),
+                ));
+            }
             return Ok(());
         }
         "shopt" if context.has_shell_builtins() => {
@@ -452,7 +496,7 @@ fn assess_simple(
                 assess_simple(
                     &resolved,
                     cwd,
-                    validated,
+                    assessment,
                     depth + 1,
                     ExecutionContext::External,
                     nested_scopes,
@@ -465,7 +509,7 @@ fn assess_simple(
                 assess_simple(
                     &inner,
                     cwd,
-                    validated,
+                    assessment,
                     depth + 1,
                     ExecutionContext::External,
                     nested_scopes,
@@ -479,7 +523,7 @@ fn assess_simple(
                 assess_simple(
                     &inner,
                     cwd,
-                    validated,
+                    assessment,
                     depth + 1,
                     ExecutionContext::External,
                     nested_scopes,
@@ -493,7 +537,7 @@ fn assess_simple(
                 assess_simple(
                     &inner,
                     cwd,
-                    validated,
+                    assessment,
                     depth + 1,
                     ExecutionContext::External,
                     nested_scopes,
@@ -516,7 +560,7 @@ fn assess_simple(
                 assess_simple(
                     &inner,
                     cwd,
-                    validated,
+                    assessment,
                     depth + 1,
                     ExecutionContext::External,
                     nested_scopes,
@@ -529,7 +573,7 @@ fn assess_simple(
                 assess_simple(
                     &inner,
                     cwd,
-                    validated,
+                    assessment,
                     depth + 1,
                     ExecutionContext::External,
                     nested_scopes,
@@ -543,7 +587,7 @@ fn assess_simple(
                 assess_simple(
                     &inner,
                     cwd,
-                    validated,
+                    assessment,
                     depth + 1,
                     ExecutionContext::External,
                     nested_scopes,
@@ -1049,6 +1093,7 @@ fn unwrap_builtin(words: &[Word]) -> Result<Option<SimpleCommand>> {
             | "source"
             | "trap"
             | "typeset"
+            | "unset"
     ) {
         return Ok(None);
     }
@@ -1082,6 +1127,7 @@ fn trap_action(words: &[Word]) -> Result<Option<String>> {
 fn validate_shell_state_builtin(executable: &str, words: &[Word]) -> Result<()> {
     let mut function_mode = false;
     let mut export_mode = executable == "export";
+    let mut readonly_mode = executable == "readonly";
     for word in words {
         let value = static_word(word, "shell state builtin argument")?;
         if value == "--" {
@@ -1090,6 +1136,7 @@ fn validate_shell_state_builtin(executable: &str, words: &[Word]) -> Result<()> 
         if let Some(options) = value.strip_prefix('-').filter(|value| !value.is_empty()) {
             function_mode |= options.chars().any(|option| matches!(option, 'f' | 'F'));
             export_mode |= options.contains('x');
+            readonly_mode |= options.contains('r');
             continue;
         }
         if is_shell_init_variable(assignment_name(value).unwrap_or(value)) {
@@ -1101,6 +1148,12 @@ fn validate_shell_state_builtin(executable: &str, words: &[Word]) -> Result<()> 
     if function_mode && export_mode {
         return Err(GuardError::Policy(
             "exported shell functions can inject code into child shells and are not decoded"
+                .to_owned(),
+        ));
+    }
+    if function_mode && readonly_mode {
+        return Err(GuardError::Policy(
+            "readonly shell functions can prevent later redefinitions and are not decoded"
                 .to_owned(),
         ));
     }

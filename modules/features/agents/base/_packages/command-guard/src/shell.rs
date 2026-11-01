@@ -315,7 +315,25 @@ fn walk(
     inside_function: bool,
     collected: &mut CollectedShell,
 ) -> Result<()> {
-    if node.kind() == "function_definition" && !inside_function {
+    if node.kind() == "function_definition" {
+        let mut scope = node;
+        loop {
+            if inside_function || scope.next_sibling().is_some_and(|next| next.kind() == "&") {
+                return Err(GuardError::Policy(
+                    "nested or conditional shell function definitions are not decoded".to_owned(),
+                ));
+            }
+            match scope.parent() {
+                Some(parent) if parent.kind() == "compound_statement" => scope = parent,
+                Some(parent) if parent.kind() == "program" => break,
+                _ => {
+                    return Err(GuardError::Policy(
+                        "nested or conditional shell function definitions are not decoded"
+                            .to_owned(),
+                    ));
+                }
+            }
+        }
         collected.functions.push(extract_function(node, source)?);
     }
     if node.kind() == "redirected_statement" && !inside_function {
@@ -326,7 +344,12 @@ fn walk(
             .map(|redirect| extract_redirect(redirect, source))
             .collect::<Result<Vec<_>>>()?;
         match node.child_by_field_name("body") {
-            Some(body) if matches!(body.kind(), "command" | "declaration_command") => {
+            Some(body)
+                if matches!(
+                    body.kind(),
+                    "command" | "declaration_command" | "unset_command"
+                ) =>
+            {
                 let mut command = extract_simple_command(body, source)?;
                 let mut redirects = redirects;
                 associate_named_descriptors(&mut command, &mut redirects, source);
@@ -345,8 +368,10 @@ fn walk(
             .assignment_names
             .push(extract_assignment_name(node, source)?);
     }
-    if matches!(node.kind(), "command" | "declaration_command")
-        && !inside_function
+    if matches!(
+        node.kind(),
+        "command" | "declaration_command" | "unset_command"
+    ) && !inside_function
         && node
             .parent()
             .is_none_or(|parent| parent.kind() != "redirected_statement")
@@ -441,7 +466,7 @@ fn extract_declaration_command(node: Node<'_>, source: &[u8]) -> Result<SimpleCo
 fn extract_simple_command(node: Node<'_>, source: &[u8]) -> Result<SimpleCommand> {
     match node.kind() {
         "command" => extract_command(node, source),
-        "declaration_command" => extract_declaration_command(node, source),
+        "declaration_command" | "unset_command" => extract_declaration_command(node, source),
         kind => Err(GuardError::Parser(format!(
             "unsupported simple command node {kind}"
         ))),
@@ -535,7 +560,10 @@ fn extract_pipeline(node: Node<'_>, source: &[u8]) -> Result<Option<Pipeline>> {
 }
 
 fn find_primary_command(node: Node<'_>) -> Option<Node<'_>> {
-    if matches!(node.kind(), "command" | "declaration_command") {
+    if matches!(
+        node.kind(),
+        "command" | "declaration_command" | "unset_command"
+    ) {
         return Some(node);
     }
     if matches!(

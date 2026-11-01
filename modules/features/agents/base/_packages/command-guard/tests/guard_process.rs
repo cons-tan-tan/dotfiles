@@ -598,6 +598,111 @@ fn empty_file_redirection_only_blocks_explicit_emptying_of_existing_files() {
 }
 
 #[test]
+fn ambiguous_function_state_cannot_hide_an_external_command() {
+    let fixture = Fixture::new();
+    for command in [
+        "if false; then danger() { true; }; fi; danger",
+        "false && danger() { true; }; danger",
+        "(danger() { true; }); danger",
+        "printf '%s' \"$(danger() { true; })\"; danger",
+        "danger() { true; } & danger",
+        "{ danger() { true; }; } & danger",
+        "f() { danger() { true; }; }; f; danger",
+    ] {
+        let output = fixture.run(command);
+        assert_eq!(
+            output["hookSpecificOutput"]["permissionDecision"], "deny",
+            "{command}"
+        );
+        assert_denied(&output, "shell function definitions");
+    }
+    for command in [
+        "danger() { true; }; unset -f danger; danger",
+        "danger() { true; }; unset danger; danger",
+        "danger() { true; }; builtin unset -f danger; danger",
+        "danger() { true; }; command unset -f danger; danger",
+        "danger() { true; }; unset -v -f danger; danger",
+        "danger() { true; }; eval 'unset -f danger'; danger",
+    ] {
+        let output = fixture.run(command);
+        assert_eq!(
+            output["hookSpecificOutput"]["permissionDecision"], "deny",
+            "{command}"
+        );
+        assert_denied(&output, "unsetting shell functions");
+    }
+    for attribute in [
+        "readonly -f f",
+        "readonly -fp f",
+        "readonly -p -f -- f",
+        "declare -fr f",
+        "declare -r -f f",
+        "declare -Fr f",
+        "typeset -rf f",
+        "typeset -r -F f",
+        "builtin readonly -f f",
+        "command declare -fr f",
+        "eval 'readonly -f f'",
+    ] {
+        let command = format!("f() {{ danger; }}; {attribute}; f() {{ true; }}; f");
+        let output = fixture.run(&command);
+        assert_eq!(
+            output["hookSpecificOutput"]["permissionDecision"], "deny",
+            "{command}"
+        );
+        assert_denied(&output, "readonly shell functions");
+    }
+    for attribute in [
+        "readonly f",
+        "declare -r f",
+        "typeset -r f",
+        "declare -f f",
+        "declare -F f",
+    ] {
+        assert_safe(&fixture.run(&format!(
+            "f() {{ danger; }}; {attribute}; f() {{ true; }}; f"
+        )));
+    }
+    assert_safe(&fixture.run("danger() { true; }; danger"));
+    assert_safe(&fixture.run("danger() { true; }; unset -v danger; danger"));
+    assert_denied(
+        &fixture.run("danger; danger() { true; }"),
+        "exact test command",
+    );
+    assert_denied(
+        &fixture.run("trap danger EXIT; exit; danger() { true; }"),
+        "exact test command",
+    );
+    assert_denied(
+        &fixture.run("cleanup() { true; }; trap cleanup EXIT; cleanup() { rm -rf target; }; exit; cleanup() { true; }"),
+        "Recursive forced deletion",
+    );
+    assert_denied(
+        &fixture.run("trap 'danger() { true; }' DEBUG; danger"),
+        "function definitions inside traps",
+    );
+}
+
+#[test]
+fn branching_trap_analysis_has_a_shared_work_limit() {
+    let fixture = Fixture::new();
+    let functions = (0..32)
+        .map(|index| format!("f{index}() {{ :; }}; "))
+        .collect::<String>();
+    assert_safe(&fixture.run(&format!("{functions}trap ':' EXIT")));
+
+    // Depth alone does not bound repeated evaluation of every possible function scope.
+    let mut action = ":".to_owned();
+    for _ in 0..4 {
+        action = format!("trap '{}' EXIT", action.replace('\'', "'\\''"));
+    }
+    assert_denied(
+        &fixture.run(&format!("{functions}{action}")),
+        "analysis budget",
+    );
+}
+
+#[test]
 fn unknown_or_malformed_execution_fails_closed() {
     let fixture = Fixture::new();
     fs::write(fixture._directory.path().join("existing1"), "content").unwrap();
