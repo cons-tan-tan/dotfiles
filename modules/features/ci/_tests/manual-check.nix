@@ -8,7 +8,6 @@ let
   support = import ./gha-diag-support.nix { };
   package = pkgs.dotfilesPackages.gha-diag;
   closure = pkgs.closureInfo { rootPaths = [ package ]; };
-  plannerPython = pkgs.dotfilesPackages.ci-matrix-planner.python;
   smoke = pkgs.runCommand "gha-diag-smoke" { nativeBuildInputs = [ package ]; } ''
     gha-diag --version | grep -Fx "gha-diag ${package.version}"
     gha-diag --help > /dev/null
@@ -44,21 +43,16 @@ let
     pkgs.runCommand "ci-python-tests"
       {
         nativeBuildInputs = [
-          pkgs.check-jsonschema
-          plannerPython
+          pkgs.python3
         ];
       }
       ''
         cd ${repoRoot}
         export PYTHONPYCACHEPREFIX="$TMPDIR/pycache"
-        ${plannerPython}/bin/python3 -m py_compile modules/features/ci/_scripts/*.py
-        ${plannerPython}/bin/python3 -m unittest \
-          modules/features/ci/_tests/test_capture_workflow_timing.py \
-          modules/features/ci/_tests/test_collect_ci_telemetry.py \
-          modules/features/ci/_tests/test_ci_telemetry.py \
-          modules/features/ci/_tests/test_download_ci_telemetry_history.py \
+        ${pkgs.python3}/bin/python3 -m py_compile modules/features/ci/_scripts/*.py
+        ${pkgs.python3}/bin/python3 -m unittest \
           modules/features/ci/_tests/test_optimize_hestia_matrix.py \
-          modules/features/ci/_tests/test_plan_ci_matrix.py
+          modules/features/ci/_tests/test_hestia_runtime.py
         touch "$out"
       ''
   );
@@ -66,7 +60,6 @@ let
     pkgs.runCommand "ci-source-lint"
       {
         nativeBuildInputs = [
-          pkgs.check-jsonschema
           pkgs.shellcheck
         ];
       }
@@ -74,14 +67,6 @@ let
         shellcheck \
           ${repoRoot}/modules/features/ci/_scripts/update-gha-diag.sh \
           ${repoRoot}/modules/features/ci/_scripts/verify_binary_substituters.sh
-        check-jsonschema --check-metaschema \
-          ${repoRoot}/modules/features/ci/_schemas/telemetry-v1.schema.json
-        check-jsonschema --check-metaschema \
-          ${repoRoot}/modules/features/ci/_schemas/telemetry-run-index-v1.schema.json
-        check-jsonschema --check-metaschema \
-          ${repoRoot}/modules/features/ci/_schemas/ci-optimization-v1.schema.json
-        check-jsonschema --check-metaschema \
-          ${repoRoot}/modules/features/ci/_schemas/ci-optimization-v2.schema.json
         touch "$out"
       ''
   );

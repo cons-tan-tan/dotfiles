@@ -6,7 +6,6 @@ setup() {
   REPO_ROOT="$DOTFILES_TEST_REPO_ROOT"
   WORKFLOW_DIR="$REPO_ROOT/.github/workflows"
   CI_WORKFLOW="$WORKFLOW_DIR/ci.yaml"
-  TELEMETRY_WORKFLOW="$WORKFLOW_DIR/ci-telemetry.yaml"
   HESTIA_WORKFLOW="$WORKFLOW_DIR/hestia-system.yaml"
   CACHE_GC_WORKFLOW="$WORKFLOW_DIR/cache-gc.yaml"
   HESTIA_SETUP_ACTION="$REPO_ROOT/.github/actions/setup-hestia/action.yaml"
@@ -314,15 +313,12 @@ YAML
   local cache_gc_action
   local matrix_action
   local setup_action
-  local version
-  version=$(yq -r '.runs.steps[] | select((.uses // "") | test("^Mic92/hestia@")) | .with.version' "$HESTIA_SETUP_ACTION")
   setup_action=$(yq -r '.runs.steps[] | select((.uses // "") | test("^Mic92/hestia@")) | .uses' "$HESTIA_SETUP_ACTION")
   matrix_action=$(yq -r '.jobs.evaluate.steps[] | select(.id == "hestia-matrix") | .uses' "$HESTIA_WORKFLOW")
   cache_gc_action=$(yq -r '.jobs.gc.steps[] | select((.uses // "") == "$/.github/actions/setup-hestia") | .uses' "$CACHE_GC_WORKFLOW")
 
   [ "$cache_gc_action" = '$/.github/actions/setup-hestia' ]
   [ "${setup_action##*@}" = "${matrix_action##*@}" ]
-  [ "$(yq -r '.outputs."hestia-version".value' "$HESTIA_SETUP_ACTION")" = "$version" ]
   [ "$(yq -r '.jobs.gc.steps[] | select(.uses == "$/.github/actions/setup-hestia") | .with."upstream-cache-filter"' "$CACHE_GC_WORKFLOW")" = "false" ]
 }
 
@@ -374,29 +370,10 @@ YAML
     and ([.jobs."flake-eval".steps[] | select(.wait == "checkout")]
       | length) == 1
     and ([.jobs."flake-eval".steps[] | select(
-      (.run // "") | contains("write_workflow_job_identity.py")
-    )] | length) == 1
-    and ([.jobs."flake-eval".steps[] | select(
-      (.run // "") | contains("write_workflow_job_identity.py")
-    )][0] | (
-      ."continue-on-error" == true
-      and .env.FLAKE_EVAL_SYSTEM == "${{ matrix.system }}"
-      and (.run | contains("write_workflow_job_identity.py"))
-    ))
-    and ([.jobs."flake-eval".steps[] | select(
       (.run // "") | contains("nix flake check --no-build --option system")
     )][0] | (
       ."continue-on-error" == null
       and (.run == "nix flake check --no-build --option system \"$FLAKE_EVAL_SYSTEM\"")
-    ))
-    and ([.jobs."flake-eval".steps[] | select(
-      ((.uses // "") | test("^actions/upload-artifact@"))
-      and ((.with.name // "") | contains("ci-workflow-job-"))
-    )][0] | (
-      .if == "always()"
-      and ."continue-on-error" == true
-      and (.with.name | contains("ci-workflow-job-"))
-      and .with."if-no-files-found" == "ignore"
     ))
     and .jobs.linux.uses == "$/.github/workflows/hestia-system.yaml"
     and .jobs.linux.with.system == "x86_64-linux"
@@ -423,9 +400,6 @@ YAML
     )] | length) == 1
     and ([.jobs.evaluate.steps[] | select(
       .uses == "$/.github/actions/setup-hestia"
-    )][0].id) == "setup-hestia"
-    and ([.jobs.evaluate.steps[] | select(
-      .uses == "$/.github/actions/setup-hestia"
     )][0].with."filter-drv-closures") == "true"
     and ([.jobs.evaluate.steps[] | select(.id == "checkout")][0].background
       == true)
@@ -440,20 +414,12 @@ YAML
       == "lib.hestiaJobs.ci.${{ inputs.system }}"
     and ([.jobs.evaluate.steps[] | select(.id == "hestia-matrix")][0].with."nix-eval-jobs"
       == "python3 modules/features/ci/_scripts/capture_hestia_eval.py")
-    and ([.jobs.evaluate.steps[] | select(.id == "hestia-matrix")][0].env.HESTIA_EVAL_CAPTURE)
-      == "${{ runner.temp }}/ci-telemetry/hestia-eval.jsonl"
     and ([.jobs.evaluate.steps[] | select(.id == "matrix")]
       | length) == 1
     and ([.jobs.evaluate.steps[] | select(.id == "optimized-matrix")]
       | length) == 1
     and ([.jobs.evaluate.steps[] | select(.id == "optimized-matrix")][0].env.HESTIA_MATRIX)
       == "${{ steps.hestia-matrix.outputs.matrix }}"
-    and ([.jobs.evaluate.steps[] | select(.id == "optimized-matrix")][0].env.HESTIA_VERSION)
-      == "${{ steps.setup-hestia.outputs.hestia-version }}"
-    and ([.jobs.evaluate.steps[] | select(.id == "optimized-matrix")][0].env.TELEMETRY_ATTR_PREFIX)
-      == "lib.hestiaJobs.ci.${{ inputs.system }}"
-    and ([.jobs.evaluate.steps[] | select(.id == "optimized-matrix")][0].env.TELEMETRY_RUNNER_NAME)
-      == "${{ runner.name }}"
     and ([.jobs.evaluate.steps[] | select(.id == "optimized-matrix")][0].run)
       == "python3 modules/features/ci/_scripts/optimize_hestia_matrix.py"
     and ([.jobs.evaluate.steps[] | select(.id == "matrix")][0].run)
@@ -502,14 +468,6 @@ YAML
     )][0].env.INSTALLABLES)
       == "${{ matrix.installables }}"
     and ([.jobs.build.steps[] | select(
-      .run == "python3 modules/features/ci/_scripts/run_hestia_build.py"
-    )][0].env.TELEMETRY_JOB_ID)
-      == "${{ matrix.jobId }}"
-    and ([.jobs.build.steps[] | select(
-      .run == "python3 modules/features/ci/_scripts/run_hestia_build.py"
-    )][0].env.TELEMETRY_RUNNER_NAME)
-      == "${{ runner.name }}"
-    and ([.jobs.build.steps[] | select(
       .run == "bash modules/features/ci/_scripts/verify_binary_substituters.sh"
     )] | length) == 1
     and ([.jobs.build.steps[] | select(
@@ -524,164 +482,6 @@ YAML
     )][0].with."sparse-checkout")
       == "modules/features/ci/_scripts"
   ' "$HESTIA_WORKFLOW"
-  [ "$status" -eq 0 ]
-}
-
-@test "system lane persists versioned telemetry without gating builds" {
-  run yq -e '
-    [
-      ([.jobs.evaluate.steps[] | select(
-        (.uses // "") | test("^actions/upload-artifact@")
-      )][0].if
-        == "always()"),
-      ([.jobs.evaluate.steps[] | select(
-        (.uses // "") | test("^actions/upload-artifact@")
-      )][0]."continue-on-error"
-        == true),
-      ([.jobs.evaluate.steps[] | select(
-        (.uses // "") | test("^actions/upload-artifact@")
-      )][0].background
-        == true),
-      (([.jobs.evaluate.steps[] | select(
-        .wait == "upload-evaluation-telemetry"
-      )] | length) == 1),
-      ([.jobs.evaluate.steps[] | select(
-        (.uses // "") | test("^actions/upload-artifact@")
-      )][0].with."retention-days"
-        == 7),
-      ([.jobs.build.steps[] | select(
-        (.uses // "") | test("^actions/upload-artifact@")
-      )][0].if
-        == "always()"),
-      ([.jobs.build.steps[] | select(
-        (.uses // "") | test("^actions/upload-artifact@")
-      )][0]."continue-on-error"
-        == true),
-      ([.jobs.build.steps[] | select(
-        (.uses // "") | test("^actions/upload-artifact@")
-      )][0].with."retention-days"
-        == 7),
-      (.jobs | has("result") | not)
-    ] | all
-  ' "$HESTIA_WORKFLOW"
-  [ "$status" -eq 0 ]
-}
-
-@test "completed CI runs are collected independently with attempt isolation" {
-  run yq -e '
-    (.jobs.collect.steps | [.. | select(kind == "map")])
-      as $steps
-    | [
-        ((.on.workflow_run.workflows | length) == 1),
-        (.on.workflow_run.workflows[0] == "CI"),
-        ((.on.workflow_run.types | length) == 1),
-        (.on.workflow_run.types[0] == "completed"),
-        ((.on.workflow_run.branches | length) == 1),
-        (.on.workflow_run.branches[0] == "main"),
-        (.concurrency.group
-          == "ci-telemetry-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}"),
-        (.concurrency."cancel-in-progress" == false),
-        (.permissions.actions == "read"),
-        (.permissions.contents == "read"),
-        ((.permissions | length) == 2),
-        (.jobs.collect.if | contains("github.event.workflow_run.event == '\''push'\''")),
-        (.jobs.collect.if | contains("github.event.workflow_run.event == '\''workflow_dispatch'\''")),
-        ([$steps[] | select(
-          (.uses // "") | test("^actions/checkout@")
-        )][0].with.ref == "${{ github.sha }}"),
-        ([$steps[] | select(
-          (.uses // "") | test("^actions/checkout@")
-        )][0].with | has("sparse-checkout") | not),
-        ([$steps[] | select(.id == "download")][0]."continue-on-error" == true),
-        ([$steps[] | select(.id == "download")][0].with.pattern
-          == "ci-telemetry-fragment-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}-*"),
-        ([$steps[] | select(.id == "download")][0].with."run-id"
-          == "${{ github.event.workflow_run.id }}"),
-        ([$steps[] | select(.id == "download")][0].with."github-token"
-          == "${{ github.token }}"),
-        ([$steps[] | select(.id == "download")][0].with."merge-multiple" == false),
-        ([$steps[] | select(
-          ((.uses // "") | test("^actions/download-artifact@"))
-          and ((.with.pattern // "") | test("^ci-workflow-job-"))
-        )][0].with.pattern
-          == "ci-workflow-job-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}-*"),
-        ([$steps[] | select(
-          ((.uses // "") | test("^actions/download-artifact@"))
-          and ((.with.pattern // "") | test("^ci-workflow-job-"))
-        )][0].with."run-id"
-          == "${{ github.event.workflow_run.id }}"),
-        ([$steps[] | select(
-          (.run // "") | contains("collect_ci_telemetry.py")
-        )][0].run | contains("collect_ci_telemetry.py")),
-        ([$steps[] | select(
-          (.run // "") | contains("collect_ci_telemetry.py")
-        )][0].env.TELEMETRY_DOWNLOAD_OUTCOME == "${{ steps.download.outcome }}"),
-        ([$steps[] | select(
-          (.run // "") | contains("collect_ci_telemetry.py")
-        )][0].run | contains("--download-outcome \"$TELEMETRY_DOWNLOAD_OUTCOME\"")),
-        ([$steps[] | select(
-          (.run // "") | contains("collect_ci_telemetry.py")
-        )][0].run | contains("--system aarch64-darwin")),
-        ([$steps[] | select(
-          (.run // "") | contains("collect_ci_telemetry.py")
-        )][0].run | contains("--system x86_64-linux")),
-        ([$steps[] | select(
-          (.run // "") | contains("collect_ci_telemetry.py")
-        )][0].run | contains("--workflow-job-system aarch64-linux")),
-        ([$steps[] | select(
-          (.run // "") | contains("collect_ci_telemetry.py")
-        )][0].run | contains("--workflow-job-system aarch64-darwin")),
-        ([$steps[] | select(
-          (.run // "") | contains("collect_ci_telemetry.py")
-        )][0].run | contains("--workflow-job-system x86_64-linux")),
-        ([$steps[] | select(
-          (.run // "") | contains("capture_workflow_timing.py")
-        )][0].env.SOURCE_RUN_ATTEMPT == "${{ github.event.workflow_run.run_attempt }}"),
-        ([$steps[] | select(
-          (.run // "") | contains("capture_workflow_timing.py")
-        )][0].run | contains("--run-attempt \"$SOURCE_RUN_ATTEMPT\"")),
-        ([$steps[] | select(
-          (.run // "") | contains("capture_workflow_timing.py")
-        )][0].run | contains("--telemetry-root")),
-        (([$steps[] | select(
-          (.run // "") | contains("download_ci_telemetry_history.py")
-        )] | length) == 1),
-        (([$steps[] | select(.uses == "$/.github/actions/setup-hestia")]
-          | length) == 1),
-        ([$steps[] | select(.uses == "$/.github/actions/setup-hestia")][0].if
-          == "github.event.workflow_run.conclusion == '\''success'\''"),
-        ([$steps[] | select(
-          (.run // "") | contains("nix profile add")
-        )][0].run | contains("modules/features/ci/_packages/matrix-planner/runtime.nix")),
-        ([$steps[] | select(
-          (.run // "") | contains("plan-ci-matrix")
-        )][0].run | contains("--max-jobs-per-system") | not),
-        ([$steps[] | select(
-          (.uses // "") | test("^actions/upload-artifact@")
-        )][0].with.name | contains(
-          "source-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}"
-        )),
-        ([$steps[] | select(
-          (.uses // "") | test("^actions/upload-artifact@")
-        )][0].with.name | contains(
-          "collector-${{ github.run_id }}-${{ github.run_attempt }}"
-        )),
-        ([$steps[] | select(.id == "checkout")][0].background == true),
-        (([.jobs.collect.steps[] | select(.wait == "checkout")] | length) == 1),
-        ([$steps[] | select(
-          ((.uses // "") | test("^actions/upload-artifact@"))
-          and ((.with.name // "") | contains("ci-telemetry-run-v1-source-"))
-        )][0].if == "always()"),
-        ([$steps[] | select(
-          (.uses // "") | test("^actions/upload-artifact@")
-        ) | .with."retention-days" == 90] | all),
-        (([$steps[] | select(
-          ((.uses // "") | test("^actions/upload-artifact@"))
-          and ((.with.name // "") | contains("ci-matrix-plan-v2-source-"))
-        )]
-          | length) > 0)
-      ] | all
-  ' "$TELEMETRY_WORKFLOW"
   [ "$status" -eq 0 ]
 }
 

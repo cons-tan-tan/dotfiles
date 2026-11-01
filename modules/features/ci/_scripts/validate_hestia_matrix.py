@@ -29,9 +29,7 @@ def parse_matrix(raw_matrix: str) -> object:
         raise ValueError("Hestia matrix is not valid JSON") from error
 
 
-def validate_row(
-    row: object, expected_system: str, *, require_telemetry: bool = False
-) -> str:
+def validate_row(row: object, expected_system: str) -> str:
     if not isinstance(row, dict):
         raise ValueError("Hestia matrix row must be an object")
 
@@ -54,11 +52,6 @@ def validate_row(
 
     if row.get("system") != expected_system:
         raise ValueError("Hestia matrix row belongs to another system")
-    if require_telemetry:
-        if not re.fullmatch(r"[0-9a-f]{64}", str(row.get("jobId", ""))):
-            raise ValueError("optimized matrix row has an invalid jobId")
-        if not re.fullmatch(r"[0-9a-f]{20}", str(row.get("telemetryKey", ""))):
-            raise ValueError("optimized matrix row has an invalid telemetryKey")
     return drv_path
 
 
@@ -66,8 +59,6 @@ def validate_matrix(
     raw_matrix: str,
     any_jobs: str,
     expected_system: str,
-    *,
-    require_telemetry: bool = False,
 ) -> str:
     matrix = parse_matrix(raw_matrix)
     if not isinstance(matrix, dict) or not isinstance(matrix.get("include"), list):
@@ -80,19 +71,9 @@ def validate_matrix(
     if len(rows) > 256:
         raise ValueError("Hestia matrix exceeds 256 rows")
 
-    drv_paths = [
-        validate_row(row, expected_system, require_telemetry=require_telemetry)
-        for row in rows
-    ]
+    drv_paths = [validate_row(row, expected_system) for row in rows]
     if len(drv_paths) != len(set(drv_paths)):
         raise ValueError("Hestia matrix contains duplicate drvPaths")
-    if require_telemetry:
-        job_ids = [str(row["jobId"]) for row in rows]
-        telemetry_keys = [str(row["telemetryKey"]) for row in rows]
-        if len(job_ids) != len(set(job_ids)) or len(telemetry_keys) != len(
-            set(telemetry_keys)
-        ):
-            raise ValueError("optimized matrix contains duplicate telemetry identities")
     return json.dumps({"include": rows}, ensure_ascii=False, separators=(",", ":"))
 
 
@@ -151,7 +132,6 @@ def main() -> None:
         require_env("HESTIA_MATRIX"),
         any_jobs,
         require_env("SYSTEM"),
-        require_telemetry=original_matrix is not None,
     )
     if original_matrix is not None:
         validate_conservation(original_matrix, matrix)

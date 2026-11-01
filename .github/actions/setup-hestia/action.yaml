@@ -21,9 +21,6 @@ outputs:
     value: >-
       https://cache.numtide.com?priority=50
       https://nix-community.cachix.org
-  hestia-version:
-    description: Hestia version started by this action
-    value: v3.1.0
 
 runs:
   using: composite

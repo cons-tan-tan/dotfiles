@@ -24,7 +24,6 @@ let
   platformNames =
     if pkgs.stdenv.hostPlatform.isLinux then
       [
-        "ci-matrix-planner"
         "oo7-dpapi-bridge"
         "wsl-dpapi"
         "wsl-open"
