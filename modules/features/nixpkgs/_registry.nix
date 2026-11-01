@@ -67,7 +67,6 @@ in
     ;
 }
 // lib.optionalAttrs hostPlatform.isLinux {
-  ci-matrix-planner = pkgs.callPackage ciPackageSources.matrixPlanner { };
   oo7-dpapi-bridge = pkgs.callPackage securityPackageSources.oo7DpapiBridge { };
   wsl-dpapi = pkgs.callPackage securityPackageSources.wslDpapi { };
   wsl-open = pkgs.callPackage platformPackageSources.wslOpen { };

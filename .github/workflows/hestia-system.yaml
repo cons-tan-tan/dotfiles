@@ -28,7 +28,6 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up Nix and Hestia
-        id: setup-hestia
         uses: $/.github/actions/setup-hestia
         with:
           filter-drv-closures: "true"
@@ -36,8 +35,6 @@ jobs:
       - name: Evaluate Hestia matrix
         id: hestia-matrix
         uses: Mic92/hestia/matrix@dfed9ced335d28978ba74e513939a10db1f71025 # v3.1.0
-        env:
-          HESTIA_EVAL_CAPTURE: ${{ runner.temp }}/ci-telemetry/hestia-eval.jsonl
         with:
           flake: ".#lib.hestiaJobs.ci.${{ inputs.system }}"
           # 16 GB runner上で評価workerの再起動を避けつつ、OSとNix daemon用に4 GBを残す。
@@ -47,27 +44,10 @@ jobs:
         name: Optimize system matrix
         shell: bash
         env:
-          CI_TELEMETRY_LANE: ${{ runner.temp }}/ci-telemetry/lane-${{ inputs.system }}.json
           HESTIA_ANY_JOBS: ${{ steps.hestia-matrix.outputs.any-jobs }}
-          HESTIA_EVAL_CAPTURE: ${{ runner.temp }}/ci-telemetry/hestia-eval.jsonl
-          HESTIA_MANIFEST_VERSION: ${{ steps.hestia-matrix.outputs.manifest-version }}
           HESTIA_MATRIX: ${{ steps.hestia-matrix.outputs.matrix }}
-          HESTIA_VERSION: ${{ steps.setup-hestia.outputs.hestia-version }}
           SYSTEM: ${{ inputs.system }}
-          TELEMETRY_ATTR_PREFIX: lib.hestiaJobs.ci.${{ inputs.system }}
-          TELEMETRY_RUNNER_NAME: ${{ runner.name }}
         run: python3 modules/features/ci/_scripts/optimize_hestia_matrix.py
-      - name: Upload evaluation telemetry
-        id: upload-evaluation-telemetry
-        if: always()
-        continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        background: true
-        with:
-          name: ci-telemetry-fragment-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.system }}-lane
-          path: ${{ runner.temp }}/ci-telemetry/lane-${{ inputs.system }}.json
-          if-no-files-found: ignore
-          retention-days: 7
       - id: matrix
         name: Validate system matrix
         shell: bash
@@ -78,7 +58,6 @@ jobs:
           HESTIA_ORIGINAL_MATRIX: ${{ steps.hestia-matrix.outputs.matrix }}
           SYSTEM: ${{ inputs.system }}
         run: python3 modules/features/ci/_scripts/validate_hestia_matrix.py
-      - wait: upload-evaluation-telemetry
 
   # 評価済みのdrv closureを引き継ぎ、評価とbuildが別のderivationを選ぶ余地を作らない。
   build:
@@ -93,10 +72,6 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.evaluate.outputs.matrix) }}
     steps:
-      - name: Record build job start
-        env:
-          CI_JOB_STARTED_AT: ${{ runner.temp }}/ci-job-started-at
-        run: date +%s > "$CI_JOB_STARTED_AT"
       - name: Check out CI scripts
         id: checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -116,22 +91,5 @@ jobs:
         run: bash modules/features/ci/_scripts/verify_binary_substituters.sh
       - name: Prefetch derivation closure and build
         env:
-          CI_JOB_STARTED_AT: ${{ runner.temp }}/ci-job-started-at
-          CI_TELEMETRY_JOB: ${{ runner.temp }}/ci-telemetry/job-${{ matrix.telemetryKey }}.json
           INSTALLABLES: ${{ matrix.installables }}
-          SYSTEM: ${{ matrix.system }}
-          TELEMETRY_JOB_ID: ${{ matrix.jobId }}
-          TELEMETRY_JOB_NAME: ${{ matrix.name }}
-          TELEMETRY_KEY: ${{ matrix.telemetryKey }}
-          TELEMETRY_RUNNER_LABELS: ${{ join(matrix.os, ',') }}
-          TELEMETRY_RUNNER_NAME: ${{ runner.name }}
         run: python3 modules/features/ci/_scripts/run_hestia_build.py
-      - name: Upload build telemetry
-        if: always()
-        continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ci-telemetry-fragment-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.system }}-${{ matrix.telemetryKey }}
-          path: ${{ runner.temp }}/ci-telemetry/job-${{ matrix.telemetryKey }}.json
-          if-no-files-found: warn
-          retention-days: 7

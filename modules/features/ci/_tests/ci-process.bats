@@ -10,7 +10,6 @@ setup() {
   HESTIA_MATRIX_OPTIMIZER="$CI_SCRIPT_DIR/optimize_hestia_matrix.py"
   HESTIA_MATRIX_VALIDATOR="$CI_SCRIPT_DIR/validate_hestia_matrix.py"
   SUBSTITUTER_CHECK_SCRIPT="$CI_SCRIPT_DIR/verify_binary_substituters.sh"
-  TELEMETRY_SCHEMA="$REPO_ROOT/modules/features/ci/_schemas/telemetry-v1.schema.json"
 }
 
 run_hestia_matrix_validation() {
@@ -41,23 +40,11 @@ run_hestia_matrix_optimization() {
   local nix_status=${2:-0}
   local stub_dir="$BATS_TEST_TMPDIR/matrix-optimizer-stubs"
   MATRIX_OUTPUT="$BATS_TEST_TMPDIR/optimized-matrix-output"
-  EVAL_CAPTURE="$BATS_TEST_TMPDIR/hestia-eval.jsonl"
-  LANE_OUTPUT="$BATS_TEST_TMPDIR/lane-x86_64-linux.json"
+  MATRIX_SUMMARY="$BATS_TEST_TMPDIR/matrix-summary"
   : >"$MATRIX_OUTPUT"
   mkdir -p "$stub_dir"
 
-  jq -c '.include[] | .installables / " " | .[] | {
-    attr: (. | capture("-(?<name>[^/]+)\\.drv\\^\\*").name),
-    drvPath: sub("\\^\\*$"; ""),
-    system: "x86_64-linux",
-    isCached: false
-  }' <<<"$matrix" >"$EVAL_CAPTURE"
-
   write_bash_stub "$stub_dir/nix" <<'SH'
-if [[ ${1:-} == --version ]]; then
-  printf 'nix (Nix) 2.34.0\n'
-  exit 0
-fi
 if [[ $OPTIMIZER_NIX_STATUS -ne 0 ]]; then
   printf 'dry-run failed\n' >&2
   exit "$OPTIMIZER_NIX_STATUS"
@@ -90,21 +77,13 @@ esac
 SH
 
   run env \
-    CI_TELEMETRY_LANE="$LANE_OUTPUT" \
     GITHUB_OUTPUT="$MATRIX_OUTPUT" \
-    HESTIA_ANY_JOBS=true \
-    HESTIA_EVAL_CAPTURE="$EVAL_CAPTURE" \
-    HESTIA_MANIFEST_VERSION=12 \
+    GITHUB_STEP_SUMMARY="$MATRIX_SUMMARY" \
+    HESTIA_ANY_JOBS="$(jq -r '.include | length > 0' <<<"$matrix")" \
     HESTIA_MATRIX="$matrix" \
-    MATRIX_OPTIMIZER_CRITICAL_PATH_SLACK=0.1 \
-    MATRIX_OPTIMIZER_MAX_WORKERS=1 \
-    MATRIX_OPTIMIZER_MIN_SHARED_DERIVATIONS=2 \
-    MATRIX_OPTIMIZER_MIN_SHARED_RATIO=0.5 \
     OPTIMIZER_NIX_STATUS="$nix_status" \
     PATH="$stub_dir:$PATH" \
     SYSTEM=x86_64-linux \
-    TELEMETRY_ATTR_PREFIX=lib.hestiaJobs.ci.x86_64-linux \
-    TELEMETRY_RUNNER_NAME='GitHub Actions test' \
     python3 "$HESTIA_MATRIX_OPTIMIZER"
 }
 
@@ -157,17 +136,7 @@ SH
     and .[1].name == "quality"
   ' <<<"$(sed -n 's/^matrix=//p' "$MATRIX_OUTPUT")"
   [ "$status" -eq 0 ]
-  run jq -e '
-    (.data.checks | map({key: .display_name, value: (.plan.dependency_drv_ids | length)}) | from_entries)
-      == {configurations: 10, "eval-tests": 3, quality: 1}
-    and .data.workflow_job
-      == {role: "system-evaluate", runner_name: "GitHub Actions test"}
-  ' "$LANE_OUTPUT"
-  [ "$status" -eq 0 ]
-  if command -v check-jsonschema >/dev/null; then
-    run check-jsonschema --schemafile "$TELEMETRY_SCHEMA" "$LANE_OUTPUT"
-    [ "$status" -eq 0 ]
-  fi
+  [[ $(<"$MATRIX_SUMMARY") == *"Status: optimized; static groups: 3; build jobs: 2."* ]]
 }
 
 @test "system matrix optimization falls back after a dry-run failure" {
@@ -183,7 +152,55 @@ SH
       == ([$original.include[].name] | sort))
   ' <<<"$(sed -n 's/^matrix=//p' "$MATRIX_OUTPUT")"
   [ "$status" -eq 0 ]
-  [ "$(jq -r '.data.decision.status' "$LANE_OUTPUT")" = fallback ]
+  [[ $(<"$MATRIX_SUMMARY") == *"Status: fallback"* ]]
+}
+
+@test "system matrix optimization skips Nix for empty and single groups" {
+  local matrix
+  for matrix in \
+    '{"include":[]}' \
+    '{"include":[{"drvPath":"/nix/store/00000000000000000000000000000000-only.drv","system":"x86_64-linux","name":"only","os":["ubuntu-latest"],"installables":"/nix/store/00000000000000000000000000000000-only.drv^*"}]}'; do
+    run_hestia_matrix_optimization "$matrix" 42
+    [ "$status" -eq 0 ]
+    [[ $output != *"optimization skipped"* ]]
+    [ "$(sed -n 's/^matrix=//p' "$MATRIX_OUTPUT")" = "$matrix" ]
+    [[ $(<"$MATRIX_SUMMARY") == *"Status: not_needed"* ]]
+  done
+}
+
+@test "system build preserves prefetch fallback and the build exit code" {
+  local stub_dir="$BATS_TEST_TMPDIR/build-stubs"
+  local trace="$BATS_TEST_TMPDIR/build-trace"
+  local installables='/nix/store/first.drv^* /nix/store/second.drv^*'
+  local codes prefetch_status build_status
+  mkdir -p "$stub_dir"
+  write_bash_stub "$stub_dir/hestia" <<'SH'
+printf 'hestia %s\n' "$*" >>"$BUILD_TRACE"
+exit "$PREFETCH_STATUS"
+SH
+  write_bash_stub "$stub_dir/nix" <<'SH'
+printf 'nix %s\n' "$*" >>"$BUILD_TRACE"
+exit "$BUILD_STATUS"
+SH
+  for codes in 0:0 42:0 0:27 42:27; do
+    prefetch_status=${codes%:*}
+    build_status=${codes#*:}
+    : >"$trace"
+    run env \
+      PATH="$stub_dir:$PATH" \
+      HESTIA_BIN="$stub_dir/hestia" \
+      INSTALLABLES="$installables" \
+      BUILD_TRACE="$trace" \
+      PREFETCH_STATUS="$prefetch_status" \
+      BUILD_STATUS="$build_status" \
+      python3 "$CI_SCRIPT_DIR/run_hestia_build.py"
+    [ "$status" -eq "$build_status" ]
+    [ "$(sed -n '1p' "$trace")" = "hestia prefetch $installables" ]
+    [ "$(sed -n '2p' "$trace")" = "nix build --no-link $installables" ]
+    if [[ $prefetch_status -ne 0 ]]; then
+      [[ $output == *"falling back to normal Nix substitution"* ]]
+    fi
+  done
 }
 
 @test "system matrix validation requires a matching manifest registration" {
