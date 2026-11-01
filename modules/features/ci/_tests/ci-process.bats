@@ -81,7 +81,6 @@ SH
     GITHUB_STEP_SUMMARY="$MATRIX_SUMMARY" \
     HESTIA_ANY_JOBS="$(jq -r '.include | length > 0' <<<"$matrix")" \
     HESTIA_MATRIX="$matrix" \
-    MATRIX_OPTIMIZER_MIN_SHARED_DERIVATIONS=2 \
     OPTIMIZER_NIX_STATUS="$nix_status" \
     PATH="$stub_dir:$PATH" \
     SYSTEM=x86_64-linux \

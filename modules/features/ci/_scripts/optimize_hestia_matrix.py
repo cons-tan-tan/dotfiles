@@ -327,7 +327,7 @@ def main() -> None:
             "MATRIX_OPTIMIZER_CRITICAL_PATH_SLACK", "0.05", minimum=0, maximum=1
         ),
         "min_shared_derivations": parse_int(
-            "MATRIX_OPTIMIZER_MIN_SHARED_DERIVATIONS", "20", minimum=1, maximum=100_000
+            "MATRIX_OPTIMIZER_MIN_SHARED_DERIVATIONS", "1", minimum=1, maximum=100_000
         ),
         "min_shared_ratio": parse_float(
             "MATRIX_OPTIMIZER_MIN_SHARED_RATIO", "0.25", minimum=0, maximum=1
