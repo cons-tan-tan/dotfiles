@@ -67,7 +67,7 @@ let
             email = "132136681+cons-tan-tan@users.noreply.github.com";
           };
           core = {
-            editor = "code --wait";
+            editor = if forWindows then "zed --wait" else lib.getExe pkgs.neovim;
             autocrlf = if forWindows then "true" else "input";
           };
           init.defaultBranch = "main";
