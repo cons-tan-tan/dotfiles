@@ -262,7 +262,8 @@ fn rsync(source: &Path, destination: &Path, delete: bool) -> Result<(), String> 
     let mut command = Command::new("rsync");
     command.arg("--archive");
     if delete {
-        command.arg("--delete");
+        // Mutations can preserve both file size and mtime.
+        command.args(["--delete", "--checksum"]);
     }
     command.arg(source.join("."));
     command.arg(destination.join("."));

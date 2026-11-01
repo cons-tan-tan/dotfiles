@@ -80,6 +80,18 @@ run_mutation_test() {
   [[ "$output" == *"SUMMARY total=1 killed=0 survived=1 invalid=0 timeout=0"* ]]
 }
 
+@test "reset restores equal-size mutations even when their timestamps match the source" {
+  write_target '(1 == 1) && (2 == 2)'
+
+  run_mutation_test \
+    --operator equality \
+    --test-command "touch -r '$TEST_ROOT/target.nix' target.nix; [[ \$(nix-instantiate --store dummy:// --eval --strict --json target.nix) == true ]]"
+
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"SUMMARY total=2 killed=2 survived=0 invalid=0 timeout=0"* ]]
+  [ "$(<"$TEST_ROOT/target.nix")" = '(1 == 1) && (2 == 2)' ]
+}
+
 @test "logical and equality operators are listed independently" {
   write_target '(true && false) == false'
 
