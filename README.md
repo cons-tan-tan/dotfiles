@@ -4,7 +4,7 @@ Nix flakeでmacOS、WSL、Linuxの開発環境を宣言的に管理する。WSL�
 
 ## セットアップ
 
-前提はNix（flakes有効）とこのリポジトリのcloneだけ。GPG鍵やsecretsが無くてもswitchは完結する。
+前提はNix（flakes有効）とこのリポジトリのclone。macOSでは[Homebrew](https://brew.sh/)も事前にインストールする。GPG鍵やsecretsが無くてもswitchは完結する。
 NixOS以外では、初回にOS側のNix daemon設定を同期する。
 `apply-nix-settings`は`/etc/nix/nix.conf`が同じディレクトリの`nix.custom.conf`をincludeしている環境向け。
 installerが管理する設定との衝突を避けるため、対応していない構成は自動変更せず停止する。その場合はincludeを追加するか、daemon設定を別管理するか、この手順をskipして`switch`に進む。skipしても構成は適用できるが、このflake向けのbinary cacheとtrusted-user設定はdaemonへ反映されない。
