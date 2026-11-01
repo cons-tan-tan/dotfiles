@@ -17,7 +17,7 @@ cat "$GHQ_REPOSITORIES_FILE"
 SH
   write_bash_stub "$TEST_TMPDIR/bin/timeout" <<'SH'
 printf '%s\0' "$@" >"$TEST_TMPDIR/timeout-args/$BASHPID"
-shift
+shift 2
 exec "$@"
 SH
   write_bash_stub "$TEST_TMPDIR/bin/git" <<'SH'
@@ -73,11 +73,11 @@ assert_nul_argv_call() {
   [ "$status" -eq 0 ]
   [ "$output" = "" ]
   assert_nul_argv_call "$TEST_TMPDIR/timeout-args" \
-    60s git -C "$repository_one" fetch --all --prune --quiet
+    --kill-after=5s 60s git -C "$repository_one" fetch --all --prune --quiet
   assert_nul_argv_call "$TEST_TMPDIR/timeout-args" \
-    60s git -C "$repository_two" fetch --all --prune --quiet
+    --kill-after=5s 60s git -C "$repository_two" fetch --all --prune --quiet
   assert_nul_argv_call "$TEST_TMPDIR/timeout-args" \
-    60s git -C "$repository_three" fetch --all --prune --quiet
+    --kill-after=5s 60s git -C "$repository_three" fetch --all --prune --quiet
   assert_nul_argv_call "$TEST_TMPDIR/git-args" \
     -C "$repository_two" fetch --all --prune --quiet
 }
