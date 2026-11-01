@@ -37,6 +37,8 @@ jobs:
         uses: Mic92/hestia/matrix@dfed9ced335d28978ba74e513939a10db1f71025 # v3.1.0
         with:
           flake: ".#lib.hestiaJobs.ci.${{ inputs.system }}"
+          # Hestia v3.1.0 defaults to macOS 14, whose retirement is 2026-11-02.
+          runner-map: aarch64-darwin=macos-15
           # 16 GB runner上で評価workerの再起動を避けつつ、OSとNix daemon用に4 GBを残す。
           nix-eval-jobs: python3 modules/features/ci/_scripts/capture_hestia_eval.py
           attr-prefix: "lib.hestiaJobs.ci.${{ inputs.system }}"
