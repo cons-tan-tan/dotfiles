@@ -14,6 +14,7 @@
           gitCredentialHelper.enable = true;
           extensions = [
             pkgs.dotfilesPackages.gh-api-get
+            pkgs.gh-actions-lock
             pkgs.gh-do
             pkgs.gh-poi
             pkgs.gh-stack
