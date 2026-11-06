@@ -7,7 +7,7 @@ setup() {
   WORKFLOW_DIR="$REPO_ROOT/.github/workflows"
   CI_WORKFLOW="$WORKFLOW_DIR/ci.yaml"
   HESTIA_WORKFLOW="$WORKFLOW_DIR/hestia-system.yaml"
-  CACHE_GC_WORKFLOW="$WORKFLOW_DIR/cache-gc.yaml"
+  CACHE_GC_WORKFLOW="$WORKFLOW_DIR/gc.yaml"
   HESTIA_SETUP_ACTION="$REPO_ROOT/.github/actions/setup-hestia/action.yaml"
   CACHE_SETTINGS="$REPO_ROOT/modules/features/nix/settings/_data/cache.nix"
   SUPPORTED_SYSTEMS="$REPO_ROOT/modules/flake/_data/systems/default.nix"
@@ -55,7 +55,7 @@ check_universal_workflow_policy() {
         (.uses // "") | test("^actions/checkout@")
       ) | .with."persist-credentials" == false] | all)
     ' "$workflow" >/dev/null || return 1
-    if [[ $(basename "$workflow") == cache-gc.yaml ]]; then
+    if [[ $(basename "$workflow") == gc.yaml ]]; then
       yq -e '
         .jobs.gc.permissions.actions == "write"
         and .jobs.gc.permissions.contents == "read"
