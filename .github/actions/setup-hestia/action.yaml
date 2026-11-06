@@ -28,7 +28,7 @@ runs:
     # GitHub Actions cannot read flake.nix before Nix is installed. Keep the
     # bootstrap cache configuration here and verify it against the Nix source.
     - name: Install Nix
-      uses: nixbuild/nix-quick-install-action@9f63be77f412a248c9d9a65a4c82cf066cdf8f0c # v35
+      uses: nixbuild/nix-quick-install-action@v35
       with:
         enable_kvm: false
         nix_conf: |
@@ -38,7 +38,7 @@ runs:
           # HTTP/2 cache transfers stalled until the 90-minute CI limit.
           http2 = false
     - name: Start Hestia
-      uses: Mic92/hestia@dfed9ced335d28978ba74e513939a10db1f71025 # v3.1.0
+      uses: Mic92/hestia@v3.1.0
       with:
         version: v3.1.0
         upstream-cache-filter: ${{ inputs.upstream-cache-filter }}

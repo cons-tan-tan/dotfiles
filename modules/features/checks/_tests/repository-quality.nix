@@ -16,12 +16,14 @@ let
       {
         nativeBuildInputs = [
           pkgs.dotfilesPackages.gha-diag
+          pkgs.gh-actions-lock
           zizmor
         ];
       }
       ''
         cd ${repoRoot}
         gha-diag
+        GH_ACTIONS_LOCK_REPO_ROOT="$PWD" gh-actions-lock --verify-local
         zizmor --offline --persona=regular .
         touch "$out"
       ''

@@ -33,6 +33,7 @@ check_universal_workflow_policy() {
   ((${#workflows[@]} > 0)) || return 1
 
   for workflow in "${workflows[@]}"; do
+    # actions.lock covers action steps, but not external reusable workflows.
     yq -e '
       .permissions.contents == "read"
       and ((.permissions.actions // "read") == "read")
@@ -44,7 +45,7 @@ check_universal_workflow_policy() {
       and ([.jobs[] | select(has("uses")) | has("timeout-minutes") | not] | all)
       and ([.jobs[] | select(has("timeout-minutes")) | .["timeout-minutes"] |
         (tag == "!!int" and . > 0)] | all)
-      and ([.. | select(kind == "map") | .uses // "" | select(length > 0)
+      and ([.jobs[] | .uses // "" | select(length > 0)
         | select(test("^(\\./|\\$/)") | not)
         | test("@[0-9a-f]{40}$")] | all)
       and ([.. | select(kind == "map") | .uses // "" |
@@ -181,6 +182,35 @@ YAML
     run check_universal_workflow_policy "$fixture_dir"
     [ "$status" -ne 0 ]
   done
+}
+
+@test "external reusable workflows still require commit SHAs" {
+  local fixture_dir="$BATS_TEST_TMPDIR/reusable-workflows"
+  mkdir -p "$fixture_dir"
+
+  cat >"$fixture_dir/workflow.yaml" <<'YAML'
+on: push
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+  reusable:
+    uses: example/workflows/.github/workflows/ci.yaml@0123456789abcdef0123456789abcdef01234567
+YAML
+
+  check_universal_workflow_policy "$fixture_dir"
+
+  yq -i '.jobs.reusable.uses = "example/workflows/.github/workflows/ci.yaml@v1"' \
+    "$fixture_dir/workflow.yaml"
+  run check_universal_workflow_policy "$fixture_dir"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"no matches found"* ]]
 }
 
 @test "universal policy rejects missing jobs and non-positive finite timeouts" {
@@ -322,7 +352,7 @@ YAML
   [ "$(yq -r '.jobs.gc.steps[] | select(.uses == "$/.github/actions/setup-hestia") | .with."upstream-cache-filter"' "$CACHE_GC_WORKFLOW")" = "false" ]
 }
 
-@test "Hestia setup action composes pinned dependencies" {
+@test "Hestia setup action composes Nix and Hestia" {
   run yq -e '
     .runs.using == "composite"
     and .inputs."upstream-cache-filter".default == "true"
@@ -330,8 +360,6 @@ YAML
     and .inputs."wait-manifest-version".default == "0"
     and .outputs."nix-extra-substituters".value
       == "https://cache.numtide.com?priority=50 https://nix-community.cachix.org"
-    and ([.runs.steps[] | .uses // "" | select(length > 0)
-      | test("@[0-9a-f]{40}$")] | all)
     and ([.runs.steps[] | select(
       (.uses // "") | test("^nixbuild/nix-quick-install-action@")
     )] | length) == 1
