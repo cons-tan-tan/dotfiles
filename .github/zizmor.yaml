@@ -1,0 +1,6 @@
+rules:
+  unpinned-uses:
+    config:
+      # actions.lock pins dependencies; workflow-lint-tests checks its coverage.
+      policies:
+        "*": ref-pin

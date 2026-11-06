@@ -23,7 +23,7 @@ jobs:
     steps:
       - name: Check out repository
         id: checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@v7.0.1
         background: true
         with:
           persist-credentials: false
@@ -34,7 +34,7 @@ jobs:
       - wait: checkout
       - name: Evaluate Hestia matrix
         id: hestia-matrix
-        uses: Mic92/hestia/matrix@dfed9ced335d28978ba74e513939a10db1f71025 # v3.1.0
+        uses: Mic92/hestia/matrix@v3.1.0
         with:
           flake: ".#lib.hestiaJobs.ci.${{ inputs.system }}"
           # Follow supported images instead of Hestia v3.1.0's macOS 14 default.
@@ -76,7 +76,7 @@ jobs:
     steps:
       - name: Check out CI scripts
         id: checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@v7.0.1
         background: true
         with:
           persist-credentials: false
