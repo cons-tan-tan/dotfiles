@@ -31,6 +31,7 @@
       config.flake.modules.homeManager.ghq-sync
       config.flake.modules.homeManager.terminal-default
       config.flake.modules.homeManager.cloud-aws
+      config.flake.modules.homeManager.cloud-cloudflare
       config.flake.modules.homeManager.cloud-gcloud
       config.flake.modules.homeManager.network-curl
       config.flake.modules.homeManager.security-gpg
