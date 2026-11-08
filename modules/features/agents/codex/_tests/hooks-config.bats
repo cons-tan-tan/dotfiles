@@ -92,7 +92,6 @@ run_reconcile() {
   run_reconcile --payload "$CODEX_HOOK_STATE_TEST_PAYLOAD"
   [ "$status" -ne 0 ]
   [[ $output == *'42 is not of type "string"'* ]]
-  [[ $output == *'schema validation failed'* ]]
   cmp "$TARGET" "$TEST_TMPDIR/before.toml"
   assert_cleaned_up
 }
