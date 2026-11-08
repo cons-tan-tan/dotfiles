@@ -19,5 +19,7 @@ in
 
   yomiyasu = {
     root = yomiyasu.outPath + "/skills/yomiyasu";
+    # Keep command permissions in the shared agent policy.
+    customization.frontmatter.excludeFields = [ "allowed-tools" ];
   };
 }
