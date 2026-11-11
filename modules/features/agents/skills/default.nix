@@ -123,12 +123,19 @@ in
                 {
                   source = toString (windowsTree ".claude/skills");
                   destination = ".claude/skills";
-                  excludes = [ "ax/" ];
+                  # These skills require CLIs installed in the Nix environment.
+                  excludes = [
+                    "ax/"
+                    "modern-web-guidance/"
+                  ];
                 }
                 {
                   source = toString (windowsTree ".agents/skills");
                   destination = ".agents/skills";
-                  excludes = [ "ax/" ];
+                  excludes = [
+                    "ax/"
+                    "modern-web-guidance/"
+                  ];
                 }
               ];
             }

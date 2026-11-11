@@ -57,6 +57,7 @@ in
     inherit (pkgs) stdenv;
     hunkInput = inputs.hunk;
   };
+  modern-web-guidance = pkgs.callPackage agentPackageSources.modernWebGuidance { };
   shellfirm = pkgs.callPackage agentPackageSources.shellfirm { inherit ghApiGet; };
   zizmor = pkgs.callPackage ciPackageSources.zizmor { };
 

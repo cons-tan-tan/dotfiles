@@ -11,6 +11,7 @@ let
     "gh-api-get"
     "gha-diag"
     "ghq-fetch-all"
+    "modern-web-guidance"
     "shellfirm"
     "zizmor"
   ];
