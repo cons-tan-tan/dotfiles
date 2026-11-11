@@ -73,6 +73,22 @@ else
         expr = wsl.config.programs.hunk.package == wsl.pkgs.dotfilesPackages.hunk.package;
         expected = true;
       };
+      testWslProfilePairsModernWebGuidancePackageAndSkill = {
+        expr = {
+          installed = builtins.elem wsl.pkgs.dotfilesPackages.modern-web-guidance wsl.config.home.packages;
+          root = wsl.config.dotfiles.agentSkills.externalSkills.modern-web-guidance.root;
+          deployed = wsl.config.home.file ? ".agents/skills/modern-web-guidance";
+          nativeWindowsExcluded = builtins.all (
+            tree: builtins.elem "modern-web-guidance/" tree.excludes
+          ) wsl.config.dotfiles.windows.staticResources.skills.trees;
+        };
+        expected = {
+          installed = true;
+          root = wsl.pkgs.dotfilesPackages.modern-web-guidance.skillRoot;
+          deployed = true;
+          nativeWindowsExcluded = true;
+        };
+      };
     };
     failureCases = { };
   }

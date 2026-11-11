@@ -11,6 +11,7 @@ base
   difit = ../difit/_packages/difit;
   herdr = ../herdr/_packages/herdr;
   hunk = ../hunk/_packages/hunk;
+  modernWebGuidance = ../modern-web-guidance/_packages/modern-web-guidance;
   pi = ../pi/_packages/pi;
   slack = ../slack/_packages/agent-slack;
 }
