@@ -20,7 +20,7 @@
 
   inputs = {
     agent-browser-skill = {
-      url = "github:vercel-labs/agent-browser/v0.39.1";
+      url = "github:vercel-labs/agent-browser/v0.42.0";
       flake = false;
     };
     agent-slack-skill = {
