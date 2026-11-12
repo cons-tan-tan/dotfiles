@@ -35,6 +35,8 @@ in
               kubernetes-strict = false;
             };
             rules.fs.flush_file_content = false;
+            # Shellfirm 0.4 moved filtered find deletion below our severity threshold.
+            rules.fs.delete_find_files_filtered = true;
           };
         };
       }
