@@ -471,6 +471,35 @@ fn parser_tracks_execution_context_instead_of_scanning_raw_text() {
 }
 
 #[test]
+fn shellfirm_checks_normalized_paths_without_matching_literal_commands() {
+    let fixture = Fixture::new();
+    for command in [
+        "chmod -R 777 /etc/",
+        "chmod -R 777 //",
+        "chmod -R 777 ./",
+        "chmod -R 777 ../",
+        "/bin/chmod -R 777 /etc/",
+    ] {
+        assert_denied(&fixture.run(command), "Shellfirm fs:recursively_chmod");
+    }
+    for command in [
+        "chown -R nobody /etc/",
+        "chown -R nobody ./",
+        "/bin/chown -R nobody ./",
+    ] {
+        assert_denied(&fixture.run(command), "Shellfirm fs:recursively_chown");
+    }
+    assert_safe(&fixture.run("printf '%s' 'chmod -R 777 /etc/'"));
+    assert_safe(&fixture.run("printf '%s' 'chown -R nobody ./'"));
+    assert_denied(
+        &fixture.run("/usr/bin/git push --force"),
+        "Shellfirm git:force_push",
+    );
+    assert_safe(&fixture.run("/usr/bin/git status"));
+    assert_safe(&fixture.run("printf '%s' '/usr/bin/git push --force'"));
+}
+
+#[test]
 fn trash_commands_allow_recoverable_operations_and_deny_permanent_ones() {
     let fixture = Fixture::new();
     for command in [

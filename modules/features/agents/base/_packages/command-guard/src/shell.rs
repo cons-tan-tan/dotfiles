@@ -113,10 +113,37 @@ impl SimpleCommand {
 
     pub fn projection(&self) -> Projection {
         let mut projection = Projection::default();
+        // Mirror Shellfirm's private PATH_COMMANDS so origin checks use normalized paths.
+        let normalize_paths =
+            self.words
+                .first()
+                .and_then(Word::static_value)
+                .is_some_and(|executable| {
+                    matches!(
+                        executable.rsplit('/').next().unwrap_or(executable),
+                        "rm" | "rmdir"
+                            | "chmod"
+                            | "chown"
+                            | "chgrp"
+                            | "mv"
+                            | "find"
+                            | "shred"
+                            | "unlink"
+                            | "srm"
+                    )
+                });
         for (index, word) in self.words.iter().enumerate() {
             let value = word.static_value().unwrap_or("__AGENT_DYNAMIC_WORD__");
+            // Shellfirm's rules match executable basenames, including absolute paths.
+            let value = if index == 0 {
+                value.rsplit('/').next().unwrap_or(value)
+            } else {
+                value
+            };
+            let normalized =
+                (normalize_paths && index > 0).then(|| shellfirm::parser::normalize_path(value));
             projection.push_token(
-                value,
+                normalized.as_deref().unwrap_or(value),
                 if index == 0 {
                     OriginRole::Executable
                 } else {
