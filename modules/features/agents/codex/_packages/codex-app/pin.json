@@ -1,8 +1,8 @@
 {
-  "version": "26.1016.51333",
+  "version": "26.1106.51428",
   "appcast": "https://persistent.oaistatic.com/codex-app-prod/appcast.xml",
-  "url": "https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-arm64-26.1016.51333.zip",
-  "hash": "sha256-Il2XmULYvGkjOZiFZ24jWtUoMVTy8862m7WdiYZzL2g=",
+  "url": "https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-arm64-26.1106.51428.zip",
+  "hash": "sha256-lZrarQqLjNAmXKGlODWvYYJ+Lq9ln9K9rXzjm3EvJXw=",
   "appName": "ChatGPT.app",
   "bundleIdentifier": "com.openai.codex",
   "displayName": "ChatGPT"
