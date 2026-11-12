@@ -36,7 +36,7 @@
       flake = false;
     };
     ax = {
-      url = "github:yusukebe/ax/v0.1.25";
+      url = "github:yusukebe/ax";
       inputs = {
         bun2nix.follows = "bun2nix";
         nixpkgs.follows = "nixpkgs";
@@ -87,14 +87,14 @@
       };
     };
     fast-nix-gc = {
-      url = "github:Mic92/fast-nix-gc/b4471ec56911541f72f7a7b9b8fee7f42183f21b";
+      url = "github:Mic92/fast-nix-gc";
       inputs = {
         nix-darwin.follows = "darwin";
         nixpkgs.follows = "nixpkgs";
         treefmt-nix.follows = "treefmt-nix";
       };
     };
-    flake-file.url = "github:denful/flake-file/v0.7.0";
+    flake-file.url = "github:denful/flake-file";
     flake-parts = {
       url = "github:hercules-ci/flake-parts";
       inputs.nixpkgs-lib.follows = "nixpkgs-lib";
@@ -114,7 +114,7 @@
       url = "github:MaryCache/imozuru";
       flake = false;
     };
-    import-tree.url = "github:denful/import-tree/v0.3.0";
+    import-tree.url = "github:denful/import-tree";
     improve-skill = {
       url = "github:shadcn/improve";
       flake = false;

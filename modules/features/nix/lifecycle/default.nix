@@ -8,7 +8,7 @@ let
 in
 {
   flake-file.inputs.fast-nix-gc = {
-    url = "github:Mic92/fast-nix-gc/b4471ec56911541f72f7a7b9b8fee7f42183f21b";
+    url = "github:Mic92/fast-nix-gc";
     inputs = {
       nix-darwin.follows = "darwin";
       nixpkgs.follows = "nixpkgs";
