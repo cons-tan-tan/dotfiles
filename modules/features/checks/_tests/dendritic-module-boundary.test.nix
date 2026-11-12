@@ -12,7 +12,7 @@ let
     lib.filesystem.listFilesRecursive repoRoot
   );
   expectedModuleFiles = builtins.filter (path: !lib.hasInfix "/_" (toString path)) allNixFiles;
-  actualModuleFiles = (inputs.import-tree.withLib lib).leafs modulesRoot;
+  actualModuleFiles = inputs.import-tree.leaves modulesRoot;
   isSupportPath =
     path: lib.hasInfix "/_tests/" (toString path) || lib.hasInfix "/_lib/" (toString path);
   supportFiles = builtins.filter isSupportPath allNixFiles;
