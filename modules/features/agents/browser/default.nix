@@ -1,5 +1,6 @@
 { inputs, ... }:
 {
+  # Keep the skill source aligned with the release assets managed by updateScript.
   flake-file.inputs.agent-browser-skill = {
     url = "github:vercel-labs/agent-browser/v0.42.0";
     flake = false;

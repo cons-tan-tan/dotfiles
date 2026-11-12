@@ -73,6 +73,7 @@ let
       ciCheck
       currentTargets
       flake
+      inputs
       lib
       pkgs
       repoRoot

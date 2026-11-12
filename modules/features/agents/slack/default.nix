@@ -1,5 +1,6 @@
 { inputs, ... }:
 {
+  # Keep the skill source aligned with the release assets managed by updateScript.
   flake-file.inputs.agent-slack-skill = {
     url = "github:stablyai/agent-slack/v0.10.2";
     flake = false;

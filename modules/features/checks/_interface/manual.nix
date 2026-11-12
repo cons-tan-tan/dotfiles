@@ -2,6 +2,7 @@
   ciCheck,
   currentTargets,
   flake,
+  inputs,
   lib,
   pkgs,
   repoRoot,
@@ -15,6 +16,7 @@ let
       ciCheck
       currentTargets
       flake
+      inputs
       lib
       pkgs
       repoRoot

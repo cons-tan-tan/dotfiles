@@ -76,16 +76,15 @@
         ]
       },
       "locked": {
-        "lastModified": 1785906402,
-        "narHash": "sha256-2F416Szv3Y5cHUB2yOKYKJeHDp7XChG11Lj/zIXsPKc=",
+        "lastModified": 1794137530,
+        "narHash": "sha256-Xn7g0ue1Wny8rqNFEBPrTlzW09rRGbdGmARmoU/CXWk=",
         "owner": "yusukebe",
         "repo": "ax",
-        "rev": "0ddd8a748ae2401ae344f536f6e8dded890fcdbf",
+        "rev": "d97681ea17be17118ba1fd8d75613fa2749bfc93",
         "type": "github"
       },
       "original": {
         "owner": "yusukebe",
-        "ref": "v0.1.25",
         "repo": "ax",
         "type": "github"
       }
@@ -346,7 +345,6 @@
       "original": {
         "owner": "Mic92",
         "repo": "fast-nix-gc",
-        "rev": "b4471ec56911541f72f7a7b9b8fee7f42183f21b",
         "type": "github"
       }
     },
@@ -368,16 +366,15 @@
     },
     "flake-file": {
       "locked": {
-        "lastModified": 1791840448,
-        "narHash": "sha256-u10FOsDRA1GMRcn1+hYf2eD1K+LP/F9/+AeErkKraPg=",
+        "lastModified": 1792905615,
+        "narHash": "sha256-KdGEzlRQPHBbNPD+AChjry8eWEx0TCrGKy1Hkacj+bA=",
         "owner": "denful",
         "repo": "flake-file",
-        "rev": "d3600508b0b031221459f7358ab88c438a81ac83",
+        "rev": "7b08dbc223bb1a758a515aad9653a6bf196bc772",
         "type": "github"
       },
       "original": {
         "owner": "denful",
-        "ref": "v0.7.0",
         "repo": "flake-file",
         "type": "github"
       }
@@ -533,7 +530,6 @@
       },
       "original": {
         "owner": "denful",
-        "ref": "v0.3.0",
         "repo": "import-tree",
         "type": "github"
       }
