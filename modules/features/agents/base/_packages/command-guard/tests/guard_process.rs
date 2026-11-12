@@ -462,7 +462,12 @@ fn parser_tracks_execution_context_instead_of_scanning_raw_text() {
         "Shellfirm",
     );
     assert_denied(&fixture.run("> /etc/hosts"), "Emptying an existing file");
-    assert_safe(&fixture.run("printf '>' > /etc/hosts"));
+    assert_safe(&fixture.run("printf '%s' '> /etc/hosts'"));
+    assert_safe(&fixture.run("printf '>' > output.txt"));
+    assert_denied(
+        &fixture.run("printf '>' > /etc/hosts"),
+        "Shellfirm fs:overwrite_system_file",
+    );
 }
 
 #[test]

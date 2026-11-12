@@ -694,10 +694,11 @@ checksum = "dc6fe69c597f9c37bfeeeeeb33da3530379845f10be461a66d16d03eca2ded77"
 
 [[package]]
 name = "shellfirm"
-version = "0.3.10"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1f722739a9cf5e474c8d33bc675fa37dd968d51cac7174874994dfb8dd20adc"
+checksum = "4bf95027326388081525d7a164767f54e50f3ee16295dbbd32d70b63125f2ead"
 dependencies = [
+ "aho-corasick",
  "console",
  "dirs",
  "exitcode",
@@ -705,6 +706,7 @@ dependencies = [
  "nix",
  "rand",
  "regex",
+ "regex-syntax",
  "requestty",
  "serde",
  "serde_derive",
