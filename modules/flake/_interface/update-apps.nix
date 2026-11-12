@@ -4,9 +4,7 @@ let
   script = pkgs.writeShellApplication {
     name = "flake-update";
     text = ''
-      echo "Updating flake.lock..."
-      nix flake update
-      echo "Done! Run 'nix run .#switch' to apply changes."
+      exec nix flake update "$@"
     '';
   };
 in
