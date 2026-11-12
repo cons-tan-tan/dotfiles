@@ -1,4 +1,4 @@
-# DO-NOT-EDIT. This file was auto-generated using github:vic/flake-file.
+# DO-NOT-EDIT. This file was auto-generated using github:denful/flake-file.
 # Use `nix run .#write-flake` to regenerate it.
 {
   description = "constantan's declarative Darwin, NixOS-WSL, and Home Manager dotfiles";
@@ -20,7 +20,7 @@
 
   inputs = {
     agent-browser-skill = {
-      url = "github:vercel-labs/agent-browser/v0.39.1";
+      url = "github:vercel-labs/agent-browser/v0.42.0";
       flake = false;
     };
     agent-slack-skill = {
@@ -87,14 +87,14 @@
       };
     };
     fast-nix-gc = {
-      url = "github:Mic92/fast-nix-gc/0243fbc569251eea46894e681e2c86eed7185c46";
+      url = "github:Mic92/fast-nix-gc/b4471ec56911541f72f7a7b9b8fee7f42183f21b";
       inputs = {
         nix-darwin.follows = "darwin";
         nixpkgs.follows = "nixpkgs";
         treefmt-nix.follows = "treefmt-nix";
       };
     };
-    flake-file.url = "github:denful/flake-file/v0.6.0";
+    flake-file.url = "github:denful/flake-file/v0.7.0";
     flake-parts = {
       url = "github:hercules-ci/flake-parts";
       inputs.nixpkgs-lib.follows = "nixpkgs-lib";
@@ -114,7 +114,7 @@
       url = "github:MaryCache/imozuru";
       flake = false;
     };
-    import-tree.url = "github:vic/import-tree/v0.2.0";
+    import-tree.url = "github:denful/import-tree/v0.3.0";
     improve-skill = {
       url = "github:shadcn/improve";
       flake = false;

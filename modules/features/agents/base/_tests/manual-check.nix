@@ -152,6 +152,9 @@ in
           check_deny ${lib.escapeShellArg "rm --rec --for target"} ${lib.escapeShellArg "Recursive forced deletion"}
           check_deny ${lib.escapeShellArg "fd -x rm -rf '{}'"} ${lib.escapeShellArg "Recursive forced deletion"}
           check_safe ${lib.escapeShellArg "fd -x echo"}
+          check_deny ${lib.escapeShellArg "find . -name '*.log' -delete"} ${lib.escapeShellArg "Shellfirm fs:delete_find_files_filtered"}
+          check_safe ${lib.escapeShellArg "find . -name '*.log' -print"}
+          check_safe ${lib.escapeShellArg "find . -name __pycache__ -delete"}
 
           check_context ${lib.escapeShellArg "rm target"} ${lib.escapeShellArg "Use `trash` instead of `rm`."}
           check_safe ${lib.escapeShellArg "trash target"}

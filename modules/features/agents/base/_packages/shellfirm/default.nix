@@ -1,4 +1,5 @@
 {
+  bashInteractive,
   callPackage,
   ghApiGet,
   lib,
@@ -41,7 +42,15 @@ rustPlatform.buildRustPackage rec {
   ];
   cargoTestFlags = cargoBuildFlags;
 
+  # Upstream banner tests compare plain text even when the builder supports ANSI colors.
+  preCheck = ''
+    export CLICOLOR=0
+    export CLICOLOR_FORCE=0
+  '';
+
   nativeBuildInputs = [ pkg-config ];
+  # The Bash hook tests exercise readline, which stdenv's minimal Bash omits.
+  nativeCheckInputs = [ bashInteractive ];
   buildInputs = [ openssl ];
 
   passthru = {

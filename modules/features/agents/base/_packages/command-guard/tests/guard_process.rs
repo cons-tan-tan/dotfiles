@@ -462,7 +462,41 @@ fn parser_tracks_execution_context_instead_of_scanning_raw_text() {
         "Shellfirm",
     );
     assert_denied(&fixture.run("> /etc/hosts"), "Emptying an existing file");
-    assert_safe(&fixture.run("printf '>' > /etc/hosts"));
+    assert_safe(&fixture.run("printf '%s' '> /etc/hosts'"));
+    assert_safe(&fixture.run("printf '>' > output.txt"));
+    assert_denied(
+        &fixture.run("printf '>' > /etc/hosts"),
+        "Shellfirm fs:overwrite_system_file",
+    );
+}
+
+#[test]
+fn shellfirm_checks_normalized_paths_without_matching_literal_commands() {
+    let fixture = Fixture::new();
+    for command in [
+        "chmod -R 777 /etc/",
+        "chmod -R 777 //",
+        "chmod -R 777 ./",
+        "chmod -R 777 ../",
+        "/bin/chmod -R 777 /etc/",
+    ] {
+        assert_denied(&fixture.run(command), "Shellfirm fs:recursively_chmod");
+    }
+    for command in [
+        "chown -R nobody /etc/",
+        "chown -R nobody ./",
+        "/bin/chown -R nobody ./",
+    ] {
+        assert_denied(&fixture.run(command), "Shellfirm fs:recursively_chown");
+    }
+    assert_safe(&fixture.run("printf '%s' 'chmod -R 777 /etc/'"));
+    assert_safe(&fixture.run("printf '%s' 'chown -R nobody ./'"));
+    assert_denied(
+        &fixture.run("/usr/bin/git push --force"),
+        "Shellfirm git:force_push",
+    );
+    assert_safe(&fixture.run("/usr/bin/git status"));
+    assert_safe(&fixture.run("printf '%s' '/usr/bin/git push --force'"));
 }
 
 #[test]
