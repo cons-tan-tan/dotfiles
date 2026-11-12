@@ -1,10 +1,12 @@
 {
   ciCheck,
+  inputs,
   lib,
   pkgs,
 }:
 let
   cleanupPolicy = import ../_data/cleanup-policy.nix;
+  fastNixGc = inputs.fast-nix-gc.packages.${pkgs.stdenv.hostPlatform.system}.default;
   nhCleanUser = pkgs.callPackage ../_packages/clean-user { };
   nhCleanArgumentProbe = pkgs.writeShellApplication {
     name = "nh";
@@ -110,6 +112,11 @@ let
   );
   storeCleanupCheck = ciCheck.buildEntry (ciCheck.targets.linux "package-smoke") (
     pkgs.runCommand "nix-store-cleanup-contract" { } ''
+      ${lib.getExe fastNixGc} --help >"$TMPDIR/gc-help"
+      for argument in ${lib.escapeShellArgs cleanupPolicy.storeGc.arguments}; do
+        ${lib.getExe pkgs.gnugrep} --fixed-strings -- "$argument" "$TMPDIR/gc-help" >/dev/null
+      done
+
       export NIX_STORE_CLEANUP_PROBE="$TMPDIR/calls"
       readonly cleanup=${lib.escapeShellArg (lib.getExe storeCleanupContract)}
       readonly cmp=${lib.escapeShellArg (lib.getExe' pkgs.diffutils "cmp")}
