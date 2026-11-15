@@ -3,6 +3,10 @@
   flake.modules.nixos.platform-wsl = {
     key = "modules/features/platform/wsl/base.nix#nixos.platform-wsl";
     imports = [
+      ({ config, ... }: {
+        wsl.usbip.enable = true;
+        users.users.${config.wsl.defaultUser}.extraGroups = [ "dialout" ];
+      })
       {
         wsl = {
           # Let WSL own WSLInterop. Adding NixOS binfmt registrations activates
