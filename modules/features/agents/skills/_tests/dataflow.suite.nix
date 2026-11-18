@@ -67,6 +67,12 @@ let
     }
   ];
   pingu = homeFor [ ];
+  repositorySkills = homeFor [
+    (import ../default.nix {
+      config = { };
+      inherit inputs lib;
+    }).flake.modules.homeManager.agent-skills-local
+  ];
   profiled = homeFor [
     {
       dotfiles.agentSkillContributions = [
@@ -87,6 +93,22 @@ else
       checkName = "agent-skills-dataflow-tests";
       execution = "build";
       hestiaGroup = "eval-tests";
+    };
+    tests.testStoredReportSkillIsNotDeployed = {
+      expr = {
+        sourceExists = builtins.pathExists (repoRoot + "/agents/skills/source-based-report/SKILL.md");
+        registered = repositorySkills.dotfiles.agentSkills.externalSkills ? source-based-report;
+        agents = repositorySkills.home.file ? ".agents/skills/source-based-report";
+        claude = repositorySkills.home.file ? ".claude/skills/source-based-report";
+        otherLocalSkill = repositorySkills.home.file ? ".agents/skills/create-pr";
+      };
+      expected = {
+        sourceExists = true;
+        registered = false;
+        agents = false;
+        claude = false;
+        otherLocalSkill = true;
+      };
     };
     tests.testCommitUsesRuntimeDistribution = {
       expr = {

@@ -9,7 +9,10 @@ let
   localSkillsDir = (import ./_interface/payload.nix).localSkillsRoot;
   externalDefinitions = import ./_data/sources.nix { inherit inputs; };
   localDefinitions = lib.mapAttrs (name: _: { root = localSkillsDir + "/${name}"; }) (
-    lib.filterAttrs (_: type: type == "directory") (builtins.readDir localSkillsDir)
+    # This skill is stored in the repository without being deployed to agents.
+    lib.filterAttrs (name: type: type == "directory" && name != "source-based-report") (
+      builtins.readDir localSkillsDir
+    )
   );
   entries =
     provenance: definitions:
