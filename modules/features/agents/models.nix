@@ -9,18 +9,18 @@
     # Updating model IDs is a deliberate runtime choice, separate from package pins.
     config.dotfiles.agentModels = {
       claude = {
-        main = "claude-opus-5-5";
+        main = "claude-fable-5-2";
       };
 
       codex = {
-        model = "gpt-6.1-sol";
+        model = "gpt-6.2-astra";
         reasoningEffort = "xhigh";
       };
 
       pi = {
-        provider = "openai-codex";
-        model = "gpt-5.6-sol";
-        thinkingLevel = "high";
+        provider = "openai";
+        model = "gpt-6.2-astra";
+        thinkingLevel = "xhigh";
       };
     };
   };
