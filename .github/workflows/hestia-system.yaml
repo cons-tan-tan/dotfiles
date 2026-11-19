@@ -91,6 +91,13 @@ jobs:
         env:
           NIX_EXTRA_SUBSTITUTERS: ${{ steps.setup-hestia.outputs.nix-extra-substituters }}
         run: bash modules/features/ci/_scripts/verify_binary_substituters.sh
+      # Hestia can still reference evicted packs (Mic92/hestia#162).
+      - name: Restore macOS build definitions from the checked-out revision
+        if: inputs.system == 'aarch64-darwin' && contains(matrix.name, 'darwin-configurations')
+        run: |
+          git sparse-checkout disable
+          nix eval --json '.#lib.hestiaJobs.ci.aarch64-darwin' \
+            --apply 'jobs: builtins.mapAttrs (_: job: job.drvPath) jobs' > /dev/null
       - name: Prefetch derivation closure and build
         env:
           INSTALLABLES: ${{ matrix.installables }}

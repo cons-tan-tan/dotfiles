@@ -15,7 +15,7 @@ in
       inherit (settings) model model_reasoning_effort;
     };
     expected = {
-      model = "gpt-6.1-sol";
+      model = "gpt-6.2-astra";
       model_reasoning_effort = "xhigh";
     };
   };
